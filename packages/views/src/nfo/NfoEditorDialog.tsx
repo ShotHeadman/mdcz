@@ -19,6 +19,7 @@ import {
 } from "@mdcz/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { type Dispatch, type ReactNode, type SetStateAction, useId } from "react";
+import { useT } from "../i18n";
 import type { EditableActorProfile, EditableNfoData, NfoValidationErrors } from "./nfoEditorModel";
 
 interface NfoEditorDialogProps {
@@ -142,6 +143,7 @@ function StringListField({
     onChange(nextValues);
   };
 
+  const t = useT();
   const removeValue = (index: number) => {
     onChange(visibleValues.filter((_, valueIndex) => valueIndex !== index));
   };
@@ -152,7 +154,7 @@ function StringListField({
         <span className={LABEL_CLASS}>{label}</span>
         <Button type="button" size="xs" variant="ghost" disabled={disabled} onClick={() => onChange([...values, ""])}>
           <Plus className="h-3.5 w-3.5" />
-          添加
+          {t.nfo.editor.add}
         </Button>
       </div>
       <div className="space-y-2">
@@ -170,7 +172,7 @@ function StringListField({
               size="icon-sm"
               variant="ghost"
               disabled={disabled}
-              aria-label={`删除${label}${index + 1}`}
+              aria-label={t.nfo.editor.deleteItemAria(label, index + 1)}
               onClick={() => removeValue(index)}
             >
               <Trash2 className="h-4 w-4" />
@@ -193,6 +195,7 @@ function ActorProfilesField({
   disabled?: boolean;
   onChange: (values: EditableActorProfile[]) => void;
 }) {
+  const t = useT();
   const visibleValues = values.length > 0 ? values : [{ name: "", photo_url: "" }];
 
   const updateValue = (index: number, patch: Partial<EditableActorProfile>) => {
@@ -208,7 +211,7 @@ function ActorProfilesField({
   return (
     <div className={FIELD_CLASS}>
       <div className="flex items-center justify-between gap-3">
-        <span className={LABEL_CLASS}>演员资料</span>
+        <span className={LABEL_CLASS}>{t.nfo.editor.actorProfiles}</span>
         <Button
           type="button"
           size="xs"
@@ -217,7 +220,7 @@ function ActorProfilesField({
           onClick={() => onChange([...values, { name: "", photo_url: "" }])}
         >
           <Plus className="h-3.5 w-3.5" />
-          添加
+          {t.nfo.editor.add}
         </Button>
       </div>
       <div className="space-y-3">
@@ -228,13 +231,13 @@ function ActorProfilesField({
             className="grid gap-3 rounded-quiet bg-surface-low/60 p-3 min-[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
           >
             <TextField
-              label="姓名"
+              label={t.nfo.editor.actorName}
               value={profile.name}
               disabled={disabled}
               onChange={(value) => updateValue(index, { name: value })}
             />
             <TextField
-              label="头像 URL"
+              label={t.nfo.editor.actorPhotoUrl}
               value={profile.photo_url}
               disabled={disabled}
               onChange={(value) => updateValue(index, { photo_url: value })}
@@ -244,7 +247,7 @@ function ActorProfilesField({
               size="icon-sm"
               variant="ghost"
               disabled={disabled}
-              aria-label={`删除演员资料${index + 1}`}
+              aria-label={t.nfo.editor.deleteActorProfileAria(index + 1)}
               className="self-end"
               onClick={() => removeValue(index)}
             >
@@ -268,6 +271,7 @@ export function NfoEditorDialog({
   onDataChange,
   onSave,
 }: NfoEditorDialogProps) {
+  const t = useT();
   const websiteSelectId = useId();
   const updateField = <Key extends keyof EditableNfoData>(key: Key, value: EditableNfoData[Key]) => {
     onDataChange((current) => ({ ...current, [key]: value }));
@@ -280,25 +284,34 @@ export function NfoEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[88vh] max-w-5xl gap-0 overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="border-b border-border/50 px-6 py-5">
-          <DialogTitle>编辑 NFO 文件</DialogTitle>
-          <DialogDescription className="sr-only">编辑 NFO 表单。</DialogDescription>
+          <DialogTitle>{t.nfo.editor.title}</DialogTitle>
+          <DialogDescription className="sr-only">{t.nfo.editor.description}</DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[calc(88vh-150px)]">
           <fieldset disabled={saving} className="space-y-6 px-6 py-5">
-            <Section title="基础">
+            <Section title={t.nfo.editor.sections.basic}>
               <div className="grid gap-4 min-[760px]:grid-cols-2">
-                <TextField label="标题" value={data.title} error={errors.title} onChange={updateTextField("title")} />
-                <TextField label="中文标题" value={data.title_zh} onChange={updateTextField("title_zh")} />
                 <TextField
-                  label="番号"
+                  label={t.nfo.editor.fields.title}
+                  value={data.title}
+                  error={errors.title}
+                  onChange={updateTextField("title")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.titleZh}
+                  value={data.title_zh}
+                  onChange={updateTextField("title_zh")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.number}
                   value={data.number}
                   error={errors.number}
                   onChange={updateTextField("number")}
                 />
                 <div className={FIELD_CLASS}>
                   <label htmlFor={websiteSelectId} className={LABEL_CLASS}>
-                    来源站点
+                    {t.nfo.editor.fields.sourceSite}
                   </label>
                   <Select
                     value={data.website}
@@ -306,7 +319,7 @@ export function NfoEditorDialog({
                     onValueChange={(value) => updateField("website", value as Website)}
                   >
                     <SelectTrigger id={websiteSelectId} aria-invalid={Boolean(errors.website)}>
-                      <SelectValue placeholder="选择站点" />
+                      <SelectValue placeholder={t.nfo.editor.fields.selectSite} />
                     </SelectTrigger>
                     <SelectContent>
                       {WEBSITE_OPTIONS.map((website) => (
@@ -318,50 +331,78 @@ export function NfoEditorDialog({
                   </Select>
                   <FieldError message={errors.website} />
                 </div>
-                <TextField label="发行日期" value={data.release_date} onChange={updateTextField("release_date")} />
                 <TextField
-                  label="时长（秒）"
+                  label={t.nfo.editor.fields.releaseDate}
+                  value={data.release_date}
+                  onChange={updateTextField("release_date")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.durationSeconds}
                   type="number"
                   value={data.durationSeconds}
                   error={errors.durationSeconds}
                   onChange={updateTextField("durationSeconds")}
                 />
                 <TextField
-                  label="评分"
+                  label={t.nfo.editor.fields.rating}
                   type="number"
                   value={data.rating}
                   error={errors.rating}
                   onChange={updateTextField("rating")}
                 />
-                <TextField label="内容类型" value={data.content_type} onChange={updateTextField("content_type")} />
+                <TextField
+                  label={t.nfo.editor.fields.contentType}
+                  value={data.content_type}
+                  onChange={updateTextField("content_type")}
+                />
               </div>
             </Section>
 
-            <Section title="制作">
+            <Section title={t.nfo.editor.sections.production}>
               <div className="grid gap-4 min-[760px]:grid-cols-2">
-                <TextField label="制作商" value={data.studio} onChange={updateTextField("studio")} />
-                <TextField label="导演" value={data.director} onChange={updateTextField("director")} />
-                <TextField label="发行商" value={data.publisher} onChange={updateTextField("publisher")} />
-                <TextField label="系列" value={data.series} onChange={updateTextField("series")} />
+                <TextField
+                  label={t.nfo.editor.fields.studio}
+                  value={data.studio}
+                  onChange={updateTextField("studio")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.director}
+                  value={data.director}
+                  onChange={updateTextField("director")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.publisher}
+                  value={data.publisher}
+                  onChange={updateTextField("publisher")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.series}
+                  value={data.series}
+                  onChange={updateTextField("series")}
+                />
               </div>
             </Section>
 
-            <Section title="文本">
+            <Section title={t.nfo.editor.sections.text}>
               <div className="grid gap-4 min-[760px]:grid-cols-2">
-                <TextareaField label="简介" value={data.plot} onChange={updateTextField("plot")} />
-                <TextareaField label="中文简介" value={data.plot_zh} onChange={updateTextField("plot_zh")} />
+                <TextareaField label={t.nfo.editor.fields.plot} value={data.plot} onChange={updateTextField("plot")} />
+                <TextareaField
+                  label={t.nfo.editor.fields.plotZh}
+                  value={data.plot_zh}
+                  onChange={updateTextField("plot_zh")}
+                />
               </div>
             </Section>
 
-            <Section title="人物">
+            <Section title={t.nfo.editor.sections.people}>
               <div className="grid gap-5 min-[760px]:grid-cols-2">
                 <StringListField
-                  label="演员"
+                  label={t.nfo.editor.fields.actors}
                   values={data.actors}
                   onChange={(values) => updateField("actors", values)}
                 />
                 <StringListField
-                  label="标签"
+                  label={t.nfo.editor.fields.tags}
                   values={data.genres}
                   onChange={(values) => updateField("genres", values)}
                 />
@@ -373,44 +414,60 @@ export function NfoEditorDialog({
               />
             </Section>
 
-            <Section title="图片">
+            <Section title={t.nfo.editor.sections.images}>
               <div className="grid gap-4 min-[760px]:grid-cols-3">
-                <TextField label="缩略图 URL" value={data.thumb_url} onChange={updateTextField("thumb_url")} />
-                <TextField label="海报 URL" value={data.poster_url} onChange={updateTextField("poster_url")} />
-                <TextField label="背景图 URL" value={data.fanart_url} onChange={updateTextField("fanart_url")} />
+                <TextField
+                  label={t.nfo.editor.fields.thumbUrl}
+                  value={data.thumb_url}
+                  onChange={updateTextField("thumb_url")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.posterUrl}
+                  value={data.poster_url}
+                  onChange={updateTextField("poster_url")}
+                />
+                <TextField
+                  label={t.nfo.editor.fields.fanartUrl}
+                  value={data.fanart_url}
+                  onChange={updateTextField("fanart_url")}
+                />
               </div>
             </Section>
 
-            <Section title="来源">
+            <Section title={t.nfo.editor.sections.sources}>
               <div className="grid gap-4 min-[760px]:grid-cols-2">
                 <TextField
-                  label="缩略图来源 URL"
+                  label={t.nfo.editor.fields.thumbSourceUrl}
                   value={data.thumb_source_url}
                   onChange={updateTextField("thumb_source_url")}
                 />
                 <TextField
-                  label="海报来源 URL"
+                  label={t.nfo.editor.fields.posterSourceUrl}
                   value={data.poster_source_url}
                   onChange={updateTextField("poster_source_url")}
                 />
                 <TextField
-                  label="背景图来源 URL"
+                  label={t.nfo.editor.fields.fanartSourceUrl}
                   value={data.fanart_source_url}
                   onChange={updateTextField("fanart_source_url")}
                 />
                 <TextField
-                  label="预告来源 URL"
+                  label={t.nfo.editor.fields.trailerSourceUrl}
                   value={data.trailer_source_url}
                   onChange={updateTextField("trailer_source_url")}
                 />
               </div>
             </Section>
 
-            <Section title="媒体">
+            <Section title={t.nfo.editor.sections.media}>
               <div className="grid gap-5 min-[760px]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                <TextField label="预告 URL" value={data.trailer_url} onChange={updateTextField("trailer_url")} />
+                <TextField
+                  label={t.nfo.editor.fields.trailerUrl}
+                  value={data.trailer_url}
+                  onChange={updateTextField("trailer_url")}
+                />
                 <StringListField
-                  label="剧照"
+                  label={t.nfo.editor.fields.stills}
                   values={data.scene_images}
                   onChange={(values) => updateField("scene_images", values)}
                 />
@@ -420,12 +477,14 @@ export function NfoEditorDialog({
         </ScrollArea>
 
         <DialogFooter className="border-t border-border/50 px-6 py-4">
-          <div className="mr-auto self-center text-xs text-muted-foreground">{dirty ? "有未保存修改" : "未修改"}</div>
+          <div className="mr-auto self-center text-xs text-muted-foreground">
+            {dirty ? t.nfo.editor.unsavedChanges : t.nfo.editor.unmodified}
+          </div>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button onClick={onSave} disabled={saving}>
-            {saving ? "保存中..." : "保存修改"}
+            {saving ? t.nfo.editor.saving : t.nfo.editor.saveChanges}
           </Button>
         </DialogFooter>
       </DialogContent>

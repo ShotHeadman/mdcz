@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useContext } from "react";
-import { FIELD_REGISTRY_BY_KEY } from "./settingsRegistry";
+import { FIELD_REGISTRY_BY_KEY, type FieldKey } from "./settingsRegistry";
 
 export type SettingsSectionMode = "public" | "advanced";
 
@@ -19,7 +19,7 @@ export function useSettingsSectionMode(): SettingsSectionMode {
 }
 
 export function shouldRenderFieldInSectionMode(name: string, mode: SettingsSectionMode): boolean {
-  const entry = FIELD_REGISTRY_BY_KEY[name];
+  const entry = FIELD_REGISTRY_BY_KEY[name as FieldKey];
   if (!entry) {
     return mode === "public";
   }

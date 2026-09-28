@@ -36,7 +36,7 @@ export const createFileScraper = (
       signalService: deps.signalService ?? {
         setProgress: () => {},
         showLogText: () => {},
-        showScrapeInfo: () => {},
+        showScrapeStep: () => {},
         showFailedInfo: () => {},
       },
     },

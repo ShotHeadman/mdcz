@@ -1,4 +1,5 @@
 import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
+import { useT } from "@mdcz/views/i18n";
 import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
 import { ToolsRouteView } from "@mdcz/views/tools";
 import { useQuery } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ const ShellLink = ({ to, className, onFocus, onMouseEnter, children }: ShellLink
 );
 
 export const RootLayout = ({ children }: { children: ReactNode }) => {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -45,7 +47,7 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
   if (authQ.isLoading) {
     return (
       <div className="flex h-dvh items-center justify-center bg-surface-canvas text-sm text-muted-foreground">
-        加载中...
+        {t.common.loading}
       </div>
     );
   }

@@ -25,7 +25,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("scrape.filenameBlacklistTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
     expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
 
-    const keys = new Set(FIELD_REGISTRY.map((candidate) => candidate.key));
+    const keys = new Set<string>(FIELD_REGISTRY.map((candidate) => candidate.key));
     expect(keys.has("behavior.updateCheck")).toBe(false);
     expect(FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.defaultScanExcludeDirs")).toBe(
       FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.mediaPath") + 1,

@@ -10,6 +10,7 @@ import {
 } from "@mdcz/ui";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
+import { useT } from "../i18n";
 
 export interface ReturnToWorkbenchSetupButtonProps {
   className?: string;
@@ -22,11 +23,14 @@ export interface ReturnToWorkbenchSetupButtonProps {
 export function ReturnToWorkbenchSetupButton({
   className,
   disabled = false,
-  dialogDescription = "返回后会清空当前工作台内容，确定继续吗？",
-  dialogTitle = "返回工作台初始页面",
+  dialogDescription,
+  dialogTitle,
   onConfirm,
 }: ReturnToWorkbenchSetupButtonProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
+  const resolvedTitle = dialogTitle ?? t.workbench.returnDialogTitle;
+  const resolvedDescription = dialogDescription ?? t.workbench.returnDialogDescription;
 
   return (
     <>
@@ -37,8 +41,8 @@ export function ReturnToWorkbenchSetupButton({
         className={cn("rounded-quiet-capsule", className)}
         onClick={() => setOpen(true)}
         disabled={disabled}
-        aria-label="返回工作台初始页面"
-        title="返回工作台初始页面"
+        aria-label={resolvedTitle}
+        title={resolvedTitle}
       >
         <ArrowLeft className="h-4 w-4" />
       </Button>
@@ -46,12 +50,12 @@ export function ReturnToWorkbenchSetupButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{dialogTitle}</DialogTitle>
-            <DialogDescription>{dialogDescription}</DialogDescription>
+            <DialogTitle>{resolvedTitle}</DialogTitle>
+            <DialogDescription>{resolvedDescription}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button
               onClick={() => {
@@ -59,7 +63,7 @@ export function ReturnToWorkbenchSetupButton({
                 onConfirm();
               }}
             >
-              确认返回
+              {t.workbench.confirmReturn}
             </Button>
           </DialogFooter>
         </DialogContent>

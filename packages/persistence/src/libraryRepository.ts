@@ -417,7 +417,7 @@ export class LibraryRepository {
         ),
       )
     )
-      throw new Error("目标路径已属于另一个文件");
+      throw new Error("Target path already belongs to another file");
     const occupied = this.database.db
       .select({ id: libraryItemFiles.id })
       .from(libraryItemFiles)
@@ -426,7 +426,7 @@ export class LibraryRepository {
       )
       .get();
     if (occupied && occupied.id !== file.id) {
-      throw new Error(`媒体库路径已属于另一个文件：${input.rootId}:${input.rootRelativePath}`);
+      throw new Error(`Library path already belongs to another file: ${input.rootId}:${input.rootRelativePath}`);
     }
     const directory = path.posix.dirname(input.rootRelativePath);
     const now = new Date();

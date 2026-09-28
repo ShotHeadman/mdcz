@@ -9,6 +9,7 @@ import {
 import { useRef } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
+import { useT } from "../i18n";
 import { ScrapeWorkbenchFrame } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
@@ -34,15 +35,19 @@ export function ScrapeWorkbenchAdapter({
 }: ScrapeWorkbenchAdapterProps) {
   const rerunning = useRef(false);
   const snapshot = useScrapeStore((state) => state.snapshot);
-  const { isScraping, scrapeStatus, progress, resultsCount, stageMessage } = useScrapeStore(
+  const t = useT();
+  const { isScraping, scrapeStatus, progress, resultsCount, latestStage } = useScrapeStore(
     useShallow((state) => ({
       isScraping: selectIsScraping(state),
       scrapeStatus: selectScrapeStatus(state),
       progress: selectScrapeProgress(state),
       resultsCount: selectScrapeResults(state).length,
-      stageMessage: state.snapshot?.latestStage?.message,
+      latestStage: state.snapshot?.latestStage,
     })),
   );
+  const stageMessage = latestStage
+    ? [t.scrape.stages[latestStage.stage], latestStage.relativePath?.split(/[\\/]/).at(-1)].filter(Boolean).join(" · ")
+    : undefined;
 
   return (
     <ScrapeWorkbenchFrame
@@ -52,31 +57,34 @@ export function ScrapeWorkbenchAdapter({
           <div className="space-y-4 p-8" role="status">
             <h2 className="text-lg font-semibold">
               {snapshot.task.status === "queued"
-                ? "任务已排队"
+                ? t.scrape.taskQueued
                 : snapshot.task.status === "discovering"
-                  ? "正在扫描视频文件"
+                  ? t.scrape.scanningVideoFiles
                   : snapshot.task.status === "stopping"
-                    ? "正在停止，等待当前文件处理完成"
+                    ? t.scrape.stoppingWaitingCurrent
                     : snapshot.task.status === "completed"
-                      ? "未找到可处理视频"
+                      ? t.scrape.noVideosFound
                       : snapshot.task.status === "stopped"
-                        ? "任务已停止"
+                        ? t.scrape.taskStopped
                         : snapshot.task.status === "interrupted"
-                          ? "任务已中断"
-                          : (snapshot.task.error ?? stageMessage ?? "正在准备任务")}
+                          ? t.scrape.taskInterrupted
+                          : (snapshot.task.error ?? stageMessage ?? t.scrape.preparingTask)}
             </h2>
             <p className="break-all text-sm">{snapshot.directorySource?.scanDir ?? snapshot.task.rootDisplayName}</p>
             {snapshot.discovery ? (
               <>
                 <p>
-                  已扫描 {snapshot.discovery.directories} 个目录，找到 {snapshot.discovery.candidates} 个视频，跳过{" "}
-                  {snapshot.discovery.skipped} 项
+                  {t.scrape.discoveryStatus(
+                    snapshot.discovery.directories,
+                    snapshot.discovery.candidates,
+                    snapshot.discovery.skipped,
+                  )}
                 </p>
                 <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>
               </>
             ) : null}
             {snapshot.discovery?.warnings.length ? (
-              <p className="break-all text-amber-600">部分路径无法访问：{snapshot.discovery.warnings.join("、")}</p>
+              <p className="break-all text-amber-600">{t.scrape.warnings(snapshot.discovery.warnings)}</p>
             ) : null}
           </div>
         ) : (

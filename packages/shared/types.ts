@@ -136,14 +136,17 @@ export interface UncensoredConfirmResponse {
   items: UncensoredConfirmResultItem[];
 }
 
+export type NamingPreviewSampleId = "standard" | "subtitled" | "multiActor" | "noActor";
+
 export interface NamingPreviewItem {
-  sourcePath?: string;
-  mediaPath?: string;
-  metadataDir?: string;
-  outputs?: string[];
-  label: string;
+  sample: NamingPreviewSampleId;
+  /** Output folder relative to the target root; empty when files stay in place. */
   folder: string;
   file: string;
+  sourcePath: string;
+  mediaPath: string;
+  metadataDir: string;
+  outputs: string[];
 }
 
 export interface MediaCandidate {
@@ -199,9 +202,29 @@ export interface FieldDiffImageCollectionPreview {
   items: string[];
 }
 
+/** Fields compared in maintenance previews; display labels live in the UI locale dictionaries. */
+export type MaintenanceDiffField =
+  | "title"
+  | "title_zh"
+  | "plot"
+  | "plot_zh"
+  | "studio"
+  | "director"
+  | "publisher"
+  | "series"
+  | "release_date"
+  | "rating"
+  | "durationSeconds"
+  | "content_type"
+  | "trailer_url"
+  | "thumb_url"
+  | "poster_url"
+  | "actors"
+  | "genres"
+  | "scene_images";
+
 interface BaseFieldDiff {
-  field: keyof CrawlerData;
-  label: string;
+  field: MaintenanceDiffField;
   oldValue: unknown;
   newValue: unknown;
   changed: boolean;

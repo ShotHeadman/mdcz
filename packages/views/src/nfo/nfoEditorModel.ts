@@ -1,5 +1,6 @@
 import { Website } from "@mdcz/shared/enums";
 import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
+import { getT } from "../i18n";
 
 export interface EditableActorProfile {
   name: string;
@@ -147,22 +148,22 @@ export const validateEditableNfoData = (data: EditableNfoData): NfoValidationRes
   const actorKeys = new Set(actors.map(normalizeActorProfileKey).filter(Boolean));
 
   if (!title) {
-    errors.title = "标题不能为空";
+    errors.title = getT().nfo.errors.titleRequired;
   }
   if (!number) {
-    errors.number = "番号不能为空";
+    errors.number = getT().nfo.errors.numberRequired;
   }
   if (!validWebsite) {
-    errors.website = "请选择来源站点";
+    errors.website = getT().nfo.errors.websiteRequired;
   }
   if (Number.isNaN(durationSeconds)) {
-    errors.durationSeconds = "时长必须是有效数字";
+    errors.durationSeconds = getT().nfo.errors.durationInvalid;
   }
   if (Number.isNaN(rating)) {
-    errors.rating = "评分必须是有效数字";
+    errors.rating = getT().nfo.errors.ratingInvalid;
   }
   if (actorProfiles.some((profile) => !profile.name.trim())) {
-    errors.actor_profiles = "演员资料的姓名不能为空";
+    errors.actor_profiles = getT().nfo.errors.actorNameRequired;
   }
 
   if (Object.keys(errors).length > 0) {

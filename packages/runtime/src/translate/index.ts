@@ -10,4 +10,4 @@ export { ensureTargetChinese, normalizeNewlines } from "../scrape/translate/shar
 export type { LanguageTarget, TranslationMappingStore } from "../scrape/translate/types";
 export { toTarget } from "../scrape/translate/types";
 export * from "./FileTranslationMappingStore";
-export { type TranslateTestLlmInput, type TranslateTestLlmResult, testLlmConnectivity } from "./llmTest";
+export { type TranslateTestLlmInput, testLlmConnectivity } from "./llmTest";

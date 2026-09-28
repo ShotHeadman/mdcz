@@ -184,7 +184,7 @@ export class ConfiguredMediaRootService {
     const normalized = normalizeHostPath(trimmed);
     const availability = await this.checkAvailability(normalized);
     if (!availability.available) {
-      throw new MediaDirectoryUnavailableError("目录不存在或无法访问，请检查");
+      throw new MediaDirectoryUnavailableError("Directory does not exist or is inaccessible; please check");
     }
     return normalized;
   }
@@ -193,7 +193,8 @@ export class ConfiguredMediaRootService {
     const checkedAt = new Date().toISOString();
     try {
       const stats = await stat(hostPath);
-      if (!stats.isDirectory()) return { available: false, checkedAt, error: "媒体目录路径不是目录" };
+      if (!stats.isDirectory())
+        return { available: false, checkedAt, error: "Media directory path is not a directory" };
       return { available: true, checkedAt, error: null };
     } catch (error) {
       return { available: false, checkedAt, error: error instanceof Error ? error.message : String(error) };
@@ -201,9 +202,10 @@ export class ConfiguredMediaRootService {
   }
 
   private validatePathSyntax(trimmed: string): void {
-    if (!trimmed) throw new Error("媒体目录路径不能为空");
-    if (hasInvalidPathBytes(trimmed)) throw new Error("媒体目录路径包含非法字符");
-    if (isRemoteUrl(trimmed)) throw new Error("暂不支持原生远程协议 URL，请先在系统中挂载共享目录。");
-    if (!path.isAbsolute(trimmed)) throw new Error("媒体目录路径必须是绝对路径");
+    if (!trimmed) throw new Error("Media directory path cannot be empty");
+    if (hasInvalidPathBytes(trimmed)) throw new Error("Media directory path contains invalid characters");
+    if (isRemoteUrl(trimmed))
+      throw new Error("Native remote protocol URLs are not supported; please mount the share in your system first.");
+    if (!path.isAbsolute(trimmed)) throw new Error("Media directory path must be an absolute path");
   }
 }

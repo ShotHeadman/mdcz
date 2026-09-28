@@ -111,7 +111,7 @@ export class DesktopLibraryService {
 }
 
 const fallbackRootDisplayName = (rootId: string): string =>
-  rootId === DESKTOP_OUTPUT_ROOT_ID ? DESKTOP_OUTPUT_ROOT_DISPLAY_NAME : "输出目录";
+  rootId === DESKTOP_OUTPUT_ROOT_ID ? DESKTOP_OUTPUT_ROOT_DISPLAY_NAME : "Output directory";
 
 const resolveRootDisplayName = (root: MediaRoot | undefined, rootId: string): string => {
   if (rootId === DESKTOP_OUTPUT_ROOT_ID) {

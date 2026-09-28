@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
+import { useT } from "@mdcz/views/i18n";
 import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import {
   chunkLibraryEntryIds,
@@ -15,6 +16,7 @@ import { ipc } from "@/client/ipc";
 import { getImageSrc } from "@/utils/image";
 
 export function LibraryPage() {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
@@ -30,7 +32,7 @@ export function LibraryPage() {
       await ipc.library.delete({ id: entry.id });
     },
     onSuccess: async () => {
-      toast.success("已从媒体库移除");
+      toast.success(t.desktop.removedFromLibrary);
       setDeleteTarget(null);
       await libraryQ.refetch();
       await queryClient.invalidateQueries({ queryKey: ["library", "availability"] });

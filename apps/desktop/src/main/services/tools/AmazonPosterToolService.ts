@@ -33,7 +33,7 @@ export class AmazonPosterToolService {
 
   async lookup(nfoPath: string, title: string): Promise<AmazonPosterLookupResult> {
     return await lookupAmazonPoster(this.networkClient, nfoPath, title, {
-      enhanceAmazonPoster: (data) => this.amazonJpImageService.enhance(data),
+      enhanceAmazonPoster: (title) => this.amazonJpImageService.enhance(title),
     });
   }
 

@@ -189,7 +189,9 @@ describe("MaintenanceSessionCoordinator", () => {
       refs: [],
     });
     expect(fixture.runtime.scanRefs).not.toHaveBeenCalled();
-    await expect(fixture.coordinator.pause(handle.session.id)).rejects.toThrow("不支持暂停");
+    await expect(fixture.coordinator.pause(handle.session.id)).rejects.toThrow(
+      "Pausing is not supported during scanning",
+    );
     const termination =
       outcome === "stopped"
         ? fixture.coordinator.stop(handle.session.id)
@@ -234,7 +236,9 @@ describe("MaintenanceSessionCoordinator", () => {
     const starting = await fixture.coordinator.startPreview(input);
     const failed = expect(starting.completion).rejects.toThrow("scan failed");
     await scanning.promise;
-    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("已有活动的维护会话");
+    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow(
+      "An active maintenance session already exists",
+    );
     await expect(
       fixture.coordinator.beginApply({
         sessionId: first.session.id,
@@ -332,7 +336,7 @@ describe("MaintenanceSessionCoordinator", () => {
           sessionId: handle.session.id,
           selections: [{ previewId: batch.items[0].id }],
         }),
-      ).rejects.toThrow("不支持执行");
+      ).rejects.toThrow("does not support execution");
       expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
     }
     await fixture.coordinator.close();
@@ -496,7 +500,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const batch = await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
 
-    expect(batch.session).toMatchObject({ status: "stopped", error: "维护已停止" });
+    expect(batch.session).toMatchObject({ status: "stopped", error: "Maintenance stopped" });
     expect(batch.applied).toHaveLength(3);
     expect(new Set(batch.applied.map((item) => item.previewId)).size).toBe(3);
     expect(batch.applied.every((item) => item.status === "skipped")).toBe(true);
@@ -647,7 +651,7 @@ describe("MaintenanceSessionCoordinator", () => {
         sessionId: previewHandle.session.id,
         selections: [{ previewId: first?.id ?? "", fieldSelections: { title: "old" } }],
       }),
-    ).rejects.toThrow("字段选择已改变目标路径");
+    ).rejects.toThrow("Field selections have changed the target path");
 
     const apply = await fixture.coordinator.beginApply({
       sessionId: previewHandle.session.id,
@@ -787,6 +791,6 @@ describe("MaintenanceSessionCoordinator", () => {
         presetId: "local_organize",
         refs: [selected],
       }),
-    ).rejects.toThrow("重复分盘号");
+    ).rejects.toThrow("duplicate part numbers");
   });
 });

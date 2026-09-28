@@ -130,7 +130,7 @@ export class MaintenanceSession {
 
   fixDiscoveredRefs(refs: readonly MaintenanceSessionRef[]): void {
     this.assertActive(["discovering"]);
-    if (this.manifestFixed) throw new Error("维护文件清单已固定");
+    if (this.manifestFixed) throw new Error("Maintenance file manifest is already fixed");
     this.refsValue = refs.map((ref) => ({ ...ref }));
     this.manifestFixed = true;
     this.statusValue = "running";
@@ -147,14 +147,16 @@ export class MaintenanceSession {
 
   beginApply(selections: readonly MaintenanceApplySelection[]): { batchId: string } {
     if (this.statusValue !== "completed" && this.statusValue !== "failed") {
-      throw new Error("维护预览生成完成后才能应用");
+      throw new Error("Maintenance previews must be generated before applying");
     }
     const previewIds = selections.map((selection) => selection.previewId);
-    if (new Set(previewIds).size !== previewIds.length) throw new Error("维护预览 ID 重复");
+    if (new Set(previewIds).size !== previewIds.length) throw new Error("Duplicate maintenance preview IDs");
     for (const previewId of previewIds) {
       const preview = this.previews.get(previewId);
       if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
-        throw new Error("部分维护预览不存在、已提交或不属于当前会话");
+        throw new Error(
+          "Some maintenance previews do not exist, are already submitted, or do not belong to the current session",
+        );
       }
     }
 
@@ -230,7 +232,7 @@ export class MaintenanceSession {
 
   initializeEntries(entries: readonly LocalScanEntry[]): void {
     this.assertActive(["running"]);
-    if (this.previews.size) throw new Error("维护文件清单已初始化");
+    if (this.previews.size) throw new Error("Maintenance file manifest is already initialized");
     this.populateInitialEntries(entries, new Date());
   }
 
@@ -295,7 +297,7 @@ export class MaintenanceSession {
   ): void {
     const preview = this.previews.get(previewId);
     if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
-      throw new Error("维护预览不存在或已提交");
+      throw new Error("Maintenance preview does not exist or is already submitted");
     }
     if (fieldSelections) this.draft.fieldSelections[previewId] = { ...fieldSelections };
     if (paths) {

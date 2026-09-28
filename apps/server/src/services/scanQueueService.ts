@@ -39,8 +39,8 @@ interface ScanDirectoryResult {
   directoryCount: number;
 }
 
-const SCAN_BACKEND_INTERRUPTED_MESSAGE = "扫描后端已重启，任务已中断；请重试扫描";
-const SCAN_SERVICE_CLOSED_MESSAGE = "扫描服务已关闭，任务已中断；请重试扫描";
+const SCAN_BACKEND_INTERRUPTED_MESSAGE = "Scan backend restarted and the task was interrupted; please retry the scan";
+const SCAN_SERVICE_CLOSED_MESSAGE = "Scan service shut down and the task was interrupted; please retry the scan";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 export class ScanQueueService {
@@ -66,7 +66,7 @@ export class ScanQueueService {
     const state = await this.persistence.getState();
     const task = await state.repositories.scanTasks.create({ rootId });
     try {
-      await this.addEvent(task.id, "queued", "扫描任务已排队");
+      await this.addEvent(task.id, "queued", "Scan task queued");
       const queuedTask = await this.toDto(task.id);
       this.publishTask(queuedTask);
       return queuedTask;
@@ -122,7 +122,7 @@ export class ScanQueueService {
     const queued = await state.repositories.scanTasks.requeue(taskId);
     if (!queued) throw new Error(`Failed to requeue scan task: ${taskId}`);
     try {
-      await this.addEvent(taskId, "queued", "重试扫描已排队");
+      await this.addEvent(taskId, "queued", "Scan retry queued");
       const queuedTask = await this.toDto(taskId);
       this.publishTask(queuedTask);
       return queuedTask;
@@ -189,7 +189,7 @@ export class ScanQueueService {
     try {
       const state = await this.persistence.getState();
       this.activeScan = { taskId, controller };
-      await this.addEvent(taskId, "running", "开始扫描媒体目录");
+      await this.addEvent(taskId, "running", "Scanning media directory");
       this.publishTask(await this.toDto(taskId));
       const root = await this.mediaRoots.get(rootId);
       const result = await this.scanDirectory(root, controller.signal);
@@ -204,7 +204,7 @@ export class ScanQueueService {
       await this.addEvent(
         taskId,
         "completed",
-        `扫描完成：${result.videos.length} 个视频，${result.directoryCount} 个目录`,
+        `Scan complete: ${result.videos.length} videos, ${result.directoryCount} directories`,
       );
       this.publishTask(await this.toDto(taskId));
     } catch (error) {
@@ -247,7 +247,7 @@ export class ScanQueueService {
       id: task.id,
       kind: "scan",
       rootId: task.rootId,
-      rootDisplayName: root?.displayName ?? "未知媒体目录",
+      rootDisplayName: root?.displayName ?? "Unknown media directory",
       status: task.status,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
@@ -315,7 +315,7 @@ export class ScanQueueService {
         id: `scan-queue:${Date.now()}`,
         taskId: "scan-queue",
         type: "failed",
-        message: `扫描队列停止排水：${message}`,
+        message: `Scan queue stopped draining: ${message}`,
         createdAt: new Date().toISOString(),
         source: "task",
       });

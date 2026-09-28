@@ -1,4 +1,5 @@
-import { type FieldAnchor, type FieldEntry, SECTION_FILTER_ALIASES, SECTION_LABELS } from "./settingsRegistry";
+import { allTranslations, getT } from "../i18n";
+import { type FieldAnchor, type FieldEntry, SECTION_ORDER } from "./settingsRegistry";
 
 export { valuesEqual } from "./autoSaveUtils";
 
@@ -37,7 +38,13 @@ function tokenize(query: string): string[] {
 }
 
 function entrySearchText(entry: FieldEntry): string {
-  return normalize([entry.label, entry.description, ...entry.aliases].filter(Boolean).join(" "));
+  const texts = allTranslations((messages) => messages.settingsFields.fields[entry.key]);
+  return normalize(
+    texts
+      .flatMap((text) => [text.label, text.description, ...(text.aliases ?? [])])
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 function matchesGroup(anchor: FieldAnchor, term: string): boolean {
@@ -46,8 +53,10 @@ function matchesGroup(anchor: FieldAnchor, term: string): boolean {
     return true;
   }
 
-  const sectionLabel = normalize(SECTION_LABELS[anchor]);
-  const candidates = [anchor.toLowerCase(), sectionLabel, ...SECTION_FILTER_ALIASES[anchor].map(normalize)];
+  const sections = allTranslations((messages) => messages.settingsFields.sections[anchor]);
+  const candidates = [anchor, ...sections.flatMap((section) => [section.label, ...(section.aliases ?? [])])].map(
+    normalize,
+  );
   return candidates.some((candidate) => candidate.includes(normalizedTerm));
 }
 
@@ -146,16 +155,16 @@ function getActiveToken(query: string): string {
 }
 
 function buildGroupSuggestions(prefix: string): SettingsSuggestion[] {
-  return Object.entries(SECTION_LABELS)
-    .filter(
-      ([anchor, label]) => matchesGroup(anchor as FieldAnchor, prefix) || normalize(label).includes(normalize(prefix)),
-    )
-    .map(([anchor, label]) => ({
+  const t = getT();
+  return SECTION_ORDER.filter((anchor) => matchesGroup(anchor, prefix)).map((anchor) => {
+    const label = t.settingsFields.sections[anchor].label;
+    return {
       id: `group:${anchor}`,
       kind: "group" as const,
-      label: `按分组筛选: ${label}`,
+      label: t.settingsFields.search.filterByGroup(label),
       insertValue: `${TOKEN_GROUP}${label}`,
-    }));
+    };
+  });
 }
 
 export function getSettingsSuggestions(query: string): SettingsSuggestion[] {
@@ -176,14 +185,14 @@ export function getSettingsSuggestions(query: string): SettingsSuggestion[] {
       kind: "token" as const,
       label: TOKEN_MODIFIED,
       insertValue: TOKEN_MODIFIED,
-      description: "仅显示已偏离默认值的设置",
+      description: getT().settingsFields.search.modifiedTokenHint,
     },
     {
       id: TOKEN_GROUP,
       kind: "token" as const,
       label: TOKEN_GROUP,
       insertValue: TOKEN_GROUP,
-      description: "按分组筛选，例如 @group:数据源",
+      description: getT().settingsFields.search.groupTokenHint,
     },
   ].filter((suggestion) => suggestion.label.startsWith(normalizedToken));
 

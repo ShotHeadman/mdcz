@@ -64,7 +64,7 @@ export class ServerPathService {
     const rawPath = parsed.path.trim();
 
     if (hasInvalidPathBytes(rawPath) || isRemoteUrl(rawPath)) {
-      return this.emptyResponse(rawPath, "", "路径不可浏览");
+      return this.emptyResponse(rawPath, "", "Path cannot be browsed");
     }
 
     if (!rawPath || !this.pathApi.isAbsolute(rawPath)) {
@@ -86,7 +86,7 @@ export class ServerPathService {
     const targetStats = currentIsDirectory ? currentStats : await this.safeLstat(listTarget);
 
     if (!targetStats?.isDirectory() || targetStats.isSymbolicLink()) {
-      return this.emptyResponse(normalizedPath, listTarget, "目录不存在或不可访问");
+      return this.emptyResponse(normalizedPath, listTarget, "Directory does not exist or is not accessible");
     }
 
     const listed = await this.listDirectoryEntries(listTarget, prefix);

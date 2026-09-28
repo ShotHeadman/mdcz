@@ -1,6 +1,7 @@
 import { cn, Input } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
 import { type ComponentProps, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useT } from "../i18n";
 
 const SUGGEST_DELAY_MS = 180;
 
@@ -69,6 +70,7 @@ export function PathAutocompleteInput({
   loadSuggestions,
   ...inputProps
 }: PathAutocompleteInputProps) {
+  const t = useT();
   const listId = useId();
   const requestRef = useRef(0);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -119,7 +121,7 @@ export function PathAutocompleteInput({
             return;
           }
           setEntries(dedupePathAutocompleteSuggestions(result.entries));
-          setError(result.accessible === false ? (result.error ?? "目录不可访问") : "");
+          setError(result.accessible === false ? (result.error ?? t.path.directoryInaccessible) : "");
           setLoaded(true);
           setActiveIndex(0);
         })
@@ -223,12 +225,12 @@ export function PathAutocompleteInput({
           {loading ? (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              正在读取目录
+              {t.path.readingDirectory}
             </div>
           ) : null}
           {!loading && error ? <div className="px-3 py-2 text-xs text-muted-foreground">{error}</div> : null}
           {!loading && !error && visibleEntries.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">没有可用的子目录</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">{t.path.noSubdirectories}</div>
           ) : null}
           {!loading && !error
             ? visibleEntries.map((entry, index) => (

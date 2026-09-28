@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import type { DiscoveryProgress } from "@mdcz/shared/directoryTasks";
+import type { ScrapeRunStage } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../../network/networkExecution";
 import { PublicationConflictError } from "../../publication/conflicts";
@@ -43,8 +44,7 @@ export interface ScrapeRunProgress {
 }
 
 export interface ScrapeRunStageSnapshot {
-  stage: string;
-  message: string;
+  stage: ScrapeRunStage;
   itemId: string | null;
   relativePath: string | null;
 }
@@ -230,7 +230,8 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
 
   async pause(): Promise<ScrapeRunSnapshot<TItem>> {
     if (this.status === "paused") return this.snapshot();
-    if (this.status === "discovering") throw new Error("扫描中不支持暂停，请直接停止任务");
+    if (this.status === "discovering")
+      throw new Error("Pausing is not supported during scanning; please stop the task directly");
     if (this.status !== "queued" && this.status !== "running")
       throw new Error(`Cannot pause scrape run in ${this.status} state`);
     this.executor?.pause();
@@ -260,7 +261,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       return this.snapshot();
     }
     try {
-      await this.skipOutstandingItems("刮削已停止");
+      await this.skipOutstandingItems("Scrape stopped");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const terminalError = new AggregateError(
@@ -350,7 +351,6 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     const item = stage.itemId ? this.itemsById.get(stage.itemId) : undefined;
     this.latestStage = {
       stage: stage.stage,
-      message: stage.message,
       itemId: stage.itemId ?? null,
       relativePath: item?.relativePath ?? null,
     };
@@ -402,7 +402,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       this.started = true;
       if (this.options.discover) {
         this.setStatus("discovering");
-        this.recordStage({ stage: "discovering", message: "正在扫描视频文件" });
+        this.recordStage({ stage: "discovering" });
         await this.options.discover(this.discoveryController.signal, (progress) => {
           this.recordDiscovery(progress);
         });
@@ -417,7 +417,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       this.discoveryController.signal.throwIfAborted();
       if (!execution) this.totalItems = 0;
       if (this.items.length === 0) {
-        this.recordStage({ stage: "completed", message: "未找到可处理视频" });
+        this.recordStage({ stage: "completed" });
         this.setStatus("completed");
         return;
       }
@@ -462,7 +462,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         : [];
     });
     if (!this.preflightPassed && preparedGroups.length > 0) {
-      this.recordStage({ stage: "check-output", message: "冲突预检" });
+      this.recordStage({ stage: "check-output" });
       try {
         await this.execution.checkTargets(preparedGroups);
         this.preflightPassed = true;
@@ -517,7 +517,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       this.completeLiveRunIfSettled();
       return;
     }
-    this.recordStage({ stage: "execute", message: "整理归档" });
+    this.recordStage({ stage: "execute" });
     const executionGroups = this.movieGroups.flatMap((group) => {
       const pendingMembers = group.members.filter((item) => item.status === "pending");
       if (!pendingMembers.length || group.preparation?.status !== "prepared") return [];
@@ -620,7 +620,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
   }
 
   private async prepareGroups(groups: RuntimeMovieGroup<TItem, TPrepared>[]): Promise<void> {
-    this.recordStage({ stage: "prepare", message: "获取信息" });
+    this.recordStage({ stage: "prepare" });
     const executor = new TaskExecutor<RuntimeMovieGroup<TItem, TPrepared>, ScrapePreparationResult<TPrepared>>({
       concurrency: this.execution.concurrency,
       gate: {
@@ -708,7 +708,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     if (this.items.some((item) => !isTerminalItemStatus(item.status))) return;
     const hasSuccess = this.items.some((item) => item.status === "success");
     if (!hasSuccess && this.items.some((item) => item.status === "skipped")) {
-      this.error ??= "未成功刮削任何文件";
+      this.error ??= "Failed to scrape any files";
     }
     this.setStatus(this.items.every((item) => item.status === "success") ? "completed" : "failed");
   }
@@ -722,7 +722,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       return;
     }
     try {
-      await this.skipOutstandingItems("任务发生错误已中止");
+      await this.skipOutstandingItems("Task aborted due to an error");
     } catch (commitError) {
       const commitMessage = commitError instanceof Error ? commitError.message : String(commitError);
       const originalMessage = error instanceof Error ? error.message : String(error);

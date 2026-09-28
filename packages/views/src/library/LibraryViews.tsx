@@ -19,6 +19,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertCircle, Database, FolderOpen, LoaderCircle, RefreshCw, Search, Trash2 } from "lucide-react";
 import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useT } from "../i18n";
 
 export type LibraryAvailabilityFilter = "all" | LibraryEntryDto["available"];
 
@@ -55,14 +56,6 @@ export interface LibraryDeleteDialogProps {
   onConfirm: () => void;
 }
 
-const availabilityFilters: Array<{ label: string; value: LibraryAvailabilityFilter }> = [
-  { label: "全部", value: "all" },
-  { label: "可用", value: "available" },
-  { label: "不可用", value: "unavailable" },
-  { label: "部分可用", value: "partial" },
-  { label: "未检查", value: "unchecked" },
-];
-
 export function LibraryIndexView({
   className,
   entries,
@@ -87,9 +80,22 @@ export function LibraryIndexView({
   onQueryChange,
   onRefresh,
 }: LibraryIndexViewProps) {
+  const t = useT();
   const mainRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLElement>(null);
   const [listOffset, setListOffset] = useState(0);
+
+  const availabilityFilters = useMemo<Array<{ label: string; value: LibraryAvailabilityFilter }>>(
+    () => [
+      { label: t.library.filter.all, value: "all" },
+      { label: t.library.filter.available, value: "available" },
+      { label: t.library.filter.unavailable, value: "unavailable" },
+      { label: t.library.filter.partial, value: "partial" },
+      { label: t.library.filter.unchecked, value: "unchecked" },
+    ],
+    [t.library.filter],
+  );
+
   const { availableCount, filteredEntries, totalSize, unknownCount, unavailableCount } = useMemo(() => {
     let availableCount = 0;
     let unavailableCount = 0;
@@ -129,15 +135,22 @@ export function LibraryIndexView({
       <main className={cn("h-full overflow-y-auto bg-surface-canvas text-foreground", className)} ref={mainRef}>
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-6 py-8 lg:px-12 lg:py-10">
           <header className="flex flex-wrap items-center justify-end gap-x-10 gap-y-4">
-            <Metric label="影片数" value={total} />
+            <Metric label={t.library.metrics.movies} value={total} />
             <Metric
-              label="文件数"
+              label={t.library.metrics.files}
               value={fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0)}
             />
-            <Metric label="可用" value={availableCount} />
-            <Metric className="text-amber-600 dark:text-amber-400" label="不可用" value={unavailableCount} />
-            <Metric label={isAvailabilityLoading ? "检查中" : "未检查"} value={unknownCount} />
-            <Metric label="总大小" value={formatBytes(totalBytes ?? totalSize)} />
+            <Metric label={t.library.metrics.available} value={availableCount} />
+            <Metric
+              className="text-amber-600 dark:text-amber-400"
+              label={t.library.metrics.unavailable}
+              value={unavailableCount}
+            />
+            <Metric
+              label={isAvailabilityLoading ? t.library.metrics.checking : t.library.metrics.unchecked}
+              value={unknownCount}
+            />
+            <Metric label={t.library.metrics.totalSize} value={formatBytes(totalBytes ?? totalSize)} />
           </header>
 
           {errorMessage && (
@@ -170,21 +183,21 @@ export function LibraryIndexView({
               <div className="relative w-full max-w-[520px]">
                 <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                 <Input
-                  aria-label="搜索媒体库"
+                  aria-label={t.library.searchAriaLabel}
                   className="h-10 border-transparent bg-surface-low pl-10 shadow-inner focus-visible:bg-surface focus-visible:ring-1"
                   onChange={(event) => onQueryChange(event.target.value)}
-                  placeholder="搜索标题、番号、演员或相对路径..."
+                  placeholder={t.library.searchPlaceholder}
                   value={query}
                 />
               </div>
               <Button className="h-10 shrink-0 px-5" onClick={onRefresh} type="button" variant="secondary">
                 <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-                刷新
+                {t.library.refresh}
               </Button>
             </div>
           </section>
 
-          <section aria-label="媒体库影片列表" className="flex flex-col gap-3" ref={listRef}>
+          <section aria-label={t.library.listAriaLabel} className="flex flex-col gap-3" ref={listRef}>
             {filteredEntries.length > 0 && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -217,13 +230,13 @@ export function LibraryIndexView({
                 {isAvailabilityLoading && availabilityFilter !== "all" && unknownCount > 0 ? (
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    正在检查可用性
+                    {t.library.checkingAvailability}
                   </div>
                 ) : (
                   <p className="text-sm font-medium">
                     {availabilityFilter !== "all" && unknownCount > 0
-                      ? `暂无已确认条目，另有 ${unknownCount} 条尚未检查`
-                      : "暂无匹配条目"}
+                      ? t.library.noConfirmedEntries(unknownCount)
+                      : t.library.noMatchingEntries}
                   </p>
                 )}
               </div>
@@ -232,7 +245,7 @@ export function LibraryIndexView({
               <div className="flex justify-center py-2">
                 <Button disabled={isLoadingMore} onClick={onLoadMore} type="button" variant="secondary">
                   <LoaderCircle className={cn("h-4 w-4", isLoadingMore && "animate-spin")} />
-                  加载更多
+                  {t.library.loadMore}
                 </Button>
               </div>
             )}
@@ -250,6 +263,7 @@ export function LibraryDeleteDialog({
   onCancel,
   onConfirm,
 }: LibraryDeleteDialogProps) {
+  const t = useT();
   return (
     <Dialog
       open={open}
@@ -261,20 +275,16 @@ export function LibraryDeleteDialog({
     >
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>从媒体库移除</DialogTitle>
+          <DialogTitle>{t.library.removeDialogTitle}</DialogTitle>
         </DialogHeader>
-        {entry && (
-          <p>
-            将移除 {entry.fileRefs.length} 个视频文件记录和 {entry.assets.length} 个资源记录。
-          </p>
-        )}
-        <p className="text-sm text-muted-foreground">磁盘文件保持不变。</p>
+        {entry && <p>{t.library.removeDialogDescription(entry.fileRefs.length, entry.assets.length)}</p>}
+        <p className="text-sm text-muted-foreground">{t.library.diskFilesUnchanged}</p>
         <DialogFooter>
           <Button disabled={submitting} variant="outline" onClick={onCancel}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button disabled={submitting} variant="destructive" onClick={onConfirm}>
-            {submitting ? "正在移除..." : "确认移除"}
+            {submitting ? t.library.removing : t.library.confirmRemove}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -312,6 +322,7 @@ function LibraryEntryRow({
   const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || displayFile?.fileName || entry.id;
   const title =
     entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || displayFile?.fileName || entry.id;
+  const t = useT();
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
@@ -349,7 +360,7 @@ function LibraryEntryRow({
         </div>
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer">
-            {entry.fileRefs.length} 个文件 · {availabilityLabels[entry.available]}
+            {t.library.fileCountWithStatus(entry.fileRefs.length, t.library.availability[entry.available])}
           </summary>
           {entry.fileRefs.map((file) => (
             <LibraryFileRow
@@ -365,11 +376,11 @@ function LibraryEntryRow({
       </div>
       <div className="hidden shrink-0 items-center gap-8 font-numeric text-xs font-bold text-muted-foreground/60 lg:flex">
         <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">大小</span>
+          <span className="text-[10px] font-bold uppercase opacity-50">{t.library.size}</span>
           <span className="text-foreground/80">{formatBytes(entry.size)}</span>
         </div>
         <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">更新时间</span>
+          <span className="text-[10px] font-bold uppercase opacity-50">{t.library.updatedTime}</span>
           <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
         </div>
       </div>
@@ -379,7 +390,7 @@ function LibraryEntryRow({
           {LinkComponent ? (
             <LinkComponent className={detailClass} entry={entry}>
               <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
-                刮削信息
+                {t.library.scrapeInfo}
               </Badge>
             </LinkComponent>
           ) : null}
@@ -387,7 +398,7 @@ function LibraryEntryRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="打开所在目录"
+                  aria-label={t.library.openFolder}
                   className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
                   onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
                   size="icon"
@@ -397,7 +408,7 @@ function LibraryEntryRow({
                   <FolderOpen className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>打开所在目录</TooltipContent>
+              <TooltipContent>{t.library.openFolder}</TooltipContent>
             </Tooltip>
           ) : null}
         </div>
@@ -415,6 +426,7 @@ function StatusActionSlot({
   entry: LibraryEntryDto;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
 }) {
+  const t = useT();
   if (!onDeleteEntry) {
     return <StatusDot available={available} />;
   }
@@ -427,7 +439,7 @@ function StatusActionSlot({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            aria-label="从媒体库移除"
+            aria-label={t.library.removeFromLibrary}
             className="absolute inset-0 h-8 w-8 text-muted-foreground opacity-0 transition-all hover:bg-surface-raised hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
             onClick={() => onDeleteEntry(entry)}
             size="icon"
@@ -437,20 +449,21 @@ function StatusActionSlot({
             <Trash2 className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>从媒体库移除</TooltipContent>
+        <TooltipContent>{t.library.removeFromLibrary}</TooltipContent>
       </Tooltip>
     </div>
   );
 }
 
 function StatusDot({ available }: { available: LibraryEntryDto["available"] }) {
+  const t = useT();
   if (available === "unavailable" || available === "partial") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="h-2 w-2 shrink-0 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
         </TooltipTrigger>
-        <TooltipContent>{availabilityLabels[available]}</TooltipContent>
+        <TooltipContent>{t.library.availability[available]}</TooltipContent>
       </Tooltip>
     );
   }
@@ -460,19 +473,12 @@ function StatusDot({ available }: { available: LibraryEntryDto["available"] }) {
         <TooltipTrigger asChild>
           <div className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/30" />
         </TooltipTrigger>
-        <TooltipContent>可用性尚未检查</TooltipContent>
+        <TooltipContent>{t.library.availabilityNotChecked}</TooltipContent>
       </Tooltip>
     );
   }
   return <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500/40" />;
 }
-
-const availabilityLabels = {
-  available: "全部可用",
-  partial: "部分可用",
-  unavailable: "全部不可用",
-  unchecked: "未检查",
-};
 
 function LibraryFileRow({
   entry,
@@ -487,6 +493,7 @@ function LibraryFileRow({
   onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
   onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
 }) {
+  const t = useT();
   const [action, setAction] = useState<"remove" | "relink" | null>(null);
   const [relativePath, setRelativePath] = useState(file.relativePath);
   const [busy, setBusy] = useState(false);
@@ -498,7 +505,11 @@ function LibraryFileRow({
         {file.partNumber ? `CD${file.partNumber} · ` : ""}
         {file.fileName}
         {file.resolution ? ` · ${file.resolution}` : ""} · {formatBytes(file.size)} ·{" "}
-        {file.available === null ? "未检查" : file.available ? "可用" : "不可用"}
+        {file.available === null
+          ? t.library.fileStatus.unchecked
+          : file.available
+            ? t.library.fileStatus.available
+            : t.library.fileStatus.unavailable}
       </div>
       <div className="break-all font-mono">{path}</div>
       {file.availabilityError && <p className="text-destructive">{file.availabilityError}</p>}
@@ -510,21 +521,21 @@ function LibraryFileRow({
             void navigator.clipboard.writeText(path).catch((cause) => setError(String(cause)));
           }}
         >
-          复制路径
+          {t.library.copyPath}
         </Button>
         {onOpenFolder && (
           <Button size="sm" variant="ghost" onClick={() => onOpenFolder(path)}>
-            打开位置
+            {t.library.openLocation}
           </Button>
         )}
         {onRelinkFile && (
           <Button size="sm" variant="ghost" onClick={() => setAction("relink")}>
-            重新关联
+            {t.library.relink}
           </Button>
         )}
         {onRemoveFile && (
           <Button size="sm" variant="ghost" onClick={() => setAction("remove")}>
-            从媒体库移除
+            {t.library.removeFile}
           </Button>
         )}
       </div>
@@ -537,23 +548,19 @@ function LibraryFileRow({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{action === "remove" ? "从媒体库移除" : "重新关联文件"}</DialogTitle>
+            <DialogTitle>{action === "remove" ? t.library.removeFile : t.library.relinkFileTitle}</DialogTitle>
           </DialogHeader>
           <p className="break-all">{path}</p>
           {action === "remove" ? (
             <>
-              <p>
-                {entry.fileRefs.length === 1
-                  ? "这是最后一个文件，将同时从媒体库移除该影片记录。"
-                  : "将从媒体库移除该文件记录，其他分盘文件仍会保留。"}
-              </p>
-              <p>磁盘文件保持不变。</p>
+              <p>{entry.fileRefs.length === 1 ? t.library.lastFileWarning : t.library.removeFileDescription}</p>
+              <p>{t.library.diskFilesUnchanged}</p>
             </>
           ) : (
             <>
-              <p>所在媒体目录：{file.rootDisplayName}</p>
+              <p>{t.library.mediaFolderLabel(file.rootDisplayName)}</p>
               <label htmlFor={`relink-path-${file.id}`}>
-                新相对路径
+                {t.library.newRelativePath}
                 <Input
                   id={`relink-path-${file.id}`}
                   value={relativePath}
@@ -564,7 +571,7 @@ function LibraryFileRow({
           )}
           <DialogFooter>
             <Button disabled={busy} onClick={() => setAction(null)}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button
               disabled={busy}
@@ -582,7 +589,7 @@ function LibraryFileRow({
                 }
               }}
             >
-              确认
+              {t.library.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>

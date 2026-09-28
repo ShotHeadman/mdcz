@@ -1,6 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
 import { toDetailViewItemFromScrapeResultDto } from "@mdcz/views/detail";
+import { useT } from "@mdcz/views/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
@@ -10,6 +11,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
 export function ScrapeResultPage() {
+  const t = useT();
   const { resultId } = Route.useParams();
   const detailPort = useMemo(() => createWebDetailPort(), []);
   const detailQ = useQuery({
@@ -25,7 +27,7 @@ export function ScrapeResultPage() {
       <DetailPanelAdapter
         port={detailPort}
         item={detailItem}
-        emptyMessage={detailQ.isLoading ? "加载中..." : "未找到刮削结果"}
+        emptyMessage={detailQ.isLoading ? t.common.loading : t.web.scrapeResultNotFound}
       />
     </main>
   );

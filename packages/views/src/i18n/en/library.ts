@@ -1,0 +1,70 @@
+export const library = {
+  filter: {
+    all: "All",
+    available: "Available",
+    unavailable: "Unavailable",
+    partial: "Partially Available",
+    unchecked: "Unchecked",
+  },
+  metrics: {
+    movies: "Movies",
+    files: "Files",
+    available: "Available",
+    unavailable: "Unavailable",
+    checking: "Checking",
+    unchecked: "Unchecked",
+    totalSize: "Total Size",
+  },
+  searchAriaLabel: "Search media library",
+  searchPlaceholder: "Search title, number, actor, or relative path…",
+  refresh: "Refresh",
+  listAriaLabel: "Media library movie list",
+  checkingAvailability: "Checking availability…",
+  noConfirmedEntries: (unknownCount: number) => `No confirmed entries yet; ${unknownCount} not yet checked`,
+  noMatchingEntries: "No matching entries",
+  loadMore: "Load more",
+
+  // Entry card
+  fileCountWithStatus: (fileCount: number, status: string) => `${fileCount} file(s) · ${status}`,
+  size: "Size",
+  updatedTime: "Updated",
+  scrapeInfo: "Scrape Info",
+  openFolder: "Open folder",
+  removeFromLibrary: "Remove from library",
+  availabilityNotChecked: "Availability not yet checked",
+
+  // Availability labels
+  availability: {
+    available: "All available",
+    partial: "Partially available",
+    unavailable: "All unavailable",
+    unchecked: "Unchecked",
+  },
+
+  // Delete dialog
+  removeDialogTitle: "Remove from Library",
+  removeDialogDescription: (fileCount: number, assetCount: number) =>
+    `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s).`,
+  diskFilesUnchanged: "Disk files will remain unchanged.",
+  removing: "Removing…",
+  confirmRemove: "Confirm Remove",
+
+  // File rows
+  fileStatus: {
+    available: "Available",
+    unavailable: "Unavailable",
+    unchecked: "Unchecked",
+  },
+  copyPath: "Copy path",
+  openLocation: "Open location",
+  relink: "Relink",
+  removeFile: "Remove from library",
+
+  // Relink / remove file dialog
+  relinkFileTitle: "Relink File",
+  lastFileWarning: "This is the last file; the movie record will also be removed from the library.",
+  removeFileDescription: "This file record will be removed from the library; other disc parts will be kept.",
+  mediaFolderLabel: (name: string) => `Media root: ${name}`,
+  newRelativePath: "New relative path",
+  confirm: "Confirm",
+};

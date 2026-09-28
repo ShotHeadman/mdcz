@@ -1,6 +1,7 @@
 import { Badge, Button, Progress, ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mdcz/ui";
 import { PauseCircle, Play, RotateCcw, StopCircle } from "lucide-react";
 import type { ReactNode } from "react";
+import { useT } from "../i18n";
 import { FloatingWorkbenchBar } from "./FloatingWorkbenchBar";
 import { ReturnToWorkbenchSetupButton } from "./ReturnToWorkbenchSetupButton";
 
@@ -39,6 +40,7 @@ export function ScrapeWorkbenchFrame({
   onReturnToSetup,
   onRerunDirectory,
 }: ScrapeWorkbenchFrameProps) {
+  const t = useT();
   const showControls = isScraping || showCompletedActions;
   const stopping = scrapeStatus === "stopping";
   const barContentClassName = isScraping
@@ -78,7 +80,7 @@ export function ScrapeWorkbenchFrame({
               {stageMessage ? <span className="text-xs text-muted-foreground">{stageMessage}</span> : null}
               {progress === null ? (
                 <span role="status" className="text-xs">
-                  正在分析文件...
+                  {t.workbench.analyzingFiles}
                 </span>
               ) : (
                 <>
@@ -98,8 +100,8 @@ export function ScrapeWorkbenchFrame({
                 className="rounded-quiet-capsule"
                 onClick={scrapeStatus === "paused" ? onResumeScrape : onPauseScrape}
                 disabled={stopping || !canPause}
-                aria-label={scrapeStatus === "paused" ? "恢复刮削任务" : "暂停刮削任务"}
-                title={scrapeStatus === "paused" ? "恢复" : "暂停"}
+                aria-label={scrapeStatus === "paused" ? t.workbench.resumeScrape : t.workbench.pauseScrape}
+                title={scrapeStatus === "paused" ? t.workbench.resume : t.workbench.pause}
               >
                 {scrapeStatus === "paused" ? <Play className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
               </Button>
@@ -110,8 +112,8 @@ export function ScrapeWorkbenchFrame({
                 className="rounded-quiet-capsule"
                 onClick={onStopScrape}
                 disabled={stopping}
-                aria-label="停止刮削任务"
-                title="停止"
+                aria-label={t.workbench.stopScrape}
+                title={t.workbench.stop}
               >
                 <StopCircle className="h-4 w-4" />
               </Button>
@@ -121,12 +123,12 @@ export function ScrapeWorkbenchFrame({
           {showCompletedActions ? (
             <>
               <ReturnToWorkbenchSetupButton
-                dialogDescription="返回后会清空当前刮削结果并回到工作台初始页面。确定继续吗？"
+                dialogDescription={t.workbench.scrapeReturnDescription}
                 onConfirm={onReturnToSetup}
               />
               {onRerunDirectory ? (
                 <Button variant="ghost" onClick={onRerunDirectory}>
-                  重新刮削此目录
+                  {t.workbench.rescrapeDirectory}
                 </Button>
               ) : null}
               {failedCount > 0 ? (
@@ -137,7 +139,7 @@ export function ScrapeWorkbenchFrame({
                   onClick={onRetryFailed}
                 >
                   <RotateCcw className="h-4 w-4" />
-                  重试失败
+                  {t.workbench.retryFailed}
                   <Badge variant="destructive" className="h-4 px-1 text-[10px]">
                     {failedCount}
                   </Badge>

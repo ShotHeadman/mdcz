@@ -1,9 +1,12 @@
-import type { EmbyConnectionCheckResult, JellyfinConnectionCheckResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerCheckStep, MediaServerConnectionCheckResult } from "@mdcz/shared/ipcTypes";
 import { Button, cn, Label, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
+import { getT, type Messages, useT } from "../../i18n";
 
 export type PersonServer = "jellyfin" | "emby";
 export type PersonSyncMode = "all" | "missing";
-export type PersonConnectionCheckResult = JellyfinConnectionCheckResult | EmbyConnectionCheckResult;
+export type PersonConnectionCheckResult = MediaServerConnectionCheckResult;
+
+export const PERSON_SERVER_NAMES: Record<PersonServer, string> = { jellyfin: "Jellyfin", emby: "Emby" };
 
 export interface PersonServerPanelState {
   checkPending: boolean;
@@ -32,26 +35,69 @@ export interface PersonMediaLibraryDetailProps {
   onSyncPhoto: (server: PersonServer) => void;
 }
 
-function getFirstDiagnosticError(result: PersonConnectionCheckResult) {
-  return result.steps.find((step) => step.status === "error");
-}
-
 export function canRunPersonSync(result: PersonConnectionCheckResult | null): result is PersonConnectionCheckResult {
   return Boolean(result?.success);
 }
 
-export function getFirstDiagnosticBlocker(result: PersonConnectionCheckResult) {
-  return getFirstDiagnosticError(result) ?? result.steps.find((step) => step.status !== "ok");
+export function describeFirstDiagnosticBlocker(
+  t: Messages,
+  server: PersonServer,
+  result: PersonConnectionCheckResult,
+): string | undefined {
+  const blocker =
+    result.steps.find((step) => step.status === "error") ?? result.steps.find((step) => step.status !== "ok");
+  return blocker
+    ? `${t.tools.connectionCheck.stepLabels[blocker.key]}: ${describeConnectionStep(t, server, blocker, result)}`
+    : undefined;
 }
 
-export function getDiagnosticHeadline(result: PersonConnectionCheckResult) {
-  if (!result.success) return "存在阻塞项";
-  if (result.personCount === 0) return "人物库为空";
-  return "可以执行人物同步";
+export function getDiagnosticHeadline(result: PersonConnectionCheckResult, t: Messages = getT()) {
+  if (!result.success) return t.tools.diagnosticHeadline.blocking;
+  if (result.personCount === 0) return t.tools.diagnosticHeadline.empty;
+  return t.tools.diagnosticHeadline.ready;
 }
 
-export function getEmptyPersonLibraryMessage(serverName: "Jellyfin" | "Emby", targetLabel: "人物信息" | "人物头像") {
-  return `${serverName} 人物库为空。已确认连接与权限状态正常，当前无法执行${targetLabel}同步。请先在 ${serverName} 中生成人物条目后重试。`;
+export function getEmptyPersonLibraryMessage(
+  serverName: "Jellyfin" | "Emby",
+  target: "info" | "photo",
+  t: Messages = getT(),
+) {
+  const targetLabel = target === "info" ? t.tools.targetInfo : t.tools.targetPhoto;
+  return t.tools.emptyPersonLibraryMessage({ server: serverName, target: targetLabel });
+}
+
+export function describeConnectionStep(
+  t: Messages,
+  server: PersonServer,
+  step: MediaServerCheckStep,
+  result: PersonConnectionCheckResult,
+): string {
+  const text = t.tools.connectionCheck;
+  const service = PERSON_SERVER_NAMES[server];
+  const serverName = [result.serverInfo?.serverName, result.serverInfo?.version].filter(Boolean).join(" ");
+  const withDetail = (message: string) => (step.detail ? `${message}: ${step.detail}` : message);
+
+  if (step.key === "adminKey") {
+    if (step.reason === "empty_library") return text.adminKeyNoticeEmpty(service);
+    return step.reason ? text.skipped[step.reason] : text.adminKeyNotice;
+  }
+  if (step.status === "skipped") {
+    if (step.reason === "empty_library") return text.emptyLibraryWrite(service);
+    return step.reason ? text.skipped[step.reason] : "";
+  }
+  switch (step.key) {
+    case "server":
+      if (step.status === "error") return withDetail(text.serverUnreachable(service));
+      return serverName ? text.connectedTo(serverName) : text.serverReachable(service);
+    case "auth":
+      if (step.status === "ok") return text.authValid(service);
+      return withDetail(step.reason === "auth_rejected" ? text.authRejected(service) : text.authUnverified(service));
+    case "peopleRead":
+      if (step.status === "error") return withDetail(text.peopleCheckFailed);
+      return step.reason === "empty_library" ? text.peopleReadEmpty(service) : text.peopleReadOk;
+    case "peopleWrite":
+      return step.status === "ok" ? text.peopleWriteOk : withDetail(text.peopleCheckFailed);
+  }
 }
 
 function getStepTone(status: PersonConnectionCheckResult["steps"][number]["status"]) {
@@ -77,7 +123,9 @@ export function PersonMediaLibraryDetail({
   const anySyncRunning =
     jellyfin.infoSyncRunning || jellyfin.photoSyncRunning || emby.infoSyncRunning || emby.photoSyncRunning;
   const anyCheckPending = jellyfin.checkPending || emby.checkPending;
-  const diagnosticLabel = activeServer === "jellyfin" ? "Jellyfin 诊断结果" : "Emby 诊断结果";
+  const t = useT();
+  const checkResult = activeState.checkResult;
+  const diagnosticLabel = t.tools.diagnosticResult(activeServer === "jellyfin" ? "Jellyfin" : "Emby");
 
   return (
     <div className="space-y-6">
@@ -103,7 +151,7 @@ export function PersonMediaLibraryDetail({
             disabled={settingsDisabled || anySyncRunning || anyCheckPending}
             className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
           >
-            连接设置
+            {t.tools.connectionSettings}
           </Button>
         ) : null}
 
@@ -113,22 +161,20 @@ export function PersonMediaLibraryDetail({
           disabled={activeState.checkPending || anySyncRunning}
           className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
         >
-          {activeState.checkPending ? "诊断中..." : "连接诊断"}
+          {activeState.checkPending ? t.tools.checkingConnection : t.tools.runConnectionCheck}
         </Button>
       </div>
 
-      {activeState.checkResult ? (
+      {checkResult ? (
         <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 {diagnosticLabel}
               </div>
-              {activeState.checkResult.serverInfo?.serverName || activeState.checkResult.serverInfo?.version ? (
+              {checkResult.serverInfo?.serverName || checkResult.serverInfo?.version ? (
                 <div className="mt-2 text-sm font-medium text-foreground">
-                  {[activeState.checkResult.serverInfo?.serverName, activeState.checkResult.serverInfo?.version]
-                    .filter(Boolean)
-                    .join(" ")}
+                  {[checkResult.serverInfo?.serverName, checkResult.serverInfo?.version].filter(Boolean).join(" ")}
                 </div>
               ) : null}
             </div>
@@ -136,27 +182,30 @@ export function PersonMediaLibraryDetail({
             <div
               className={cn(
                 "rounded-quiet-capsule px-3 py-1 text-xs font-semibold",
-                !activeState.checkResult.success &&
-                  "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300",
-                activeState.checkResult.success &&
-                  activeState.checkResult.personCount === 0 &&
+                !checkResult.success && "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300",
+                checkResult.success &&
+                  checkResult.personCount === 0 &&
                   "bg-surface-floating text-muted-foreground dark:bg-surface-floating/80",
-                activeState.checkResult.success &&
-                  activeState.checkResult.personCount !== 0 &&
+                checkResult.success &&
+                  checkResult.personCount !== 0 &&
                   "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300",
               )}
             >
-              {getDiagnosticHeadline(activeState.checkResult)}
+              {getDiagnosticHeadline(checkResult, t)}
             </div>
           </div>
 
           <div className="grid gap-2.5">
-            {activeState.checkResult.steps.map((step) => (
+            {checkResult.steps.map((step) => (
               <div key={step.key} className="rounded-quiet bg-surface-floating/94 px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-foreground">{step.label}</div>
-                    <div className="mt-1 text-xs leading-6 text-muted-foreground">{step.message}</div>
+                    <div className="text-sm font-medium text-foreground">
+                      {t.tools.connectionCheck.stepLabels[step.key]}
+                    </div>
+                    <div className="mt-1 text-xs leading-6 text-muted-foreground">
+                      {describeConnectionStep(t, activeServer, step, checkResult)}
+                    </div>
                   </div>
                   <div
                     className={cn(
@@ -164,7 +213,11 @@ export function PersonMediaLibraryDetail({
                       getStepTone(step.status),
                     )}
                   >
-                    {step.status === "ok" ? "通过" : step.status === "error" ? "失败" : "跳过"}
+                    {step.status === "ok"
+                      ? t.tools.stepPassed
+                      : step.status === "error"
+                        ? t.common.failed
+                        : t.common.skipped}
                   </div>
                 </div>
               </div>
@@ -176,7 +229,7 @@ export function PersonMediaLibraryDetail({
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
           <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            演员资料同步
+            {t.tools.actorInfoSync}
           </Label>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Select
@@ -187,8 +240,8 @@ export function PersonMediaLibraryDetail({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="missing">仅补全空白资料</SelectItem>
-                <SelectItem value="all">更新已有资料</SelectItem>
+                <SelectItem value="missing">{t.tools.syncMissingOnly}</SelectItem>
+                <SelectItem value="all">{t.tools.syncAll}</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -197,7 +250,7 @@ export function PersonMediaLibraryDetail({
               disabled={anySyncRunning || activeState.checkPending}
               className="h-11 flex-1 rounded-quiet-capsule bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
-              {activeState.infoSyncRunning ? "同步中..." : "同步信息"}
+              {activeState.infoSyncRunning ? t.tools.syncing : t.tools.syncInfo}
             </Button>
           </div>
           <div className="text-xs leading-6 text-muted-foreground">{activeState.infoText}</div>
@@ -205,7 +258,7 @@ export function PersonMediaLibraryDetail({
 
         <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
           <Label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            演员头像同步
+            {t.tools.actorPhotoSync}
           </Label>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Select
@@ -216,8 +269,8 @@ export function PersonMediaLibraryDetail({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="missing">仅补全缺失头像</SelectItem>
-                <SelectItem value="all">重新同步头像</SelectItem>
+                <SelectItem value="missing">{t.tools.syncMissingPhotos}</SelectItem>
+                <SelectItem value="all">{t.tools.syncAllPhotos}</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -226,7 +279,7 @@ export function PersonMediaLibraryDetail({
               disabled={anySyncRunning || activeState.checkPending}
               className="h-11 flex-1 rounded-quiet-capsule bg-surface-floating px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/70"
             >
-              {activeState.photoSyncRunning ? "同步中..." : "同步头像"}
+              {activeState.photoSyncRunning ? t.tools.syncing : t.tools.syncPhoto}
             </Button>
           </div>
           <div className="text-xs leading-6 text-muted-foreground">{activeState.photoText}</div>
@@ -239,7 +292,7 @@ export function PersonMediaLibraryDetail({
       {activeState.progress > 0 ? (
         <div className="grid gap-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
           <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-            <span>任务进度</span>
+            <span>{t.tools.taskProgress}</span>
             <span>{Math.round(activeState.progress)}%</span>
           </div>
           <Progress value={activeState.progress} className="h-2 bg-surface-floating" />

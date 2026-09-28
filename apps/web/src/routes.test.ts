@@ -11,8 +11,8 @@ describe("route helpers", () => {
   });
 
   it("keeps Web navigation aligned with desktop routes", () => {
-    expect([...PRIMARY_SHELL_NAV, ...SYSTEM_SHELL_NAV].map((route) => [route.label, route.to])).toEqual(
-      DESKTOP_ROUTE_DEFINITIONS.map((route) => [route.label, route.path]),
+    expect([...PRIMARY_SHELL_NAV, ...SYSTEM_SHELL_NAV].map((route) => [route.id, route.to])).toEqual(
+      DESKTOP_ROUTE_DEFINITIONS.map((route) => [route.id, route.path]),
     );
   });
 });

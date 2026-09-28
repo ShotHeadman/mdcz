@@ -39,24 +39,6 @@ export class SystemService {
         platform: process.platform,
         arch: process.arch,
       },
-      community: {
-        feedback: {
-          label: "提交反馈",
-          url: "https://github.com/ShotHeadman/mdcz/issues/new/choose",
-        },
-        links: [
-          {
-            label: "MDCx",
-            url: "https://github.com/sqzw-x/mdcx",
-            description: "原 Python 版本项目",
-          },
-          {
-            label: "Movie_Data_Capture",
-            url: "https://github.com/yoshiko2/Movie_Data_Capture",
-            description: "命令行版核心项目",
-          },
-        ],
-      },
     };
   }
 

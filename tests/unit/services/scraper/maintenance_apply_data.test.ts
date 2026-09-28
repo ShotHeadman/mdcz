@@ -30,21 +30,18 @@ describe("buildCommittedCrawlerData", () => {
       fieldDiffs: [
         createMaintenanceValueDiff({
           field: "title",
-          label: "标题",
           oldValue: "Old Title",
           newValue: "New Title",
           changed: true,
         }),
         createMaintenanceValueDiff({
           field: "title_zh",
-          label: "中文标题",
           oldValue: "旧标题",
           newValue: "新标题",
           changed: true,
         }),
         createMaintenanceValueDiff({
           field: "genres",
-          label: "标签",
           oldValue: ["Drama"],
           newValue: ["Drama", "Mystery"],
           changed: true,
@@ -108,7 +105,6 @@ describe("buildMaintenanceApplyData", () => {
       fieldDiffs: [
         createMaintenanceImageDiff({
           field: "poster_url",
-          label: "海报",
           oldValue: "https://example.com/old-poster.jpg",
           newValue: "https://example.com/new-poster.jpg",
           changed: true,
@@ -123,7 +119,6 @@ describe("buildMaintenanceApplyData", () => {
         }),
         createMaintenanceImageDiff({
           field: "thumb_url",
-          label: "封面图",
           oldValue: "https://example.com/old-thumb.jpg",
           newValue: "https://example.com/new-thumb.jpg",
           changed: true,
@@ -176,7 +171,6 @@ describe("buildMaintenanceApplyData", () => {
       fieldDiffs: [
         createMaintenanceImageCollectionDiff({
           field: "scene_images",
-          label: "剧照",
           oldValue: [],
           newValue: ["https://example.com/new-scene.jpg"],
           changed: true,
@@ -227,7 +221,6 @@ describe("buildMaintenanceApplyData", () => {
       fieldDiffs: [
         createMaintenanceValueDiff({
           field: "trailer_url",
-          label: "预告片",
           oldValue: "https://example.com/trailer-old.mp4",
           newValue: "https://example.com/trailer-new.mp4",
           changed: true,
@@ -259,7 +252,6 @@ describe("buildMaintenanceApplyData", () => {
       fieldDiffs: [
         createMaintenanceValueDiff({
           field: "trailer_url",
-          label: "预告片",
           oldValue: "trailer.mp4",
           newValue: "https://example.com/trailer-new.mp4",
           changed: true,
@@ -296,7 +288,6 @@ describe("buildMaintenanceApplyData", () => {
       fieldDiffs: [
         createMaintenanceImageDiff({
           field: "poster_url",
-          label: "海报",
           oldValue: "",
           newValue: "https://example.com/new-poster.jpg",
           changed: true,
@@ -311,7 +302,6 @@ describe("buildMaintenanceApplyData", () => {
         }),
         createMaintenanceImageDiff({
           field: "thumb_url",
-          label: "封面图",
           oldValue: "",
           newValue: "https://example.com/new-thumb.jpg",
           changed: true,
@@ -350,7 +340,6 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
   it("resolves old vs new preview src and fallback lists for image diffs", () => {
     const posterDiff = createMaintenanceImageDiff({
       field: "poster_url",
-      label: "海报",
       oldValue: "poster.jpg",
       newValue: "https://example.com/new-poster.jpg",
       changed: true,
@@ -373,7 +362,6 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
 
     const valueDiff = createMaintenanceValueDiff({
       field: "title",
-      label: "标题",
       oldValue: "Old",
       newValue: "New",
       changed: true,
@@ -388,7 +376,6 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
   it("resolves image collection items", () => {
     const collectionDiff = createMaintenanceImageCollectionDiff({
       field: "scene_images",
-      label: "剧照",
       oldValue: [],
       newValue: ["https://example.com/scene1.jpg"],
       changed: true,
@@ -405,7 +392,6 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
 
     const valueDiff = createMaintenanceValueDiff({
       field: "title",
-      label: "标题",
       oldValue: "A",
       newValue: "B",
       changed: true,
@@ -418,7 +404,6 @@ describe("getDefaultMaintenanceFieldSelection", () => {
   it("prefers old when only old has value, otherwise new", () => {
     const onlyOldDiff = createMaintenanceValueDiff({
       field: "plot",
-      label: "剧情介绍",
       oldValue: "Existing outline",
       newValue: "",
       changed: true,
@@ -427,7 +412,6 @@ describe("getDefaultMaintenanceFieldSelection", () => {
 
     const onlyNewDiff = createMaintenanceValueDiff({
       field: "plot",
-      label: "剧情介绍",
       oldValue: "",
       newValue: "New outline",
       changed: true,
@@ -436,7 +420,6 @@ describe("getDefaultMaintenanceFieldSelection", () => {
 
     const bothDiff = createMaintenanceValueDiff({
       field: "plot",
-      label: "剧情介绍",
       oldValue: "Old outline",
       newValue: "New outline",
       changed: true,

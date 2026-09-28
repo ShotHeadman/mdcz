@@ -123,15 +123,7 @@ export const findSubtitleSidecars = async (
     }),
   );
 
-  const sidecars = matches.filter((entry): entry is SubtitleSidecarMatch => entry !== null);
-  for (const sidecar of sidecars) {
-    if (
-      extname(sidecar.path).toLowerCase() === ".idx" &&
-      !sidecars.some((candidate) => candidate.path.toLowerCase() === `${sidecar.path.slice(0, -4).toLowerCase()}.sub`)
-    )
-      throw new Error(`字幕 IDX 缺少配对的 SUB 文件：${sidecar.path}`);
-  }
-  return sidecars;
+  return matches.filter((entry): entry is SubtitleSidecarMatch => entry !== null);
 };
 
 export const getPreferredSubtitleTagFromSidecars = (sidecars: SubtitleSidecarMatch[]): SubtitleTag | undefined => {

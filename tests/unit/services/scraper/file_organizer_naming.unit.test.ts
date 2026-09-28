@@ -323,8 +323,8 @@ describe("FileOrganizer naming rules", () => {
       }),
     );
 
-    expect(previews.find((item) => item.label === "中文字幕")?.file).toContain("-SUB");
-    expect(previews.find((item) => item.label === "多演员")?.folder).toContain("等演员");
+    expect(previews.find((item) => item.sample === "subtitled")?.file).toContain("-SUB");
+    expect(previews.find((item) => item.sample === "multiActor")?.folder).toContain("等演员");
 
     const fallbackPreviews = organizer.buildNamingPreview(
       createConfig({
@@ -336,8 +336,8 @@ describe("FileOrganizer naming rules", () => {
         },
       }),
     );
-    expect(fallbackPreviews.find((item) => item.label === "演员为空")?.folder).toContain("卖家：示例卖家");
-    expect(fallbackPreviews.find((item) => item.label === "普通")?.file).toBe("ABC-123Sample Original Title.mp4");
+    expect(fallbackPreviews.find((item) => item.sample === "noActor")?.folder).toContain("卖家：示例卖家");
+    expect(fallbackPreviews.find((item) => item.sample === "standard")?.file).toBe("ABC-123Sample Original Title.mp4");
 
     const expandedPreviews = organizer.buildNamingPreview(
       createConfig({
@@ -353,7 +353,7 @@ describe("FileOrganizer naming rules", () => {
         },
       }),
     );
-    const subtitlePreview = expandedPreviews.find((item) => item.label === "中文字幕");
+    const subtitlePreview = expandedPreviews.find((item) => item.sample === "subtitled");
 
     expect(subtitlePreview?.folder).toContain("ABC-456-SUB");
     expect(subtitlePreview?.folder).toContain("2024 示例导演 121 2160P ABC-456");

@@ -78,7 +78,7 @@ describe("buildComputedConfiguration", () => {
           },
         }),
         path: ["naming", "assetNamingMode"],
-        message: "共享目录模式下，附属文件命名必须使用“跟随影片文件名”",
+        message: "sharedDirectoryAssetNaming",
       },
       {
         result: configurationSchema.safeParse({
@@ -95,7 +95,7 @@ describe("buildComputedConfiguration", () => {
           },
         }),
         path: ["download", "nfoNaming"],
-        message: "共享目录模式下，NFO 文件命名必须使用“仅 文件名.nfo”",
+        message: "sharedDirectoryNfoNaming",
       },
       {
         result: configurationSchema.safeParse({
@@ -112,7 +112,7 @@ describe("buildComputedConfiguration", () => {
           },
         }),
         path: ["download", "downloadSceneImages"],
-        message: "共享目录模式下不支持下载剧照，请关闭“下载剧照”",
+        message: "sharedDirectorySceneImages",
       },
       {
         result: configurationSchema.safeParse({
@@ -130,7 +130,7 @@ describe("buildComputedConfiguration", () => {
           },
         }),
         path: ["jellyfin", "userId"],
-        message: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
+        message: "jellyfinUserIdNotUuid",
       },
     ];
 
@@ -201,7 +201,7 @@ describe("buildComputedConfiguration", () => {
         expect.arrayContaining([
           expect.objectContaining({
             path,
-            message: "[] 可选段不能包含路径分隔符，请仅在单个路径片段内使用可选内容",
+            message: "optionalSegmentPathSeparator",
           }),
         ]),
       );

@@ -168,7 +168,7 @@ describe("buildServer maintenance integration", () => {
     });
     if (kind === "missing") {
       expect(response.statusCode).toBe(400);
-      expect(response.body).toContain("目录不存在或无法访问");
+      expect(response.body).toContain("Directory does not exist or is inaccessible");
       expect(await services.maintenance.getActiveSession()).toBeNull();
       return;
     }

@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { Button, Form, FormControl, FormField, FormItem, FormLabel, FormMessage, PasswordInput } from "@mdcz/ui";
+import { useT } from "@mdcz/views/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -9,6 +10,7 @@ import { queryKeys } from "../../lib/queryKeys";
 import { ErrorBanner } from "../../routeCommon";
 
 export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
+  const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +41,8 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
       <div className="w-full max-w-md space-y-8 rounded-quiet-xl border border-border/60 bg-surface p-8 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.45)]">
         <div className="space-y-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">MDCz</p>
-          <h1 className="text-2xl font-semibold tracking-tight">管理员登录</h1>
-          <p className="text-sm leading-6 text-muted-foreground">请输入管理员密码</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t.web.adminLogin}</h1>
+          <p className="text-sm leading-6 text-muted-foreground">{t.web.enterAdminPassword}</p>
         </div>
 
         {error && <ErrorBanner>{error}</ErrorBanner>}
@@ -52,16 +54,21 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>密码</FormLabel>
+                  <FormLabel>{t.web.password}</FormLabel>
                   <FormControl>
-                    <PasswordInput autoFocus placeholder="••••••••" {...field} />
+                    <PasswordInput
+                      visibilityLabels={{ show: t.common.showPassword, hide: t.common.hidePassword }}
+                      autoFocus
+                      placeholder="••••••••"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <Button disabled={isPending} type="submit">
-              {isPending ? "正在登录..." : "登录"}
+              {isPending ? t.web.loggingIn : t.web.login}
             </Button>
           </form>
         </Form>

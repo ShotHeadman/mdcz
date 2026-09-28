@@ -1,4 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
+import { getT } from "@mdcz/views/i18n";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readNfo, resolveNfoWritePath, retryScrapeSelection, startSelectedScrape, updateNfo } from "@/api/manual";
@@ -101,12 +102,12 @@ describe("startSelectedScrape", () => {
     const snapshot = buildScrapeSnapshot({
       task: { ...buildScrapeSnapshot().task, id: "fast-run" },
     });
-    start.mockResolvedValue({ taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削", snapshot });
+    start.mockResolvedValue({ taskId: "fast-run", totalFiles: 1, snapshot });
 
     await expect(
       startSelectedScrape([{ rootId: "root-1", relativePath: "ABC-001.mp4" }], "output-root"),
     ).resolves.toEqual({
-      data: { taskId: "fast-run", totalFiles: 1, message: "已启动选中文件刮削", snapshot },
+      data: { taskId: "fast-run", totalFiles: 1, snapshot },
     });
 
     expect(getStatus).not.toHaveBeenCalled();
@@ -129,7 +130,6 @@ describe("retryScrapeSelection", () => {
     retry.mockResolvedValue({
       taskId: "task-1",
       totalFiles: 2,
-      message: "重试任务已启动，共 2 个文件",
       snapshot: buildScrapeSnapshot(),
     });
 
@@ -137,7 +137,6 @@ describe("retryScrapeSelection", () => {
       data: {
         taskId: "task-1",
         totalFiles: 2,
-        message: "重试任务已启动，共 2 个文件",
         snapshot: buildScrapeSnapshot(),
       },
     });
@@ -151,13 +150,13 @@ describe("retryScrapeSelection", () => {
         task: { ...buildScrapeSnapshot().task, id: "running", status: "running", completedAt: null },
       }),
     );
-    await expect(retryScrapeSelection()).rejects.toThrow("当前刮削任务仍在进行");
+    await expect(retryScrapeSelection()).rejects.toThrow(getT().desktop.scrapeTaskInProgress);
 
     expect(retry).not.toHaveBeenCalled();
   });
 
   it("requires a run in the scrape store", async () => {
-    await expect(retryScrapeSelection()).rejects.toThrow("没有可重试的刮削任务");
+    await expect(retryScrapeSelection()).rejects.toThrow(getT().desktop.noScrapeTaskToRetry);
     expect(retry).not.toHaveBeenCalled();
   });
 });

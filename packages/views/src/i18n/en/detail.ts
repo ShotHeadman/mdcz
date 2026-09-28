@@ -1,0 +1,65 @@
+export const detail = {
+  // Result tree
+  processingQueue: "Processing Queue",
+  noResults: "No results",
+  rescrapeByUrl: "Rescrape by URL",
+  currentStatus: (number: string, status: string) => `Current Number: ${number} · Status: ${status}`,
+  submitting: "Submitting…",
+  rescrape: "Rescrape",
+
+  // Scene image gallery
+  preview: "Preview",
+  galleryTitle: "Still Preview",
+  galleryDescription: (current: number, total: number) =>
+    `Viewing still image preview (${current} of ${total}). Use left and right arrow keys to switch.`,
+  closePreview: "Close still preview",
+  previousPhoto: "Previous still",
+  nextPhoto: "Next still",
+
+  // Poster crop dialog
+  editCover: "Edit Cover",
+  cropDescription: "Drag selection to reposition, use zoom to adjust framing.",
+  cropSourceAlt: "Cover crop source",
+  cropRegionAriaLabel: "Cover crop region",
+  zoom: "Zoom",
+  zoomAriaLabel: "Cover zoom",
+  cropPreviewAlt: "Cover crop preview",
+  outputRatioAndSize: (width: number, height: number) => `Output 2:3 · ${width} x ${height}`,
+  reset: "Reset",
+  saving: "Saving…",
+  saveCover: "Save Cover",
+
+  // Detail panel view
+  errorDetails: "Error details",
+  play: "Play",
+  openSourceFolder: "Open source folder",
+  openMetadataFolder: "Open metadata folder",
+  editNfo: "Edit NFO",
+  selectItemPrompt: "Select an item to view details",
+  dataCompare: "Data comparison",
+  filePath: "File path",
+  fields: {
+    actors: "Actors",
+    studio: "Studio",
+    releaseDate: "Release date",
+    series: "Series",
+    director: "Director",
+    genres: "Genres",
+    resolution: "Resolution",
+    bitrate: "Bitrate",
+    duration: "Duration",
+    publisher: "Publisher",
+  },
+  sections: {
+    details: "Details",
+    plot: "Plot summary",
+    poster: "Thumbnail",
+    stills: "Stills",
+    trailer: "Trailer",
+  },
+  posterThumbAlt: (alt: string) => `${alt} thumbnail`,
+  posterPreviewTitle: "Thumbnail Preview",
+  posterPreviewDescription: "View full preview of the thumbnail.",
+  closePosterPreview: "Close thumbnail preview",
+  posterPreviewAlt: (alt: string) => `${alt} thumbnail full preview`,
+};

@@ -82,7 +82,7 @@ describe("diffCrawlerData", () => {
       {
         kind: "value",
         field: "actors",
-        label: "演员",
+
         oldValue: ["Actor A"],
         newValue: ["Actor A", "Actor B"],
         changed: true,
@@ -130,7 +130,7 @@ describe("diffCrawlerData", () => {
       {
         kind: "value",
         field: "studio",
-        label: "制片",
+
         oldValue: undefined,
         newValue: "New Studio",
         changed: true,
@@ -140,7 +140,7 @@ describe("diffCrawlerData", () => {
       {
         kind: "value",
         field: "title",
-        label: "标题",
+
         oldValue: "Original Title",
         newValue: "Original Title",
         changed: false,
@@ -148,7 +148,7 @@ describe("diffCrawlerData", () => {
       {
         kind: "value",
         field: "plot",
-        label: "简介",
+
         oldValue: "Original Plot",
         newValue: "Original Plot",
         changed: false,
@@ -156,7 +156,7 @@ describe("diffCrawlerData", () => {
       {
         kind: "value",
         field: "actors",
-        label: "演员",
+
         oldValue: ["Actor A"],
         newValue: ["Actor A"],
         changed: false,
@@ -195,7 +195,7 @@ describe("diffCrawlerData", () => {
     expect(result.fieldDiffs).toContainEqual({
       kind: "image",
       field: "thumb_url",
-      label: "封面图",
+
       oldValue: "thumb.jpg",
       newValue: "https://example.com/new-thumb.jpg",
       changed: true,
@@ -208,7 +208,6 @@ describe("diffCrawlerData", () => {
         fallbackSrcs: ["https://example.com/new-thumb-alt.jpg"],
       },
     });
-    expect(result.fieldDiffs.find((diff) => diff.field === "fanart_url")).toBeUndefined();
   });
 
   it("diffs release_date", () => {
@@ -226,7 +225,7 @@ describe("diffCrawlerData", () => {
       {
         kind: "value",
         field: "release_date",
-        label: "发行日期",
+
         oldValue: "2023-05-06",
         newValue: "2024-01-02",
         changed: true,
@@ -264,7 +263,7 @@ describe("diffCrawlerData", () => {
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "image",
       field: "thumb_url",
-      label: "封面图",
+
       oldValue: "thumb.jpg",
       newValue: "https://example.com/current-thumb.jpg",
       changed: false,
@@ -280,7 +279,7 @@ describe("diffCrawlerData", () => {
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "value",
       field: "trailer_url",
-      label: "预告片",
+
       oldValue: "trailer.mp4",
       newValue: "https://example.com/current-trailer.mp4",
       changed: false,
@@ -288,7 +287,7 @@ describe("diffCrawlerData", () => {
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "imageCollection",
       field: "scene_images",
-      label: "剧照",
+
       oldValue: ["https://example.com/current-scene.jpg"],
       newValue: ["https://example.com/current-scene.jpg"],
       changed: false,
@@ -322,7 +321,7 @@ describe("diffCrawlerData", () => {
     expect(result.fieldDiffs).toContainEqual({
       kind: "imageCollection",
       field: "scene_images",
-      label: "剧照",
+
       oldValue: ["https://example.com/old-scene.jpg"],
       newValue: ["https://example.com/new-scene.jpg"],
       changed: true,
@@ -349,7 +348,7 @@ describe("diffCrawlerData", () => {
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "imageCollection",
       field: "scene_images",
-      label: "剧照",
+
       oldValue: ["https://example.com/scene-a.jpg"],
       newValue: ["https://example.com/scene-a.jpg"],
       changed: false,

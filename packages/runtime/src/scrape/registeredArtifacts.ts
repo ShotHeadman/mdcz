@@ -110,8 +110,9 @@ export async function registeredPosterCropContext(
 ) {
   const snapshot = library.publicationSnapshot({ paths: [videoPath] });
   const owners = [...new Set(snapshot.files.map((file) => file.itemId))];
-  if (owners.length > 1) throw new Error("同一视频文件已被媒体库中的多个影片重复引用，无法确定封面");
-  if (!owners.length) throw new Error("当前视频尚未入库，无法获取已保存的封面");
+  if (owners.length > 1)
+    throw new Error("The same video file is referenced by multiple library movies; cannot determine cover");
+  if (!owners.length) throw new Error("Current video is not in library; cannot retrieve saved cover");
   const movieId = owners[0];
   const entry = await library.getEntryById(movieId);
   const assets: { thumb?: string; poster?: string } = {};

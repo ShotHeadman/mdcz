@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useT } from "@mdcz/views/i18n";
 import type { AmazonPosterApplyItem } from "@mdcz/views/tools";
 import { AmazonPosterWorkspaceDetail } from "@mdcz/views/tools";
 import { useCallback, useState } from "react";
@@ -8,6 +9,7 @@ import { useToast } from "@/contexts/ToastProvider";
 import { browseDirectoryPath } from "./toolUtils";
 
 export function AmazonPoster() {
+  const t = useT();
   const { showError, showInfo, showSuccess } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [items, setItems] = useState<Awaited<ReturnType<typeof ipc.tool.amazonPosterScan>>["items"]>([]);
@@ -16,7 +18,7 @@ export function AmazonPoster() {
   const handleScan = async (directory: string) => {
     const targetDirectory = directory.trim();
     if (!targetDirectory) {
-      showError("请输入需要扫描的媒体目录");
+      showError(t.desktop.enterScanDirectory);
       return;
     }
 
@@ -27,12 +29,12 @@ export function AmazonPoster() {
       setDialogOpen(true);
 
       if (result.items.length === 0) {
-        showInfo("扫描完成，但未找到可处理的 NFO 条目。");
+        showInfo(t.desktop.amazonScanNoItems);
       } else {
-        showSuccess(`扫描完成，共找到 ${result.items.length} 个条目。`);
+        showSuccess(t.desktop.amazonScanCompleted(result.items.length));
       }
     } catch (error) {
-      showError(`Amazon 海报扫描失败: ${toErrorMessage(error)}`);
+      showError(t.desktop.amazonScanFailed(toErrorMessage(error)));
     } finally {
       setScanning(false);
     }
@@ -40,7 +42,7 @@ export function AmazonPoster() {
 
   const handleApply = async (selectedItems: AmazonPosterApplyItem[]) => {
     if (selectedItems.length === 0) {
-      showInfo("当前没有选中的 Amazon 海报。");
+      showInfo(t.desktop.noAmazonPosterSelected);
       return;
     }
 
@@ -50,14 +52,14 @@ export function AmazonPoster() {
       const failedCount = result.results.length - successCount;
 
       if (failedCount === 0) {
-        showSuccess(`已替换 ${successCount} 个海报文件。`);
+        showSuccess(t.desktop.postersReplacedCount(successCount));
       } else {
-        showError(`替换完成：成功 ${successCount}，失败 ${failedCount}。`);
+        showError(t.desktop.replaceCompletedSuccess(successCount, failedCount));
       }
 
       setDialogOpen(false);
     } catch (error) {
-      showError(`海报替换失败: ${toErrorMessage(error)}`);
+      showError(t.desktop.replaceFailed(toErrorMessage(error)));
     }
   };
 

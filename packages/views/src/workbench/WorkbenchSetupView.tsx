@@ -1,8 +1,9 @@
-import { getMaintenancePresetMeta, MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
+import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import { Button, Checkbox, cn, quietFieldSurfaceClass, quietPanelSurfaceClass } from "@mdcz/ui";
 import { AlertCircle, ArrowDown, Check, FolderOpen, FolderOutput, Loader2, Search, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { useT } from "../i18n";
 import { PathAutocompleteInput, type PathAutocompleteResult } from "../path";
 
 export type WorkbenchSetupMode = "scrape" | "maintenance";
@@ -125,7 +126,7 @@ function PathControl({
             className="mr-1.5 h-10 shrink-0 rounded-quiet bg-surface px-4 text-xs font-semibold"
             onClick={onBrowse}
           >
-            浏览
+            {useT().workbench.browse}
           </Button>
         ) : null}
       </div>
@@ -139,6 +140,7 @@ function PathControl({
 }
 
 function ScanningStatus({ scopeLabel }: { scopeLabel: string }) {
+  const t = useT();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => {
     const started = Date.now();
@@ -149,7 +151,7 @@ function ScanningStatus({ scopeLabel }: { scopeLabel: string }) {
   return (
     <p role="status" className="mb-4 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      正在扫描（{scopeLabel}）· 已耗时 {elapsedSeconds} 秒
+      {t.workbench.scanningStatus(scopeLabel, elapsedSeconds)}
     </p>
   );
 }
@@ -233,10 +235,11 @@ export function WorkbenchSetupView({
   onToggleCandidate,
   onSelectCandidates,
 }: WorkbenchSetupViewProps) {
+  const t = useT();
   const scanning = scanStatus === "scanning";
   const selectedPathSet = new Set(selectedPaths);
   const recursiveId = useId();
-  const scopeLabel = recursive ? "含子目录" : "仅当前目录";
+  const scopeLabel = recursive ? t.workbench.scopeRecursive : t.workbench.scopeCurrentOnly;
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -271,13 +274,12 @@ export function WorkbenchSetupView({
   const actions = (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-5">
       <p className="mr-auto text-xs leading-5 text-muted-foreground">
-        {previewMode ? (
-          <>
-            已选 {selectedPaths.length} 个文件 · {formatBytes(selectedSize, { trimTrailingZeros: true })}
-          </>
-        ) : (
-          <>处理目录内全部视频 · {scopeLabel}</>
-        )}
+        {previewMode
+          ? t.workbench.selectedFilesSummary(
+              selectedPaths.length,
+              formatBytes(selectedSize, { trimTrailingZeros: true }),
+            )
+          : t.workbench.processAllVideos(scopeLabel)}
       </p>
       <Button
         type="button"
@@ -285,11 +287,11 @@ export function WorkbenchSetupView({
         disabled={startPending || (!previewMode && (refreshDisabled || scanning))}
         onClick={previewMode ? onExitPreview : onRefreshScan}
       >
-        {previewMode ? "返回配置" : "预览文件"}
+        {previewMode ? t.workbench.backToConfig : t.workbench.previewFiles}
       </Button>
       <Button type="button" disabled={primaryDisabled} onClick={onStart}>
         {startPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {mode === "scrape" ? "开始刮削" : "开始维护"}
+        {mode === "scrape" ? t.workbench.startScrape : t.workbench.startMaintenance}
       </Button>
     </div>
   );
@@ -307,7 +309,10 @@ export function WorkbenchSetupView({
           previewMode && "flex h-full flex-col",
         )}
       >
-        <nav aria-label="工作台步骤" className="mb-6 flex shrink-0 flex-wrap justify-end gap-2 text-sm">
+        <nav
+          aria-label={t.workbench.stepsNavAriaLabel}
+          className="mb-6 flex shrink-0 flex-wrap justify-end gap-2 text-sm"
+        >
           <button
             type="button"
             disabled={!previewMode || startPending}
@@ -320,13 +325,14 @@ export function WorkbenchSetupView({
                 : "text-muted-foreground enabled:cursor-pointer enabled:hover:text-foreground",
             )}
           >
-            01 配置目录
+            {t.workbench.step01}
           </button>
           <span
             aria-current={previewMode ? "step" : undefined}
             className={cn("px-2 py-1", previewMode ? "font-semibold" : "text-muted-foreground")}
           >
-            02 预览文件<span className="ml-1 text-xs text-muted-foreground">可选</span>
+            {t.workbench.step02}
+            <span className="ml-1 text-xs text-muted-foreground">{t.workbench.optional}</span>
           </span>
         </nav>
         {!previewMode ? (
@@ -354,7 +360,9 @@ export function WorkbenchSetupView({
                       onClick={() => onPresetChange(option.id)}
                     >
                       <div className="flex w-full items-start justify-between gap-3">
-                        <div className="text-sm font-bold tracking-tight">{option.label}</div>
+                        <div className="text-sm font-bold tracking-tight">
+                          {t.domain.maintenancePresets[option.id].label}
+                        </div>
                         <span
                           className={cn(
                             "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
@@ -364,7 +372,9 @@ export function WorkbenchSetupView({
                           {active ? <Check className="h-3 w-3" /> : null}
                         </span>
                       </div>
-                      <p className="mt-3 text-xs leading-5 text-muted-foreground">{option.description}</p>
+                      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                        {t.domain.maintenancePresets[option.id].description}
+                      </p>
                     </button>
                   );
                 })}
@@ -373,7 +383,7 @@ export function WorkbenchSetupView({
             <div className={cn(quietPanelSurfaceClass, "relative min-w-0 space-y-6 rounded-quiet-xl p-6 md:p-8")}>
               <div className="space-y-6 md:space-y-8">
                 <PathControl
-                  label="扫描目录"
+                  label={t.workbench.scanDirLabel}
                   disabled={startPending}
                   labelAction={
                     <label
@@ -386,13 +396,13 @@ export function WorkbenchSetupView({
                         disabled={startPending}
                         onCheckedChange={(checked) => onRecursiveChange?.(checked === true)}
                       />
-                      包含子目录
+                      {t.workbench.includeSubdirs}
                     </label>
                   }
                   icon={<FolderOpen className="h-5 w-5" />}
                   value={scanDir}
                   error={scanDirError}
-                  placeholder={configLoading ? "正在读取配置..." : "请选择需要扫描的媒体目录"}
+                  placeholder={configLoading ? t.workbench.loadingConfig : t.workbench.scanDirPlaceholder}
                   onBrowse={isServer ? undefined : onBrowseScanDir}
                   onChange={onScanDirChange}
                   onCommit={onCommitScanDir}
@@ -405,11 +415,11 @@ export function WorkbenchSetupView({
                       <ArrowDown className="-ml-2 mt-6 h-4 w-4 rounded-full bg-surface text-muted-foreground" />
                     </div>
                     <PathControl
-                      label="输出目录"
+                      label={t.workbench.outputDirLabel}
                       disabled={startPending}
                       icon={<FolderOutput className="h-5 w-5" />}
                       value={targetDir}
-                      placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
+                      placeholder={configLoading ? t.workbench.loadingConfig : t.workbench.outputDirPlaceholder}
                       onBrowse={isServer ? undefined : onBrowseTargetDir}
                       onChange={onTargetDirChange}
                       loadSuggestions={onSuggestTargetDir}
@@ -427,7 +437,7 @@ export function WorkbenchSetupView({
                 <div className="space-y-1">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground">
                     <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span>扫描目录</span>
+                    <span>{t.workbench.scanDirLabel}</span>
                   </div>
                   <div className="truncate text-xs font-bold text-foreground" title={scanDir}>
                     {getDirBasename(scanDir)}
@@ -447,7 +457,7 @@ export function WorkbenchSetupView({
                     <div className="space-y-1">
                       <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground">
                         <FolderOutput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span>输出目录</span>
+                        <span>{t.workbench.outputDirLabel}</span>
                       </div>
                       <div className="truncate text-xs font-bold text-foreground" title={targetDir}>
                         {getDirBasename(targetDir)}
@@ -465,7 +475,7 @@ export function WorkbenchSetupView({
                   </span>
                   {mode === "maintenance" ? (
                     <span className="inline-flex items-center rounded-quiet bg-surface-low px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {getMaintenancePresetMeta(presetId).label}
+                      {t.domain.maintenancePresets[presetId].label}
                     </span>
                   ) : null}
                 </div>
@@ -475,7 +485,9 @@ export function WorkbenchSetupView({
               {scanning ? <ScanningStatus scopeLabel={scopeLabel} /> : null}
               {scanStatus === "success" && warnings && warnings.count > 0 ? (
                 <details className="mb-4 shrink-0 rounded-quiet border border-border/60 bg-surface-low px-4 py-3 text-sm">
-                  <summary className="cursor-pointer font-medium">部分路径无法访问，已跳过 {warnings.count} 项</summary>
+                  <summary className="cursor-pointer font-medium">
+                    {t.workbench.inaccessiblePathsWarning(warnings.count)}
+                  </summary>
                   <ul className="mt-2 max-h-24 space-y-1 overflow-y-auto break-all font-mono text-xs text-muted-foreground">
                     {warnings.paths.map((path) => (
                       <li key={path}>{path}</li>
@@ -493,7 +505,7 @@ export function WorkbenchSetupView({
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3.5">
                   <div className="flex flex-wrap items-center gap-3">
                     <Checkbox
-                      aria-label="选择当前可见文件"
+                      aria-label={t.workbench.selectVisibleFilesAriaLabel}
                       checked={allSelected ? true : someSelected ? "indeterminate" : false}
                       disabled={filteredCandidates.length === 0 || scanning || startPending}
                       onCheckedChange={() =>
@@ -510,10 +522,10 @@ export function WorkbenchSetupView({
                       disabled={refreshDisabled || scanning || startPending}
                       onClick={onRefreshScan}
                     >
-                      刷新文件
+                      {t.workbench.refreshFiles}
                     </Button>
                     <span className="font-numeric text-xs font-semibold text-foreground">
-                      已选 {selectedPaths.length} / {candidates.length} 个文件
+                      {t.workbench.selectedOfTotalFiles(selectedPaths.length, candidates.length)}
                     </span>
                   </div>
 
@@ -522,7 +534,7 @@ export function WorkbenchSetupView({
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <input
                         type="text"
-                        aria-label="搜索文件"
+                        aria-label={t.workbench.searchFilesAriaLabel}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         onKeyDown={(event) => {
@@ -531,7 +543,7 @@ export function WorkbenchSetupView({
                           event.stopPropagation();
                           setSearchQuery("");
                         }}
-                        placeholder="搜索文件..."
+                        placeholder={t.workbench.searchFilesPlaceholder}
                         className={cn(
                           quietFieldSurfaceClass,
                           "h-8 w-full rounded-quiet pl-8 pr-7 text-xs text-foreground placeholder:text-muted-foreground transition-colors focus:border-ring/40 focus:outline-none focus:ring-[3px] focus:ring-ring/15",
@@ -540,7 +552,7 @@ export function WorkbenchSetupView({
                       {searchQuery ? (
                         <button
                           type="button"
-                          aria-label="清空搜索"
+                          aria-label={t.workbench.clearSearchAriaLabel}
                           onClick={() => setSearchQuery("")}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         >
@@ -549,10 +561,12 @@ export function WorkbenchSetupView({
                       ) : null}
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      总大小 {formatBytes(totalSize, { trimTrailingZeros: true })}
+                      {t.workbench.totalSize(formatBytes(totalSize, { trimTrailingZeros: true }))}
                     </span>
                     {searchQuery ? (
-                      <span className="text-xs text-muted-foreground">显示 {filteredCandidates.length} 项</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t.workbench.showingItems(filteredCandidates.length)}
+                      </span>
                     ) : null}
                   </div>
                 </div>
@@ -563,9 +577,9 @@ export function WorkbenchSetupView({
                   )}
                 >
                   <span />
-                  <span>文件</span>
-                  <span>类型</span>
-                  <span>大小</span>
+                  <span>{t.workbench.colFile}</span>
+                  <span>{t.workbench.colType}</span>
+                  <span>{t.workbench.colSize}</span>
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto">
@@ -573,7 +587,7 @@ export function WorkbenchSetupView({
                     <div className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 text-center">
                       <AlertCircle className="h-8 w-8 text-destructive" />
                       <div>
-                        <div className="font-semibold">扫描失败</div>
+                        <div className="font-semibold">{t.workbench.scanFailed}</div>
                         <div className="mt-2 max-w-xl wrap-break-word text-sm text-muted-foreground">{scanError}</div>
                       </div>
                     </div>
@@ -582,7 +596,7 @@ export function WorkbenchSetupView({
                   {!scanning && scanStatus !== "error" && !scanDir ? (
                     <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                       <FolderOpen className="h-8 w-8" />
-                      <div className="text-sm font-medium">选择目录后，点击“预览文件”查看可处理的媒体文件。</div>
+                      <div className="text-sm font-medium">{t.workbench.previewHint}</div>
                     </div>
                   ) : null}
 
@@ -590,11 +604,11 @@ export function WorkbenchSetupView({
                     <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                       <FolderOpen className="h-8 w-8" />
                       <div className="text-sm font-medium">
-                        {recursive ? "未找到支持的视频" : "当前目录未找到视频，可勾选“包含子目录”"}
+                        {recursive ? t.workbench.noVideosFoundRecursive : t.workbench.noVideosFoundCurrent}
                       </div>
                       <div className="max-w-xl break-all font-mono text-xs">{scanDir}</div>
                       {supportedExtensions.length > 0 ? (
-                        <div className="text-xs">支持类型: {supportedExtensions.join(", ")}</div>
+                        <div className="text-xs">{t.workbench.supportedTypes(supportedExtensions.join(", "))}</div>
                       ) : null}
                     </div>
                   ) : null}
@@ -613,7 +627,7 @@ export function WorkbenchSetupView({
                   {!scanning && candidates.length > 0 && filteredCandidates.length === 0 ? (
                     <div className="flex min-h-48 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                       <Search className="h-7 w-7 text-muted-foreground/40" />
-                      <div className="text-sm font-medium">未找到匹配“{searchQuery}”的文件</div>
+                      <div className="text-sm font-medium">{t.workbench.noFilesMatching(searchQuery)}</div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -621,7 +635,7 @@ export function WorkbenchSetupView({
                         className="rounded-full text-xs"
                         onClick={() => setSearchQuery("")}
                       >
-                        清空搜索
+                        {t.workbench.clearSearch}
                       </Button>
                     </div>
                   ) : null}

@@ -32,11 +32,9 @@ export const createSymlink = async (options: { body: CreateSoftlinksBody } & Thr
     throw new Error("Source and destination directories are required");
   }
 
-  const data = await ipc.tool.createSymlink({
+  await ipc.tool.createSymlink({
     sourceDir,
     destDir,
     copyFiles: Boolean(options.body.copy_files),
   });
-
-  return { data };
 };

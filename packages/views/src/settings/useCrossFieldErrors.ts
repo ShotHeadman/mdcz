@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useFormContext, useFormState } from "react-hook-form";
+import { useT } from "../i18n";
 import { FIELD_REGISTRY, type FieldEntry } from "./settingsRegistry";
 
 export interface CrossFieldError {
@@ -9,6 +10,7 @@ export interface CrossFieldError {
 }
 
 export function useCrossFieldErrors(sectionKey: FieldEntry["anchor"]): CrossFieldError[] {
+  const t = useT();
   const form = useFormContext();
   const formState = useFormState({ control: form.control });
 
@@ -22,11 +24,13 @@ export function useCrossFieldErrors(sectionKey: FieldEntry["anchor"]): CrossFiel
       if (!fieldError || fieldError.type !== "server") continue;
       output.push({
         field: entry.key,
-        label: entry.label,
+        label: t.settingsFields.fields[entry.key].label,
         message:
-          typeof fieldError.message === "string" && fieldError.message.length > 0 ? fieldError.message : "校验失败",
+          typeof fieldError.message === "string" && fieldError.message.length > 0
+            ? fieldError.message
+            : t.settings.autoSave.validationFailed,
       });
     }
     return output;
-  }, [form, formState, sectionKey]);
+  }, [form, formState, sectionKey, t]);
 }

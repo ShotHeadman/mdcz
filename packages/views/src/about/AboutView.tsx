@@ -2,6 +2,7 @@ import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
 import { Badge, Button, quietHeroRadiusClass, quietPanelRadiusClass, Switch } from "@mdcz/ui";
 import { Bug, ExternalLink, Github, Server, Sparkles } from "lucide-react";
 import AppLogo from "../assets/logo.png";
+import { useT } from "../i18n";
 
 export interface AboutViewProps {
   about?: SystemAboutResponse;
@@ -30,25 +31,13 @@ const fallbackAbout: SystemAboutResponse = {
     platform: "unknown",
     arch: "unknown",
   },
-  community: {
-    feedback: {
-      label: "提交反馈",
-      url: "https://github.com/ShotHeadman/mdcz/issues/new/choose",
-    },
-    links: [
-      {
-        label: "MDCx",
-        url: "https://github.com/sqzw-x/mdcx",
-        description: "原 Python 版本项目",
-      },
-      {
-        label: "Movie_Data_Capture",
-        url: "https://github.com/yoshiko2/Movie_Data_Capture",
-        description: "命令行版核心项目",
-      },
-    ],
-  },
 };
+
+const FEEDBACK_URL = "https://github.com/ShotHeadman/mdcz/issues/new/choose";
+const RELATED_PROJECTS = [
+  { id: "mdcx", name: "MDCx", url: "https://github.com/sqzw-x/mdcx" },
+  { id: "movieDataCapture", name: "Movie_Data_Capture", url: "https://github.com/yoshiko2/Movie_Data_Capture" },
+] as const;
 
 const compactValue = (value: string | null | undefined): string => value || "dev";
 
@@ -58,13 +47,15 @@ export const AboutView = ({
   updateCheck = null,
   showUpdateCheck = true,
   showDebugAction = false,
-  debugActionLabel = "开启调试",
+  debugActionLabel,
   logoSrc,
   updateCheckDisabled = false,
   onDebug,
   onOpenExternal,
   onUpdateCheckChange,
 }: AboutViewProps) => {
+  const t = useT();
+  const resolvedDebugActionLabel = debugActionLabel ?? t.about.debugAction;
   const homepage = about.homepage ?? about.repository ?? fallbackAbout.homepage;
   const resolvedLogoSrc = logoSrc ?? AppLogo;
 
@@ -96,25 +87,25 @@ export const AboutView = ({
                   v{compactValue(about.version)}
                 </Badge>
               </h1>
-              <p className="text-xs text-muted-foreground">{loading ? "读取信息中" : ""}</p>
+              <p className="text-xs text-muted-foreground">{loading ? t.about.loading : ""}</p>
             </div>
           </section>
 
           <section className="space-y-2">
             <div className="flex items-center gap-2 px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-50">
               <Sparkles className="h-3.5 w-3.5" />
-              <span>社区与反馈</span>
+              <span>{t.about.communityAndFeedback}</span>
             </div>
             <div className={`grid gap-4 ${showDebugAction ? "grid-cols-2" : "grid-cols-1"}`}>
               <Button
                 className={`h-14 justify-start gap-3.5 border-border/30 bg-surface-low/30 px-4.5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
                 variant="outline"
-                onClick={() => onOpenExternal(about.community.feedback.url)}
+                onClick={() => onOpenExternal(FEEDBACK_URL)}
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/5 transition-colors group-hover:bg-primary/10">
                   <Github className="h-4 w-4" />
                 </div>
-                <span className="text-sm font-semibold">{about.community.feedback.label}</span>
+                <span className="text-sm font-semibold">{t.about.feedback}</span>
                 <ExternalLink className="ml-auto h-3 w-3 opacity-60" />
               </Button>
               {showDebugAction && (
@@ -126,7 +117,7 @@ export const AboutView = ({
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/5">
                     <Bug className="h-4 w-4" />
                   </div>
-                  <span className="text-sm font-semibold">{debugActionLabel}</span>
+                  <span className="text-sm font-semibold">{resolvedDebugActionLabel}</span>
                 </Button>
               )}
             </div>
@@ -137,10 +128,10 @@ export const AboutView = ({
               className={`flex items-center justify-between border border-border/30 bg-surface-low/30 p-5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
             >
               <div className="space-y-0.5 px-1">
-                <h2 className="text-sm font-semibold">自动检查更新</h2>
+                <h2 className="text-sm font-semibold">{t.about.autoCheckUpdates}</h2>
               </div>
               <Switch
-                aria-label="自动检查更新"
+                aria-label={t.about.autoCheckUpdates}
                 checked={Boolean(updateCheck)}
                 disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
                 onCheckedChange={(checked) => onUpdateCheckChange?.(checked)}
@@ -150,10 +141,10 @@ export const AboutView = ({
 
           <section className="space-y-2">
             <div className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-50">
-              相关项目
+              {t.about.relatedProjectsTitle}
             </div>
             <div className="grid gap-2.5">
-              {about.community.links.map((link) => (
+              {RELATED_PROJECTS.map((link) => (
                 <button
                   className={`group flex w-full items-center justify-between border border-transparent bg-surface-low/20 p-4 text-left transition-all hover:border-border/40 hover:bg-surface-low/50 ${quietPanelRadiusClass}`}
                   key={link.url}
@@ -166,9 +157,9 @@ export const AboutView = ({
                     </div>
                     <div>
                       <div className="text-sm font-semibold transition-colors group-hover:text-primary">
-                        {link.label}
+                        {link.name}
                       </div>
-                      {link.description && <div className="text-xs text-muted-foreground/60">{link.description}</div>}
+                      <div className="text-xs text-muted-foreground/60">{t.about.relatedProjects[link.id]}</div>
                     </div>
                   </div>
                   <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/40" />

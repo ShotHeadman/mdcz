@@ -76,7 +76,7 @@ describe("scrape admission and grouping", () => {
         targetDir: join(directory, "output"),
       });
     if (kind === "missing") {
-      await expect(start()).rejects.toThrow("目录不存在或无法访问");
+      await expect(start()).rejects.toThrow("Directory does not exist or is inaccessible");
       expect(prepare).not.toHaveBeenCalled();
       return;
     }

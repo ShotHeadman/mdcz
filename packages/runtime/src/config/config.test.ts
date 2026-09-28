@@ -121,7 +121,7 @@ describe("runtime config helpers", () => {
         naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number} {title}" },
       }).items[0],
     ).toMatchObject({
-      label: "普通",
+      sample: "standard",
       file: "ABC-123 示例中文标题.mp4",
     });
     expect(
@@ -136,7 +136,7 @@ describe("runtime config helpers", () => {
         fileTemplate: "{rawNumber}-{4K}{cnword}-{title}",
         cnwordStyle: "-SUB",
       },
-    }).items.find((item) => item.label === "中文字幕");
+    }).items.find((item) => item.sample === "subtitled");
 
     expect(expandedPreview).toMatchObject({
       folder: "A-ABC-456-SUB",

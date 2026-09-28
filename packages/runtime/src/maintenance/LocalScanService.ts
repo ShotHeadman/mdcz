@@ -212,7 +212,7 @@ export class LocalScanService {
     const root: MediaRoot = Array.isArray(rootOrPaths)
       ? {
           id: deterministicMediaRootId(filePaths[0] ? dirname(filePaths[0]) : "."),
-          displayName: "扫描文件",
+          displayName: "Scanned files",
           hostPath: dirname(filePaths[0] ?? "."),
           realPath: null,
           createdAt: new Date(),
@@ -230,7 +230,7 @@ export class LocalScanService {
     for (const videoPath of uniqueFilePaths) {
       throwIfAborted(signal);
       if (!DEFAULT_VIDEO_EXTENSIONS.has(extname(videoPath).toLowerCase())) {
-        throw new Error(`不支持的维护视频文件：${videoPath}`);
+        throw new Error(`Unsupported maintenance video file: ${videoPath}`);
       }
 
       if (
@@ -238,13 +238,13 @@ export class LocalScanService {
         (extname(videoPath).toLowerCase() === ".strm" &&
           !(await inventory.mediaEntries(dirname(videoPath))).some((entry) => entry.name === basename(videoPath)))
       ) {
-        throw new Error(`不能单独维护生成的视频附属文件：${videoPath}`);
+        throw new Error(`Cannot maintain generated sidecar video file alone: ${videoPath}`);
       }
 
       try {
         const fileStats = await inventory.stats(videoPath);
         if (!fileStats.isFile()) {
-          throw new Error("路径不是文件");
+          throw new Error("Path is not a file");
         }
 
         const entry = await this.scanVideo(root, videoPath, sceneImagesFolder, signal, metadata, inventory);
@@ -254,7 +254,7 @@ export class LocalScanService {
           throw error;
         }
         const message = toErrorMessage(error);
-        throw new Error(`维护扫描失败：${videoPath}：${message}`, { cause: error });
+        throw new Error(`Maintenance scan failed: ${videoPath}: ${message}`, { cause: error });
       }
     }
 
@@ -294,14 +294,15 @@ export class LocalScanService {
       try {
         await inventory.stats(nfoPath);
         const snapshot = await inventory.loadNfo(nfoPath);
-        if (!snapshot) scanError = [scanError, `媒体库记录的 NFO 不存在：${nfoPath}`].filter(Boolean).join("；");
+        if (!snapshot)
+          scanError = [scanError, `NFO recorded in library does not exist: ${nfoPath}`].filter(Boolean).join("; ");
         else {
           crawlerData = snapshot.crawlerData;
           nfoLocalState = snapshot.localState;
         }
       } catch (error) {
         const message = toErrorMessage(error);
-        scanError = `NFO 解析失败: ${message}`;
+        scanError = `Failed to parse NFO: ${message}`;
         this.logger.warn(`Failed to parse NFO at ${nfoPath}: ${message}`);
       }
     }
@@ -329,7 +330,7 @@ export class LocalScanService {
       ...assets.actorPhotos,
     ]) {
       if (path && !(await fileExists(path, inventory)))
-        scanError = [scanError, `媒体库记录的文件不存在：${path}`].filter(Boolean).join("；");
+        scanError = [scanError, `File recorded in library does not exist: ${path}`].filter(Boolean).join("; ");
     }
 
     return {

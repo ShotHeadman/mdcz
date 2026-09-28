@@ -1,5 +1,6 @@
 import { Button, cn } from "@mdcz/ui";
 import { RotateCcw } from "lucide-react";
+import { useT } from "../i18n";
 
 interface ResetToDefaultButtonProps {
   label: string;
@@ -8,13 +9,14 @@ interface ResetToDefaultButtonProps {
 }
 
 export function ResetToDefaultButton({ label, onClick, className }: ResetToDefaultButtonProps) {
+  const t = useT();
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon-xs"
-      aria-label={`将 ${label} 恢复为默认值`}
-      title="恢复默认值"
+      aria-label={t.settings.resetToDefault.ariaLabel(label)}
+      title={t.settings.resetToDefault.title}
       onClick={onClick}
       className={cn(
         "h-6 w-6 rounded-[var(--radius-quiet-capsule)] text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/setting-row:opacity-100 group-focus-within/setting-row:opacity-100",

@@ -19,12 +19,13 @@ import { createContext, type ReactElement, type ReactNode, useContext, useState 
 import type { ControllerRenderProps, FieldValues, RegisterOptions } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
+import { useT } from "../i18n";
 import { ResetToDefaultButton } from "../settings/ResetToDefaultButton";
 import { SettingRow } from "../settings/SettingRow";
 import { useOptionalSettingsSearch } from "../settings/SettingsSearchContext";
 import { shouldRenderFieldInSectionMode, useSettingsSectionMode } from "../settings/SettingsSectionModeContext";
 import { useSettingsServices } from "../settings/SettingsServices";
-import { isFieldManagedBySettingsSearch } from "../settings/settingsRegistry";
+import { type FieldKey, isFieldManagedBySettingsSearch } from "../settings/settingsRegistry";
 import { useAutoSaveField } from "../settings/useAutoSaveField";
 import {
   BufferedFieldControl,
@@ -58,8 +59,8 @@ export function ConfigFieldLayoutProvider({ children, layout = "horizontal" }: C
 }
 
 interface BaseFieldProps {
-  name: string;
-  label: string;
+  name: FieldKey;
+  /** Overrides the dictionary description for text that depends on other form values. */
   description?: string;
   labelAddon?: ReactNode;
   children: (field: ControllerRenderProps<FieldValues, string>) => React.ReactNode;
@@ -78,7 +79,6 @@ interface BaseFieldProps {
  */
 export function BaseField({
   name,
-  label,
   description,
   labelAddon,
   children,
@@ -95,7 +95,6 @@ export function BaseField({
   return (
     <ConnectedBaseField
       name={name}
-      label={label}
       description={description}
       labelAddon={labelAddon}
       layout={layout}
@@ -107,19 +106,13 @@ export function BaseField({
   );
 }
 
-function ConnectedBaseField({
-  name,
-  label,
-  description,
-  labelAddon,
-  children,
-  layout,
-  commitMode,
-  rules,
-}: BaseFieldProps) {
+function ConnectedBaseField({ name, description, labelAddon, children, layout, commitMode, rules }: BaseFieldProps) {
+  const t = useT();
+  const text = t.settingsFields.fields[name];
+  const label = text.label;
   const form = useFormContext();
   const fieldLayout = useContext(ConfigFieldLayoutContext);
-  const { resetToDefault } = useAutoSaveField(name, { mode: commitMode, label });
+  const { resetToDefault } = useAutoSaveField(name, { mode: commitMode });
   const search = useOptionalSettingsSearch();
   const visible =
     search && isFieldManagedBySettingsSearch(name) ? !search.hasActiveFilters || search.isFieldVisible(name) : true;
@@ -149,7 +142,7 @@ function ConnectedBaseField({
             <SettingRow
               fieldName={name}
               label={label}
-              description={description}
+              description={description ?? text.description}
               labelAddon={labelAddon}
               error={rowError}
               headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
@@ -169,21 +162,20 @@ function ConnectedBaseField({
 
 export function BoolField({
   name,
-  label,
   description,
   disabled,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   disabled?: boolean;
 }) {
+  const t = useT();
   return (
-    <BaseField name={name} label={label} description={description} commitMode="immediate">
+    <BaseField name={name} description={description} commitMode="immediate">
       {(field) => (
         <FormControl>
           <Switch
-            aria-label={label}
+            aria-label={t.settingsFields.fields[name].label}
             checked={Boolean(field.value)}
             onCheckedChange={field.onChange}
             disabled={disabled}
@@ -198,17 +190,15 @@ export function BoolField({
 
 export function TextField({
   name,
-  label,
   description,
   labelAddon,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   labelAddon?: ReactNode;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} labelAddon={labelAddon} commitMode="debounce">
+    <BaseField name={name} description={description} labelAddon={labelAddon} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field}>
           {(control) => (
@@ -231,14 +221,16 @@ export function TextField({
   );
 }
 
-export function SecretField({ name, label, description }: { name: string; label: string; description?: string }) {
+export function SecretField({ name, description }: { name: FieldKey; description?: string }) {
+  const t = useT();
   return (
-    <BaseField name={name} label={label} description={description} commitMode="debounce">
+    <BaseField name={name} description={description} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field}>
           {(control) => (
             <FormControl>
               <PasswordInput
+                visibilityLabels={{ show: t.common.showPassword, hide: t.common.hidePassword }}
                 name={control.name}
                 ref={control.ref}
                 value={control.value}
@@ -259,9 +251,9 @@ export function SecretField({ name, label, description }: { name: string; label:
 
 // ── URL ──
 
-export function UrlField({ name, label, description }: { name: string; label: string; description?: string }) {
+export function UrlField({ name, description }: { name: FieldKey; description?: string }) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="debounce">
+    <BaseField name={name} description={description} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field}>
           {(control) => (
@@ -290,15 +282,13 @@ export function UrlField({ name, label, description }: { name: string; label: st
 
 export function NumberField({
   name,
-  label,
   description,
   min,
   max,
   step,
   optional,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   min?: number;
   max?: number;
@@ -306,7 +296,7 @@ export function NumberField({
   optional?: boolean;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="debounce">
+    <BaseField name={name} description={description} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl
           field={field}
@@ -342,22 +332,21 @@ export type EnumOption = string | { value: string; label: string };
 
 export function EnumField({
   name,
-  label,
   description,
   options,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   options: EnumOption[];
 }) {
+  const t = useT();
   return (
-    <BaseField name={name} label={label} description={description} commitMode="immediate">
+    <BaseField name={name} description={description} commitMode="immediate">
       {(field) => (
         <FormControl>
           <Select value={(field.value as string) ?? ""} onValueChange={field.onChange}>
             <SelectTrigger className="h-8 w-[320px] text-sm bg-background/50 focus:bg-background transition-all">
-              <SelectValue placeholder="选择选项" />
+              <SelectValue placeholder={t.configForm.selectOption} />
             </SelectTrigger>
             <SelectContent>
               {options.map((option) => {
@@ -381,7 +370,8 @@ export function EnumField({
 
 const COOKIE_VALIDATE_FIELDS = new Set(["network.javdbCookie", "network.javbusCookie", "network.fantiaCookie"]);
 
-function CookieValidateButton({ fieldKey }: { fieldKey: string }) {
+function CookieValidateButton({ fieldKey }: { fieldKey: FieldKey }) {
+  const t = useT();
   const services = useSettingsServices();
   const [checking, setChecking] = useState(false);
   const siteName = fieldKey.includes("javdb")
@@ -398,17 +388,18 @@ function CookieValidateButton({ fieldKey }: { fieldKey: string }) {
       const response = await services.checkCookies();
       const entry = response.results.find((r) => r.site === siteName);
       if (!entry) {
-        toast.error(`${siteName} Cookie 验证失败: 未找到验证结果`);
+        toast.error(t.configForm.cookieCheckFailed(siteName, t.configForm.cookieCheckNoResult));
         return;
       }
+      const message = t.configForm.cookieCheckStatus[entry.status](entry.site);
       if (entry.valid) {
-        toast.success(entry.message);
+        toast.success(message);
       } else {
-        toast.error(entry.message);
+        toast.error(entry.error ? `${message}: ${entry.error}` : message);
       }
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "验证请求失败";
-      toast.error(`${siteName} Cookie 验证失败: ${msg}`);
+      const msg = error instanceof Error ? error.message : t.configForm.cookieCheckRequestFailed;
+      toast.error(t.configForm.cookieCheckFailed(siteName, msg));
     } finally {
       setChecking(false);
     }
@@ -418,26 +409,18 @@ function CookieValidateButton({ fieldKey }: { fieldKey: string }) {
     <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleCheck} disabled={checking}>
       {checking ? (
         <>
-          <Loader2 className="h-3 w-3 mr-1 animate-spin" /> 验证中...
+          <Loader2 className="h-3 w-3 mr-1 animate-spin" /> {t.configForm.verifying}
         </>
       ) : (
-        "验证 Cookie"
+        t.configForm.verifyCookie
       )}
     </Button>
   );
 }
 
-export function CookieFieldWrapper({
-  name,
-  label,
-  description,
-}: {
-  name: string;
-  label: string;
-  description?: string;
-}) {
+export function CookieFieldWrapper({ name, description }: { name: FieldKey; description?: string }) {
   return (
-    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="debounce">
+    <BaseField name={name} description={description} layout="vertical" commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field} commitOnEnter={false}>
           {(control) => (
@@ -469,17 +452,9 @@ export function CookieFieldWrapper({
 
 // ── Prompt (multi-line) ──
 
-export function PromptFieldWrapper({
-  name,
-  label,
-  description,
-}: {
-  name: string;
-  label: string;
-  description?: string;
-}) {
+export function PromptFieldWrapper({ name, description }: { name: FieldKey; description?: string }) {
   return (
-    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="debounce">
+    <BaseField name={name} description={description} layout="vertical" commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field} commitOnEnter={false}>
           {(control) => (
@@ -505,21 +480,19 @@ export function PromptFieldWrapper({
 
 export function PathFieldWrapper({
   name,
-  label,
   description,
   isDirectory,
   disabled,
   rules,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   isDirectory?: boolean;
   disabled?: boolean;
   rules?: RegisterOptions;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="immediate" rules={rules}>
+    <BaseField name={name} description={description} commitMode="immediate" rules={rules}>
       {(field) => (
         <fieldset disabled={disabled} className="w-[450px] disabled:opacity-50">
           <ServerPathField field={field} isDirectory={isDirectory} />
@@ -529,17 +502,9 @@ export function PathFieldWrapper({
   );
 }
 
-export function PathArrayFieldWrapper({
-  name,
-  label,
-  description,
-}: {
-  name: string;
-  label: string;
-  description?: string;
-}) {
+export function PathArrayFieldWrapper({ name, description }: { name: FieldKey; description?: string }) {
   return (
-    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="immediate">
+    <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
       {(field) => <PathArrayField field={field} />}
     </BaseField>
   );
@@ -547,17 +512,9 @@ export function PathArrayFieldWrapper({
 
 // ── Duration ──
 
-export function DurationFieldWrapper({
-  name,
-  label,
-  description,
-}: {
-  name: string;
-  label: string;
-  description?: string;
-}) {
+export function DurationFieldWrapper({ name, description }: { name: FieldKey; description?: string }) {
   return (
-    <BaseField name={name} label={label} description={description} commitMode="debounce">
+    <BaseField name={name} description={description} commitMode="debounce">
       {(field) => <DurationField field={field} />}
     </BaseField>
   );
@@ -567,19 +524,17 @@ export function DurationFieldWrapper({
 
 export function ChipArrayFieldWrapper({
   name,
-  label,
   description,
   options,
   showBulkActions,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   options?: ChipArrayOption[];
   showBulkActions?: boolean;
 }) {
   return (
-    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="immediate">
+    <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
       {(field) => <ChipArrayField field={field} options={options} showBulkActions={showBulkActions} />}
     </BaseField>
   );
@@ -587,17 +542,15 @@ export function ChipArrayFieldWrapper({
 
 export function OrderedSiteFieldWrapper({
   name,
-  label,
   description,
   options,
 }: {
-  name: string;
-  label: string;
+  name: FieldKey;
   description?: string;
   options: string[];
 }) {
   return (
-    <BaseField name={name} label={label} description={description} layout="vertical" commitMode="immediate">
+    <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
       {(field) => <OrderedSiteField field={field} options={options} />}
     </BaseField>
   );
@@ -605,12 +558,23 @@ export function OrderedSiteFieldWrapper({
 
 // ── Shortcut ──
 
-export function ShortcutField({ name, label, description }: { name: string; label: string; description?: string }) {
+export function ShortcutField({ name, description }: { name: FieldKey; description?: string }) {
+  const t = useT();
   return (
-    <BaseField name={name} label={label} description={description} commitMode="immediate">
+    <BaseField name={name} description={description} commitMode="immediate">
       {(field) => (
         <FormControl>
-          <ShortcutInput value={field.value as string} onChange={field.onChange} className="w-[320px] justify-end" />
+          <ShortcutInput
+            value={field.value as string}
+            onChange={field.onChange}
+            className="w-[320px] justify-end"
+            labels={{
+              recording: t.common.shortcutRecording,
+              unset: t.common.shortcutUnset,
+              change: t.common.shortcutChange,
+              clear: t.common.clear,
+            }}
+          />
         </FormControl>
       )}
     </BaseField>

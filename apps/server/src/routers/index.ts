@@ -198,7 +198,7 @@ export const appRouter = t.router({
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);
-      if (!file) throw new Error("影片缺少展示文件");
+      if (!file) throw new Error("Movie has no display file");
       return await ctx.services.scans.start(file.rootId);
     }),
   }),

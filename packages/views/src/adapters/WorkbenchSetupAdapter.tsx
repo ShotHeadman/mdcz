@@ -15,6 +15,7 @@ import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { getT } from "../i18n";
 import type { PathAutocompleteResult } from "../path";
 import { WorkbenchSetupView } from "../workbench";
 
@@ -194,7 +195,7 @@ export function WorkbenchSetupAdapter({
   useEffect(() => {
     return () => {
       scanRequestRef.current += 1;
-      void stopPreview().catch((error) => toast.error(`取消扫描失败: ${toErrorMessage(error)}`));
+      void stopPreview().catch((error) => toast.error(getT().workbench.cancelScanFailed(toErrorMessage(error))));
       if (useWorkbenchSetupStore.getState().scanStatus === "scanning")
         useWorkbenchSetupStore.setState({ scanStatus: "idle" });
     };
@@ -217,7 +218,7 @@ export function WorkbenchSetupAdapter({
         );
       }
     } catch (error) {
-      toast.error(`选择扫描目录失败: ${toErrorMessage(error)}`);
+      toast.error(getT().workbench.selectScanDirFailed(toErrorMessage(error)));
     }
   };
 
@@ -229,7 +230,7 @@ export function WorkbenchSetupAdapter({
       }
       setTargetDir(selectedPath);
     } catch (error) {
-      toast.error(`选择目标目录失败: ${toErrorMessage(error)}`);
+      toast.error(getT().workbench.selectOutputDirFailed(toErrorMessage(error)));
     }
   };
 
@@ -243,7 +244,7 @@ export function WorkbenchSetupAdapter({
     try {
       if (!previewMode) {
         if (!isAbsoluteHostPath(scanDir)) {
-          setDirectoryError("请输入完整路径");
+          setDirectoryError(getT().workbench.enterFullPath);
           return;
         }
         setDirectoryError("");

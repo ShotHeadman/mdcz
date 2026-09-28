@@ -1,6 +1,5 @@
 import type { ServiceContainer } from "@main/container";
 import { ScraperServiceError } from "@main/services/scraper";
-import type { StartScrapeResult } from "@main/services/scraper/ScraperService";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { scrapeConfirmUncensoredInputSchema } from "@mdcz/shared/serverDtos";
@@ -15,7 +14,6 @@ import {
 } from "../payloads";
 import { t } from "../shared";
 
-const withLaunchMessage = (result: StartScrapeResult, message: string) => ({ ...result, message });
 const toScraperServiceIpcError = (error: unknown) => {
   if (error instanceof ScraperServiceError) {
     return createIpcError(error.code, error.message);
@@ -45,27 +43,16 @@ export const createScraperHandlers = (
       .input(scraperGetStatusInputSchema)
       .action(async ({ input }) => scraperService.getSnapshot(input.taskId)),
     [IpcChannel.Scraper_Start]: t.procedure.input(scraperStartInputSchema).action(({ input }) =>
-      withIpcErrorHandling(
-        "start scraper",
-        async () => {
-          return withLaunchMessage(
-            await scraperService.start(input),
-            input.mode === "directory"
-              ? "目录刮削任务已提交"
-              : input.mode === "selection"
-                ? "已启动选中文件刮削"
-                : "单文件刮削任务已启动",
-          );
-        },
-        { mapError: toScraperServiceIpcError },
-      ),
+      withIpcErrorHandling("start scraper", async () => await scraperService.start(input), {
+        mapError: toScraperServiceIpcError,
+      }),
     ),
     [IpcChannel.Scraper_StartSinglePath]: t.procedure
       .input(scraperStartSinglePathInputSchema)
       .action(({ input }) =>
         withIpcErrorHandling(
           "start single-file scraper",
-          async () => withLaunchMessage(await scraperService.startFromNativePath(input.path), "单文件刮削任务已启动"),
+          async () => await scraperService.startFromNativePath(input.path),
           { mapError: toScraperServiceIpcError },
         ),
       ),
@@ -89,24 +76,15 @@ export const createScraperHandlers = (
         return { success: true as const };
       }),
     ),
-    [IpcChannel.Scraper_RerunDirectory]: t.procedure
-      .input(scraperRerunDirectoryInputSchema)
-      .action(({ input }) =>
-        withIpcErrorHandling(
-          "rerun directory",
-          async () => withLaunchMessage(await scraperService.rerunDirectory(input.runId), "已重新启动目录扫描"),
-          { mapError: toScraperServiceIpcError },
-        ),
-      ),
+    [IpcChannel.Scraper_RerunDirectory]: t.procedure.input(scraperRerunDirectoryInputSchema).action(({ input }) =>
+      withIpcErrorHandling("rerun directory", async () => await scraperService.rerunDirectory(input.runId), {
+        mapError: toScraperServiceIpcError,
+      }),
+    ),
     [IpcChannel.Scraper_Retry]: t.procedure.input(scraperRetryInputSchema).action(({ input }) =>
-      withIpcErrorHandling(
-        "retry files",
-        async () => {
-          const result = await scraperService.retry(input.runId, input.itemIds);
-          return withLaunchMessage(result, `已启动重试（共 ${result.totalFiles} 个文件）`);
-        },
-        { mapError: toScraperServiceIpcError },
-      ),
+      withIpcErrorHandling("retry files", async () => await scraperService.retry(input.runId, input.itemIds), {
+        mapError: toScraperServiceIpcError,
+      }),
     ),
     [IpcChannel.Scraper_ConfirmUncensored]: t.procedure.input(scrapeConfirmUncensoredInputSchema).action(({ input }) =>
       withIpcErrorHandling("confirm uncensored items", async () => await scraperService.confirmUncensored(input), {

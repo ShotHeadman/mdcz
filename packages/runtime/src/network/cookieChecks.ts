@@ -1,12 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { NetworkCookieCheckStatus } from "@mdcz/shared/serverDtos";
-import {
-  classifyJavbusPage,
-  JAVBUS_HOME_URL,
-  JAVBUS_REQUEST_HEADERS,
-  javbusVerificationGuidance,
-  toErrorMessage,
-} from "../shared";
+import { classifyJavbusPage, JAVBUS_HOME_URL, JAVBUS_REQUEST_HEADERS, toErrorMessage } from "../shared";
 
 interface CookieCheckNetworkClient {
   getText(url: string, init?: { headers?: Record<string, string> }): Promise<string>;
@@ -15,8 +9,8 @@ interface CookieCheckNetworkClient {
 export interface CookieCheckResult {
   site: string;
   valid: boolean;
-  message: string;
   status: NetworkCookieCheckStatus;
+  error?: string;
 }
 
 const toCookieSafeErrorMessage = (error: unknown, cookie: string): string => {
@@ -32,32 +26,31 @@ const toCookieSafeErrorMessage = (error: unknown, cookie: string): string => {
   return message;
 };
 
+const cookieCheckResult = (site: string, status: NetworkCookieCheckStatus): CookieCheckResult => ({
+  site,
+  valid: status === "ready_with_cookie" || status === "ready_without_cookie",
+  status,
+});
+
+const requestFailed = (site: string, error: unknown, cookie: string): CookieCheckResult => ({
+  ...cookieCheckResult(site, "request_failed"),
+  error: toCookieSafeErrorMessage(error, cookie),
+});
+
 const checkJavdbCookie = async (
   cookie: string,
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
-  if (!cookie) {
-    return { site: "JavDB", valid: false, message: "未配置 Cookie", status: "not_configured" };
-  }
+  if (!cookie) return cookieCheckResult("JavDB", "not_configured");
 
   try {
     const html = await networkClient.getText("https://javdb.com/users/profile", {
       headers: { cookie },
     });
     const valid = !html.includes('href="/login"') && !html.includes("sign_in");
-    return {
-      site: "JavDB",
-      valid,
-      message: valid ? "Cookie 有效" : "Cookie 无效或已过期",
-      status: valid ? "ready_with_cookie" : "invalid_or_expired",
-    };
+    return cookieCheckResult("JavDB", valid ? "ready_with_cookie" : "invalid_or_expired");
   } catch (error) {
-    return {
-      site: "JavDB",
-      valid: false,
-      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
-      status: "request_failed",
-    };
+    return requestFailed("JavDB", error, cookie);
   }
 };
 
@@ -73,47 +66,10 @@ const checkJavbusCookie = async (
       },
     });
     const page = classifyJavbusPage(html);
-
-    if (page === "content") {
-      return {
-        site: "JavBus",
-        valid: true,
-        message: cookie ? "JavBus Cookie 有效" : "JavBus 影片页面可匿名访问，无需 Cookie",
-        status: cookie ? "ready_with_cookie" : "ready_without_cookie",
-      };
-    }
-
-    if (page === "verification_required") {
-      return {
-        site: "JavBus",
-        valid: false,
-        message: javbusVerificationGuidance,
-        status: "verification_required",
-      };
-    }
-
-    if (page === "login_wall") {
-      return {
-        site: "JavBus",
-        valid: false,
-        message: "JavBus 影片页面返回登录墙，当前 Cookie 无法访问影片内容。",
-        status: "login_wall",
-      };
-    }
-
-    return {
-      site: "JavBus",
-      valid: false,
-      message: "JavBus 影片页面未返回可识别内容，请稍后重试。",
-      status: "unexpected_page",
-    };
+    if (page === "content") return cookieCheckResult("JavBus", cookie ? "ready_with_cookie" : "ready_without_cookie");
+    return cookieCheckResult("JavBus", page === "unknown" ? "unexpected_page" : page);
   } catch (error) {
-    return {
-      site: "JavBus",
-      valid: false,
-      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
-      status: "request_failed",
-    };
+    return requestFailed("JavBus", error, cookie);
   }
 };
 
@@ -121,47 +77,25 @@ const checkFantiaCookie = async (
   cookie: string,
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
-  if (!cookie) {
-    return { site: "Fantia", valid: false, message: "未配置 Cookie", status: "not_configured" };
-  }
+  if (!cookie) return cookieCheckResult("Fantia", "not_configured");
 
   try {
     const html = await networkClient.getText("https://fantia.jp/mypage/dashboard", {
       headers: { cookie },
     });
     if (html.includes("外部サービスでログイン") || /type=["']password["']/iu.test(html)) {
-      return { site: "Fantia", valid: false, message: "Cookie 无效或已过期", status: "invalid_or_expired" };
+      return cookieCheckResult("Fantia", "invalid_or_expired");
     }
-
     if (
       html.includes("あなたは18歳以上ですか？") ||
       html.includes("成人向けの画像、動画、テキストなどが表示される可能性があります")
     ) {
-      return {
-        site: "Fantia",
-        valid: false,
-        message: "Fantia 页面需要完成年龄验证。请在浏览器完成验证后复制 Cookie。",
-        status: "verification_required",
-      };
+      return cookieCheckResult("Fantia", "verification_required");
     }
-
-    if (/href=["']\/mypage\/dashboard["']/iu.test(html)) {
-      return { site: "Fantia", valid: true, message: "Cookie 有效", status: "ready_with_cookie" };
-    }
-
-    return {
-      site: "Fantia",
-      valid: false,
-      message: "Fantia 页面未返回可识别的登录状态，请稍后重试。",
-      status: "unexpected_page",
-    };
+    if (/href=["']\/mypage\/dashboard["']/iu.test(html)) return cookieCheckResult("Fantia", "ready_with_cookie");
+    return cookieCheckResult("Fantia", "unexpected_page");
   } catch (error) {
-    return {
-      site: "Fantia",
-      valid: false,
-      message: `请求失败: ${toCookieSafeErrorMessage(error, cookie)}`,
-      status: "request_failed",
-    };
+    return requestFailed("Fantia", error, cookie);
   }
 };
 

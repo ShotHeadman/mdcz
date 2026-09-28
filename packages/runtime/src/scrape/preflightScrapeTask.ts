@@ -24,7 +24,7 @@ export class ScrapeTargetConflictError extends Error {
   constructor(readonly conflicts: readonly ScrapeTargetConflict[]) {
     super(
       conflicts
-        .map((conflict) => `${conflict.message}\n待处理：${conflict.sourcePath}\n目标路径：${conflict.targetPath}`)
+        .map((conflict) => `${conflict.message}\nPending: ${conflict.sourcePath}\nTarget path: ${conflict.targetPath}`)
         .join("\n\n"),
     );
     this.name = "ScrapeTargetConflictError";
@@ -96,8 +96,8 @@ export async function checkScrapeTargets(
     if (distinctSources.size < 2) continue;
     const message =
       new Set(siblings.map(({ group }) => group)).size === 1
-        ? "同一影片的多个视频目标文件名重复，请调整命名规则以区分这些视频"
-        : "多部影片目标文件名重复";
+        ? "Multiple video target filenames for the same movie are identical; please adjust naming rules to distinguish these videos"
+        : "Multiple movies have identical target filenames";
     for (const { member } of siblings) addConflict(conflicts, member, member.targetVideoPath, message);
   }
 
@@ -116,7 +116,7 @@ export async function checkScrapeTargets(
       }
       for (const { member } of matches) {
         if (sources.get(member.itemId) === filesystemPathKey(targetPath)) continue;
-        addConflict(conflicts, member, targetPath, "目标目录已存在同名影片");
+        addConflict(conflicts, member, targetPath, "Target directory already contains a movie with the same name");
       }
     }
   }
@@ -124,13 +124,15 @@ export async function checkScrapeTargets(
   for (const [path, owners] of artifacts) {
     const distinctGroups = [...new Map(owners.map((owner) => [owner.group, owner])).values()];
     if (distinctGroups.length > 1) {
-      for (const owner of distinctGroups) markGroup(conflicts, owner.group, owner.path, "多部影片生成文件路径冲突");
+      for (const owner of distinctGroups)
+        markGroup(conflicts, owner.group, owner.path, "Generated file paths for multiple movies conflict");
     }
     const video = videos.get(path);
     if (video && distinctGroups.some((owner) => owner.group !== video.group)) {
-      markGroup(conflicts, video.group, video.member.targetVideoPath, "生成文件与视频文件名冲突");
+      markGroup(conflicts, video.group, video.member.targetVideoPath, "Generated file conflicts with video filename");
       for (const owner of distinctGroups) {
-        if (owner.group !== video.group) markGroup(conflicts, owner.group, owner.path, "生成文件与视频文件名冲突");
+        if (owner.group !== video.group)
+          markGroup(conflicts, owner.group, owner.path, "Generated file conflicts with video filename");
       }
     }
   }

@@ -517,7 +517,7 @@ export class ScrapeRunner {
   async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<UncensoredConfirmResponse> {
     const configuration = await this.deps.getConfiguration();
     if (!configuration.download.generateNfo)
-      throw new ScrapeRunnerError("INVALID_ARGUMENT", "已关闭 NFO 生成功能，无法确认无码类型");
+      throw new ScrapeRunnerError("INVALID_ARGUMENT", "NFO generation is disabled; cannot confirm uncensored type");
     const selected = new Map<
       string,
       { entry: Awaited<ReturnType<LibraryRepository["getEntryById"]>>; choice: UncensoredChoice }
@@ -525,7 +525,8 @@ export class ScrapeRunner {
     for (const item of input.items) {
       const entry = await this.deps.persistence.library.getEntryByFileId(item.fileId);
       const previous = selected.get(entry.id);
-      if (previous && previous.choice !== item.choice) throw new Error("同一影片不能选择不同的无码类型");
+      if (previous && previous.choice !== item.choice)
+        throw new Error("Cannot select different uncensored types for the same movie");
       selected.set(entry.id, { entry, choice: item.choice });
     }
     const roots = await this.deps.persistence.mediaRoots.listRoots();
@@ -549,7 +550,7 @@ export class ScrapeRunner {
     const updatedItems: UncensoredConfirmResponse["items"] = [];
     for (const { entry, choice } of selected.values()) {
       const root = rootsById.get(entry.files[0]?.rootId ?? "");
-      if (!root) throw new Error("影片缺少有效媒体文件");
+      if (!root) throw new Error("Movie is missing valid media files");
       const result = await maintenance.applyLibraryEntry({
         root,
         presetId: "local_organize",
@@ -580,7 +581,8 @@ export class ScrapeRunner {
           },
         },
       });
-      if (result.status === "failed" || !result.output) throw new Error(result.error ?? "无码确认维护应用失败");
+      if (result.status === "failed" || !result.output)
+        throw new Error(result.error ?? "Failed to apply uncensored confirmation maintenance");
       const updates = new Map<
         string,
         Pick<ScrapeResult, "output" | "nfo" | "assets" | "crawlerData" | "uncensoredAmbiguous">
@@ -749,7 +751,8 @@ export class ScrapeRunner {
     if (!run.disposition || run.disposition === "interrupted") {
       throw new Error(`Only completed, failed, or stopped scrape runs can be retried: ${run.id}`);
     }
-    if (!run.manifestFixedAt) throw new Error("目录文件列表尚未生成，无法重试，请重新扫描目录");
+    if (!run.manifestFixedAt)
+      throw new Error("Directory file list has not been generated; cannot retry, please rescan directory");
     if (itemIds) {
       if (itemIds.length === 0) throw new Error(`Scrape retry requires at least one item: ${run.id}`);
       const unknownItemId = itemIds.find((itemId) => !run.items.some((item) => item.id === itemId));
@@ -813,7 +816,7 @@ export class ScrapeRunner {
 
   private failedOrSkippedItemIds(runId: string): string[] {
     const snapshot = this.terminalSnapshots.get(runId);
-    if (!snapshot) throw new Error("该任务结果已不在本次会话，请重新扫描目录");
+    if (!snapshot) throw new Error("Task results are no longer in this session; please rescan directory");
     return snapshot.items
       .filter((item) => item.status === "failed" || item.status === "skipped")
       .map((item) => item.id);
@@ -921,7 +924,7 @@ export class ScrapeRunner {
         signalService: {
           setProgress: (value, current) => reporter.progress(manifest.items[current - 1]?.id ?? "", value),
           showLogText: () => undefined,
-          showScrapeInfo: () => undefined,
+          showScrapeStep: () => undefined,
           showFailedInfo: () => undefined,
         },
         actorImageService: this.deps.actorImageService,
@@ -996,8 +999,7 @@ export class ScrapeRunner {
                 signalService: {
                   setProgress: (value: number) => reporter.progress(member.id, value),
                   showLogText: (message: string) => this.logger.info(message),
-                  showScrapeInfo: ({ step, fileInfo }) =>
-                    reporter.stage({ itemId: member.id, stage: step, message: fileInfo.fileName }),
+                  showScrapeStep: (step) => reporter.stage({ itemId: member.id, stage: step }),
                   showFailedInfo: ({ error }) => this.logger.warn(error),
                 },
               },

@@ -22,6 +22,7 @@
     "./shell": "./src/shell/index.ts",
     "./tools": "./src/tools/index.ts",
     "./common": "./src/common/index.ts",
+    "./i18n": "./src/i18n/index.ts",
     "./adapters": "./src/adapters/index.ts",
     "./adapters/DetailPanelAdapter": "./src/adapters/DetailPanelAdapter.tsx",
     "./adapters/MaintenanceBatchBarAdapter": "./src/adapters/MaintenanceBatchBarAdapter.tsx",

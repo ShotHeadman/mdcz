@@ -1,5 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import type { SiteConnectivityProbeResponse } from "@mdcz/shared/serverDtos";
 import { buildCrawlerOptions } from "../scrape/crawlerOptions";
 import { toErrorMessage } from "../shared";
 
@@ -50,16 +51,6 @@ const appendCookie = (headers: Record<string, string>, cookie: string | undefine
   headers.cookie = headers.cookie ? `${headers.cookie}; ${normalized}` : normalized;
 };
 
-const formatLatency = (latencyMs: number): string => `${Math.max(0, Math.trunc(latencyMs))}ms`;
-
-export interface SiteConnectivityProbeResult {
-  ok: boolean;
-  message: string;
-  latencyMs: number;
-  status?: number;
-  resolvedUrl?: string;
-}
-
 export const resolveSiteConnectivityTargetUrl = (site: Website): string => DEFAULT_SITE_CONNECTIVITY_URLS[site];
 
 export const buildSiteConnectivityHeaders = (site: Website, configuration: Configuration): Record<string, string> => {
@@ -82,7 +73,7 @@ export const probeSiteConnectivity = async (
   site: Website,
   configuration: Configuration,
   networkClient: SiteConnectivityNetworkClient,
-): Promise<SiteConnectivityProbeResult> => {
+): Promise<SiteConnectivityProbeResponse> => {
   const url = resolveSiteConnectivityTargetUrl(site);
   const headers = buildSiteConnectivityHeaders(site, configuration);
   const timeout = Math.max(1, Math.trunc(configuration.network.timeout * 1000));
@@ -93,23 +84,13 @@ export const probeSiteConnectivity = async (
       timeout,
       headers,
     });
-    const latencyMs = Date.now() - startedAt;
-    const baseMessage = `HTTP ${result.status} · ${formatLatency(latencyMs)}`;
-
     return {
       ok: result.ok,
-      message: result.ok ? baseMessage : `连接异常 · ${baseMessage}`,
-      latencyMs,
+      latencyMs: Date.now() - startedAt,
       status: result.status,
       resolvedUrl: result.resolvedUrl,
     };
   } catch (error) {
-    const latencyMs = Date.now() - startedAt;
-
-    return {
-      ok: false,
-      message: `请求失败: ${toErrorMessage(error)}`,
-      latencyMs,
-    };
+    return { ok: false, latencyMs: Date.now() - startedAt, error: toErrorMessage(error) };
   }
 };

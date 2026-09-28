@@ -63,7 +63,7 @@ export class UpdateService {
     const result = await this.checkForUpdate();
     if (result.hasUpdate && result.latestVersion) {
       signalService.showLogText(
-        `🔔 发现新版本 v${result.latestVersion}，当前版本 v${result.currentVersion}。请前往 GitHub 下载更新。`,
+        `🔔 New version v${result.latestVersion} found (current v${result.currentVersion}). Please visit GitHub to download the update.`,
       );
     }
   }

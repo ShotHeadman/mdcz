@@ -100,7 +100,7 @@ export class AutomationService {
           status: run.disposition,
           startedAt: run.startedAt,
           completedAt: run.completedAt,
-          summary: `刮削 ${run.rootDisplayName || run.rootId}: ${run.disposition}`,
+          summary: `Scrape ${run.rootDisplayName || run.rootId}: ${run.disposition}`,
           errors: run.error ? [run.error] : [],
         },
       })),
@@ -135,12 +135,12 @@ export class AutomationService {
   private summary(task: TaskLifecycleEvent): string {
     const target = task.rootDisplayName || task.rootId;
     if (task.kind === "scan") {
-      return `扫描 ${target}: ${task.status}`;
+      return `Scan ${target}: ${task.status}`;
     }
     if (task.kind === "scrape") {
-      return `刮削 ${target}: ${task.status}`;
+      return `Scrape ${target}: ${task.status}`;
     }
-    return `维护 ${target}: ${task.status}`;
+    return `Maintenance ${target}: ${task.status}`;
   }
 
   private enqueueWebhook(task: TaskLifecycleEvent): void {

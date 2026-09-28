@@ -1,4 +1,5 @@
 import type { OverviewRecentAcquisitionItem } from "@mdcz/shared/ipc-contracts/overviewContract";
+import { getT } from "@mdcz/views/i18n";
 import {
   RecentAcquisitionRemoveDialog,
   RecentAcquisitionsGrid as SharedRecentAcquisitionsGrid,
@@ -48,33 +49,33 @@ export function RecentAcquisitionsGrid() {
 async function removeRecentAcquisition(item: OverviewRecentAcquisitionItem, onSuccess: () => void) {
   try {
     await ipc.overview.removeRecentAcquisition(item.id);
-    toast.success("已从最近入库移除");
+    toast.success(getT().desktop.removedFromRecent);
     onSuccess();
   } catch {
-    toast.error("移除最近入库记录失败");
+    toast.error(getT().desktop.removeFromRecentFailed);
   }
 }
 
 async function openRecentAcquisition(item: OverviewRecentAcquisitionItem) {
   if (!item.lastKnownPath) {
-    toast.info("无已知路径");
+    toast.info(getT().desktop.noKnownPath);
     return;
   }
 
   try {
     const result = await ipc.file.exists(item.lastKnownPath);
     if (!result.exists) {
-      toast.error("文件已移动或删除,无法定位原位置");
+      toast.error(getT().desktop.fileMovedOrDeleted);
       return;
     }
   } catch {
-    toast.error("文件已移动或删除,无法定位原位置");
+    toast.error(getT().desktop.fileMovedOrDeleted);
     return;
   }
 
   try {
     await ipc.app.showItemInFolder(item.lastKnownPath);
   } catch {
-    toast.error("无法打开系统文件管理器");
+    toast.error(getT().desktop.cannotOpenFileExplorer);
   }
 }

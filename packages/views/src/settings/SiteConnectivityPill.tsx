@@ -4,33 +4,24 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
+import { getT, useT } from "../i18n";
 import { useSettingsInFlightSaves, useSettingsServices } from "./SettingsServices";
 
 type ConnectivityState =
-  | { kind: "idle"; message: string }
-  | { kind: "loading"; message: string }
-  | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
+  | { kind: "idle"; configChanged: boolean }
+  | { kind: "loading" }
+  | { kind: "success" | "error"; message: string };
 
 interface SiteConnectivityPillProps {
   site: Website;
 }
 
-const STATUS_LABELS: Record<ConnectivityState["kind"], string> = {
-  idle: "",
-  loading: "检测中",
-  success: "正常",
-  error: "异常",
-};
-
 export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
+  const t = useT();
   const form = useFormContext<FieldValues>();
   const services = useSettingsServices();
   const inFlightSaves = useSettingsInFlightSaves();
-  const [state, setState] = useState<ConnectivityState>({
-    kind: "idle",
-    message: "尚未检测站点连通性",
-  });
+  const [state, setState] = useState<ConnectivityState>({ kind: "idle", configChanged: false });
   const hasMountedRef = useRef(false);
   const requestVersionRef = useRef(0);
 
@@ -64,19 +55,13 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
     }
 
     requestVersionRef.current += 1;
-    setState({
-      kind: "idle",
-      message: "配置已变更，请重新检测",
-    });
+    setState({ kind: "idle", configChanged: true });
   }, [probeDependencyKey]);
 
   const handleProbe = async () => {
     const requestVersion = requestVersionRef.current + 1;
     requestVersionRef.current = requestVersion;
-    setState({
-      kind: "loading",
-      message: "正在检测站点连通性",
-    });
+    setState({ kind: "loading" });
 
     try {
       const result = await services.probeSiteConnectivity(site);
@@ -84,9 +69,13 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
         return;
       }
 
+      const text = getT().settings.siteConnectivity;
       setState({
         kind: result.ok ? "success" : "error",
-        message: result.message,
+        message:
+          result.status === undefined
+            ? `${text.requestFailed}: ${result.error}`
+            : text.httpResult(result.ok, result.status, Math.max(0, Math.trunc(result.latencyMs))),
       });
     } catch (error) {
       if (requestVersionRef.current !== requestVersion) {
@@ -101,7 +90,16 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
   };
 
   const disabled = state.kind === "loading" || inFlightSaves > 0;
-  const disabledTitle = inFlightSaves > 0 ? "等待自动保存完成后再测试" : state.message;
+  const text = t.settings.connectivity;
+  const message =
+    state.kind === "idle"
+      ? state.configChanged
+        ? text.configChanged
+        : text.notChecked
+      : state.kind === "loading"
+        ? text.checking
+        : state.message;
+  const disabledTitle = inFlightSaves > 0 ? text.waitForAutosave : message;
 
   return (
     <div className="flex items-center gap-2">
@@ -114,10 +112,10 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
         title={disabledTitle}
         className="rounded-[var(--radius-quiet-capsule)] px-2.5 text-[11px] text-muted-foreground hover:text-foreground"
       >
-        测试
+        {text.test}
       </Button>
       <span
-        title={state.message}
+        title={message}
         hidden={state.kind === "idle"}
         className={cn(
           "inline-flex min-w-[64px] items-center justify-center gap-1 rounded-[var(--radius-quiet-capsule)] px-2.5 py-1 text-[11px] font-medium",
@@ -127,7 +125,7 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
         )}
       >
         {state.kind === "loading" && <Loader2 className="h-3 w-3 animate-spin" />}
-        <span>{STATUS_LABELS[state.kind]}</span>
+        <span>{text.status[state.kind]}</span>
       </span>
     </div>
   );

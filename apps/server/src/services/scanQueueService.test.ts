@@ -124,8 +124,16 @@ describe("ScanQueueService", () => {
     await service.recoverInterrupted();
 
     expect([...tasks.values()]).toEqual([
-      expect.objectContaining({ id: "queued", status: "failed", error: expect.stringContaining("后端已重启") }),
-      expect.objectContaining({ id: "running", status: "failed", error: expect.stringContaining("后端已重启") }),
+      expect.objectContaining({
+        id: "queued",
+        status: "failed",
+        error: expect.stringContaining("Scan backend restarted"),
+      }),
+      expect.objectContaining({
+        id: "running",
+        status: "failed",
+        error: expect.stringContaining("Scan backend restarted"),
+      }),
     ]);
     expect(lifecycle).toHaveBeenCalledTimes(2);
     await service.close();

@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@mdcz/shared/toolCatalog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, Label } from "@mdcz/ui";
 import { Bug, FileSearch, FileText, FolderOpen, Languages, Link2, Search, ShoppingCart, UserCheck } from "lucide-react";
 import type { ReactNode } from "react";
+import { useT } from "../i18n";
 
 export const ToolCardIcon = ({ icon }: { icon: ToolDefinition["overviewIcon"] }) => {
   const iconClassName = "h-8 w-8";
@@ -33,24 +34,31 @@ const ToolDetailIcon = ({ toolId }: { toolId: ToolDefinition["id"] }) => {
   return <Search className={iconClassName} />;
 };
 
-export const ToolShell = ({ tool, children }: { tool: ToolDefinition; children: ReactNode }) => (
-  <Card className="rounded-quiet-lg border-none bg-surface-floating/96 py-0 shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
-    <CardHeader className="px-6 pt-6 pb-0 md:px-7">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-low text-foreground">
-            <ToolDetailIcon toolId={tool.id} />
-          </div>
-          <div className="min-w-0">
-            <CardTitle className="text-lg font-semibold tracking-tight">{tool.detailTitle}</CardTitle>
-            <CardDescription className="mt-1 text-sm leading-6">{tool.detailDescription}</CardDescription>
+export const ToolShell = ({ tool, children }: { tool: ToolDefinition; children: ReactNode }) => {
+  const t = useT();
+  return (
+    <Card className="rounded-quiet-lg border-none bg-surface-floating/96 py-0 shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
+      <CardHeader className="px-6 pt-6 pb-0 md:px-7">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-low text-foreground">
+              <ToolDetailIcon toolId={tool.id} />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="text-lg font-semibold tracking-tight">
+                {t.toolCatalog[tool.id].detailTitle}
+              </CardTitle>
+              <CardDescription className="mt-1 text-sm leading-6">
+                {t.toolCatalog[tool.id].detailDescription}
+              </CardDescription>
+            </div>
           </div>
         </div>
-      </div>
-    </CardHeader>
-    <CardContent className="space-y-6 px-6 py-6 md:px-7 md:py-7">{children}</CardContent>
-  </Card>
-);
+      </CardHeader>
+      <CardContent className="space-y-6 px-6 py-6 md:px-7 md:py-7">{children}</CardContent>
+    </Card>
+  );
+};
 
 export const ToolField = ({ label, children }: { label: string; children: ReactNode }) => (
   <div className="grid gap-2">

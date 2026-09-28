@@ -230,8 +230,8 @@ const assertLlmConfiguration = (config: Configuration): void => {
   const apiKey = config.translate.llmApiKey.trim();
   const baseUrl = normalizeLlmBaseUrl(config.translate.llmBaseUrl);
 
-  if (!model) throw new Error("请先配置 LLM 模型名称");
-  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("请先配置 LLM API Key");
+  if (!model) throw new Error("Configure LLM model name first");
+  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("Configure LLM API key first");
 };
 
 const translateChunk = async (
@@ -247,9 +247,10 @@ const translateChunk = async (
     }),
   );
 
-  if (!content) throw new Error("LLM 返回空响应");
+  if (!content) throw new Error("LLM returned an empty response");
   const { translations } = batchTranslationSchema.parse(JSON.parse(content));
-  if (translations.length !== texts.length) throw new Error("LLM 返回的批量翻译数量与输入不一致");
+  if (translations.length !== texts.length)
+    throw new Error("LLM returned a batch translation count that does not match input");
   return translations;
 };
 
@@ -276,7 +277,7 @@ const translatePendingTexts = async (
       chunk.forEach((item, index) => {
         const value = translated[index]?.trim();
         if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
-        else failedReasonByKey.set(item.key, "LLM 返回了空翻译结果");
+        else failedReasonByKey.set(item.key, "LLM returned an empty translation result");
       });
     } catch (error) {
       const message = toErrorMessage(error);
@@ -388,7 +389,7 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: false,
         translatedFields: [],
-        error: "缺少可写回的 NFO 或元数据",
+        error: "Missing writable NFO or metadata",
       });
       continue;
     }
@@ -414,7 +415,7 @@ export const applyBatchNfoTranslations = async (
         translatedFields.push(action.field);
       } else {
         const reason = failedReasonByKey.get(action.key);
-        errors.push(`${action.field === "title" ? "标题" : "简介"}翻译失败${reason ? `：${reason}` : ""}`);
+        errors.push(`${action.field === "title" ? "Title" : "Plot"} translation failed${reason ? `: ${reason}` : ""}`);
       }
     }
 
@@ -423,7 +424,7 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: false,
         translatedFields,
-        error: errors.join("；") || "未生成任何可写回的翻译结果",
+        error: errors.join("; ") || "No writable translation results generated",
       });
       continue;
     }

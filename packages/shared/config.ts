@@ -2,7 +2,7 @@ import { z } from "zod";
 import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES, isSharedDirectoryMode } from "./assetNaming";
-import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UiLanguage, Website } from "./enums";
+import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import {
   DEFAULT_LLM_BASE_URL,
   LLM_API_FORMAT_OPTIONS,
@@ -146,8 +146,23 @@ const downloadSchema = z.object({
   keepNfo: z.boolean().default(true),
 });
 
+/** Custom issue messages are codes so the UI can localize them. */
+export type ConfigIssueCode =
+  | "actorAliasListEmpty"
+  | "actorCanonicalNameEmpty"
+  | "actorAliasListNoValidAlias"
+  | "actorAliasEmpty"
+  | "actorAliasConflict"
+  | "globalTimeoutNotGreater"
+  | "metadataPathNotAbsolute"
+  | "sharedDirectoryAssetNaming"
+  | "sharedDirectoryNfoNaming"
+  | "sharedDirectorySceneImages"
+  | "optionalSegmentPathSeparator"
+  | "jellyfinUserIdNotUuid";
+
 const actorAliasesSchema = z
-  .record(z.string(), z.array(z.string()).min(1, "演员别名列表不能为空"))
+  .record(z.string(), z.array(z.string()).min(1, "actorAliasListEmpty" satisfies ConfigIssueCode))
   .default({})
   .superRefine((actorAliases, ctx) => {
     const owners = new Map<string, { canonicalName: string; rawCanonicalName: string }>();
@@ -158,7 +173,7 @@ const actorAliasesSchema = z
         ctx.addIssue({
           code: "custom",
           path: [rawCanonicalName],
-          message: "演员规范名称不能为空",
+          message: "actorCanonicalNameEmpty" satisfies ConfigIssueCode,
         });
         continue;
       }
@@ -172,7 +187,7 @@ const actorAliasesSchema = z
         ctx.addIssue({
           code: "custom",
           path: [rawCanonicalName],
-          message: "演员别名列表至少需要一个有效别名",
+          message: "actorAliasListNoValidAlias" satisfies ConfigIssueCode,
         });
       }
 
@@ -182,7 +197,7 @@ const actorAliasesSchema = z
         const path = index === 0 ? [rawCanonicalName] : [rawCanonicalName, index - 1];
         if (!name) {
           if (index > 0) {
-            ctx.addIssue({ code: "custom", path, message: "演员别名不能为空" });
+            ctx.addIssue({ code: "custom", path, message: "actorAliasEmpty" satisfies ConfigIssueCode });
           }
           continue;
         }
@@ -193,7 +208,7 @@ const actorAliasesSchema = z
           ctx.addIssue({
             code: "custom",
             path,
-            message: `演员名称与“${owner.canonicalName}”别名组冲突`,
+            message: "actorAliasConflict" satisfies ConfigIssueCode,
           });
           continue;
         }
@@ -233,7 +248,6 @@ const shortcutsSchema = z.object({
 });
 
 const uiSchema = z.object({
-  language: z.enum(UiLanguage).default(UiLanguage.ZH_CN),
   theme: z.enum(ThemeMode).default(ThemeMode.SYSTEM),
   showLogsPanel: z.boolean().default(true),
   hideDock: z.boolean().default(false),
@@ -403,7 +417,7 @@ const aggregationSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["globalTimeoutMs"],
-        message: "全局超时必须大于单爬虫超时",
+        message: "globalTimeoutNotGreater" satisfies ConfigIssueCode,
       });
     }
   });
@@ -437,14 +451,14 @@ export const configurationSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["paths", "metadataPath"],
-        message: "元数据输出目录必须使用绝对路径",
+        message: "metadataPathNotAbsolute" satisfies ConfigIssueCode,
       });
 
     if (sharedDirectoryMode && data.naming.assetNamingMode !== "followVideo") {
       ctx.addIssue({
         code: "custom",
         path: ["naming", "assetNamingMode"],
-        message: "共享目录模式下，附属文件命名必须使用“跟随影片文件名”",
+        message: "sharedDirectoryAssetNaming" satisfies ConfigIssueCode,
       });
     }
 
@@ -452,7 +466,7 @@ export const configurationSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["download", "nfoNaming"],
-        message: "共享目录模式下，NFO 文件命名必须使用“仅 文件名.nfo”",
+        message: "sharedDirectoryNfoNaming" satisfies ConfigIssueCode,
       });
     }
 
@@ -460,7 +474,7 @@ export const configurationSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["download", "downloadSceneImages"],
-        message: "共享目录模式下不支持下载剧照，请关闭“下载剧照”",
+        message: "sharedDirectorySceneImages" satisfies ConfigIssueCode,
       });
     }
 
@@ -475,7 +489,7 @@ export const configurationSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["naming", field],
-        message: "[] 可选段不能包含路径分隔符，请仅在单个路径片段内使用可选内容",
+        message: "optionalSegmentPathSeparator" satisfies ConfigIssueCode,
       });
     }
 
@@ -486,7 +500,7 @@ export const configurationSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["jellyfin", "userId"],
-        message: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
+        message: "jellyfinUserIdNotUuid" satisfies ConfigIssueCode,
       });
     }
   });

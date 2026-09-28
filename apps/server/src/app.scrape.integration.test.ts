@@ -148,7 +148,7 @@ describe("buildServer scrape integration", () => {
     });
     if (kind === "missing") {
       expect(accepted.statusCode).toBe(400);
-      expect(accepted.body).toContain("目录不存在或无法访问");
+      expect(accepted.body).toContain("Directory does not exist or is inaccessible");
       return;
     }
     expect(accepted.statusCode).toBe(200);
@@ -235,7 +235,7 @@ describe("buildServer scrape integration", () => {
       return;
     }
     expect(terminal.task).toMatchObject({ status: "failed", failedCount: 2, skippedCount: 0, successCount: 2 });
-    expect(terminal.task.error).toContain("目标目录已存在同名影片");
+    expect(terminal.task.error).toContain("Target directory already contains a movie with the same name");
     for (const number of ["ABF-981", "XYZ-222"])
       expect(terminal.task.error).toContain(join(root, `JAV_output/fixed/${number}/${number}.mp4`));
     expect(aggregate).toHaveBeenCalledTimes(4);
@@ -244,7 +244,7 @@ describe("buildServer scrape integration", () => {
     expect(await state.repositories.library.getEntryById(entry.id)).toEqual(entry);
     for (const number of ["ABF-981", "XYZ-222"]) {
       expect(terminal.items.find((item) => item.relativePath === `${number}.mp4`)?.error).toBe(
-        `目标目录已存在同名影片\n待处理：${join(root, `${number}.mp4`)}\n目标路径：${join(root, `JAV_output/fixed/${number}/${number}.mp4`)}`,
+        `Target directory already contains a movie with the same name\nPending: ${join(root, `${number}.mp4`)}\nTarget path: ${join(root, `JAV_output/fixed/${number}/${number}.mp4`)}`,
       );
       expect(await readFile(join(root, `${number}.mp4`), "utf8")).toBe(`source ${number}`);
       expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(
@@ -966,7 +966,7 @@ describe("buildServer scrape integration", () => {
 
     if (scenario === "missing" || scenario === "conflicting" || scenario === "commit_failure") {
       expect(confirmResponse.statusCode).toBe(400);
-      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("维护扫描失败");
+      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("Maintenance scan failed");
       expect((await state.repositories.library.getEntryById(originalEntry.id)).files).toEqual(originalEntry.files);
       if (scenario !== "commit_failure")
         await expect(readFile(join(root, primaryFile.rootRelativePath), "utf8")).resolves.toBe("video");

@@ -8,6 +8,7 @@ import { Button, cn, NavButton, Separator, Tooltip, TooltipContent, TooltipTrigg
 import {
   FileText,
   Info,
+  Languages,
   LayoutDashboard,
   Library,
   type LucideIcon,
@@ -23,12 +24,13 @@ import {
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import AppLogo from "../assets/logo.png";
+import { useLocaleStore, useT } from "../i18n";
 import { preloadSettingsExperience } from "../settings";
 import { useTheme } from "./theme";
 
 export interface ShellNavItem {
   icon: LucideIcon;
-  label: string;
+  id: DesktopRouteId;
   to: string;
 }
 
@@ -60,7 +62,7 @@ const SHELL_ROUTE_ICONS: Record<DesktopRouteId, LucideIcon> = {
 
 const toShellNavItem = (route: DesktopRouteDefinition): ShellNavItem => ({
   icon: SHELL_ROUTE_ICONS[route.id],
-  label: route.label,
+  id: route.id,
   to: route.path,
 });
 
@@ -76,12 +78,13 @@ export function AppShell({
   systemNav = SYSTEM_SHELL_NAV,
 }: AppShellProps) {
   const { theme, setTheme } = useTheme();
+  const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const themeMeta = useMemo(() => {
-    if (theme === "light") return { icon: Sun, label: "浅色模式" };
-    if (theme === "dark") return { icon: Moon, label: "深色模式" };
-    return { icon: Monitor, label: "跟随系统" };
-  }, [theme]);
+    if (theme === "light") return { icon: Sun, label: t.shell.themeLight };
+    if (theme === "dark") return { icon: Moon, label: t.shell.themeDark };
+    return { icon: Monitor, label: t.shell.themeSystem };
+  }, [t, theme]);
 
   const cycleTheme = () => {
     setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light");
@@ -135,6 +138,8 @@ function NavContent({
   themeIcon: LucideIcon;
   themeLabel: string;
 }) {
+  const t = useT();
+  const { locale, setLocale } = useLocaleStore();
   return (
     <div className="flex h-full flex-col">
       <div className={cn("flex h-20 shrink-0 items-center", collapsed ? "justify-center px-2" : "gap-2 px-5")}>
@@ -181,6 +186,7 @@ function NavContent({
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              aria-label={themeLabel}
               onClick={onThemeToggle}
             >
               <ThemeIcon />
@@ -194,12 +200,29 @@ function NavContent({
               variant="ghost"
               size="icon"
               className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              aria-label={t.shell.switchLanguage}
+              onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")}
+            >
+              <Languages />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side={collapsed ? "right" : "top"}>{t.shell.switchLanguage}</TooltipContent>
+        </Tooltip>
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+              aria-label={collapsed ? t.shell.expandSidebar : t.shell.collapseSidebar}
               onClick={() => onCollapse(!collapsed)}
             >
               {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent side={collapsed ? "right" : "top"}>{collapsed ? "展开侧栏" : "收起侧栏"}</TooltipContent>
+          <TooltipContent side={collapsed ? "right" : "top"}>
+            {collapsed ? t.shell.expandSidebar : t.shell.collapseSidebar}
+          </TooltipContent>
         </Tooltip>
       </div>
     </div>
@@ -217,7 +240,9 @@ function NavLink({
   item: ShellNavItem;
   linkComponent: (props: ShellLinkProps) => ReactNode;
 }) {
+  const t = useT();
   const Icon = item.icon;
+  const label = t.shell.nav[item.id];
   const preloadOnIntent = () => {
     if (item.to === "/settings") {
       void preloadSettingsExperience();
@@ -232,7 +257,7 @@ function NavLink({
         children: (
           <>
             <Icon className={cn("h-5 w-5", !collapsed && "shrink-0")} strokeWidth={isActive ? 2.5 : 2} />
-            {collapsed ? <span className="sr-only">{item.label}</span> : <span className="truncate">{item.label}</span>}
+            {collapsed ? <span className="sr-only">{label}</span> : <span className="truncate">{label}</span>}
           </>
         ),
       })}
@@ -247,7 +272,7 @@ function NavLink({
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>{link}</TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}>
-        {item.label}
+        {label}
       </TooltipContent>
     </Tooltip>
   );

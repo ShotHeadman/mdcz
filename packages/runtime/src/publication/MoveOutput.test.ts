@@ -195,7 +195,7 @@ describe("MoveOutput", () => {
       for (const occupied of [targetPath, conflictPath]) {
         await writeFile(occupied, "existing");
         await expect(output.install({ moves: [move], artifacts: [], reorganize: true, commit })).rejects.toThrow(
-          "已存在",
+          "already exists",
         );
         expect(commit).not.toHaveBeenCalled();
         await expect(readFile(local.sourcePath, "utf8")).resolves.toBe("video");
@@ -219,7 +219,7 @@ describe("MoveOutput", () => {
         artifacts: [],
         commit: () => undefined,
       }),
-    ).rejects.toThrow("已存在");
+    ).rejects.toThrow("already exists");
     await expect(readFile(test.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.targetPath, "utf8")).resolves.toBe("existing");
     const overlapping = await fixture();
@@ -273,7 +273,7 @@ describe("MoveOutput", () => {
           },
           commit,
         }),
-      ).rejects.toThrow(changed === "source" ? "source changed before mutation" : "已存在");
+      ).rejects.toThrow(changed === "source" ? "source changed before mutation" : "already exists");
       expect(commit).not.toHaveBeenCalled();
       await expect(readFile(pending.sourcePath, "utf8")).resolves.toBe(
         changed === "source" ? "changed after observation" : "video",

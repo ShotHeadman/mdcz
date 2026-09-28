@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
 import { ChevronLeft, ChevronRight, ImageIcon, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useT } from "../i18n";
 
 export type ResolveImageCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
 
@@ -46,10 +47,12 @@ export function SceneImageGallery({
   images,
   maxThumbnails = 10,
   baseDir,
-  label = "预览",
+  label,
   variant = "compact",
   resolveImageCandidates,
 }: SceneImageGalleryProps) {
+  const t = useT();
+  const effectiveLabel = label ?? t.detail.preview;
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const isOpen = lightboxIndex >= 0;
 
@@ -103,7 +106,7 @@ export function SceneImageGallery({
             : "mb-2 text-xs text-muted-foreground"
         }
       >
-        {label}
+        {effectiveLabel}
         {!isFilmstrip ? ` (${images.length})` : ""}
       </div>
 
@@ -175,15 +178,15 @@ export function SceneImageGallery({
           showCloseButton={false}
           className="flex w-fit max-w-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent p-0 shadow-none backdrop-blur-none sm:max-w-none"
         >
-          <DialogTitle className="sr-only">剧照预览</DialogTitle>
+          <DialogTitle className="sr-only">{t.detail.galleryTitle}</DialogTitle>
           <DialogDescription className="sr-only">
-            查看剧照大图预览，当前第 {lightboxIndex + 1} 张，共 {images.length} 张，可使用左右方向键切换。
+            {t.detail.galleryDescription(lightboxIndex + 1, images.length)}
           </DialogDescription>
 
           <button
             type="button"
             onClick={closeLightbox}
-            aria-label="关闭剧照预览"
+            aria-label={t.detail.closePreview}
             className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
           >
             <X className="h-4 w-4" />
@@ -198,7 +201,7 @@ export function SceneImageGallery({
               <button
                 type="button"
                 onClick={goPrev}
-                aria-label="上一张剧照"
+                aria-label={t.detail.previousPhoto}
                 className="absolute top-1/2 left-2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -206,7 +209,7 @@ export function SceneImageGallery({
               <button
                 type="button"
                 onClick={goNext}
-                aria-label="下一张剧照"
+                aria-label={t.detail.nextPhoto}
                 className="absolute top-1/2 right-2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
               >
                 <ChevronRight className="h-5 w-5" />

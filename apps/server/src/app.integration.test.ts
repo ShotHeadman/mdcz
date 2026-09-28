@@ -57,29 +57,28 @@ const createFakeRuntimeActions = (): RuntimeActionService =>
     listCrawlerSites: async () => ({
       sites: [{ site: Website.JAVDB, name: "javdb", enabled: true, native: true }],
     }),
-    probeSiteConnectivity: async (input: { site: Website }) => ({
+    probeSiteConnectivity: async () => ({
       ok: true,
-      message: `HTTP 200 · ${input.site}`,
       latencyMs: 12,
       status: 200,
       resolvedUrl: "https://javdb.com/",
     }),
     checkCookies: async () => ({
       results: [
-        { site: "JavDB", valid: true, message: "Cookie 有效", status: "ready_with_cookie" },
+        { site: "JavDB", valid: true, status: "ready_with_cookie" as const },
         {
           site: "JavBus",
           valid: true,
-          message: "JavBus 影片页面可匿名访问，无需 Cookie",
-          status: "ready_without_cookie",
+          status: "ready_without_cookie" as const,
         },
       ],
     }),
-    testLlm: async (input: { llmModelName?: string }) => ({
-      success: Boolean(input.llmModelName),
-      message: input.llmModelName ? `连接成功，LLM 回复: ${input.llmModelName}` : "请先填写 LLM 模型名称",
-    }),
-  }) as RuntimeActionService;
+    testLlm: async (input: { llmModelName?: string }) =>
+      input.llmModelName ? { status: "ok" as const, sample: input.llmModelName } : { status: "missing_model" as const },
+  }) satisfies Pick<
+    RuntimeActionService,
+    "ensureWatermarkDirectory" | "listCrawlerSites" | "probeSiteConnectivity" | "checkCookies" | "testLlm"
+  > as unknown as RuntimeActionService;
 
 const startWebhookServer = async (): Promise<{
   close: () => Promise<void>;
@@ -158,7 +157,7 @@ describe("buildServer composition integration", () => {
     } finally {
       if (process.platform !== "win32") await chmod(statePath, 0o600);
     }
-    await expect(restartedAuth.login("admin")).rejects.toThrow("管理员密码错误");
+    await expect(restartedAuth.login("admin")).rejects.toThrow("Incorrect administrator password");
     const other = await createTestServer();
     await other.services.auth.completeSetup({
       password: winningPassword,
@@ -209,7 +208,7 @@ describe("buildServer composition integration", () => {
       payload: { password: "another-password" },
     });
     expect(denied.statusCode).toBe(403);
-    await expect(services.auth.login("wrong-password")).rejects.toThrow("管理员密码错误");
+    await expect(services.auth.login("wrong-password")).rejects.toThrow("Incorrect administrator password");
     await expect(services.auth.login(environmentPassword)).resolves.toMatchObject({ authenticated: true });
     await expect(readFile(join(services.config.runtimePaths.configDir, "auth-state.json"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -514,8 +513,8 @@ describe("buildServer composition integration", () => {
     );
     expect(llmResponse.statusCode).toBe(200);
     expect(llmResponse.json().result.data).toMatchObject({
-      success: true,
-      message: expect.stringContaining("gpt-test"),
+      status: "ok",
+      sample: "gpt-test",
     });
     expect(watermarkResponse.statusCode).toBe(200);
     expect(watermarkResponse.json().result.data.path).toBe("/server-data/watermark");
@@ -712,7 +711,7 @@ describe("buildServer composition integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           available: false,
-          availabilityError: expect.stringContaining("文件缺失，仅保留媒体库记录"),
+          availabilityError: expect.stringContaining("File missing; media library record retained only"),
         }),
       ]),
     );
@@ -831,7 +830,7 @@ describe("buildServer composition integration", () => {
       status: "queued",
       startedAt: null,
       completedAt: null,
-      summary: `扫描 ${root.split(/[\\/]+/u).at(-1)}: queued`,
+      summary: `Scan ${root.split(/[\\/]+/u).at(-1)}: queued`,
       errors: [],
     });
     expect(recentResponse.statusCode).toBe(200);
@@ -839,7 +838,7 @@ describe("buildServer composition integration", () => {
       taskId,
       kind: "scan",
       status: "completed",
-      summary: `扫描 ${root.split(/[\\/]+/u).at(-1)}: completed`,
+      summary: `Scan ${root.split(/[\\/]+/u).at(-1)}: completed`,
       errors: [],
     });
     expect(recentResponse.json().tasks[0].completedAt).toEqual(expect.any(String));

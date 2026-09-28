@@ -266,7 +266,7 @@ export class MaintenanceRuntime {
       let imageAlternatives: MaintenanceImageAlternatives = {};
       if (preset.dataSource === "online") {
         if (!this.deps.aggregationService || !this.deps.translateService) {
-          throw new Error("在线预设缺少必要的聚合或翻译服务");
+          throw new Error("Online preset lacks required aggregation or translation services");
         }
         const prepared = await prepareOnlineMetadata({
           number: entry.fileInfo.number,
@@ -480,7 +480,7 @@ export class MaintenanceRuntime {
 
       if (stagingDir && preset.dataSource === "online") {
         if (!this.deps.downloadManager) {
-          throw new Error("在线预设缺少下载服务");
+          throw new Error("Online preset lacks download service");
         }
         const downloaded = await downloadCrawlerAssets({
           config,
@@ -642,7 +642,7 @@ export class MaintenanceRuntime {
     }
 
     if (!crawlerData) {
-      throw new Error("本地 NFO 不存在或无法解析，无法执行后续步骤");
+      throw new Error("Local NFO does not exist or failed to parse; cannot proceed with subsequent steps");
     }
 
     if (preset.output === "write") {

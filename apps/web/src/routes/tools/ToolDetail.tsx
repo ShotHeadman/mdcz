@@ -4,10 +4,11 @@ import type {
   AmazonPosterScanItem,
   BatchTranslateApplyResultItem,
   BatchTranslateScanItem,
-  EmbyConnectionCheckResult,
-  JellyfinConnectionCheckResult,
+  MediaServerConnectionCheckResult,
+  PersonSyncResult,
 } from "@mdcz/shared/ipcTypes";
 import type { ToolId } from "@mdcz/shared/toolCatalog";
+import { useT } from "@mdcz/views/i18n";
 import {
   AmazonPosterWorkspaceDetail,
   BatchNfoTranslatorWorkspaceDetail,
@@ -24,7 +25,7 @@ import { useCallback, useState } from "react";
 import { api, getLibraryAssetSrc } from "../../client";
 import { queryKeys } from "../../lib/queryKeys";
 import { AppLink, ErrorBanner } from "../../routeCommon";
-import { toMediaServerCheckResult, toRunState } from "../toolsController";
+import { toRunState } from "../toolsController";
 
 const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
@@ -63,6 +64,7 @@ const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPat
 };
 
 export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
+  const t = useT();
   const queryClient = useQueryClient();
   const [singleFileRootId, setSingleFileRootId] = useState("");
   const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
@@ -73,10 +75,9 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const [jellyfinPhotoMode, setJellyfinPhotoMode] = useState<PersonSyncMode>("missing");
   const [embyInfoMode, setEmbyInfoMode] = useState<PersonSyncMode>("missing");
   const [embyPhotoMode, setEmbyPhotoMode] = useState<PersonSyncMode>("missing");
-  const [jellyfinCheckResult, setJellyfinCheckResult] = useState<JellyfinConnectionCheckResult | null>(null);
-  const [embyCheckResult, setEmbyCheckResult] = useState<EmbyConnectionCheckResult | null>(null);
-  const [jellyfinMessage, setJellyfinMessage] = useState<string | null>(null);
-  const [embyMessage, setEmbyMessage] = useState<string | null>(null);
+  const [jellyfinCheckResult, setJellyfinCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
+  const [embyCheckResult, setEmbyCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
+  const [lastPersonSync, setLastPersonSync] = useState<{ server: PersonServer; result: PersonSyncResult } | null>(null);
   const rootsQ = useQuery({ queryKey: queryKeys.mediaRoots.list, queryFn: () => api.mediaRoots.list(), retry: false });
   const browserQ = useQuery({
     queryKey: queryKeys.browser.list(singleFileRootId),
@@ -120,7 +121,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
             state={state}
             workbenchLink={
               <AppLink className="text-sm font-medium underline-offset-4 hover:underline" to="/workbench">
-                打开工作台
+                {t.web.openWorkbench}
               </AppLink>
             }
             onRootChange={setSingleFileRootId}
@@ -170,12 +171,8 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
                 executeM.variables.action === "sync-photo" &&
                 executeM.variables.server === "jellyfin",
               progress: 0,
-              infoText:
-                jellyfinInfoMode === "missing"
-                  ? "仅补全缺失的演员简介与基础资料。"
-                  : "按当前抓取结果更新演员简介与基础资料。",
-              photoText:
-                jellyfinPhotoMode === "missing" ? "仅为缺少头像的演员补充头像。" : "按当前抓取结果重新同步演员头像。",
+              infoText: jellyfinInfoMode === "missing" ? t.web.jellyfinInfoMissing : t.web.jellyfinInfoAll,
+              photoText: jellyfinPhotoMode === "missing" ? t.web.jellyfinPhotoMissing : t.web.jellyfinPhotoAll,
             }}
             emby={{
               checkPending: executeM.isPending && executeM.variables?.toolId === "media-library-tools",
@@ -193,24 +190,15 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
                 executeM.variables.action === "sync-photo" &&
                 executeM.variables.server === "emby",
               progress: 0,
-              infoText:
-                embyInfoMode === "missing"
-                  ? "仅补全缺失的演员简介与基础资料，并保留未变更字段。"
-                  : "按当前抓取结果更新演员简介与基础资料，并按同步字段写回 Emby。",
-              photoText:
-                embyPhotoMode === "missing" ? "仅为缺少头像的演员补充头像。" : "按当前抓取结果重新同步演员头像。",
-              photoNotice: "人物头像上传通常需要管理员 API Key。若返回 401 或 403，请改用管理员 API Key 后重试。",
+              infoText: embyInfoMode === "missing" ? t.web.embyInfoMissing : t.web.embyInfoAll,
+              photoText: embyPhotoMode === "missing" ? t.web.embyPhotoMissing : t.web.embyPhotoAll,
+              photoNotice: t.web.photoAdminNotice,
             }}
             onCheck={async (server) => {
               const response = await executeM.mutateAsync({ toolId, server, action: "check", mode: "missing" });
-              const result = toMediaServerCheckResult(server, response);
-              if (server === "jellyfin") {
-                setJellyfinCheckResult(result as JellyfinConnectionCheckResult);
-                setJellyfinMessage(response.message);
-              } else {
-                setEmbyCheckResult(result as EmbyConnectionCheckResult);
-                setEmbyMessage(response.message);
-              }
+              const result = response.data as MediaServerConnectionCheckResult;
+              if (server === "jellyfin") setJellyfinCheckResult(result);
+              else setEmbyCheckResult(result);
             }}
             onInfoModeChange={(server, mode) => {
               if (server === "jellyfin") setJellyfinInfoMode(mode);
@@ -224,17 +212,17 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
             onSyncInfo={async (server) => {
               const mode = server === "jellyfin" ? jellyfinInfoMode : embyInfoMode;
               const response = await executeM.mutateAsync({ toolId, server, action: "sync-info", mode });
-              if (server === "jellyfin") setJellyfinMessage(response.message);
-              else setEmbyMessage(response.message);
+              setLastPersonSync({ server, result: response.data as PersonSyncResult });
             }}
             onSyncPhoto={async (server) => {
               const mode = server === "jellyfin" ? jellyfinPhotoMode : embyPhotoMode;
               const response = await executeM.mutateAsync({ toolId, server, action: "sync-photo", mode });
-              if (server === "jellyfin") setJellyfinMessage(response.message);
-              else setEmbyMessage(response.message);
+              setLastPersonSync({ server, result: response.data as PersonSyncResult });
             }}
           />
-          <p className="text-sm text-muted-foreground">{personServer === "jellyfin" ? jellyfinMessage : embyMessage}</p>
+          {lastPersonSync?.server === personServer ? (
+            <p className="text-sm text-muted-foreground">{t.tools.personSyncSummary(lastPersonSync.result)}</p>
+          ) : null}
         </>
       )}
       {toolId === "amazon-poster" && (

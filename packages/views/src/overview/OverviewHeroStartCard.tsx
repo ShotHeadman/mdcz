@@ -1,6 +1,7 @@
 import { formatBytes } from "@mdcz/shared/format";
 import { Button, cn } from "@mdcz/ui";
 import { FolderCog, Play, Telescope } from "lucide-react";
+import { useT } from "../i18n";
 
 export interface OverviewHeroStartCardProps {
   className?: string;
@@ -26,10 +27,13 @@ export function OverviewHeroStartCard({
   hasConfiguredOutput = false,
   isError = false,
   isLoading = false,
-  labels = { startAction: "去工作台", setupAction: "去设置" },
+  labels,
   onStart,
   onSetup,
 }: OverviewHeroStartCardProps) {
+  const t = useT();
+  const startAction = labels?.startAction ?? t.overview.hero.startAction;
+  const setupAction = labels?.setupAction ?? t.overview.hero.setupAction;
   const hasOutputRoot = Boolean(data?.rootPath);
   const canStart = isLoading || isError || hasOutputRoot || hasConfiguredOutput;
 
@@ -44,10 +48,8 @@ export function OverviewHeroStartCard({
 
       <div className="relative z-10 flex items-start justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">开始刮削</h2>
-          <p className="mt-3 max-w-lg text-lg leading-8 text-white/66">
-            进入工作台执行元数据提取。当前输出目录概况会在完成刮削后保持更新。
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight">{t.overview.hero.title}</h2>
+          <p className="mt-3 max-w-lg text-lg leading-8 text-white/66">{t.overview.hero.description}</p>
         </div>
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-quiet-lg bg-white/10 text-white/55">
           <Telescope className="h-6 w-6" />
@@ -64,7 +66,7 @@ export function OverviewHeroStartCard({
           ) : isError ? (
             <>
               <MetricBlock label="Files" value="-" />
-              <MetricBlock label="Size" value="加载失败" />
+              <MetricBlock label="Size" value={t.overview.hero.loadFailed} />
             </>
           ) : hasOutputRoot ? (
             <>
@@ -77,12 +79,12 @@ export function OverviewHeroStartCard({
           ) : hasConfiguredOutput ? (
             <>
               <MetricBlock label="Files" value={0} />
-              <MetricBlock label="Size" value="等待首次刮削" />
+              <MetricBlock label="Size" value={t.overview.hero.waitingFirstScrape} />
             </>
           ) : (
             <>
               <MetricBlock label="Files" value="-" />
-              <MetricBlock label="Size" value="未配置" />
+              <MetricBlock label="Size" value={t.overview.hero.notConfigured} />
             </>
           )}
         </div>
@@ -93,7 +95,7 @@ export function OverviewHeroStartCard({
           onClick={canStart ? onStart : onSetup}
         >
           {canStart ? <Play className="h-4 w-4 fill-current" /> : <FolderCog className="h-4 w-4" />}
-          {canStart ? labels.startAction : labels.setupAction}
+          {canStart ? startAction : setupAction}
         </Button>
       </div>
     </section>

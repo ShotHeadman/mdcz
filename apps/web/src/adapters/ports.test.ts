@@ -1,6 +1,7 @@
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { getT } from "@mdcz/views/i18n";
 import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
@@ -59,11 +60,13 @@ describe("web detail action port", () => {
       }),
     );
 
-    expect(html).not.toContain("文件路径");
+    const t = getT().detail;
+    expect(html).not.toContain(t.filePath);
     expect(html).not.toContain("ABC-001.mp4");
-    expect(html).not.toContain("播放");
-    expect(html).not.toContain("打开文件夹");
-    expect(html).toContain("编辑 NFO");
+    expect(html).not.toContain(t.play);
+    expect(html).not.toContain(t.openSourceFolder);
+    expect(html).not.toContain(t.openMetadataFolder);
+    expect(html).toContain(t.editNfo);
   });
 
   it("resolves root-relative image candidates through authenticated library assets", async () => {
@@ -236,9 +239,7 @@ describe("web scrape action port", () => {
     );
     const port = createWebScrapeActionPort();
 
-    await expect(port.retryFailed()).resolves.toEqual({
-      message: "重试任务已启动：session-run",
-    });
+    await port.retryFailed();
     expect(retry).toHaveBeenCalledWith({ taskId: "session-run" });
     await port.retryFailed(["failed-item"]);
     expect(retry).toHaveBeenLastCalledWith({ taskId: "session-run", itemIds: ["failed-item"] });
@@ -248,7 +249,7 @@ describe("web scrape action port", () => {
     expect(retry).toHaveBeenCalledTimes(2);
 
     useScrapeStore.getState().reset();
-    await expect(port.retryFailed()).rejects.toThrow("没有可重试的刮削任务");
+    await expect(port.retryFailed()).rejects.toThrow(getT().web.noScrapeTaskToRetry);
   });
 });
 

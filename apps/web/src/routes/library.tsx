@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
+import { useT } from "@mdcz/views/i18n";
 import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import {
   chunkLibraryEntryIds,
@@ -17,6 +18,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { AppLink } from "../routeCommon";
 
 export function LibraryPage() {
+  const t = useT();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
@@ -33,7 +35,7 @@ export function LibraryPage() {
       await api.library.delete({ id: entry.id });
     },
     onSuccess: async () => {
-      toast.success("已从媒体库移除");
+      toast.success(t.web.removedFromLibrary);
       setDeleteTarget(null);
       await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
     },

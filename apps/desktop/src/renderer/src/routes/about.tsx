@@ -1,6 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
 import { AboutView } from "@mdcz/views/about";
+import { useT } from "@mdcz/views/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/about")({
 });
 
 function About() {
+  const t = useT();
   const [about, setAbout] = useState<SystemAboutResponse | undefined>();
   const [loading, setLoading] = useState(true);
   const [updateCheck, setUpdateCheck] = useState<boolean | null>(null);
@@ -42,30 +44,12 @@ function About() {
             platform: info.platform,
             arch: info.arch,
           },
-          community: {
-            feedback: {
-              label: "提交反馈",
-              url: "https://github.com/ShotHeadman/mdcz/issues/new/choose",
-            },
-            links: [
-              {
-                label: "MDCx",
-                url: "https://github.com/sqzw-x/mdcx",
-                description: "原 Python 版本项目",
-              },
-              {
-                label: "Movie_Data_Capture",
-                url: "https://github.com/yoshiko2/Movie_Data_Capture",
-                description: "命令行版核心项目",
-              },
-            ],
-          },
         });
         setUpdateCheck((config as ConfigOutput).behavior?.updateCheck ?? true);
       })
       .catch((error) => {
         if (!cancelled) {
-          toast.error(`读取关于信息失败: ${toErrorMessage(error, "未知错误")}`);
+          toast.error(t.desktop.readAboutFailed(toErrorMessage(error, t.common.unknownError)));
         }
       })
       .finally(() => {
@@ -93,7 +77,7 @@ function About() {
       });
     } catch (error) {
       setUpdateCheck(previous);
-      toast.error(`保存失败: ${toErrorMessage(error, "未知错误")}`);
+      toast.error(t.desktop.saveFailed(toErrorMessage(error, t.common.unknownError)));
     } finally {
       setIsSavingUpdateCheck(false);
     }
@@ -112,7 +96,7 @@ function About() {
   return (
     <AboutView
       about={about}
-      debugActionLabel="开启调试"
+      debugActionLabel={t.desktop.enableDebug}
       loading={loading}
       logoSrc={AppLogo}
       showDebugAction={showDebugAction}

@@ -134,7 +134,7 @@ describe("JavbusCrawler", () => {
     }
 
     expect(response.result.error).toContain("age/region verification");
-    expect(response.result.error).toContain("论坛账号注册不能解决此问题");
+    expect(response.result.error).toContain("Forum account registration does not resolve this");
     expect(response.result.failureReason).toBe("region_blocked");
   });
 });

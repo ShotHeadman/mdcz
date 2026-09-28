@@ -161,7 +161,7 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (refs.length === 0) throw new Error("No files selected");
     const rootId = refs[0]?.rootId;
-    if (!rootId) throw new Error("维护文件缺少媒体目录");
+    if (!rootId) throw new Error("Maintenance file is missing a media directory");
     this.signalService.invalidate("maintenance");
     return await this.coordinator.startPreview({
       rootId,
@@ -178,11 +178,12 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.requireActiveSession();
-    if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
-    if (presetId === "inspect_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    if (session.presetId !== presetId) throw new Error("Maintenance preset does not match current task");
+    if (presetId === "inspect_local")
+      throw new Error("Current preset only inspects local data and does not require execution");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
     if (selections.some((selection) => !previewIds.has(selection.previewId))) {
-      throw new Error("维护项目不属于当前任务");
+      throw new Error("Maintenance item does not belong to the current task");
     }
     this.signalService.invalidate("maintenance");
     const handle = await this.coordinator.beginApply({ sessionId: session.id, selections });
@@ -230,7 +231,7 @@ export class MaintenanceService {
 
   private async requireActiveSession(): Promise<MaintenanceActiveSessionSnapshot> {
     const session = await this.coordinator.getActiveSession();
-    if (!session) throw new Error("维护会话不存在或已过期");
+    if (!session) throw new Error("Maintenance session does not exist or has expired");
     return session;
   }
 

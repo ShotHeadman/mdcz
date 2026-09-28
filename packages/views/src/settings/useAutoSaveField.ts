@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
+import { getT } from "../i18n";
 import {
   buildAutoSaveFlatPayload,
   extractServerValidation,
@@ -19,7 +20,7 @@ import {
   isLatestRevision,
   nextRevision,
   runLatestRevisionTask,
-  toFieldMessage,
+  toConfigErrorMessage,
   valuesEqual,
 } from "./autoSaveUtils";
 import { useSettingsNotifier, useSettingsServices } from "./SettingsServices";
@@ -37,7 +38,6 @@ export type AutoSaveStatus = "idle" | "saving" | "saved" | "error";
 export interface UseAutoSaveFieldOptions {
   mode?: "debounce" | "immediate";
   debounceMs?: number;
-  label?: string;
 }
 
 export interface UseAutoSaveFieldResult {
@@ -48,13 +48,12 @@ export interface UseAutoSaveFieldResult {
 interface RegisteredAutoSaveField {
   mode: "debounce" | "immediate";
   debounceMs: number;
-  label?: string;
 }
 
 interface SettingsEditorAutosaveContextValue {
   registerField: (path: string, options: UseAutoSaveFieldOptions) => () => void;
   getFieldStatus: (path: string) => AutoSaveStatus;
-  resetFieldToDefault: (path: string, label?: string) => void;
+  resetFieldToDefault: (path: string) => void;
 }
 
 interface SettingsEditorAutosaveProviderProps {
@@ -220,18 +219,16 @@ export function SettingsEditorAutosaveProvider({
                       continue;
                     }
 
-                    const message = serverError.fieldErrors[otherField] ?? "校验失败";
+                    const message = serverError.fieldErrors[otherField] ?? getT().settings.autoSave.validationFailed;
                     formRef.current.setError(otherField, { type: "server", message });
                   }
                 } else {
-                  const message = toFieldMessage(error, "保存失败");
+                  const message = toConfigErrorMessage(error, getT().settings.autoSave.saveFailed);
                   formRef.current.setError(path, {
                     type: "server",
                     message,
                   });
-                  notifierRef.current.error(
-                    `${formatFieldLabel(registeredFieldsRef.current[path]?.label, path)} 保存失败: ${message}`,
-                  );
+                  notifierRef.current.error(getT().settings.autoSave.fieldSaveFailed(formatFieldLabel(path), message));
                 }
 
                 setFieldStatus(path, "error");
@@ -258,14 +255,14 @@ export function SettingsEditorAutosaveProvider({
   );
 
   const resetFieldToDefault = useCallback(
-    (path: string, label?: string) => {
+    (path: string) => {
       if (!defaultValuesReady || !Object.hasOwn(defaultValuesRef.current, path)) {
         return;
       }
 
       const defaultValue = defaultValuesRef.current[path];
       const previousValue = formRef.current.getValues(path);
-      const fieldLabel = formatFieldLabel(label, path);
+      const fieldLabel = formatFieldLabel(path);
 
       clearFieldTimers(path);
       const revision = nextRevision(saveRevisionsRef.current, path);
@@ -299,9 +296,9 @@ export function SettingsEditorAutosaveProvider({
                 servicesRef.current.updateCurrentConfigCache?.({ [path]: defaultValue });
                 markFieldSaved(path);
 
-                notifierRef.current.success(`${fieldLabel} 已恢复为默认值`, {
+                notifierRef.current.success(getT().settings.autoSave.fieldReset(fieldLabel), {
                   action: {
-                    label: "撤销",
+                    label: getT().settings.autoSave.undo,
                     onClick: () => {
                       programmaticSave(path, previousValue);
                     },
@@ -319,10 +316,15 @@ export function SettingsEditorAutosaveProvider({
                 });
                 formRef.current.setError(path, {
                   type: "server",
-                  message: toFieldMessage(error, "恢复默认值失败"),
+                  message: toConfigErrorMessage(error, getT().settings.autoSave.resetFailed),
                 });
                 setFieldStatus(path, "error");
-                notifierRef.current.error(`${fieldLabel} 恢复失败: ${toFieldMessage(error, "未知错误")}`);
+                notifierRef.current.error(
+                  getT().settings.autoSave.fieldResetFailed(
+                    fieldLabel,
+                    toConfigErrorMessage(error, getT().common.unknownError),
+                  ),
+                );
               }
             },
           });
@@ -337,15 +339,10 @@ export function SettingsEditorAutosaveProvider({
         const nextField: RegisteredAutoSaveField = {
           mode: options.mode ?? "immediate",
           debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
-          label: options.label,
         };
 
         const current = previous[path];
-        if (
-          current?.mode === nextField.mode &&
-          current?.debounceMs === nextField.debounceMs &&
-          current?.label === nextField.label
-        ) {
+        if (current?.mode === nextField.mode && current?.debounceMs === nextField.debounceMs) {
           return previous;
         }
 
@@ -482,15 +479,14 @@ export function useAutoSaveField(path: string, options: UseAutoSaveFieldOptions 
     () => ({
       mode: options.mode,
       debounceMs: options.debounceMs,
-      label: options.label,
     }),
-    [options.debounceMs, options.label, options.mode],
+    [options.debounceMs, options.mode],
   );
 
   useEffect(() => registerField(path, registrationOptions), [path, registerField, registrationOptions]);
 
   return {
     status: getFieldStatus(path),
-    resetToDefault: () => resetFieldToDefault(path, options.label),
+    resetToDefault: () => resetFieldToDefault(path),
   };
 }

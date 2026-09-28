@@ -1,5 +1,6 @@
 import { FormControl, Input } from "@mdcz/ui";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
+import { useT } from "../i18n";
 import { BufferedFieldControl, parseBufferedNumberValue } from "./BufferedFieldControls";
 
 interface DurationFieldProps {
@@ -7,6 +8,7 @@ interface DurationFieldProps {
 }
 
 export function DurationField({ field }: DurationFieldProps) {
+  const t = useT();
   return (
     <div className="flex w-full justify-end">
       <BufferedFieldControl field={field} parse={parseBufferedNumberValue}>
@@ -29,7 +31,7 @@ export function DurationField({ field }: DurationFieldProps) {
               aria-hidden="true"
               className="min-w-[1.25rem] text-[10px] font-medium uppercase leading-none text-muted-foreground/70"
             >
-              秒
+              {t.configForm.secondsUnit}
             </span>
           </div>
         )}

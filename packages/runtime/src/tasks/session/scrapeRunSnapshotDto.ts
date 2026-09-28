@@ -122,7 +122,6 @@ export const toScrapeRunSnapshotDto = (input: {
     latestStage: input.snapshot.latestStage
       ? {
           stage: input.snapshot.latestStage.stage,
-          message: input.snapshot.latestStage.message,
           relativePath: input.snapshot.latestStage.relativePath,
         }
       : null,

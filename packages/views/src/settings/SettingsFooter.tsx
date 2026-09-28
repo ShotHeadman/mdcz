@@ -1,4 +1,5 @@
 import { SlidersHorizontal } from "lucide-react";
+import { useT } from "../i18n";
 
 interface AdvancedSettingsFooterContentProps {
   hasActiveFilters: boolean;
@@ -11,11 +12,12 @@ export function AdvancedSettingsFooterContent({
   isAdvancedVisible,
   onToggleShowAdvanced,
 }: AdvancedSettingsFooterContentProps) {
+  const t = useT();
   if (hasActiveFilters) {
     return null;
   }
 
-  const actionLabel = isAdvancedVisible ? "隐藏高级设置" : "显示高级设置";
+  const actionLabel = isAdvancedVisible ? t.settings.layout.hideAdvanced : t.settings.layout.showAdvanced;
   return (
     <div className="flex justify-end pt-2">
       <button

@@ -58,11 +58,13 @@ describe("inventory target conflicts", () => {
       conflicts: [
         expect.objectContaining({
           itemId: "one",
-          message: "同一影片的多个视频目标文件名重复，请调整命名规则以区分这些视频",
+          message:
+            "Multiple video target filenames for the same movie are identical; please adjust naming rules to distinguish these videos",
         }),
         expect.objectContaining({
           itemId: "two",
-          message: "同一影片的多个视频目标文件名重复，请调整命名规则以区分这些视频",
+          message:
+            "Multiple video target filenames for the same movie are identical; please adjust naming rules to distinguish these videos",
         }),
       ],
     });

@@ -1,7 +1,7 @@
 import { parse } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
-import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
+import type { CrawlerData, FileInfo, NamingPreviewSampleId, NfoLocalState } from "@mdcz/shared/types";
 import { classifyMovie, type MovieClassification } from "../utils/movieClassification";
 import { buildSafeFileName, buildSafePath } from "../utils/path";
 import { resolveFileInfoSubtitleTag } from "../utils/subtitles";
@@ -255,23 +255,23 @@ const previewData = (number: string, overrides?: Partial<CrawlerData>): CrawlerD
 });
 
 export const NAMING_PREVIEW_SAMPLES: Array<{
-  label: string;
+  sample: NamingPreviewSampleId;
   fileInfo: FileInfo;
   data: CrawlerData;
   localState?: NfoLocalState;
 }> = [
   {
-    label: "普通",
+    sample: "standard",
     fileInfo: previewFileInfo("ABC-123"),
     data: previewData("ABC-123"),
   },
   {
-    label: "中文字幕",
+    sample: "subtitled",
     fileInfo: previewFileInfo("ABC-456", { isSubtitled: true, subtitleTag: "中文字幕", resolution: "2160P" }),
     data: previewData("ABC-456", { title_zh: "中文字幕示例", actors: ["演员B"], studio: "Studio X" }),
   },
   {
-    label: "多演员",
+    sample: "multiActor",
     fileInfo: previewFileInfo("DEF-012"),
     data: previewData("DEF-012", {
       title_zh: "多演员作品",
@@ -280,7 +280,7 @@ export const NAMING_PREVIEW_SAMPLES: Array<{
     }),
   },
   {
-    label: "演员为空",
+    sample: "noActor",
     fileInfo: previewFileInfo("FC2-123456"),
     data: previewData("FC2-123456", {
       actors: [],

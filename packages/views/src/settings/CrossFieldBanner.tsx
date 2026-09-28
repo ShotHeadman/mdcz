@@ -1,5 +1,6 @@
 import { cn } from "@mdcz/ui";
 import { AlertTriangle } from "lucide-react";
+import { useT } from "../i18n";
 import { focusSettingFieldInDom } from "./focusSettingField";
 import type { CrossFieldError } from "./useCrossFieldErrors";
 
@@ -14,6 +15,7 @@ interface CrossFieldBannerProps {
  * section is clean.
  */
 export function CrossFieldBanner({ errors, className }: CrossFieldBannerProps) {
+  const t = useT();
   if (errors.length === 0) return null;
 
   return (
@@ -27,7 +29,7 @@ export function CrossFieldBanner({ errors, className }: CrossFieldBannerProps) {
     >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
       <div className="min-w-0 flex-1 space-y-1.5">
-        <div className="text-sm font-medium text-destructive">{errors.length} 项配置未完成</div>
+        <div className="text-sm font-medium text-destructive">{t.settings.crossField.incomplete(errors.length)}</div>
         <ul className="space-y-1">
           {errors.map((err) => (
             <li key={err.field} className="flex items-start justify-between gap-3 text-xs">
@@ -44,7 +46,7 @@ export function CrossFieldBanner({ errors, className }: CrossFieldBannerProps) {
                   "focus-visible:ring-2 focus-visible:ring-destructive/40",
                 )}
               >
-                聚焦
+                {t.settings.crossField.focus}
               </button>
             </li>
           ))}

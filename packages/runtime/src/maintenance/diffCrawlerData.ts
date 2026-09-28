@@ -4,13 +4,9 @@ import type {
   FieldDiffImageCollectionPreview,
   FieldDiffImagePreview,
   LocalScanEntry,
+  MaintenanceDiffField,
   MaintenanceImageAlternatives,
 } from "@mdcz/shared/types";
-
-interface DiffableField {
-  key: keyof CrawlerData;
-  label: string;
-}
 
 interface DiffCrawlerDataOptions {
   includeTranslatedFields?: boolean;
@@ -23,40 +19,34 @@ export interface PartitionedCrawlerDataDiffs {
   unchangedFieldDiffs: FieldDiff[];
 }
 
-const VALUE_FIELDS: DiffableField[] = [
-  { key: "title", label: "标题" },
-  { key: "title_zh", label: "中文标题" },
-  { key: "plot", label: "简介" },
-  { key: "plot_zh", label: "中文简介" },
-  { key: "studio", label: "制片" },
-  { key: "director", label: "导演" },
-  { key: "publisher", label: "发行商" },
-  { key: "series", label: "系列" },
-  { key: "release_date", label: "发行日期" },
-  { key: "rating", label: "评分" },
-  { key: "durationSeconds", label: "时长" },
-  { key: "content_type", label: "内容类型" },
+const VALUE_FIELDS: MaintenanceDiffField[] = [
+  "title",
+  "title_zh",
+  "plot",
+  "plot_zh",
+  "studio",
+  "director",
+  "publisher",
+  "series",
+  "release_date",
+  "rating",
+  "durationSeconds",
+  "content_type",
 ];
 
-const TRAILER_FIELDS: DiffableField[] = [{ key: "trailer_url", label: "预告片" }];
+const TRAILER_FIELDS = ["trailer_url"] as const;
 
 const VALUE_SOURCE_FIELD_MAP = {
   trailer_url: "trailer_source_url",
 } as const satisfies Partial<Record<keyof CrawlerData, keyof CrawlerData>>;
 
-const IMAGE_FIELDS: DiffableField[] = [
-  // In maintenance mode, fanart is treated as a derived local asset from thumb,
-  // so only independently switchable primary images are diffed here.
-  { key: "thumb_url", label: "封面图" },
-  { key: "poster_url", label: "海报" },
-];
+// In maintenance mode, fanart is treated as a derived local asset from thumb,
+// so only independently switchable primary images are diffed here.
+const IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
-const ARRAY_VALUE_FIELDS: DiffableField[] = [
-  { key: "actors", label: "演员" },
-  { key: "genres", label: "标签" },
-];
+const ARRAY_VALUE_FIELDS: MaintenanceDiffField[] = ["actors", "genres"];
 
-const IMAGE_COLLECTION_FIELDS: DiffableField[] = [{ key: "scene_images", label: "剧照" }];
+const IMAGE_COLLECTION_FIELDS = ["scene_images"] as const;
 
 const IMAGE_ASSET_FIELD_MAP = {
   thumb_url: "thumb",
@@ -211,15 +201,13 @@ const hasPreviewContent = (diff: FieldDiff, side: "old" | "new"): boolean => {
 };
 
 const buildValueDiff = (
-  field: keyof CrawlerData,
-  label: string,
+  field: MaintenanceDiffField,
   oldValue: unknown,
   newValue: unknown,
   changed: boolean,
 ): FieldDiff => ({
   kind: "value",
   field,
-  label,
   oldValue,
   newValue,
   changed,
@@ -227,7 +215,6 @@ const buildValueDiff = (
 
 const buildSourceAwareValueDiff = (
   field: keyof typeof VALUE_SOURCE_FIELD_MAP,
-  label: string,
   oldData: CrawlerData,
   newData: CrawlerData,
 ): FieldDiff => {
@@ -239,12 +226,11 @@ const buildSourceAwareValueDiff = (
   const newSource = toRemoteHttpSource(newData[sourceField]) || toRemoteHttpSource(newValue);
   const changed = oldSource || newSource ? oldSource !== newSource : rawChanged;
 
-  return buildValueDiff(field, label, oldValue, newValue, changed);
+  return buildValueDiff(field, oldValue, newValue, changed);
 };
 
 const buildImageFieldDiff = (
   field: "thumb_url" | "poster_url",
-  label: string,
   oldData: CrawlerData,
   newData: CrawlerData,
   entry: LocalScanEntry | undefined,
@@ -266,7 +252,6 @@ const buildImageFieldDiff = (
   return {
     kind: "image",
     field,
-    label,
     oldValue,
     newValue,
     changed,
@@ -277,7 +262,6 @@ const buildImageFieldDiff = (
 
 const buildImageCollectionFieldDiff = (
   field: "scene_images",
-  label: string,
   oldData: CrawlerData,
   newData: CrawlerData,
   entry: LocalScanEntry | undefined,
@@ -291,7 +275,6 @@ const buildImageCollectionFieldDiff = (
   return {
     kind: "imageCollection",
     field,
-    label,
     oldValue,
     newValue,
     changed: !isEqual(oldValue, newValue),
@@ -327,15 +310,15 @@ export function partitionCrawlerDataWithOptions(
   const entry = options.entry;
   const imageAlternatives = options.imageAlternatives;
 
-  for (const { key, label } of VALUE_FIELDS) {
+  for (const key of VALUE_FIELDS) {
     if (!includeTranslatedFields && (key === "title_zh" || key === "plot_zh")) {
       continue;
     }
 
     const diff =
       key in VALUE_SOURCE_FIELD_MAP
-        ? buildSourceAwareValueDiff(key as keyof typeof VALUE_SOURCE_FIELD_MAP, label, oldData, newData)
-        : buildValueDiff(key, label, oldData[key], newData[key], !isEqual(oldData[key], newData[key]));
+        ? buildSourceAwareValueDiff(key as keyof typeof VALUE_SOURCE_FIELD_MAP, oldData, newData)
+        : buildValueDiff(key, oldData[key], newData[key], !isEqual(oldData[key], newData[key]));
 
     if (!diff.changed && !hasPreviewContent(diff, "old")) {
       continue;
@@ -344,15 +327,8 @@ export function partitionCrawlerDataWithOptions(
     (diff.changed ? fieldDiffs : unchangedFieldDiffs).push(diff);
   }
 
-  for (const { key, label } of IMAGE_FIELDS) {
-    const diff = buildImageFieldDiff(
-      key as "thumb_url" | "poster_url",
-      label,
-      oldData,
-      newData,
-      entry,
-      imageAlternatives,
-    );
+  for (const key of IMAGE_FIELDS) {
+    const diff = buildImageFieldDiff(key, oldData, newData, entry, imageAlternatives);
     if (!diff.changed && !hasPreviewContent(diff, "old")) {
       continue;
     }
@@ -360,11 +336,11 @@ export function partitionCrawlerDataWithOptions(
     (diff.changed ? fieldDiffs : unchangedFieldDiffs).push(diff);
   }
 
-  for (const { key, label } of ARRAY_VALUE_FIELDS) {
+  for (const key of ARRAY_VALUE_FIELDS) {
     const oldValue = oldData[key];
     const newValue = newData[key];
     const changed = !isEqual(oldValue, newValue);
-    const diff = buildValueDiff(key, label, oldValue, newValue, changed);
+    const diff = buildValueDiff(key, oldValue, newValue, changed);
 
     if (!changed && !hasPreviewContent(diff, "old")) {
       continue;
@@ -373,8 +349,8 @@ export function partitionCrawlerDataWithOptions(
     (changed ? fieldDiffs : unchangedFieldDiffs).push(diff);
   }
 
-  for (const { key, label } of IMAGE_COLLECTION_FIELDS) {
-    const diff = buildImageCollectionFieldDiff(key as "scene_images", label, oldData, newData, entry);
+  for (const key of IMAGE_COLLECTION_FIELDS) {
+    const diff = buildImageCollectionFieldDiff(key, oldData, newData, entry);
     if (!diff.changed && !hasPreviewContent(diff, "old")) {
       continue;
     }
@@ -382,8 +358,8 @@ export function partitionCrawlerDataWithOptions(
     (diff.changed ? fieldDiffs : unchangedFieldDiffs).push(diff);
   }
 
-  for (const { key, label } of TRAILER_FIELDS) {
-    const diff = buildSourceAwareValueDiff(key as keyof typeof VALUE_SOURCE_FIELD_MAP, label, oldData, newData);
+  for (const key of TRAILER_FIELDS) {
+    const diff = buildSourceAwareValueDiff(key, oldData, newData);
     if (!diff.changed && !hasPreviewContent(diff, "old")) {
       continue;
     }

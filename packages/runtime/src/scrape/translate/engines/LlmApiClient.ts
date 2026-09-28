@@ -215,10 +215,12 @@ export class LlmApiClient {
 
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
     if (request.reasoning === "enabled" && request.serviceType !== "deepseek") {
-      throw new Error("显式开启并使用默认强度仅适用于 DeepSeek；请选择服务端默认或指定强度");
+      throw new Error(
+        "Explicitly enabling with default effort is only supported for DeepSeek; please use server default or specify effort",
+      );
     }
     if (request.serviceType === "google" && request.reasoning === "max") {
-      throw new Error("Google OpenAI 兼容接口不支持 max 推理强度");
+      throw new Error("Google OpenAI-compatible endpoint does not support max reasoning effort");
     }
     const baseUrl = normalizeLlmBaseUrl(request.baseUrl);
     const headers = this.buildHeaders(request.apiKey);

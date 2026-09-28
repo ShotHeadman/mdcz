@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
-import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
@@ -63,11 +62,7 @@ const findExistingNfoInInventory = async (
 export interface RuntimeScrapeSignalService {
   showFailedInfo(input: { fileInfo: FileInfo; error: string }): void;
   showLogText(message: string): void;
-  showScrapeInfo(input: {
-    fileInfo: FileInfo;
-    site: Website;
-    step: "search" | "download" | "parse" | "organize";
-  }): void;
+  showScrapeStep(step: "search" | "download"): void;
   setProgress(value: number, current: number, total: number): void;
 }
 
@@ -238,9 +233,12 @@ export class FileScraper {
         this.setProgress(progress, 0);
         const facts = await inventory.stats(parsedFileInfo.filePath).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT")
-            throw new Error(`源文件未找到：${parsedFileInfo.filePath}（文件可能已移至目标路径，请在目标目录查看）`, {
-              cause: error,
-            });
+            throw new Error(
+              `Source file not found: ${parsedFileInfo.filePath} (file may have been moved to target path; please check target directory)`,
+              {
+                cause: error,
+              },
+            );
           throw error;
         });
         if (!facts.isFile()) throw new Error("Scrape source is not a file");
@@ -293,7 +291,7 @@ export class FileScraper {
       signalService.showLogText(
         `Preparing movie scrape task ${randomUUID()} for ${fileInfo.number} (scrapeSessionId: ${scrapeSessionId ?? "standalone"})`,
       );
-      signalService.showScrapeInfo({ fileInfo, site: configuration.scrape.sites[0], step: "search" });
+      signalService.showScrapeStep("search");
       const { aggregation, crawlerData, translationError } = await prepareOnlineMetadata({
         number: fileInfo.number,
         configuration,
@@ -421,11 +419,7 @@ export class FileScraper {
           throwIfAborted(signal);
           this.setProgress(progress, 60);
           if (!crawlerData.website) throw new Error("Scrape crawler website not initialized");
-          signalService.showScrapeInfo({
-            fileInfo,
-            site: crawlerData.website,
-            step: "download",
-          });
+          signalService.showScrapeStep("download");
           const downloaded = await downloadCrawlerAssets({
             config: configuration,
             crawlerData,

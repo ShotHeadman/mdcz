@@ -4,6 +4,7 @@ import {
   buildScrapeResultGroupActionContext,
   findScrapeResultGroup,
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
+import { useT } from "@mdcz/views/i18n";
 import { runScrapeRequest, selectIsScraping, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
@@ -34,6 +35,7 @@ const isEditingText = () => {
 };
 
 export function ShortcutHandler() {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -71,9 +73,9 @@ export function ShortcutHandler() {
             if (selectIsScraping(scrapeState)) {
               try {
                 await runScrapeRequest(stopScrape);
-                toast.info("正在停止刮削任务...");
+                toast.info(t.desktop.stoppingScrape);
               } catch (error) {
-                toast.error(`停止失败: ${toErrorMessage(error)}`);
+                toast.error(t.desktop.stopFailed(toErrorMessage(error)));
               }
               return;
             }
@@ -81,29 +83,29 @@ export function ShortcutHandler() {
             try {
               await useWorkbenchSetupStore.getState().startTask?.();
             } catch (error) {
-              toast.error(`启动失败: ${toErrorMessage(error)}`);
+              toast.error(t.desktop.startFailed(toErrorMessage(error)));
             }
             return;
           }
 
           case "retry-scrape": {
             if (!selectedItem) {
-              toast.info("请先选择一个结果项");
+              toast.info(t.desktop.selectResultFirst);
               return;
             }
 
             try {
-              const response = await retryScrapeSelection([selectedItem.fileId]);
-              toast.success(response.data.message);
+              await retryScrapeSelection([selectedItem.fileId]);
+              toast.success(t.scrape.launch.retry);
             } catch (error) {
-              toast.error(`重试失败: ${toErrorMessage(error)}`);
+              toast.error(t.desktop.retryFailed(toErrorMessage(error)));
             }
             return;
           }
 
           case "open-folder": {
             if (!selectedPath) {
-              toast.info("请先选择一个结果项");
+              toast.info(t.desktop.selectResultFirst);
               return;
             }
             const slash = Math.max(selectedPath.lastIndexOf("/"), selectedPath.lastIndexOf("\\"));
@@ -114,16 +116,16 @@ export function ShortcutHandler() {
 
           case "play-video": {
             if (!selectedPath) {
-              toast.info("请先选择一个结果项");
+              toast.info(t.desktop.selectResultFirst);
               return;
             }
-            await playMediaPath(selectedRef ?? selectedPath, "仅桌面客户端支持播放");
+            await playMediaPath(selectedRef ?? selectedPath, t.desktop.desktopPlaybackOnly);
             return;
           }
 
           case "edit-nfo": {
             if (!selectedPath) {
-              toast.info("请先选择一个结果项");
+              toast.info(t.desktop.selectResultFirst);
               return;
             }
             navigate({ to: "/workbench" });

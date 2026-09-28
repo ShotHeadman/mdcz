@@ -51,14 +51,12 @@ export const classifyJavbusPage = (html: string): JavbusPageClassification => {
   return "unknown";
 };
 
-export const javbusVerificationGuidance = "JavBus 影片页面需要完成年龄/地区验证。请在浏览器完成验证后复制 Cookie。";
-
 // The English prefixes ("region blocked" / "login wall") are load-bearing:
 // BaseCrawler.toFailureReason derives failureReason by keyword-matching the
 // thrown message.
 export const javbusBlockedPageMessage = (page: JavbusPageClassification): string | null => {
   if (page === "verification_required") {
-    return `JavBus region blocked by age/region verification. ${javbusVerificationGuidance} 论坛账号注册不能解决此问题。`;
+    return `JavBus region blocked by age/region verification. JavBus movie pages require age/region verification. Please complete verification in your browser and copy cookies. Forum account registration does not resolve this.`;
   }
 
   if (page === "login_wall") {

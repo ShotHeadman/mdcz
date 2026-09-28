@@ -202,7 +202,7 @@ const createScraper = (
   const defaultSignalService: RuntimeScrapeSignalService = {
     showLogText: vi.fn(),
     setProgress: vi.fn(),
-    showScrapeInfo: vi.fn(),
+    showScrapeStep: vi.fn(),
     showFailedInfo: vi.fn(),
   };
   const signalService = overrides.signalService ?? defaultSignalService;

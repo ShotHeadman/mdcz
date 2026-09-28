@@ -4,6 +4,7 @@ import { cn } from "@mdcz/ui";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CheckCircle2, CircleX, FileText, Globe2, Info, TriangleAlert } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { useT } from "../i18n";
 
 export interface LogsListViewProps {
   autoScroll?: boolean;
@@ -61,9 +62,11 @@ function getLevelPresentation(level: VisualLogLevel) {
   }
 }
 
-export const LogsListView = ({ autoScroll = true, logs, emptyText = "暂无日志。" }: LogsListViewProps) => {
+export const LogsListView = ({ autoScroll = true, logs, emptyText }: LogsListViewProps) => {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const logCount = logs.length;
+  const resolvedEmptyText = emptyText ?? t.logs.noLogs;
   const rowVirtualizer = useVirtualizer({
     count: logCount,
     estimateSize: () => 44,
@@ -87,8 +90,8 @@ export const LogsListView = ({ autoScroll = true, logs, emptyText = "暂无日�
           <FileText className="h-6 w-6 stroke-[1.75]" />
         </div>
         <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground/80">暂无相关日志内容</p>
-          <p className="text-xs text-muted-foreground">{emptyText}</p>
+          <p className="text-sm font-medium text-foreground/80">{t.logs.noMatchingLogs}</p>
+          <p className="text-xs text-muted-foreground">{resolvedEmptyText}</p>
         </div>
       </div>
     );

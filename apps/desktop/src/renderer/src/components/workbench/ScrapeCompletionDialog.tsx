@@ -1,4 +1,5 @@
 import { buildUncensoredConfirmationItems } from "@mdcz/views/adapters/workbenchSession";
+import { useT } from "@mdcz/views/i18n";
 import { UncensoredConfirmDialog } from "@mdcz/views/scrape";
 import { selectScrapeOutcome, selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useState } from "react";
@@ -6,6 +7,7 @@ import { toast } from "sonner";
 import { ipc } from "../../client/ipc";
 
 export default function ScrapeCompletionDialog() {
+  const t = useT();
   const snapshot = useScrapeStore(selectScrapeSnapshot);
   const outcome = useScrapeStore(selectScrapeOutcome);
   const [dismissedCompletion, setDismissedCompletion] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export default function ScrapeCompletionDialog() {
         const result = await ipc.scraper.confirmUncensored({
           items: buildUncensoredConfirmationItems(snapshot.ambiguousUncensoredItems, selections),
         });
-        toast.success(`已更新 ${result.updatedCount} 个文件的无码类型`);
+        toast.success(t.desktop.updatedUncensoredTypes(result.updatedCount));
       }}
     />
   );

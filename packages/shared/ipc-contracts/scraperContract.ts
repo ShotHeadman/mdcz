@@ -19,11 +19,11 @@ export type ScraperStartInput =
 export type ScraperIpcContract = {
   [IpcChannel.Scraper_Start]: IpcProcedure<
     ScraperStartInput,
-    { taskId: string; totalFiles: number | null; message: string; snapshot: ScrapeRunSnapshotDto }
+    { taskId: string; totalFiles: number | null; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_StartSinglePath]: IpcProcedure<
     { path: string },
-    { taskId: string; totalFiles: number | null; message: string; snapshot: ScrapeRunSnapshotDto }
+    { taskId: string; totalFiles: number | null; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_Stop]: IpcProcedure<void, { success: true; pendingCount: number }>;
   [IpcChannel.Scraper_Pause]: IpcProcedure<void, { success: true }>;
@@ -31,11 +31,11 @@ export type ScraperIpcContract = {
   [IpcChannel.Scraper_GetStatus]: IpcProcedure<{ taskId?: string }, ScrapeRunSnapshotDto | null>;
   [IpcChannel.Scraper_RerunDirectory]: IpcProcedure<
     { runId: string },
-    { taskId: string; totalFiles: number | null; message: string; snapshot: ScrapeRunSnapshotDto }
+    { taskId: string; totalFiles: number | null; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_Retry]: IpcProcedure<
     { runId: string; itemIds?: string[] },
-    { taskId: string; totalFiles: number | null; message: string; snapshot: ScrapeRunSnapshotDto }
+    { taskId: string; totalFiles: number | null; snapshot: ScrapeRunSnapshotDto }
   >;
   [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<ScrapeConfirmUncensoredInput, UncensoredConfirmResponse>;
 };

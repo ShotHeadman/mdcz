@@ -131,7 +131,7 @@ describe("ScrapeCoordinator", () => {
     expect(createExecution).not.toHaveBeenCalled();
     coordinator.recordLog(run.id, { level: "info", message: "discovery log" });
     const discoveryRevision = coordinator.liveRuns()[0].snapshot.revision;
-    await expect(coordinator.pause(run.id)).rejects.toThrow("不支持暂停");
+    await expect(coordinator.pause(run.id)).rejects.toThrow("Pausing is not supported during scanning");
     if (outcome === "stopped") {
       vi.mocked(host.create).mockResolvedValueOnce({ ...run, id: "queued-directory" });
       const queued = await coordinator.start("second");
@@ -177,7 +177,7 @@ describe("ScrapeCoordinator", () => {
       expect(snapshots.at(-1)).toMatchObject({
         status: "completed",
         progress: { percent: 100, completedItems: 0, totalItems: 0 },
-        latestStage: { message: "未找到可处理视频" },
+        latestStage: { stage: "completed" },
       });
     if (outcome !== "files") expect(commitItems).not.toHaveBeenCalled();
     expect(coordinator.liveRuns()).toEqual([]);

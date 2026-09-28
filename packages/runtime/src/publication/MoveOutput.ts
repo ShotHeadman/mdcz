@@ -30,7 +30,11 @@ export const assertMoveTargetAbsent = async (targetPath: string, fs = outputFile
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
-  throw new PublicationConflictError(targetPath, targetPath, "目标已存在，禁止替换媒体文件");
+  throw new PublicationConflictError(
+    targetPath,
+    targetPath,
+    "Target already exists; overwriting media files is prohibited",
+  );
 };
 
 // Uncommitted media is put back where it came from so a retry sees the original source
@@ -81,7 +85,11 @@ export class MoveOutput {
         for (const candidate of entries) {
           if (candidate === filesystemPathKey(sourcePath)) continue;
           if (filesystemPathKey(path.join(directory, path.parse(candidate).name)) === base)
-            throw new PublicationConflictError(move.sourcePath, candidate, "目标目录已存在同名影片");
+            throw new PublicationConflictError(
+              move.sourcePath,
+              candidate,
+              "A movie with the same name already exists in target directory",
+            );
         }
       }
       await assertMoveTargetAbsent(move.targetPath, fs);

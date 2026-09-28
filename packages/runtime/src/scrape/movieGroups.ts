@@ -65,11 +65,11 @@ export const groupMovieMembers = (members: readonly MovieMember[]): MovieGroup[]
     if (memberError) {
       group.error = memberError;
     } else if (!group.members[0]?.ownerId && parts.length && parts.length !== group.members.length) {
-      group.error = "同一影片同时包含分盘文件和独立文件，需要手动核对";
+      group.error = "The same movie contains both multi-part and standalone files; please check manually";
     } else if (new Set(parts).size !== parts.length) {
-      group.error = "同一影片存在重复分盘号，需要手动核对";
+      group.error = "The same movie contains duplicate part numbers; please check manually";
     } else if (new Set(group.members.map((member) => JSON.stringify(member.manualScrape ?? null))).size > 1) {
-      group.error = "同一影片包含冲突的手动刮削指令";
+      group.error = "The same movie contains conflicting manual scrape instructions";
     }
   }
   return [...groups.values()];
@@ -105,7 +105,7 @@ const inspectMember = async (
     fileInfo.extension.toLowerCase() === ".strm" &&
     !primary.some((entry) => entry.name === `${fileInfo.fileName}${fileInfo.extension}`)
   ) {
-    member.error = `不能单独处理生成的视频附属文件：${filePath}`;
+    member.error = `Cannot process generated sidecar video file alone: ${filePath}`;
   }
   return member;
 };

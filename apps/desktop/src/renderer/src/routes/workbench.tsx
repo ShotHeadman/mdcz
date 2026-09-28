@@ -9,6 +9,7 @@ import {
   useScrapeTerminalError,
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
+import { useT } from "@mdcz/views/i18n";
 import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
 import {
   changeMaintenancePreset,
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/workbench")({
 });
 
 export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintenance" }) {
+  const t = useT();
   const queryClient = useQueryClient();
   const [startError, setStartError] = useState<unknown>(null);
   const configQ = useCurrentConfig();
@@ -83,16 +85,16 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleStartDirectory = async (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => {
     try {
       if (workbenchMode === "maintenance") {
-        if (isScraping) throw new Error("请先停止当前刮削任务");
+        if (isScraping) throw new Error(t.desktop.stopScrapeFirst);
         changeMaintenancePreset(presetId);
         useMaintenanceStore.getState().setPending(true);
         await ipc.maintenance.directory(source, presetId, targetDir);
       } else {
-        if (maintenanceBusy) throw new Error("请先停止当前维护任务");
+        if (maintenanceBusy) throw new Error(t.desktop.stopMaintenanceFirst);
         activateNewScrapeTask();
         await ipc.scraper.start({ mode: "directory", source, targetDir });
       }
-      toast.success("任务已提交");
+      toast.success(t.desktop.taskSubmitted);
     } catch (error) {
       if (workbenchMode === "maintenance") useMaintenanceStore.getState().setPending(false);
       throw error;
@@ -101,19 +103,19 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
     if (maintenanceBusy) {
-      toast.warning("维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。");
+      toast.warning(t.desktop.maintenanceRunningWarning);
       return;
     }
 
     try {
       const outputRoot = await ipc.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
       activateNewScrapeTask();
-      const response = await startSelectedScrape(
+      await startSelectedScrape(
         candidates.map((candidate) => candidate.ref),
         outputRoot.id,
         outputRoot.relativeDirectory,
       );
-      toast.success(response.data.message);
+      toast.success(t.scrape.launch.selection);
     } catch (error) {
       const errorMessage = toErrorMessage(error);
 
@@ -122,7 +124,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       }
 
       if (errorMessage.includes("NO_FILES")) {
-        toast.info("当前目录中没有需要刮削的媒体文件");
+        toast.info(t.desktop.noMediaToScrape);
         return;
       }
 
@@ -136,7 +138,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     targetDir?: string,
   ) => {
     if (isScraping) {
-      toast.warning("正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。");
+      toast.warning(t.desktop.scrapeRunningWarning);
       return;
     }
 
@@ -154,46 +156,46 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   };
 
   const handleStopScrape = async () => {
-    if (!window.confirm("确定要停止刮削吗？")) return;
+    if (!window.confirm(t.desktop.confirmStopScrape)) return;
     try {
       await runScrapeRequest(stopScrape);
-      toast.info("正在停止...");
+      toast.info(t.desktop.stopping);
     } catch (_error) {
-      toast.error("停止失败");
+      toast.error(t.desktop.stopScrapeFailed);
     }
   };
 
   const handlePauseScrape = async () => {
     try {
       await runScrapeRequest(pauseScrape);
-      toast.info("任务已暂停");
+      toast.info(t.desktop.taskPaused);
     } catch (_error) {
-      toast.error("暂停失败");
+      toast.error(t.desktop.pauseFailed);
     }
   };
 
   const handleResumeScrape = async () => {
     try {
       await runScrapeRequest(resumeScrape);
-      toast.success("任务已恢复");
+      toast.success(t.desktop.taskResumed);
     } catch (_error) {
-      toast.error("恢复失败");
+      toast.error(t.desktop.resumeFailed);
     }
   };
 
   const handleRetryFailed = async () => {
     if (failedPaths.length === 0) {
-      toast.info("当前没有可重试的失败项目");
+      toast.info(t.desktop.noFailedItemsToRetry);
       return;
     }
 
-    if (!window.confirm(`确定要批量重试 ${failedPaths.length} 个失败项目吗？`)) {
+    if (!window.confirm(t.desktop.confirmBatchRetry(failedPaths.length))) {
       return;
     }
 
     try {
-      const result = await retryScrapeSelection();
-      toast.success(result.data.message);
+      await retryScrapeSelection();
+      toast.success(t.scrape.launch.retry);
     } catch (error) {
       setStartError(error);
     }
@@ -204,7 +206,9 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       <div className="flex-1 min-h-0">
         <Suspense
           fallback={
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">加载中...</div>
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              {t.common.loading}
+            </div>
           }
         >
           {showSetup ? (

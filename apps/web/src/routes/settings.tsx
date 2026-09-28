@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useT } from "@mdcz/views/i18n";
 import { SettingsEditor, SettingsLayout, SettingsProfileDialogs, SettingsServicesProvider } from "@mdcz/views/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -19,6 +20,7 @@ import {
 } from "./settingsController";
 
 export const SettingsPage = () => {
+  const t = useT();
   const queryClient = useQueryClient();
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -74,23 +76,23 @@ export const SettingsPage = () => {
   }, [activeProfile, importDialogOpen, importMode, overwriteProfileName, profiles]);
 
   const handleOpenResetDialog = () => {
-    if (!ensureProfileActionReady("恢复默认设置")) {
+    if (!ensureProfileActionReady(t.web.actionResetDefault)) {
       return;
     }
     setResetDialogOpen(true);
   };
 
   const handleReset = async () => {
-    if (!ensureProfileActionReady("恢复默认设置")) {
+    if (!ensureProfileActionReady(t.web.actionResetDefault)) {
       return;
     }
     try {
       await api.config.reset();
       invalidateConfigQueries(queryClient);
-      toast.success(`已恢复档案 "${activeProfile ?? "default"}" 的默认设置`);
+      toast.success(t.web.profileResetSuccess(activeProfile ?? "default"));
       setResetDialogOpen(false);
     } catch (error) {
-      handleProfileActionError("重置失败", error);
+      handleProfileActionError(t.web.resetFailed, error);
     }
   };
 
@@ -100,11 +102,11 @@ export const SettingsPage = () => {
     try {
       await api.config.profiles.create({ name });
       invalidateConfigQueries(queryClient);
-      toast.success(`配置档案 "${name}" 已创建`);
+      toast.success(t.web.profileCreated(name));
       setNewProfileName("");
       setNewProfileDialogOpen(false);
     } catch (error) {
-      handleProfileActionError("创建失败", error);
+      handleProfileActionError(t.web.createFailed, error);
     }
   };
 
@@ -112,15 +114,15 @@ export const SettingsPage = () => {
     if (!name || name === activeProfile) {
       return;
     }
-    if (!ensureProfileActionReady("切换档案")) {
+    if (!ensureProfileActionReady(t.web.actionSwitchProfile)) {
       return;
     }
     try {
       await api.config.profiles.switch({ name });
       invalidateConfigQueries(queryClient);
-      toast.success(`已切换到配置档案 "${name}"`);
+      toast.success(t.web.profileSwitched(name));
     } catch (error) {
-      handleProfileActionError("切换失败", error);
+      handleProfileActionError(t.web.switchFailed, error);
     }
   };
 
@@ -129,11 +131,11 @@ export const SettingsPage = () => {
     try {
       await api.config.profiles.delete({ name: deleteProfileName });
       invalidateConfigQueries(queryClient);
-      toast.success("配置档案已删除");
+      toast.success(t.web.profileDeleted);
       setDeleteProfileDialogOpen(false);
       setDeleteProfileName("");
     } catch (error) {
-      handleProfileActionError("删除失败", error);
+      handleProfileActionError(t.web.deleteFailed, error);
     }
   };
 
@@ -141,16 +143,16 @@ export const SettingsPage = () => {
     if (!activeProfile) {
       return;
     }
-    if (!ensureProfileActionReady("导出配置档案")) {
+    if (!ensureProfileActionReady(t.web.actionExportProfile)) {
       return;
     }
 
     try {
       const result = await api.config.profiles.export({ name: activeProfile });
       triggerDownload(result.fileName, result.content, "application/toml;charset=utf-8");
-      toast.success(`配置档案 "${result.profileName}" 已导出`);
+      toast.success(t.web.profileExported(result.profileName));
     } catch (error) {
-      handleProfileActionError("导出失败", error);
+      handleProfileActionError(t.web.exportFailed, error);
     }
   };
 
@@ -170,7 +172,7 @@ export const SettingsPage = () => {
       setImportFileLabel(result.label);
       setImportProfileName(suggestImportProfileName(result.label, profiles));
     } catch (error) {
-      handleProfileActionError("选择文件失败", error);
+      handleProfileActionError(t.web.selectFileFailed, error);
     }
   };
 
@@ -178,7 +180,7 @@ export const SettingsPage = () => {
     if (!importFilePath || !importTargetName) {
       return;
     }
-    if (!ensureProfileActionReady("导入配置档案")) {
+    if (!ensureProfileActionReady(t.web.actionImportProfile)) {
       return;
     }
 
@@ -193,17 +195,17 @@ export const SettingsPage = () => {
       clearImportedFile(importFilePath);
       invalidateConfigQueries(queryClient);
       toast.success(
-        result.overwritten ? `配置档案 "${result.profileName}" 已覆盖导入` : `配置档案 "${result.profileName}" 已导入`,
+        result.overwritten ? t.web.profileOverwritten(result.profileName) : t.web.profileImported(result.profileName),
       );
       setImportDialogOpen(false);
       resetImportState();
     } catch (error) {
-      handleProfileActionError("导入失败", error);
+      handleProfileActionError(t.web.importFailed, error);
     }
   };
 
   if (configQ.isError) {
-    return <div className="p-4 text-destructive">加载设置失败：{toErrorMessage(configQ.error)}</div>;
+    return <div className="p-4 text-destructive">{t.web.loadSettingsFailed(toErrorMessage(configQ.error))}</div>;
   }
 
   return (

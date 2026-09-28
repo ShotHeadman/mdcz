@@ -104,15 +104,15 @@ export class FileOrganizer {
 
     if (config.behavior.metadataOnly) {
       if (!metadataRoot) {
-        throw new Error("启用仅输出元数据模式时，必须指定元数据输出目录");
+        throw new Error("Metadata output directory must be specified when metadata-only mode is enabled");
       }
       if (!isAbsolute(metadataRoot)) {
-        throw new Error("元数据输出目录必须使用绝对路径");
+        throw new Error("Metadata output directory must be an absolute path");
       }
       const sourceDir = resolve(dirname(fileInfo.filePath));
       const metadataDir = resolve(metadataRoot, layout.folderRelativePath);
       if (!isPathInside(metadataRoot, metadataDir)) {
-        throw new Error("生成路径超出元数据输出目录");
+        throw new Error("Generated path is outside the metadata output directory");
       }
       if (
         metadataDir === sourceDir ||
@@ -120,7 +120,9 @@ export class FileOrganizer {
         isPathInside(sourceDir, metadataRoot) ||
         isPathInside(metadataRoot, sourceDir)
       ) {
-        throw new Error("元数据输出目录不能与源媒体目录相同或互相包含");
+        throw new Error(
+          "Metadata output directory cannot be the same as or contained within the source media directory",
+        );
       }
       const nfoPath = join(metadataDir, layout.nfoFileName);
 
@@ -141,7 +143,8 @@ export class FileOrganizer {
     const generatedTargetVideoPath = join(outputDir, layout.targetVideoFileName);
     const moveMedia = config.behavior.successFileMove || config.behavior.successFileRename;
     const targetVideoPath = moveMedia ? generatedTargetVideoPath : fileInfo.filePath;
-    if (!isPathInside(directory, outputDir)) throw new Error("生成路径超出整理目标目录");
+    if (!isPathInside(directory, outputDir))
+      throw new Error("Generated path is outside the target organization directory");
     const nfoPath = join(outputDir, layout.nfoFileName);
 
     return {
@@ -161,11 +164,8 @@ export class FileOrganizer {
       const plan = this.plan(sample.fileInfo, sample.data, config, sample.localState);
       const assets = buildMovieAssetFileNames(basename(plan.nfoPath, ".nfo"), config.naming.assetNamingMode);
       return {
-        label: sample.label,
-        folder:
-          config.behavior.metadataOnly || config.behavior.successFileMove
-            ? layout.folderRelativePath || "当前目录"
-            : "当前目录",
+        sample: sample.sample,
+        folder: config.behavior.metadataOnly || config.behavior.successFileMove ? layout.folderRelativePath : "",
         file: layout.targetVideoFileName,
         sourcePath: resolve(sample.fileInfo.filePath),
         mediaPath: plan.targetVideoPath,
@@ -219,7 +219,9 @@ export class FileOrganizer {
       });
       if (otherVideos.length > 0) {
         this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
-        throw new Error("源目录包含多部影片，请开启“仅输出元数据”或使用影片同名命名模式");
+        throw new Error(
+          "Source directory contains multiple movies; please enable metadata-only mode or use a movie-named folder pattern",
+        );
       }
     }
 

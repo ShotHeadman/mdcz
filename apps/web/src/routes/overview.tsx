@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { OverviewRecentAcquisitionDto } from "@mdcz/shared/serverDtos";
+import { getT, useT } from "@mdcz/views/i18n";
 import {
   OverviewHeroStartCard,
   OverviewMaintenanceCard,
@@ -27,6 +28,7 @@ export const hasWorkbenchOutput = (input: {
   input.recentCount > 0;
 
 export function OverviewPage() {
+  const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionDto | null>(null);
@@ -54,7 +56,7 @@ export function OverviewPage() {
             hasConfiguredOutput={configured}
             isError={overviewQ.isError}
             isLoading={setupQ.isLoading || overviewQ.isLoading}
-            labels={{ startAction: "去工作台", setupAction: "前往设置" }}
+            labels={{ startAction: t.web.goToWorkbench, setupAction: t.web.goToSettings }}
             onSetup={() => {
               void navigate({ to: "/settings" });
             }}
@@ -73,7 +75,7 @@ export function OverviewPage() {
 
         <section className="col-span-12 mt-8">
           <div className="mb-8">
-            <h2 className="text-2xl font-bold tracking-tight">最近入库</h2>
+            <h2 className="text-2xl font-bold tracking-tight">{t.web.recentAcquisitions}</h2>
           </div>
           <RecentAcquisitionsGrid
             getImageSrc={(path, item) =>
@@ -108,7 +110,7 @@ export function OverviewPage() {
 async function removeRecentAcquisition(item: OverviewRecentAcquisitionDto, onSuccess: () => void) {
   try {
     await api.overview.removeRecentAcquisition({ id: item.id });
-    toast.success("已从最近入库移除");
+    toast.success(getT().web.removedFromRecent);
     onSuccess();
   } catch (error) {
     toast.error(toErrorMessage(error));

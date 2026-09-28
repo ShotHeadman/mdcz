@@ -82,7 +82,6 @@ describe("ToolsService person sync", () => {
     expect(actorSourceProvider.lookup).toHaveBeenCalledWith(configuration, "Actor A");
     expect(response).toMatchObject({
       ok: true,
-      message: "人物简介同步完成：1 成功，0 跳过，0 失败",
       data: { processedCount: 1, skippedCount: 0, failedCount: 0 },
     });
     const payload = JSON.parse(String(networkClient.postText.mock.calls[0]?.[1] ?? "{}")) as { Overview?: string };
@@ -108,7 +107,6 @@ describe("ToolsService person sync", () => {
     expect(networkClient.getContent).toHaveBeenCalledWith("https://example.com/actor-a.jpg", expect.anything());
     expect(response).toMatchObject({
       ok: true,
-      message: "人物头像同步完成：1 成功，0 跳过，0 失败",
       data: { processedCount: 1, skippedCount: 0, failedCount: 0 },
     });
   });

@@ -31,7 +31,7 @@ export const relinkLibraryFile = async <T>(input: {
   );
   try {
     const file = await stat(resolveRootRelativePath(input.root, input.relativePath));
-    if (!file.isFile()) throw new Error("目标路径不是文件");
+    if (!file.isFile()) throw new Error("Target path is not a file");
     return await input.relink({
       fileId: input.fileId,
       entryIdentity: filesystemPathKey(await resolveEntryPath(resolveRootRelativePath(input.root, input.relativePath))),

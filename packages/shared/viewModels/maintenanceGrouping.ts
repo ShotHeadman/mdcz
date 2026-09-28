@@ -346,14 +346,6 @@ export const countMaintenanceDisplayItems = (
   options: BuildMaintenanceEntryGroupsOptions = {},
 ): number => buildMaintenanceEntryViewModel(entries, options).displayCount;
 
-export const formatMaintenanceIdleStatusText = (entries: LocalScanEntry[], emptyText = "就绪"): string => {
-  if (entries.length === 0) {
-    return emptyText;
-  }
-
-  return `已扫描 ${countMaintenanceDisplayItems(entries)} 项`;
-};
-
 export const summarizeMaintenancePreviewGroups = (
   entries: LocalScanEntry[],
   previewResults: Record<string, MaintenancePreviewItem>,

@@ -415,6 +415,18 @@ export type ScrapeResultDto = z.infer<typeof scrapeResultSchema>;
  * can therefore describe pending and processing work as well as a committed
  * terminal outcome.
  */
+export const scrapeRunStageSchema = z.enum([
+  "discovering",
+  "prepare",
+  "check-output",
+  "execute",
+  "search",
+  "download",
+  "completed",
+]);
+
+export type ScrapeRunStage = z.infer<typeof scrapeRunStageSchema>;
+
 export const scrapeLiveItemSchema = z.object({
   id: z.string(),
   resultId: z.string().nullable(),
@@ -602,8 +614,7 @@ export const scrapeRunSnapshotSchema = z.object({
   items: z.array(scrapeLiveItemSchema),
   latestStage: z
     .object({
-      stage: z.string(),
-      message: z.string(),
+      stage: scrapeRunStageSchema,
       relativePath: z.string().nullable(),
     })
     .nullable(),
@@ -808,14 +819,6 @@ export const healthResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export const aboutLinkSchema = z.object({
-  label: z.string(),
-  url: z.string(),
-  description: z.string().optional(),
-});
-
-export type AboutLinkDto = z.infer<typeof aboutLinkSchema>;
-
 export const systemAboutResponseSchema = z.object({
   productName: z.string(),
   version: z.string().nullable(),
@@ -828,10 +831,6 @@ export const systemAboutResponseSchema = z.object({
     node: z.string(),
     platform: z.string(),
     arch: z.string(),
-  }),
-  community: z.object({
-    feedback: aboutLinkSchema,
-    links: z.array(aboutLinkSchema),
   }),
 });
 
@@ -938,10 +937,11 @@ export type CrawlerProbeSiteConnectivityInput = z.infer<typeof crawlerProbeSiteC
 
 export const siteConnectivityProbeResponseSchema = z.object({
   ok: z.boolean(),
-  message: z.string(),
   latencyMs: z.number(),
   status: z.number().optional(),
   resolvedUrl: z.string().optional(),
+  /** Raw request error when the probe could not get an HTTP response. */
+  error: z.string().optional(),
 });
 
 export type SiteConnectivityProbeResponse = z.infer<typeof siteConnectivityProbeResponseSchema>;
@@ -964,8 +964,8 @@ export const networkCheckCookiesResponseSchema = z.object({
     z.object({
       site: z.string(),
       valid: z.boolean(),
-      message: z.string(),
       status: networkCookieCheckStatusSchema,
+      error: z.string().optional(),
     }),
   ),
 });
@@ -988,8 +988,10 @@ export const translateTestLlmInputSchema = z.object({
 export type TranslateTestLlmInputDto = z.infer<typeof translateTestLlmInputSchema>;
 
 export const translateTestLlmResponseSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
+  status: z.enum(["ok", "missing_model", "missing_api_key", "failed"]),
+  /** Translated sample title when status is "ok". */
+  sample: z.string().optional(),
+  error: z.string().optional(),
 });
 
 export type TranslateTestLlmResponse = z.infer<typeof translateTestLlmResponseSchema>;
@@ -1048,7 +1050,7 @@ const profileNameSchema = z
   .string()
   .trim()
   .min(1)
-  .regex(/^[\p{L}\p{N}_-]+$/u, '档案名仅支持字母、数字、"_" 和 "-"');
+  .regex(/^[\p{L}\p{N}_-]+$/u, 'Profile name only supports letters, numbers, "_" and "-"');
 
 export const configProfileNameInputSchema = z.object({
   name: profileNameSchema,
@@ -1171,7 +1173,6 @@ export type ToolExecuteInput = z.input<typeof toolExecuteInputSchema>;
 export const toolExecuteResponseSchema = z.object({
   toolId: z.string(),
   ok: z.boolean(),
-  message: z.string(),
   data: z.any().optional(),
 });
 

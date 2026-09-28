@@ -16,6 +16,7 @@ import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore"
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
+import { useT } from "../i18n";
 import { type MaintenanceBatchBarPreviewGroup, MaintenanceBatchBarView } from "../maintenance";
 import type { MaintenanceActionPort } from "./ports";
 
@@ -48,8 +49,8 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     );
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
 
-  const presetMeta = getMaintenancePresetMeta(presetId);
-  const supportsExecution = presetMeta.supportsExecution !== false;
+  const t = useT();
+  const supportsExecution = getMaintenancePresetMeta(presetId).supportsExecution;
   const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const activeExecution = executionStatus !== "idle";
   const paused = executionStatus === "paused";
@@ -105,12 +106,12 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     }
 
     if (isScraping) {
-      toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
+      toast.warning(t.maintenance.scrapeRunningCannotMaintain);
       return;
     }
 
     if (selectedEntries.length === 0) {
-      toast.info("请先选择要执行的项目");
+      toast.info(t.maintenance.selectItemsFirst);
       return;
     }
 
@@ -120,25 +121,25 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
         selectedEntries.map((entry) => entry.ref),
         presetId,
       );
-      toast.info("维护预览已启动");
+      toast.info(t.maintenance.previewStarted);
     } catch (error) {
       useMaintenanceStore.getState().setPending(false);
       if (toErrorMessage(error) === "Operation aborted") {
         return;
       }
       useMaintenanceStore.getState().setError(toErrorMessage(error));
-      toast.error(`预览失败: ${toErrorMessage(error)}`);
+      toast.error(t.maintenance.previewFailed(toErrorMessage(error)));
     }
   };
 
   const handleExecute = async (previewMapOverride?: Record<string, MaintenancePreviewItem>) => {
     if (!supportsExecution) {
-      toast.info("“本地查看”预设只需扫描目录，无需执行。");
+      toast.info(t.maintenance.inspectLocalNoExecute);
       return;
     }
 
     if (isScraping) {
-      toast.warning("正常刮削正在进行中，无法启动维护模式。请先停止当前任务。");
+      toast.warning(t.maintenance.scrapeRunningCannotMaintain);
       return;
     }
 
@@ -153,12 +154,12 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     const executableEntries = executionViewModel.executableEntries;
     const selections = executableEntries.map((entry) => {
       const preview = effectivePreviewResults[entry.fileId];
-      if (!preview?.previewId) throw new Error(`维护预览缺少 ID：${entry.fileInfo.filePath}`);
+      if (!preview?.previewId) throw new Error(`Maintenance preview is missing an ID: ${entry.fileInfo.filePath}`);
       return { previewId: preview.previewId, fieldSelections: fieldSelections[entry.fileId] };
     });
 
     if (selections.length === 0) {
-      toast.info("没有可执行的项目，请先完成预览并处理阻塞项。");
+      toast.info(t.maintenance.noExecutableSelections);
       return;
     }
 
@@ -168,10 +169,10 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
 
     try {
       await port.execute(selections, presetId);
-      toast.success(`维护任务已启动，共 ${displayCount} 项`);
+      toast.success(t.maintenance.maintenanceStarted(displayCount));
     } catch (error) {
       useMaintenanceStore.getState().setError(toErrorMessage(error));
-      toast.error(`启动失败: ${toErrorMessage(error)}`);
+      toast.error(t.maintenance.startFailed(toErrorMessage(error)));
     }
   };
 
@@ -185,24 +186,28 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       if (paused) {
         await port.resume();
         toast.success(
-          useMaintenanceStore.getState().snapshot?.phase === "preview" ? "维护预览已恢复" : "维护任务已恢复",
+          useMaintenanceStore.getState().snapshot?.phase === "preview"
+            ? t.maintenance.previewResumed
+            : t.maintenance.taskResumed,
         );
         return;
       }
 
       await port.pause();
-      toast.info(pausingPreview ? "维护预览已暂停" : "维护任务已暂停");
+      toast.info(pausingPreview ? t.maintenance.previewPaused : t.maintenance.taskPaused);
     } catch (error) {
-      toast.error(`${paused ? "恢复" : "暂停"}失败: ${toErrorMessage(error)}`);
+      toast.error(
+        paused ? t.maintenance.resumeFailed(toErrorMessage(error)) : t.maintenance.pauseFailed(toErrorMessage(error)),
+      );
     }
   };
 
   const handleStop = async () => {
     try {
       await port.stop();
-      toast.info("维护流程已停止");
+      toast.info(t.maintenance.processStopped);
     } catch (error) {
-      toast.error(`停止失败: ${toErrorMessage(error)}`);
+      toast.error(t.maintenance.stopFailed(toErrorMessage(error)));
     }
   };
 
@@ -212,7 +217,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       setExecuteDialogOpen(false);
       resetMaintenanceSession();
     } catch (error) {
-      toast.error(`丢弃维护会话失败: ${toErrorMessage(error)}`);
+      toast.error(t.maintenance.discardSessionFailed(toErrorMessage(error)));
     }
   };
 
@@ -248,7 +253,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       }
       onStop={() => void handleStop()}
       paused={paused}
-      presetLabel={presetMeta.label}
+      presetLabel={t.domain.maintenancePresets[presetId].label}
       previewPending={previewPending}
       progressValue={totalUnknown ? null : progressValue}
       readyCount={previewSummary.readyCount}

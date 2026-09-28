@@ -84,11 +84,11 @@ type PreviewExecutionResult = {
   selection: MaintenanceMovieSelection;
 };
 
-const PREVIEW_ALL_FAILED = "维护预览全部失败";
-const APPLY_FAILED = "维护应用失败";
-const STOPPED = "维护已停止";
-const STOPPED_ITEM = "维护已停止，项目未执行";
-const INTERRUPTED = "维护因服务关闭而中断，请重新预览后执行";
+const PREVIEW_ALL_FAILED = "Maintenance preview failed for all items";
+const APPLY_FAILED = "Maintenance apply failed";
+const STOPPED = "Maintenance stopped";
+const STOPPED_ITEM = "Maintenance stopped; item not processed";
+const INTERRUPTED = "Maintenance interrupted due to service shutdown; please preview and apply again";
 const OWNERSHIP_CHANGED = "Maintenance execution ownership changed";
 
 const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${ref.relativePath}`;
@@ -96,9 +96,9 @@ const refKey = (ref: RootFileRef): string => `${ref.rootId}\0${ref.relativePath}
 const assertUniqueRefs = (refs: readonly MaintenanceSessionRef[]): void => {
   const seen = new Set<string>();
   for (const ref of refs) {
-    if (!ref.relativePath.trim()) throw new Error("维护文件路径不能为空");
+    if (!ref.relativePath.trim()) throw new Error("Maintenance file path cannot be empty");
     const key = refKey(ref);
-    if (seen.has(key)) throw new Error(`维护文件路径重复：${ref.rootId}:${ref.relativePath}`);
+    if (seen.has(key)) throw new Error(`Duplicate maintenance file path: ${ref.rootId}:${ref.relativePath}`);
     seen.add(key);
   }
 };
@@ -147,7 +147,7 @@ const resolveMovieSelections = async (
     }));
     files.sort((left, right) => refKey(left).localeCompare(refKey(right)));
     const selected = files[0];
-    if (!selected) throw new Error("影片缺少有效文件");
+    if (!selected) throw new Error("Movie is missing valid files");
     return {
       ref: { rootId: selected.rootId, relativePath: selected.relativePath },
       identity: {
@@ -206,16 +206,17 @@ const scanMembers = async (
     for (const entry of entries) {
       const ref = { rootId, relativePath: entry.ref.relativePath };
       const key = refKey(ref);
-      if (byRef.has(key)) throw new Error(`维护扫描结果路径重复：${rootId}:${entry.ref.relativePath}`);
+      if (byRef.has(key))
+        throw new Error(`Duplicate maintenance scan result path: ${rootId}:${entry.ref.relativePath}`);
       byRef.set(key, { ...entry, ref });
     }
   }
   if (byRef.size !== members.length || members.some((member) => !byRef.has(refKey(member)))) {
-    throw new Error("维护扫描结果与请求文件不一致");
+    throw new Error("Maintenance scan results do not match requested files");
   }
   return members.map((member) => {
     const observation = byRef.get(refKey(member));
-    if (!observation) throw new Error("维护扫描结果与请求文件不一致");
+    if (!observation) throw new Error("Maintenance scan results do not match requested files");
     return { ...observation, fileId: member.fileId };
   });
 };
@@ -271,16 +272,18 @@ export class MaintenanceSessionCoordinator {
     outputRelativeDirectory?: string;
   }): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     this.assertOpen();
-    if (input.refs.length === 0 && !input.directoryScope) throw new Error("维护文件不能为空");
+    if (input.refs.length === 0 && !input.directoryScope) throw new Error("Maintenance files cannot be empty");
     if (this.previewStarting || this.session?.isActive()) {
-      throw new Error("已有活动的维护会话，请先完成或停止当前会话");
+      throw new Error(
+        "An active maintenance session already exists; please complete or stop the current session first",
+      );
     }
     this.previewStarting = true;
     try {
       const currentConfiguration = await this.deps.runtime.getConfiguration();
       const configuration = input.configuration ?? currentConfiguration;
       if (configuration.behavior.metadataOnly) {
-        throw new Error("维护模式不支持仅输出元数据，请先在设置中关闭");
+        throw new Error("Maintenance mode does not support metadata-only output; please disable it in settings first");
       }
       this.inventory = new DirectoryInventory();
       this.sessionController.abort();
@@ -371,7 +374,7 @@ export class MaintenanceSessionCoordinator {
         batch.session.status === "interrupted"
       ) {
         if (batch.session.error === PREVIEW_ALL_FAILED) return batch;
-        throw new Error(batch.session.error ?? "维护预览失败");
+        throw new Error(batch.session.error ?? "Maintenance preview failed");
       }
       await this.waitForChange(sessionId, revision);
     }
@@ -383,24 +386,27 @@ export class MaintenanceSessionCoordinator {
   }): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     this.assertOpen();
     await this.deps.runtime.getConfiguration();
-    if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
-    if (input.selections.length === 0) throw new Error("请选择要应用的维护预览");
+    if (this.previewStarting) throw new Error("Maintenance preview is starting, please try again shortly");
+    if (input.selections.length === 0) throw new Error("Please select maintenance previews to apply");
     const previewIds = input.selections.map((selection) => selection.previewId);
     const session = this.require(input.sessionId);
     if (!getMaintenancePreset(session.presetId).supportsExecution) {
-      throw new Error(`维护预设 ${session.presetId} 不支持执行`);
+      throw new Error(`Maintenance preset ${session.presetId} does not support execution`);
     }
     const previews = previewIds
       .map((previewId) => session.preview(previewId))
       .filter((preview) => preview !== undefined);
-    if (previews.length !== previewIds.length) throw new Error("部分维护预览不存在、已提交或不属于当前会话");
+    if (previews.length !== previewIds.length)
+      throw new Error(
+        "Some maintenance previews do not exist, were already committed, or do not belong to the current session",
+      );
     const draftSelections = session.snapshot().draft.fieldSelections;
     for (const selection of input.selections) {
       const preview = previews.find((item) => item.id === selection.previewId);
       const fieldSelections = selection.fieldSelections ?? draftSelections[selection.previewId];
       if (!fieldSelections || preview?.status !== "ready" || !preview.entry || !preview.files?.length) continue;
       const crawlerData = buildMaintenanceApplyData(preview.entry, preview, fieldSelections).crawlerData;
-      if (!crawlerData) throw new Error("维护预览缺少影片元数据");
+      if (!crawlerData) throw new Error("Maintenance preview is missing movie metadata");
       const paths = await this.runtime.previewPaths({
         presetId: session.presetId,
         entry: preview.entry,
@@ -411,7 +417,9 @@ export class MaintenanceSessionCoordinator {
         paths.pathDiff?.targetVideoPath !== preview.pathDiff?.targetVideoPath ||
         JSON.stringify(paths.affectedFiles) !== JSON.stringify(preview.affectedFiles)
       ) {
-        throw new Error("字段选择已改变目标路径，请刷新维护预览后执行");
+        throw new Error(
+          "Field selections have changed the target path; please refresh the maintenance preview before executing",
+        );
       }
     }
     await this.deps.roots.assertRootIntegrity([
@@ -419,8 +427,8 @@ export class MaintenanceSessionCoordinator {
       ...previews.flatMap((preview) => preview.movieGroup?.files.map((file) => file.rootId) ?? []),
     ]);
     this.assertOpen();
-    if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
-    if (this.session !== session) throw new Error("当前维护任务已失效，请重新开始");
+    if (this.previewStarting) throw new Error("Maintenance preview is starting, please try again shortly");
+    if (this.session !== session) throw new Error("Current maintenance task is no longer valid; please start over");
     const apply = session.beginApply(input.selections);
     try {
       await this.publishStatus(session, "queued", `Maintenance apply queued. Items: ${input.selections.length}`);
@@ -439,7 +447,8 @@ export class MaintenanceSessionCoordinator {
 
   async pause(sessionId: string): Promise<MaintenanceSessionSnapshot> {
     const session = this.require(sessionId);
-    if (session.status === "discovering") throw new Error("扫描中不支持暂停，请直接停止任务");
+    if (session.status === "discovering")
+      throw new Error("Pausing is not supported during scanning; please stop the task directly");
     if (!session.pause()) return session.statusSnapshot();
     await this.publishStatus(session, "paused", "Maintenance session paused");
     if (this.active?.sessionId === session.id) this.active.executor.pause();
@@ -527,10 +536,11 @@ export class MaintenanceSessionCoordinator {
   }): Promise<MaintenanceActiveSessionSnapshot> {
     const session = this.require(input.sessionId);
     const preview = session.preview(input.previewId);
-    if (!preview?.entry || !preview.files?.length) throw new Error("维护预览不存在或缺少影片文件");
+    if (!preview?.entry || !preview.files?.length)
+      throw new Error("Maintenance preview does not exist or is missing movie files");
     const selections = input.fieldSelections ?? session.snapshot().draft.fieldSelections[input.previewId];
     const crawlerData = buildMaintenanceApplyData(preview.entry, preview, selections).crawlerData;
-    if (!crawlerData) throw new Error("维护预览缺少影片元数据");
+    if (!crawlerData) throw new Error("Maintenance preview is missing movie metadata");
     const paths = await this.runtime.previewPaths({
       presetId: session.presetId,
       entry: preview.entry,
@@ -538,7 +548,7 @@ export class MaintenanceSessionCoordinator {
       crawlerData,
     });
     if (new Set(paths.affectedFiles.map((file) => file.targetPath)).size !== paths.affectedFiles.length)
-      throw new Error("影片多个文件的目标路径重复，请调整字段选择");
+      throw new Error("Multiple files for the movie have identical target paths; please adjust field selections");
     this.require(input.sessionId).updateDraft(input.previewId, input.fieldSelections, {
       pathDiff: paths.pathDiff ?? null,
       affectedFiles: paths.affectedFiles,
@@ -549,8 +559,9 @@ export class MaintenanceSessionCoordinator {
 
   async discardSession(sessionId?: string): Promise<void> {
     if (!this.session) return;
-    if (sessionId && this.session.id !== sessionId) throw new Error("当前维护任务已失效，请重新开始");
-    if (this.session.isActive()) throw new Error("维护任务仍在运行，请停止后再返回");
+    if (sessionId && this.session.id !== sessionId)
+      throw new Error("Current maintenance task is no longer valid; please start over");
+    if (this.session.isActive()) throw new Error("Maintenance task is still running; please stop before returning");
     const id = this.session.id;
     this.previewSelections.clear();
     this.sessionController.abort();
@@ -607,7 +618,8 @@ export class MaintenanceSessionCoordinator {
       }
       scanController.signal.throwIfAborted();
       if (initial.directoryScope && !initial.snapshot().manifestFixed) {
-        if (!this.deps.discoverDirectory || !setup?.configuration) throw new Error("目录扫描缺少必要配置");
+        if (!this.deps.discoverDirectory || !setup?.configuration)
+          throw new Error("Directory scan is missing required configuration");
         let progressNotification = Promise.resolve();
         let progressError: unknown;
         const refs = await this.deps.discoverDirectory(
@@ -657,7 +669,8 @@ export class MaintenanceSessionCoordinator {
       if (initial.status === "paused") return;
       const selections = initial.refs.map((ref) => {
         const selection = this.previewSelections.get(refKey(ref));
-        if (!selection) throw new Error(`维护影片选择已失效：${ref.rootId}:${ref.relativePath}`);
+        if (!selection)
+          throw new Error(`Maintenance movie selection is no longer valid: ${ref.rootId}:${ref.relativePath}`);
         return selection;
       });
       for (const selection of selections) {
@@ -671,7 +684,7 @@ export class MaintenanceSessionCoordinator {
         current.initializeEntries(
           selections.map((selection) => {
             const entry = selection.files?.find((file) => refKey(file.ref) === refKey(selection.ref));
-            if (!entry) throw new Error("维护预览缺少选中的文件");
+            if (!entry) throw new Error("Maintenance preview is missing selected file");
             return entry;
           }),
         );
@@ -693,7 +706,7 @@ export class MaintenanceSessionCoordinator {
 
           const files = selection.files;
           const entry = files?.find((file) => refKey(file.ref) === refKey(selection.ref));
-          if (!files || !entry) throw new Error("维护预览缺少已扫描的视频文件");
+          if (!files || !entry) throw new Error("Maintenance preview is missing scanned video files");
           const root = await this.deps.roots.get(entry.ref.rootId);
           try {
             const active = this.assertCurrent(sessionId, ["running"]);
@@ -708,7 +721,9 @@ export class MaintenanceSessionCoordinator {
               item.affectedFiles &&
               new Set(item.affectedFiles.map((file) => file.targetPath)).size !== item.affectedFiles.length
             )
-              throw new Error("影片多个文件的目标路径重复，请调整命名后重新预览");
+              throw new Error(
+                "Multiple files for the movie have identical target paths; please adjust naming and re-preview",
+              );
             return { item, selection };
           } catch (error) {
             if (isAbortError(error) || context.signal.aborted) throw error;
@@ -757,13 +772,13 @@ export class MaintenanceSessionCoordinator {
         runItem: async (item, context) => {
           const active = this.assertCurrent(sessionId, ["running"]).markApplyProcessing(item);
           if (!active.preview) {
-            await this.commitItem(sessionId, item, { status: "failed", error: "维护预览不存在" });
+            await this.commitItem(sessionId, item, { status: "failed", error: "Maintenance preview does not exist" });
             return;
           }
           if (active.preview.status === "blocked") {
             await this.commitItem(sessionId, item, {
               status: "skipped",
-              error: active.preview.error ?? "维护预览不可应用",
+              error: active.preview.error ?? "Maintenance preview is not applicable",
             });
             return;
           }
@@ -777,7 +792,7 @@ export class MaintenanceSessionCoordinator {
               (file) =>
                 file.ref.rootId === active.preview?.rootId && file.ref.relativePath === active.preview.relativePath,
             );
-            if (!entry) throw new Error(`维护文件不存在：${active.preview.relativePath}`);
+            if (!entry) throw new Error(`Maintenance file does not exist: ${active.preview.relativePath}`);
             const committed = buildMaintenanceApplyData(entry, active.preview, active.item.selection.fieldSelections);
             const latest = this.assertCurrent(sessionId, ["running", "paused"]);
             const publicationRoots = await this.deps.roots.list();
@@ -894,7 +909,8 @@ export class MaintenanceSessionCoordinator {
       const revision = this.revision;
       const session = this.require(sessionId);
       if (["completed", "failed", "stopped", "interrupted"].includes(session.status)) {
-        if (session.snapshot().currentBatch?.id !== batchId) throw new Error("维护执行状态已变动，请重新查看任务进度");
+        if (session.snapshot().currentBatch?.id !== batchId)
+          throw new Error("Maintenance execution status has changed; please review task progress again");
         return {
           session: session.statusSnapshot(),
           batchId,
@@ -917,7 +933,7 @@ export class MaintenanceSessionCoordinator {
     const message =
       session.phase === "preview"
         ? status === "failed"
-          ? (error ?? "维护预览失败")
+          ? (error ?? "Maintenance preview failed")
           : `Maintenance preview completed. Ready: ${progress.successCount}, Blocked: ${progress.failedCount}`
         : status === "failed"
           ? (error ?? APPLY_FAILED)

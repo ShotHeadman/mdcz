@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
-import { Website } from "@mdcz/shared/enums";
 import type {
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
@@ -19,7 +18,11 @@ import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
-import { AmazonJpImageService, type AmazonJpNetworkClient } from "./AmazonJpImageService";
+import {
+  AmazonJpImageService,
+  type AmazonJpNetworkClient,
+  type AmazonJpPosterEnhanceResult,
+} from "./AmazonJpImageService";
 
 const POSTER_FILE_NAME = "poster.jpg";
 
@@ -106,14 +109,9 @@ const findCurrentPosterPath = async (
   return null;
 };
 
-export interface AmazonPosterEnhanceResult {
-  poster_url?: string;
-  reason: string;
-}
-
 export interface AmazonPosterDependencies {
   validateImage?: (filePath: string) => Promise<ImageValidation>;
-  enhanceAmazonPoster?: (data: CrawlerData) => Promise<AmazonPosterEnhanceResult>;
+  enhanceAmazonPoster?: (title: string) => Promise<AmazonJpPosterEnhanceResult>;
   logger?: Pick<RuntimeLogger, "warn">;
 }
 
@@ -198,18 +196,9 @@ export const lookupAmazonPoster = async (
   const normalizedNfoPath = resolve(nfoPath.trim());
   const startedAt = Date.now();
   try {
-    const data: CrawlerData = {
-      title: title.replace(/\s+/gu, " ").trim(),
-      number: basename(normalizedNfoPath, extname(normalizedNfoPath)),
-      actors: [],
-      genres: [],
-      scene_images: [],
-      website: Website.JAVDB,
-      poster_url: "lookup",
-    };
     const result = dependencies.enhanceAmazonPoster
-      ? await dependencies.enhanceAmazonPoster(data)
-      : await new AmazonJpImageService(networkClient, dependencies.logger).enhance(data);
+      ? await dependencies.enhanceAmazonPoster(title)
+      : await new AmazonJpImageService(networkClient, dependencies.logger).enhance(title);
     return {
       nfoPath: normalizedNfoPath,
       amazonPosterUrl: result.poster_url ?? null,
@@ -220,7 +209,8 @@ export const lookupAmazonPoster = async (
     return {
       nfoPath: normalizedNfoPath,
       amazonPosterUrl: null,
-      reason: `查询失败: ${toErrorText(error)}`,
+      reason: "query_failed",
+      error: toErrorText(error),
       elapsedMs: Date.now() - startedAt,
     };
   }

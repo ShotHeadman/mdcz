@@ -138,7 +138,7 @@ export const walkFiles = async (
     const timer = options.onDiagnostic
       ? setTimeout(() => {
           options.onDiagnostic?.(
-            `扫描慢调用 ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start), pending: [...pendingOperations.values()] })}`,
+            `Slow scan call ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start), pending: [...pendingOperations.values()] })}`,
           );
         }, 1000)
       : undefined;
@@ -149,7 +149,7 @@ export const walkFiles = async (
       pendingOperations.delete(key);
       if (performance.now() - start >= 1000)
         options.onDiagnostic?.(
-          `扫描调用结束 ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start) })}`,
+          `Scan call finished ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start) })}`,
         );
     }
   };
@@ -294,7 +294,7 @@ export const walkFiles = async (
     currentPath = null;
     progress(true);
     options.onDiagnostic?.(
-      `扫描汇总 ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count, calls, pending: [...pendingOperations.values()] })}`,
+      `Scan summary ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count, calls, pending: [...pendingOperations.values()] })}`,
     );
   }
 };

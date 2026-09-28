@@ -12,6 +12,7 @@ import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { toDetailViewItemFromMaintenanceEntry } from "../detail";
+import { useT } from "../i18n";
 import { MaintenanceWorkbenchFrame } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";
 import { MaintenanceBatchBarAdapter } from "./MaintenanceBatchBarAdapter";
@@ -19,6 +20,7 @@ import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
 
 export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
+  const t = useT();
   const snapshot = useMaintenanceStore((state) => state.snapshot);
   const { entries, activeId, presetId } = useMaintenanceStore(
     useShallow((state) => ({
@@ -75,7 +77,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     void ports.maintenance
       .updateDraft(previewId, { fieldSelections: selections })
       .then(async () => applyMaintenanceSessionSnapshot(await ports.maintenance.getActiveSession()))
-      .catch((error) => toast.error(`保存维护选择失败: ${toErrorMessage(error)}`));
+      .catch((error) => toast.error(t.maintenance.saveSelectionsFailed(toErrorMessage(error))));
   };
   const detailItem = useMemo(() => {
     if (!activeGroup || !detailEntry) {
@@ -105,26 +107,29 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
           <div role="status" className="space-y-4 p-8">
             <h2 className="text-lg font-semibold">
               {snapshot.status === "discovering"
-                ? "正在扫描文件"
+                ? t.maintenance.scanningFiles
                 : snapshot.status === "queued"
-                  ? "维护任务已排队"
+                  ? t.maintenance.queued
                   : snapshot.status === "stopping"
-                    ? "正在停止，等待当前文件处理完成"
+                    ? t.maintenance.stoppingWaitingCurrent
                     : snapshot.status === "completed"
                       ? snapshot.totalEntries === 0
-                        ? "未找到待处理视频"
-                        : "维护任务已完成"
-                      : (snapshot.error ?? "正在读取本地文件")}
+                        ? t.maintenance.noVideosToProcess
+                        : t.maintenance.taskCompleted
+                      : (snapshot.error ?? t.maintenance.readingLocalFiles)}
             </h2>
             <p className="break-all text-sm">{snapshot.directoryScope?.scanDir}</p>
             {snapshot.discovery ? (
               <>
                 <p>
-                  已扫描 {snapshot.discovery.directories} 个目录，找到 {snapshot.discovery.candidates} 个视频，跳过{" "}
-                  {snapshot.discovery.skipped} 项
+                  {t.maintenance.discoveryStatus(
+                    snapshot.discovery.directories,
+                    snapshot.discovery.candidates,
+                    snapshot.discovery.skipped,
+                  )}
                 </p>
                 <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>
-                <p className="break-all text-amber-600">{snapshot.discovery.warnings.join("、")}</p>
+                <p className="break-all text-amber-600">{t.scrape.warnings(snapshot.discovery.warnings)}</p>
               </>
             ) : null}
           </div>
@@ -133,7 +138,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
             {snapshot?.previews.find((preview) => preview.entry?.fileId === detailEntry?.fileId)?.affectedFiles
               ?.length ? (
               <section className="space-y-2 border-b p-4 text-sm">
-                <h3 className="font-semibold">文件变动</h3>
+                <h3 className="font-semibold">{t.maintenance.fileChanges}</h3>
                 {snapshot.previews
                   .find((preview) => preview.entry?.fileId === detailEntry?.fileId)
                   ?.affectedFiles?.map((file) => (
@@ -151,7 +156,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
                 usesDiffView
                   ? {
                       result: compareResult,
-                      badgeLabel: "数据对比",
+                      badgeLabel: t.maintenance.dataCompare,
                       entry: detailEntry ?? undefined,
                       preview: detailPreview,
                       fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,

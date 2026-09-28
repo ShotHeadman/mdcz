@@ -91,11 +91,7 @@ export const createCrawlerHandlers = (
           const configuration = await configManager.getValidated();
           return await probeSiteConnectivity(site, configuration, networkClient);
         } catch (error) {
-          return {
-            ok: false as const,
-            message: `请求失败: ${toErrorMessage(error)}`,
-            latencyMs: 0,
-          };
+          return { ok: false, latencyMs: 0, error: toErrorMessage(error) };
         }
       }),
   };

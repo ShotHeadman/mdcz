@@ -15,14 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@mdcz/ui";
+import { useT } from "../i18n";
 
 export type SettingsProfileImportMode = "new" | "overwrite";
-
-export interface SettingsProfileImportCopy {
-  title?: string;
-  description?: string;
-  filePlaceholder?: string;
-}
 
 interface SettingsProfileDialogsProps {
   activeProfile: string | null;
@@ -40,7 +35,6 @@ interface SettingsProfileDialogsProps {
   overwriteProfileName: string;
   profiles: string[];
   resetDialogOpen: boolean;
-  importCopy?: SettingsProfileImportCopy;
   onBrowseImportFile: () => void;
   onCreateProfile: () => void;
   onDeleteProfile: () => void;
@@ -67,38 +61,33 @@ const PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME =
   "rounded-[var(--radius-quiet-capsule)] border-border/40 bg-surface-low px-5";
 const PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME = "rounded-[var(--radius-quiet-capsule)] px-5";
 
-const DEFAULT_IMPORT_COPY: Required<SettingsProfileImportCopy> = {
-  title: "导入配置档案",
-  description: "选择一个导出的设置文件（TOML 或 JSON），并决定导入为新档案或覆盖现有档案。",
-  filePlaceholder: "选择一个 TOML/JSON 文件",
-};
-
 export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
-  const importCopy = {
-    ...DEFAULT_IMPORT_COPY,
-    ...props.importCopy,
-  };
+  const t = useT();
+  const text = t.settings.profiles;
 
   return (
     <>
       <Dialog open={props.resetDialogOpen} onOpenChange={props.onResetDialogOpenChange}>
         <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
           <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">当前档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">恢复默认设置</DialogTitle>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+              {text.currentProfile}
+            </p>
+            <DialogTitle className="text-2xl font-semibold tracking-tight">{text.resetDefaults}</DialogTitle>
             <DialogDescription className="text-sm leading-6">
-              这会将 <span className="font-medium text-foreground">{props.activeProfile ?? "default"}</span>{" "}
-              重置为默认配置。 此操作不可撤销。
+              {text.resetDescriptionLead}
+              <span className="font-medium text-foreground">{props.activeProfile ?? "default"}</span>
+              {text.resetDescriptionTail}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
+                {t.common.cancel}
               </Button>
             </DialogClose>
             <Button variant="destructive" className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME} onClick={props.onReset}>
-              确定恢复
+              {text.confirmReset}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -107,16 +96,16 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
       <Dialog open={props.newProfileDialogOpen} onOpenChange={props.onNewProfileDialogOpenChange}>
         <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
           <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">新建配置档案</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              输入一个名称，将基于默认设置生成新的配置档案。
-            </DialogDescription>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+              {text.menuTitle}
+            </p>
+            <DialogTitle className="text-2xl font-semibold tracking-tight">{text.create}</DialogTitle>
+            <DialogDescription className="text-sm leading-6">{text.createDescription}</DialogDescription>
           </DialogHeader>
           <Input
             value={props.newProfileName}
             onChange={(event) => props.onNewProfileNameChange(event.target.value)}
-            placeholder="配置档案名称"
+            placeholder={text.namePlaceholder}
             className={PROFILE_DIALOG_INPUT_CLASS_NAME}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -127,7 +116,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
           <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
+                {t.common.cancel}
               </Button>
             </DialogClose>
             <Button
@@ -135,7 +124,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
               onClick={props.onCreateProfile}
               disabled={!props.newProfileName.trim()}
             >
-              创建
+              {text.createAction}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -144,15 +133,15 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
       <Dialog open={props.deleteProfileDialogOpen} onOpenChange={props.onDeleteProfileDialogOpenChange}>
         <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
           <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">删除配置档案</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              仅可删除非当前活动档案。删除后，该档案的设置文件将被移除。
-            </DialogDescription>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+              {text.menuTitle}
+            </p>
+            <DialogTitle className="text-2xl font-semibold tracking-tight">{text.deleteTitle}</DialogTitle>
+            <DialogDescription className="text-sm leading-6">{text.deleteDescription}</DialogDescription>
           </DialogHeader>
           <Select value={props.deleteProfileName} onValueChange={props.onDeleteProfileNameChange}>
             <SelectTrigger className={PROFILE_DIALOG_SELECT_TRIGGER_CLASS_NAME}>
-              <SelectValue placeholder="选择配置档案" />
+              <SelectValue placeholder={text.selectProfile} />
             </SelectTrigger>
             <SelectContent>
               {props.deletableProfiles.map((profile) => (
@@ -165,7 +154,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
           <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
+                {t.common.cancel}
               </Button>
             </DialogClose>
             <Button
@@ -174,7 +163,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
               onClick={props.onDeleteProfile}
               disabled={!props.deleteProfileName}
             >
-              删除
+              {t.common.delete}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -183,19 +172,23 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
       <Dialog open={props.importDialogOpen} onOpenChange={props.onImportDialogOpenChange}>
         <DialogContent className={PROFILE_DIALOG_CONTENT_CLASS_NAME}>
           <DialogHeader className="gap-3 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">配置档案</p>
-            <DialogTitle className="text-2xl font-semibold tracking-tight">{importCopy.title}</DialogTitle>
-            <DialogDescription className="text-sm leading-6">{importCopy.description}</DialogDescription>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+              {text.menuTitle}
+            </p>
+            <DialogTitle className="text-2xl font-semibold tracking-tight">{text.importTitle}</DialogTitle>
+            <DialogDescription className="text-sm leading-6">{text.importDescription}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">源文件</div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {text.sourceFile}
+              </div>
               <div className="flex gap-2">
                 <Input
                   value={props.importFileLabel}
                   readOnly
-                  placeholder={importCopy.filePlaceholder}
+                  placeholder={text.importFilePlaceholder}
                   className={cn(PROFILE_DIALOG_INPUT_CLASS_NAME, "font-mono text-xs")}
                 />
                 <Button
@@ -204,13 +197,15 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                   className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}
                   onClick={props.onBrowseImportFile}
                 >
-                  选择文件
+                  {text.chooseFile}
                 </Button>
               </div>
             </div>
 
             <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">导入方式</div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {text.importMode}
+              </div>
               <div className="grid grid-cols-2 gap-2 rounded-[var(--radius-quiet)] bg-surface-low/80 p-1">
                 <button
                   type="button"
@@ -222,7 +217,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  新建档案
+                  {text.importAsNew}
                 </button>
                 <button
                   type="button"
@@ -234,18 +229,20 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  覆盖现有档案
+                  {text.importOverwrite}
                 </button>
               </div>
             </div>
 
             {props.importMode === "new" ? (
               <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">档案名称</div>
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {text.profileName}
+                </div>
                 <Input
                   value={props.importProfileName}
                   onChange={(event) => props.onImportProfileNameChange(event.target.value)}
-                  placeholder="为导入档案命名"
+                  placeholder={text.importNamePlaceholder}
                   className={PROFILE_DIALOG_INPUT_CLASS_NAME}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -256,10 +253,12 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">覆盖目标</div>
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {text.overwriteTarget}
+                </div>
                 <Select value={props.overwriteProfileName} onValueChange={props.onOverwriteProfileNameChange}>
                   <SelectTrigger className={PROFILE_DIALOG_SELECT_TRIGGER_CLASS_NAME}>
-                    <SelectValue placeholder="选择要覆盖的档案" />
+                    <SelectValue placeholder={text.selectOverwriteTarget} />
                   </SelectTrigger>
                   <SelectContent>
                     {props.profiles.map((profile) => (
@@ -270,9 +269,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                   </SelectContent>
                 </Select>
                 {props.overwriteProfileName === props.activeProfile && (
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    当前活动档案会在导入完成后立即刷新为新内容。
-                  </p>
+                  <p className="text-xs leading-5 text-muted-foreground">{text.activeProfileRefreshHint}</p>
                 )}
               </div>
             )}
@@ -281,7 +278,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
           <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline" className={PROFILE_DIALOG_SECONDARY_BUTTON_CLASS_NAME}>
-                取消
+                {t.common.cancel}
               </Button>
             </DialogClose>
             <Button
@@ -289,7 +286,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
               onClick={props.onImportProfile}
               disabled={!props.importFilePath || !props.importTargetName}
             >
-              导入
+              {text.importAction}
             </Button>
           </DialogFooter>
         </DialogContent>

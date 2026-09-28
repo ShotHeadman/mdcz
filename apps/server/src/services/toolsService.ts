@@ -4,13 +4,14 @@ import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import {
+  checkEmbyConnection,
+  checkJellyfinConnection,
   EmbyActorInfoService,
   EmbyActorPhotoService,
   JellyfinActorInfoService,
   JellyfinActorPhotoService,
   type MediaServerKey,
   type MediaServerSignalService,
-  probeMediaServer,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
@@ -23,7 +24,6 @@ import {
   scanAmazonPosters,
   scanBatchNfoTranslations,
 } from "@mdcz/runtime/tools";
-import { toErrorMessage } from "@mdcz/shared/error";
 import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
 import type { ToolCatalogResponse, ToolExecuteInput, ToolExecuteResponse } from "@mdcz/shared/serverDtos";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
@@ -87,27 +87,14 @@ export class ToolsService {
           manualUrl: input.manualUrl,
           uncensoredConfirmed: true,
         });
-        return { toolId: input.toolId, ok: true, message: `已创建刮削任务 ${task.task.id}`, data: task };
+        return { toolId: input.toolId, ok: true, data: task };
       }
       case "crawler-tester": {
-        try {
-          const config = await this.config.get();
-          const result = await new AggregationService(this.crawlerProvider, { config }).aggregate(input.number, {
-            manualScrape: resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
-          });
-          return {
-            toolId: input.toolId,
-            ok: true,
-            message: `爬虫测试完成：${result.stats.successCount}/${result.stats.totalSites} 成功`,
-            data: result,
-          };
-        } catch (error) {
-          return {
-            toolId: input.toolId,
-            ok: false,
-            message: toErrorMessage(error),
-          };
-        }
+        const config = await this.config.get();
+        const result = await new AggregationService(this.crawlerProvider, { config }).aggregate(input.number, {
+          manualScrape: resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
+        });
+        return { toolId: input.toolId, ok: true, data: result };
       }
       case "media-library-tools": {
         const server = input.server ?? "jellyfin";
@@ -119,39 +106,27 @@ export class ToolsService {
             action === "sync-info"
               ? await this.createActorInfoService(server).run(config, mode)
               : await this.createActorPhotoService(server).run(config, mode);
-          const label = action === "sync-info" ? "人物简介同步完成" : "人物头像同步完成";
-          return {
-            toolId: input.toolId,
-            ok: result.failedCount === 0,
-            message: `${label}：${result.processedCount} 成功，${result.skippedCount} 跳过，${result.failedCount} 失败`,
-            data: result,
-          };
+          return { toolId: input.toolId, ok: result.failedCount === 0, data: result };
         }
         const config = await this.config.get();
-        const check = await probeMediaServer(this.networkClient, config, server);
-        return { toolId: input.toolId, ok: check.ok, message: check.message, data: check };
+        const check =
+          server === "emby"
+            ? await checkEmbyConnection(this.networkClient, config)
+            : await checkJellyfinConnection(this.networkClient, config);
+        return { toolId: input.toolId, ok: check.success, data: check };
       }
       case "symlink-manager": {
         const result = await createSymlinks(input);
-        return {
-          toolId: input.toolId,
-          ok: result.failed === 0,
-          message: input.dryRun
-            ? `预览完成：${result.planned.length} 个目标可创建`
-            : `软链接完成：${result.linked} 链接，${result.copied} 复制，${result.failed} 失败`,
-          data: result,
-        };
+        return { toolId: input.toolId, ok: result.failed === 0, data: result };
       }
       case "batch-nfo-translator": {
         const config = await this.config.get();
         if (input.action === "scan") {
-          if (!input.directory) {
-            return { toolId: input.toolId, ok: false, message: "请选择要扫描的目录。" };
-          }
+          if (!input.directory) throw new Error("Batch NFO translation scan requires a directory");
           const items = await scanBatchNfoTranslations(input.directory, config, {
             localScanService: this.localScanService,
           });
-          return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个待翻译 NFO`, data: { items } };
+          return { toolId: input.toolId, ok: true, data: { items } };
         }
         if (input.action === "apply") {
           const items = input.items ?? [];
@@ -179,37 +154,23 @@ export class ToolsService {
               maxBatchItems: input.batchSize,
             },
           );
-          return {
-            toolId: input.toolId,
-            ok: results.every((item) => item.success),
-            message: `批量翻译完成：${results.filter((item) => item.success).length}/${results.length} 成功`,
-            data: { results },
-          };
+          return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }
-        if (!input.text) {
-          return { toolId: input.toolId, ok: false, message: "请输入待翻译文本。" };
-        }
+        if (!input.text) throw new Error("Text translation requires text");
         const translated = await this.translate.translateText(
           input.text,
           toTarget(config.translate.targetLanguage),
           config,
         );
-        return { toolId: input.toolId, ok: true, message: "翻译完成", data: { translated } };
+        return { toolId: input.toolId, ok: true, data: { translated } };
       }
       case "amazon-poster": {
         if (input.action === "lookup") {
-          if (!input.nfoPath || !input.title) {
-            return { toolId: input.toolId, ok: false, message: "NFO 路径和标题不能为空。" };
-          }
+          if (!input.nfoPath || !input.title) throw new Error("Amazon poster lookup requires an NFO path and title");
           const result = await lookupAmazonPoster(this.networkClient, input.nfoPath, input.title, {
             logger: runtimeLoggerService.getLogger("AmazonJpImageService"),
           });
-          return {
-            toolId: input.toolId,
-            ok: Boolean(result.amazonPosterUrl),
-            message: result.reason,
-            data: result,
-          };
+          return { toolId: input.toolId, ok: Boolean(result.amazonPosterUrl), data: result };
         }
         if (input.action === "apply") {
           const items = input.items ?? [];
@@ -224,18 +185,11 @@ export class ToolsService {
             library: state.repositories.library,
             roots: await this.mediaRoots.listRoots(),
           });
-          return {
-            toolId: input.toolId,
-            ok: results.every((item) => item.success),
-            message: `海报写入完成：${results.filter((item) => item.success).length}/${results.length} 成功`,
-            data: { results },
-          };
+          return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }
-        if (!input.rootDir) {
-          return { toolId: input.toolId, ok: false, message: "请选择要扫描的目录。" };
-        }
+        if (!input.rootDir) throw new Error("Amazon poster scan requires a root directory");
         const items = await scanAmazonPosters(input.rootDir);
-        return { toolId: input.toolId, ok: true, message: `扫描到 ${items.length} 个 NFO 条目`, data: { items } };
+        return { toolId: input.toolId, ok: true, data: { items } };
       }
     }
   }

@@ -36,11 +36,11 @@ const baseSettingsServices = {
   listCrawlerSites: vi.fn(async () => ({ sites: [] })),
   openWatermarkDirectory: vi.fn(async () => undefined),
   previewNaming: vi.fn(async () => ({ items: [] })),
-  probeSiteConnectivity: vi.fn(async () => ({ ok: true, message: "" })),
+  probeSiteConnectivity: vi.fn(async () => ({ ok: true, latencyMs: 0, status: 200 })),
   relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
   saveConfig: vi.fn(async () => undefined),
-  testLLM: vi.fn(async () => ({ success: true, message: "" })),
+  testLLM: vi.fn(async () => ({ status: "ok" as const, sample: "" })),
 } satisfies SettingsServices;
 
 const createSettingsServices = (overrides: Partial<SettingsServices> = {}): SettingsServices => ({

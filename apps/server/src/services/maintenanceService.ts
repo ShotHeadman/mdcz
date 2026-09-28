@@ -99,18 +99,20 @@ export class MaintenanceService {
 
   async execute(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto> {
     const session = await this.coordinator.getActiveSession();
-    if (!session || session.id !== input.sessionId) throw new Error(`维护会话不存在：${input.sessionId}`);
+    if (!session || session.id !== input.sessionId)
+      throw new Error(`Maintenance session not found: ${input.sessionId}`);
     const previews = session.previews;
     const selectedIds = input.previewIds ? new Set(input.previewIds) : null;
     const selected = selectedIds ? previews.filter((preview) => selectedIds.has(preview.id)) : previews;
-    if (previews.length === 0) throw new Error("没有可应用的维护预览");
-    if (selectedIds && selected.length !== selectedIds.size) throw new Error("部分维护预览不存在或不属于当前任务");
-    if (selected.length === 0) throw new Error("请选择要应用的维护预览");
+    if (previews.length === 0) throw new Error("No maintenance previews to apply");
+    if (selectedIds && selected.length !== selectedIds.size)
+      throw new Error("Some maintenance previews do not exist or do not belong to the current task");
+    if (selected.length === 0) throw new Error("Select the maintenance previews to apply");
     if (
       selected.some((preview) => preview.proposedCrawlerData) &&
       input.confirmationToken !== `maintenance:${input.sessionId}`
     ) {
-      throw new Error("维护应用需要确认令牌");
+      throw new Error("Applying maintenance requires a confirmation token");
     }
     const fieldsByPreview = new Map((input.selections ?? []).map((item) => [item.previewId, item.fieldSelections]));
     const selections: MaintenanceApplySelection[] = selected.map((preview) => ({
@@ -206,7 +208,8 @@ export class MaintenanceService {
       kind: "maintenance",
       rootId: task.rootId,
       rootDisplayName:
-        (await this.mediaRoots.list()).roots.find((root) => root.id === task.rootId)?.displayName ?? "未知媒体目录",
+        (await this.mediaRoots.list()).roots.find((root) => root.id === task.rootId)?.displayName ??
+        "Unknown media directory",
       status: task.status,
       startedAt: task.startedAt?.toISOString() ?? null,
       completedAt: task.completedAt?.toISOString() ?? null,

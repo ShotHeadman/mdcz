@@ -3,6 +3,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogH
 import { RotateCcw, Save } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
+import { useT } from "../i18n";
 
 interface PosterCropDialogProps {
   open: boolean;
@@ -108,12 +109,14 @@ export function PosterCropDialog({
     });
   };
 
+  const t = useT();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle className="tracking-normal">编辑封面</DialogTitle>
-          <DialogDescription>拖动选区调整位置，使用缩放控制取景范围。</DialogDescription>
+          <DialogTitle className="tracking-normal">{t.detail.editCover}</DialogTitle>
+          <DialogDescription>{t.detail.cropDescription}</DialogDescription>
         </DialogHeader>
         {session && crop ? (
           <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -125,13 +128,13 @@ export function PosterCropDialog({
               >
                 <img
                   src={session.sourceUrl}
-                  alt="封面裁剪源图"
+                  alt={t.detail.cropSourceAlt}
                   className="absolute inset-0 h-full w-full"
                   draggable={false}
                 />
                 <button
                   type="button"
-                  aria-label="封面裁剪区域"
+                  aria-label={t.detail.cropRegionAriaLabel}
                   className="absolute cursor-move touch-none border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.58)] outline-none focus-visible:ring-2 focus-visible:ring-white"
                   style={{
                     left: `${crop.x * 100}%`,
@@ -149,9 +152,9 @@ export function PosterCropDialog({
                 </button>
               </div>
               <div className="flex items-center gap-3 rounded-quiet bg-surface-low/70 px-3 py-2.5">
-                <span className="text-xs font-medium text-muted-foreground">缩放</span>
+                <span className="text-xs font-medium text-muted-foreground">{t.detail.zoom}</span>
                 <input
-                  aria-label="封面缩放"
+                  aria-label={t.detail.zoomAriaLabel}
                   type="range"
                   min="1"
                   max="3"
@@ -164,18 +167,23 @@ export function PosterCropDialog({
               </div>
             </div>
             <div className="space-y-3">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">预览</div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                {t.detail.preview}
+              </div>
               <div className="relative mx-auto aspect-2/3 w-full max-w-[220px] overflow-hidden rounded-quiet-lg bg-surface-low">
                 <img
                   src={session.sourceUrl}
-                  alt="封面裁剪预览"
+                  alt={t.detail.cropPreviewAlt}
                   className="absolute max-w-none"
                   style={previewStyle}
                   draggable={false}
                 />
               </div>
               <p className="text-xs leading-5 text-muted-foreground">
-                输出比例 2:3 · {Math.round(crop.width * session.width)} x {Math.round(crop.height * session.height)}
+                {t.detail.outputRatioAndSize(
+                  Math.round(crop.width * session.width),
+                  Math.round(crop.height * session.height),
+                )}
               </p>
             </div>
           </div>
@@ -183,14 +191,14 @@ export function PosterCropDialog({
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={reset} disabled={saving || !session}>
             <RotateCcw />
-            重置
+            {t.detail.reset}
           </Button>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button type="button" onClick={onSave} disabled={saving || !crop}>
             <Save />
-            {saving ? "保存中..." : "保存封面"}
+            {saving ? t.detail.saving : t.detail.saveCover}
           </Button>
         </DialogFooter>
       </DialogContent>

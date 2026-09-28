@@ -13,6 +13,7 @@ import {
 import { Search } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { type MediaBrowserFilter, type MediaBrowserItem, MediaBrowserList } from "../common";
+import { useT } from "../i18n";
 
 export interface ResultTreeManualUrlTarget {
   videoPaths: string[];
@@ -43,18 +44,19 @@ export function ResultTreeView({
   onManualUrlSubmit,
   headerTrailing,
 }: ResultTreeViewProps) {
+  const t = useT();
   return (
     <>
       <MediaBrowserList
         items={items}
         filter={filter}
         onFilterChange={onFilterChange}
-        title="处理队列"
+        title={t.detail.processingQueue}
         stats={stats}
         emptyContent={
           <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
             <Search className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
-            <span className="text-[13px] text-muted-foreground/40 tracking-wider">暂无结果</span>
+            <span className="text-[13px] text-muted-foreground/40 tracking-wider">{t.detail.noResults}</span>
           </div>
         }
         headerTrailing={headerTrailing}
@@ -80,11 +82,12 @@ function ManualUrlRescrapeDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (target: ResultTreeManualUrlTarget, manualUrl: string) => Promise<void>;
 }) {
+  const t = useT();
   const [url, setUrl] = useState("");
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const validation = useMemo(() => validateManualScrapeUrl(url), [url]);
-  const errorText = touched && !validation.valid ? validation.message : undefined;
+  const errorText = touched && !validation.valid ? t.domain.manualScrapeUrlInvalid[validation.reason] : undefined;
 
   useEffect(() => {
     if (target) {
@@ -121,10 +124,8 @@ function ManualUrlRescrapeDialog({
       <DialogContent className="max-w-md">
         <form onSubmit={handleSubmit} className="grid gap-5">
           <DialogHeader>
-            <DialogTitle>按 URL 重新刮削</DialogTitle>
-            <DialogDescription>
-              当前番号：{target?.number ?? ""} · 状态：{scrapeStatus}
-            </DialogDescription>
+            <DialogTitle>{t.detail.rescrapeByUrl}</DialogTitle>
+            <DialogDescription>{t.detail.currentStatus(target?.number ?? "", scrapeStatus)}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
             <Input
@@ -145,10 +146,10 @@ function ManualUrlRescrapeDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? "提交中..." : "重新刮削"}
+              {submitting ? t.detail.submitting : t.detail.rescrape}
             </Button>
           </DialogFooter>
         </form>

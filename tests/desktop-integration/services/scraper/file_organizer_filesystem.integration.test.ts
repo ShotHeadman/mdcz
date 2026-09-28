@@ -422,7 +422,7 @@ describe("FileOrganizer filesystem organize", () => {
     });
 
     expect(() => organizer.plan(createFileInfo({ filePath: sourcePath }), createCrawlerData(), config)).toThrow(
-      "元数据输出目录不能与源媒体目录相同或互相包含",
+      "Metadata output directory cannot be the same as or contained within the source media directory",
     );
   });
 
@@ -783,7 +783,7 @@ describe("FileOrganizer filesystem organize", () => {
     );
 
     await expect(organizer.resolveOutputPlan(invalidPlan, invalidSourcePath)).rejects.toThrow(
-      "源目录包含多部影片，请开启“仅输出元数据”或使用影片同名命名模式",
+      "Source directory contains multiple movies; please enable metadata-only mode or use a movie-named folder pattern",
     );
   });
 

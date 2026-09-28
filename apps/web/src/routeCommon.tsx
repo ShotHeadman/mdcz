@@ -1,4 +1,5 @@
 import type { ScanTaskDto, TaskKind } from "@mdcz/shared";
+import { getT } from "@mdcz/views/i18n";
 import { Link } from "@tanstack/react-router";
 import type { ComponentProps, ReactNode } from "react";
 
@@ -31,16 +32,34 @@ export const formatDate = (value: string | null | undefined): string =>
   value ? new Date(value).toLocaleString() : "—";
 
 export const scanStatusLabels: Record<ScanTaskDto["status"], string> = {
-  queued: "排队中",
-  running: "运行中",
-  completed: "已完成",
-  failed: "失败",
-  paused: "已暂停",
-  stopping: "停止中",
+  get queued() {
+    return getT().web.taskStatus.queued;
+  },
+  get running() {
+    return getT().web.taskStatus.running;
+  },
+  get completed() {
+    return getT().web.taskStatus.completed;
+  },
+  get failed() {
+    return getT().web.taskStatus.failed;
+  },
+  get paused() {
+    return getT().web.taskStatus.paused;
+  },
+  get stopping() {
+    return getT().web.taskStatus.stopping;
+  },
 };
 
 export const taskKindLabels: Record<TaskKind, string> = {
-  maintenance: "维护",
-  scan: "扫描",
-  scrape: "刮削",
+  get maintenance() {
+    return getT().web.taskType.maintenance;
+  },
+  get scan() {
+    return getT().web.taskType.scan;
+  },
+  get scrape() {
+    return getT().web.taskType.scrape;
+  },
 };

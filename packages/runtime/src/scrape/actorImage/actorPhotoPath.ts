@@ -5,7 +5,9 @@ export class ActorPhotoFolderConfigurationError extends Error {
   readonly code = "CONFIG_VALIDATION_ERROR";
 
   constructor() {
-    super("paths.actorPhotoFolder 使用相对路径时，必须先配置 paths.mediaPath，或改用绝对路径");
+    super(
+      "When paths.actorPhotoFolder uses a relative path, paths.mediaPath must be configured first, or use an absolute path",
+    );
   }
 }
 
