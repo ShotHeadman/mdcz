@@ -12,7 +12,7 @@ import { assetRefSchema, type RootFileRef, rootFileRefSchema, wireRelativeDirect
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
-export const maintenancePresetIdSchema = z.enum(["inspect_local", "refresh_metadata", "local_organize", "rebuild_all"]);
+export const maintenancePresetIdSchema = z.enum(["import_local", "refresh_metadata", "local_organize", "rebuild_all"]);
 export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({

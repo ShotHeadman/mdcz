@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { isPathInside } from "@mdcz/media-store";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 
@@ -64,6 +64,7 @@ export interface OrganizePlanOptions {
   executionMode?: ScrapeExecutionMode;
   outputDirectory?: string;
   outputTemplateRoot?: string;
+  versionLabel?: string;
 }
 
 export type ScrapeExecutionMode = "single" | "batch";
@@ -140,7 +141,10 @@ export class FileOrganizer {
     const { directory, useFolderTemplate } = resolveOrganizeDirectory(fileInfo.filePath, config, options);
     const outputDir = useFolderTemplate ? join(directory, layout.folderRelativePath) : directory;
 
-    const generatedTargetVideoPath = join(outputDir, layout.targetVideoFileName);
+    const targetVideoFileName = options.versionLabel
+      ? `${parse(layout.targetVideoFileName).name} - ${options.versionLabel}${parse(layout.targetVideoFileName).ext}`
+      : layout.targetVideoFileName;
+    const generatedTargetVideoPath = join(outputDir, targetVideoFileName);
     const moveMedia = config.behavior.successFileMove || config.behavior.successFileRename;
     const targetVideoPath = moveMedia ? generatedTargetVideoPath : fileInfo.filePath;
     if (!isPathInside(directory, outputDir))

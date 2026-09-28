@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -164,7 +164,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { source: { kind: "directory", scanDir: source, recursive: true }, presetId: "inspect_local" },
+      payload: { source: { kind: "directory", scanDir: source, recursive: true }, presetId: "import_local" },
     });
     if (kind === "missing") {
       expect(response.statusCode).toBe(400);
@@ -286,10 +286,23 @@ describe("buildServer maintenance integration", () => {
     expect(completed.previews.map((item) => item.relativePath)).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
   });
 
-  it("starts a inspect_local preview from selected files", async () => {
+  it("imports every part's MDCx NFO and poster untouched, then organizes them without leftovers", async () => {
     const root = await createTempRoot("maintenance-selected-root");
-    await writeMaintenanceInput(root, "ABC-225", "Local Title ABC-225");
-    const { fastify } = await createTestServer();
+    const parts = ["ABC-225-cd1", "ABC-225-cd2"];
+    for (const part of parts) {
+      await writeFile(join(root, `${part}.mp4`), "video");
+      await writeFile(
+        join(root, `${part}.nfo`),
+        "<movie><title>Local Title ABC-225</title><num>ABC-225</num><javdbsearchid>ABC-225</javdbsearchid></movie>",
+      );
+      await writeFile(join(root, `${part}-poster.jpg`), `poster ${part}`);
+    }
+    const snapshotFiles = async () =>
+      Promise.all(
+        (await readdir(root)).sort().map(async (name) => [name, await readFile(join(root, name), "utf8")] as const),
+      );
+    const before = await snapshotFiles();
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
 
@@ -299,8 +312,8 @@ describe("buildServer maintenance integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         rootId,
-        presetId: "inspect_local",
-        refs: [{ rootId, relativePath: "ABC-225.mp4" }],
+        presetId: "import_local",
+        refs: parts.map((part) => ({ rootId, relativePath: `${part}.mp4` })),
       },
     });
     expect(startResponse.statusCode).toBe(200);
@@ -309,9 +322,59 @@ describe("buildServer maintenance integration", () => {
 
     expect(session.previews).toHaveLength(1);
     expect(session.previews[0]).toMatchObject({
-      relativePath: "ABC-225.mp4",
+      relativePath: "ABC-225-cd1.mp4",
+      status: "ready",
       proposedCrawlerData: { number: "ABC-225", title: "Local Title ABC-225" },
     });
+
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+    });
+    const applied = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+    expect(applied.currentBatch?.items[0]).toMatchObject({ status: "success" });
+    const fileId = session.previews[0]?.movieGroup?.files[0]?.fileId;
+    if (!fileId) throw new Error("Import preview has no movie file");
+    const { repositories } = await services.persistence.getState();
+    const entry = await repositories.library.getEntryByFileId(fileId);
+    expect(entry).toMatchObject({ number: "ABC-225", title: "Local Title ABC-225" });
+    expect(
+      entry.assets
+        .filter((asset) => asset.kind === "nfo" || asset.kind === "poster")
+        .map(({ kind, relativePath, published }) => ({ kind, relativePath, published }))
+        .sort((left, right) => `${left.kind}${left.relativePath}`.localeCompare(`${right.kind}${right.relativePath}`)),
+    ).toEqual(
+      ["nfo", "poster"].flatMap((kind) =>
+        parts.map((part) => ({
+          kind,
+          relativePath: kind === "nfo" ? `${part}.nfo` : `${part}-poster.jpg`,
+          published: true,
+        })),
+      ),
+    );
+    expect(await snapshotFiles()).toEqual(before);
+
+    await configureOrganizedOutput(fastify, token, root);
+    const organize = await startMaintenancePreview(
+      fastify,
+      token,
+      rootId,
+      "local_organize",
+      parts.map((part) => `${part}.mp4`),
+    );
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sessionId: organize.sessionId, confirmationToken: `maintenance:${organize.sessionId}` },
+    });
+    await waitForMaintenanceSession(fastify, token, organize.sessionId, "apply", "completed");
+    expect(await readdir(root)).toEqual(["JAV_output"]);
+    expect((await readdir(join(root, "JAV_output", "ABC-225"))).filter((name) => name.endsWith(".jpg"))).toHaveLength(
+      1,
+    );
   });
 
   it.each([

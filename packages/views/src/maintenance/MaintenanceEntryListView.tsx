@@ -10,7 +10,7 @@ export interface MaintenanceEntryListViewItem {
   id: string;
   menuContent: ReactNode;
   onClick: () => void;
-  onSelectionChange?: () => void;
+  onSelectionChange: () => void;
   selected?: boolean | "indeterminate";
   selectionDisabled?: boolean;
   status?: MediaBrowserItemStatus;
@@ -33,7 +33,6 @@ export interface MaintenanceEntryListViewProps {
   onToggleVisibleSelection: () => void;
   selectedVisibleCount: number;
   selectionDisabled?: boolean;
-  showSelection?: boolean;
   someVisibleSelected: boolean;
   stats: MaintenanceEntryListViewStat[];
   visibleCount: number;
@@ -49,7 +48,6 @@ export function MaintenanceEntryListView({
   onToggleVisibleSelection,
   selectedVisibleCount,
   selectionDisabled = false,
-  showSelection = false,
   someVisibleSelected,
   stats,
   visibleCount,
@@ -67,15 +65,14 @@ export function MaintenanceEntryListView({
         status: item.status,
         menuContent: item.menuContent,
         onClick: item.onClick,
-        selectionControl:
-          showSelection && item.onSelectionChange ? (
-            <Checkbox
-              checked={item.selected ?? false}
-              disabled={item.selectionDisabled}
-              onCheckedChange={item.onSelectionChange}
-              onClick={(event) => event.stopPropagation()}
-            />
-          ) : undefined,
+        selectionControl: (
+          <Checkbox
+            checked={item.selected ?? false}
+            disabled={item.selectionDisabled}
+            onCheckedChange={item.onSelectionChange}
+            onClick={(event) => event.stopPropagation()}
+          />
+        ),
       }))}
       filter={filter}
       onFilterChange={onFilterChange}
@@ -94,19 +91,17 @@ export function MaintenanceEntryListView({
         )
       }
       headerLeading={
-        showSelection ? (
-          <>
-            <Checkbox
-              id="maintenance-select-all"
-              checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
-              disabled={selectionDisabled || visibleIdsCount === 0}
-              onCheckedChange={onToggleVisibleSelection}
-            />
-            <label htmlFor="maintenance-select-all" className="cursor-pointer">
-              {t.maintenance.selectAll(selectedVisibleCount, visibleCount)}
-            </label>
-          </>
-        ) : undefined
+        <>
+          <Checkbox
+            id="maintenance-select-all"
+            checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+            disabled={selectionDisabled || visibleIdsCount === 0}
+            onCheckedChange={onToggleVisibleSelection}
+          />
+          <label htmlFor="maintenance-select-all" className="cursor-pointer">
+            {t.maintenance.selectAll(selectedVisibleCount, visibleCount)}
+          </label>
+        </>
       }
     />
   );

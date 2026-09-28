@@ -17,6 +17,17 @@ import {
 } from "./app.testSupport";
 import type { ScrapeServiceResources } from "./services/scrapeService";
 
+vi.mock("mediainfo.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("mediainfo.js")>()),
+  // Test videos state their probed height in their content, e.g. "height=800".
+  mediaInfoFactory: async () => ({
+    analyzeData: async (size: () => number, read: (length: number, offset: number) => Promise<Uint8Array>) => {
+      const height = /height=(\d+)/u.exec(Buffer.from(await read(size(), 0)).toString())?.[1];
+      return { media: { track: height ? [{ "@type": "Video", Height: height }] : [] } };
+    },
+  }),
+}));
+
 const createAmbiguousUncensoredAggregation = (
   imageUrl: string,
 ): NonNullable<ScrapeServiceResources["aggregationService"]> => ({
@@ -255,6 +266,65 @@ describe("buildServer scrape integration", () => {
       await expect(stat(join(root, `${number}.mp4`))).rejects.toMatchObject({ code: "ENOENT" });
       expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(`source ${number}`);
     }
+  });
+
+  it("labels resolution versions of one movie and attaches later versions to the library movie", async () => {
+    const root = await createTempRoot("scrape-versions-root");
+    for (const [name, content] of [
+      ["ABC-123.mp4", "height=800"],
+      ["ABC-123-4K.mp4", "height=2160"],
+    ])
+      await writeFile(join(root, name), content);
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+    });
+    await services.config.update({
+      naming: { folderTemplate: "fixed/{number}", fileTemplate: "{number}" },
+      download: {
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      },
+    });
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const scrape = async (names: string[]) => {
+      const response = await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.start",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          executionMode: "batch",
+          refs: names.map((name) => ({ rootId, relativePath: name })),
+          outputRootId: rootId,
+          outputRelativeDirectory: "JAV_output",
+        },
+      });
+      await waitForScrapeRunStatus(fastify, token, response.json().result.data.runId, "completed");
+    };
+    const output = join(root, "JAV_output/fixed/ABC-123");
+    const { repositories } = await services.persistence.getState();
+
+    await scrape(["ABC-123.mp4", "ABC-123-4K.mp4"]);
+    await writeFile(join(root, "ABC-123-1080P.mp4"), "hd");
+    await scrape(["ABC-123-1080P.mp4"]);
+    await scrape(["JAV_output/fixed/ABC-123/ABC-123.mp4"]);
+
+    for (const [name, content] of [
+      ["ABC-123.mp4", "height=2160"],
+      ["ABC-123 - 800p.mp4", "height=800"],
+      ["ABC-123 - 1080p.mp4", "hd"],
+    ])
+      expect(await readFile(join(output, name), "utf8")).toBe(content);
+    const [movie, ...others] = await repositories.library.listEntries();
+    expect(others).toEqual([]);
+    expect(movie.files.map((file) => file.fileName).sort()).toEqual([
+      "ABC-123 - 1080p.mp4",
+      "ABC-123 - 800p.mp4",
+      "ABC-123.mp4",
+    ]);
   });
 
   it("runs the full scrape runtime pipeline and indexes organized output", async () => {

@@ -1,5 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import {
   buildMaintenanceEntryViewModel,
@@ -93,13 +92,12 @@ function buildMenuContent(t: Messages, entry: LocalScanEntry, port: MaintenanceA
 
 export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionPort }) {
   const t = useT();
-  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceStore(
+  const { entries, selectedIds, activeId, filter, setFilter, setActiveId } = useMaintenanceStore(
     useShallow((state) => ({
       entries: selectMaintenanceEntries(state),
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
-      presetId: state.presetId,
       setFilter: state.setFilter,
       setActiveId: state.setActiveId,
     })),
@@ -112,7 +110,6 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
     })),
   );
   const previewResults = useMaintenanceStore(selectMaintenancePreviewResults);
-  const showsSelection = getMaintenancePresetMeta(presetId).supportsExecution;
   const selectionLocked = executionStatus !== "idle";
   const groupedEntries = useMemo(
     () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }).groups,
@@ -159,11 +156,9 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       status: group.status,
       selected: checkedState,
       selectionDisabled: selectionLocked,
-      onSelectionChange: showsSelection
-        ? () => {
-            toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
-          }
-        : undefined,
+      onSelectionChange: () => {
+        toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
+      },
       onClick: () =>
         setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
       menuContent: buildMenuContent(t, group.items.find((entry) => entry.fileId === activeId) ?? representative, port),
@@ -176,7 +171,6 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       loading={pending || executionStatus === "previewing"}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
-      showSelection={showsSelection}
       selectionDisabled={selectionLocked}
       allVisibleSelected={allVisibleSelected}
       someVisibleSelected={someVisibleSelected}
@@ -188,7 +182,7 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       }}
       stats={[
         { label: t.maintenance.metrics.total, value: String(groupedEntries.length) },
-        ...(showsSelection ? [{ label: t.maintenance.metrics.selected, value: String(selectedCount) }] : []),
+        { label: t.maintenance.metrics.selected, value: String(selectedCount) },
         { label: t.maintenance.metrics.processing, value: String(processingCount) },
         { label: t.maintenance.metrics.blocked, value: String(blockedCount), tone: "negative" },
       ]}

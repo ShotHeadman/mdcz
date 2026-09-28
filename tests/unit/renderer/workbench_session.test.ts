@@ -43,12 +43,12 @@ describe("workbench session scrape setup", () => {
     expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
   });
 
-  it("hydrates incremental inspect_local previews and rejects retired sessions", () => {
+  it("hydrates incremental import_local previews and rejects retired sessions", () => {
     const refs = ["one.mp4", "two.mp4"].map((relativePath) => ({ rootId: "root-1", relativePath }));
     const session = new MaintenanceSession({
       id: "maintenance-1",
       rootId: "root-1",
-      presetId: "inspect_local",
+      presetId: "import_local",
       refs,
     });
     session.startRunning();

@@ -17,6 +17,7 @@ export * from "./FileScraper";
 export * from "./media";
 export * from "./nfo";
 export * from "./organize/NamingEngine";
+export * from "./organize/versionLabels";
 export * from "./output/applyPosterTagBadges";
 export * from "./output/executeOutputSteps";
 export * from "./output/prepareCrawlerDataForMovieOutput";

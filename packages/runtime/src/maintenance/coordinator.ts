@@ -36,7 +36,6 @@ import {
 } from "../tasks/session/MaintenanceSession";
 import { buildMaintenanceApplyData } from "./applyData";
 import type { MaintenanceRuntime, MaintenanceRuntimePreviewItem } from "./MaintenanceRuntime";
-import { getMaintenancePreset } from "./presets";
 
 export interface MaintenanceRootPort {
   get(rootId: string): Promise<MediaRoot>;
@@ -390,9 +389,6 @@ export class MaintenanceSessionCoordinator {
     if (input.selections.length === 0) throw new Error("Please select maintenance previews to apply");
     const previewIds = input.selections.map((selection) => selection.previewId);
     const session = this.require(input.sessionId);
-    if (!getMaintenancePreset(session.presetId).supportsExecution) {
-      throw new Error(`Maintenance preset ${session.presetId} does not support execution`);
-    }
     const previews = previewIds
       .map((previewId) => session.preview(previewId))
       .filter((preview) => preview !== undefined);

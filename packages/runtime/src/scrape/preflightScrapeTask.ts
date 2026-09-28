@@ -96,7 +96,7 @@ export async function checkScrapeTargets(
     if (distinctSources.size < 2) continue;
     const message =
       new Set(siblings.map(({ group }) => group)).size === 1
-        ? "Multiple video target filenames for the same movie are identical; please adjust naming rules to distinguish these videos"
+        ? "Multiple videos of the same movie get the same target name and their resolution cannot tell them apart; please adjust naming rules"
         : "Multiple movies have identical target filenames";
     for (const { member } of siblings) addConflict(conflicts, member, member.targetVideoPath, message);
   }

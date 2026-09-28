@@ -59,12 +59,12 @@ describe("inventory target conflicts", () => {
         expect.objectContaining({
           itemId: "one",
           message:
-            "Multiple video target filenames for the same movie are identical; please adjust naming rules to distinguish these videos",
+            "Multiple videos of the same movie get the same target name and their resolution cannot tell them apart; please adjust naming rules",
         }),
         expect.objectContaining({
           itemId: "two",
           message:
-            "Multiple video target filenames for the same movie are identical; please adjust naming rules to distinguish these videos",
+            "Multiple videos of the same movie get the same target name and their resolution cannot tell them apart; please adjust naming rules",
         }),
       ],
     });

@@ -179,8 +179,6 @@ export class MaintenanceService {
     if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.requireActiveSession();
     if (session.presetId !== presetId) throw new Error("Maintenance preset does not match current task");
-    if (presetId === "inspect_local")
-      throw new Error("Current preset only inspects local data and does not require execution");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
     if (selections.some((selection) => !previewIds.has(selection.previewId))) {
       throw new Error("Maintenance item does not belong to the current task");

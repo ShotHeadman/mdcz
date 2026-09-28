@@ -60,7 +60,7 @@ interface MovieOutputMember {
   scrape?: PreparedMovieFile["scrape"];
 }
 
-const MANAGED_MOVIE_ASSET_KINDS = new Set(["nfo", "poster", "fanart", "thumb", "trailer", "scene", "actor"]);
+export const MANAGED_MOVIE_ASSET_KINDS = new Set(["nfo", "poster", "fanart", "thumb", "trailer", "scene", "actor"]);
 
 export const retainedRegisteredFeatures = (
   members: readonly { layout: { sidecars: readonly { kind: string }[] } }[],
@@ -105,7 +105,7 @@ export const prepareMovieArtifacts = async (input: {
   actorPhotoPaths: string[];
   assetDecisions?: MaintenanceAssetDecisions;
   relocateExistingArtifacts?: boolean;
-  existingNfoPaths?: readonly string[];
+  ownedAssetPaths?: readonly string[];
   nfoNaming: "both" | "movie" | "filename";
   remoteData?: CrawlerData;
   writeNfo(
@@ -375,15 +375,19 @@ export const prepareMovieArtifacts = async (input: {
     }
   }
   if (input.relocateExistingArtifacts) {
-    const existingNfoPaths = [
+    const kept = new Set(
+      [...assetTargets.values(), ...artifacts.map((artifact) => artifact.targetPath)].map((path) => resolve(path)),
+    );
+    // The new layout holds one NFO and image set per movie; owned files it does not carry (replaced NFOs, extra
+    // per-part artwork) would otherwise stay behind unregistered.
+    const obsolete = [
       ...new Set([
         ...input.members.flatMap((member) => member.existingNfoPath ?? []),
-        ...(input.existingNfoPaths ?? []),
+        ...(input.ownedAssetPaths ?? []),
       ]),
-    ];
-    for (const artifact of artifacts) {
-      if (artifact.targetPath.toLowerCase().endsWith(".nfo")) artifact.removeSourcesAfterCommit = existingNfoPaths;
-    }
+    ].filter((path) => !kept.has(resolve(path)));
+    for (const artifact of artifacts)
+      artifact.removeSourcesAfterCommit = [...(artifact.removeSourcesAfterCommit ?? []), ...obsolete];
   }
 
   const movieAssets: AssetRef[] = [...locationAssets.values(), ...featureAssets.values()];

@@ -9,7 +9,7 @@ import {
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { cleanupPublicationStaging } from "@mdcz/runtime";
+import { recoverInterruptedPublications } from "@mdcz/runtime";
 import { app } from "electron";
 import { getDesktopUserDataPath } from "../../appIdentity";
 
@@ -88,7 +88,7 @@ export class DesktopPersistenceService {
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
       const mediaRoots = new MediaRootRepository(database);
-      await cleanupPublicationStaging(await mediaRoots.list());
+      await recoverInterruptedPublications(await mediaRoots.list());
       this.state = {
         database,
         repositories: {

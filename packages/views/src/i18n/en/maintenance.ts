@@ -36,6 +36,8 @@ export const maintenance = {
   generateDiff: "Generate comparison",
   executeOrganize: "Execute organize",
   generateOrganizePreview: "Generate organize preview",
+  executeImport: "Import to library",
+  generateImportPreview: "Generate import preview",
   reexecuteMaintenance: "Re-execute maintenance",
   returnDescription:
     "Returning will clear the current maintenance list, preview results, and execution records. Are you sure you want to continue?",
@@ -77,7 +79,6 @@ export const maintenance = {
   // MaintenanceBatchBarAdapter
   selectItemsFirst: "Select the items to run first",
   previewFailed: (error: string) => `Preview failed: ${error}`,
-  inspectLocalNoExecute: "The Inspect locally preset only scans directories; there is nothing to execute.",
   noExecutableSelections: "Nothing to execute. Finish the preview and resolve blocked items first.",
   maintenanceStarted: (count: number) => `Maintenance started for ${count} item${count === 1 ? "" : "s"}`,
   startFailed: (error: string) => `Failed to start: ${error}`,
@@ -122,6 +123,6 @@ export const maintenance = {
   scrapeRunningCannotMaintain:
     "Normal scrape is running, cannot start maintenance mode. Please stop the current scrape task first.",
   noMaintainableItems: "No maintainable items found",
-  localInspectStarted: (count: number) => `Local inspection started, total ${count} items`,
+  localImportStarted: (count: number) => `Local import preview started, total ${count} items`,
   previewStarted: "Maintenance preview started",
 };

@@ -11,6 +11,8 @@ import { outputFileSystem } from "./outputFileSystem";
 import type { PublicationFileSystem } from "./types";
 import { type WriteArtifact, WriteOutput } from "./WriteOutput";
 
+export const PARKED_SOURCE_PREFIX = ".mdcz-relocation-";
+
 export type MediaFileFacts = { dev: number; ino: number; size: number; mtimeMs: number };
 export interface SourceMove extends MediaFileFacts {
   source: RootFileRef;
@@ -109,7 +111,7 @@ export class MoveOutput {
               await assertSource(move, move.sourcePath);
               const parked = path.join(
                 path.dirname(move.sourcePath),
-                `.mdcz-relocation-${randomUUID()}-${path.basename(move.sourcePath)}`,
+                `${PARKED_SOURCE_PREFIX}${randomUUID()}-${path.basename(move.sourcePath)}`,
               );
               await assertMoveTargetAbsent(parked, fs);
               await fs.rename(move.sourcePath, parked);

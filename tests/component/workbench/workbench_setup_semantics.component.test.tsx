@@ -73,7 +73,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   expect(onStartDirectory).toHaveBeenCalledWith(
     { kind: "directory", scanDir: rootDir, recursive: true },
     "/output",
-    "inspect_local",
+    "import_local",
   );
   let finishStart!: () => void;
   const pendingStart = new Promise<void>((resolve) => {
@@ -178,7 +178,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   expect(onStartDirectory).toHaveBeenLastCalledWith(
     { kind: "directory", scanDir: "/changed", recursive: false },
     "/changed",
-    "inspect_local",
+    "import_local",
   );
   await screen.getByRole("button", { name: "预览文件" }).click();
   await expect.poll(() => requests.length).toBe(5);
@@ -277,7 +277,7 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       scanStatus="idle"
       startPending={false}
       supportedExtensions={[".mp4"]}
-      presetId="inspect_local"
+      presetId="import_local"
       primaryDisabled
       isServer
       formatBytes={() => "0 B"}

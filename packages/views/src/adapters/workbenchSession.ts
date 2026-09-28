@@ -179,8 +179,8 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     await options.port.preview(refs, options.presetId, options.targetDir);
     await options.onRefreshConfig?.();
     options.toast.success(
-      options.presetId === "inspect_local"
-        ? t.maintenance.localInspectStarted(options.candidates.length)
+      options.presetId === "import_local"
+        ? t.maintenance.localImportStarted(options.candidates.length)
         : t.maintenance.previewStarted,
     );
   } catch (error) {

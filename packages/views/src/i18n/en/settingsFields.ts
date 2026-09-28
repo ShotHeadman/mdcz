@@ -65,8 +65,8 @@ const fields: Record<FieldKey, FieldText> = {
   "behavior.metadataOnly": {
     label: "Metadata only",
     description:
-      "Leave the original videos in place and only write posters and NFO files to a separate directory (useful for cloud-drive mounts).",
-    aliases: ["metadata", "only", "read-only"],
+      "Leave the original videos in place and export posters and NFO files to a separate directory as an archive. The directory contains no videos, so media servers cannot use it as a library.",
+    aliases: ["metadata", "only", "read-only", "archive"],
   },
   "paths.metadataPath": {
     label: "Metadata output directory",

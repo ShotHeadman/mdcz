@@ -129,7 +129,7 @@ const initialState = () => ({
   retiredSessionIds: [] as string[],
   selectedIds: [] as string[],
   activeId: null as string | null,
-  presetId: "inspect_local" as MaintenancePresetId,
+  presetId: "import_local" as MaintenancePresetId,
   filter: "all" as MaintenanceFilter,
   currentPath: "",
   pending: false,

@@ -21,21 +21,20 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
   onReturnToSetup: vi.fn(),
   onStop: vi.fn(),
   paused: false,
-  presetLabel: "本地查看",
+  presetId: "import_local",
+  presetLabel: "本地导入",
   previewPending: false,
   progressValue: 0,
   readyCount: 1,
   recentResults: [],
   selectedCount: 1,
   stopping: false,
-  supportsExecution: false,
-  usesDiffView: false,
   ...overrides,
 });
 
 function PresetSelectionHarness() {
-  const [presetId, setPresetId] = useState<"inspect_local" | "refresh_metadata" | "local_organize" | "rebuild_all">(
-    "inspect_local",
+  const [presetId, setPresetId] = useState<"import_local" | "refresh_metadata" | "local_organize" | "rebuild_all">(
+    "import_local",
   );
 
   return (
@@ -65,13 +64,18 @@ function PresetSelectionHarness() {
   );
 }
 
-function OrganizeHarness({ onExecute }: { onExecute: () => void }) {
+function LocalPresetHarness({
+  presetId,
+  onExecute,
+}: {
+  presetId: "import_local" | "local_organize";
+  onExecute: () => void;
+}) {
   const [hasPreviewResults, setHasPreviewResults] = useState(false);
   return (
     <MaintenanceBatchBarView
       {...createBatchBarProps({
-        presetLabel: "本地整理",
-        supportsExecution: true,
+        presetId,
         hasPreviewResults,
         onPreview: async () => {
           setHasPreviewResults(true);
@@ -97,9 +101,8 @@ function ReplacementHarness({ onExecute }: { onExecute: () => void }) {
     <>
       <MaintenanceBatchBarView
         {...createBatchBarProps({
+          presetId: "rebuild_all",
           presetLabel: "全量重整",
-          supportsExecution: true,
-          usesDiffView: true,
           hasPreviewResults: true,
           executeDialogOpen: open,
           onExecuteDialogOpenChange: setOpen,
@@ -128,7 +131,7 @@ test("maintenance setup selects all four presets through semantic buttons", asyn
   await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
 
   for (const [label, presetId] of [
-    ["本地查看", "inspect_local"],
+    ["本地导入", "import_local"],
     ["原地更新", "refresh_metadata"],
     ["本地整理", "local_organize"],
     ["全量重整", "rebuild_all"],
@@ -138,17 +141,19 @@ test("maintenance setup selects all four presets through semantic buttons", asyn
   }
 });
 
-test("read-local short circuits execution while organize previews before applying", async () => {
-  const readLocal = await render(<MaintenanceBatchBarView {...createBatchBarProps()} />);
-  await expect.element(readLocal.getByRole("button", { name: "返回工作台初始页面" })).toBeVisible();
-  await expect.element(readLocal.getByRole("button", { name: /生成|执行|数据替换/u })).not.toBeInTheDocument();
-  await readLocal.unmount();
-
-  const onExecute = vi.fn();
-  const organize = await render(<OrganizeHarness onExecute={onExecute} />);
-  await organize.getByRole("button", { name: "生成整理预览" }).click();
-  await organize.getByRole("button", { name: "执行整理" }).click();
-  expect(onExecute).toHaveBeenCalledOnce();
+test("local presets preview before applying with their own actions", async () => {
+  for (const [presetId, previewLabel, executeLabel] of [
+    ["import_local", "生成导入预览", "导入到媒体库"],
+    ["local_organize", "生成整理预览", "执行整理"],
+  ] as const) {
+    const onExecute = vi.fn();
+    const screen = await render(<LocalPresetHarness presetId={presetId} onExecute={onExecute} />);
+    await expect.element(screen.getByRole("button", { name: "数据替换" })).not.toBeInTheDocument();
+    await screen.getByRole("button", { name: previewLabel }).click();
+    await screen.getByRole("button", { name: executeLabel }).click();
+    expect(onExecute).toHaveBeenCalledOnce();
+    await screen.unmount();
+  }
 });
 
 test("diff presets expose replacement confirmation and changed path evidence", async () => {

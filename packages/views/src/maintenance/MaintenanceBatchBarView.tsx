@@ -1,4 +1,4 @@
-import type { MaintenanceItemResult, PathDiff } from "@mdcz/shared/types";
+import type { MaintenanceItemResult, MaintenancePresetId, PathDiff } from "@mdcz/shared/types";
 import {
   Button,
   Dialog,
@@ -50,8 +50,7 @@ export interface MaintenanceBatchBarViewProps {
   recentResults: MaintenanceItemResult[];
   selectedCount: number;
   stopping: boolean;
-  supportsExecution: boolean;
-  usesDiffView: boolean;
+  presetId: MaintenancePresetId;
 }
 
 export function MaintenanceBatchBarView({
@@ -79,18 +78,22 @@ export function MaintenanceBatchBarView({
   recentResults,
   selectedCount,
   stopping,
-  supportsExecution,
-  usesDiffView,
+  presetId,
 }: MaintenanceBatchBarViewProps) {
   const t = useT();
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const previewActionLabel = usesDiffView
     ? hasPreviewResults
       ? t.maintenance.refreshDiff
       : t.maintenance.generateDiff
-    : hasPreviewResults
-      ? t.maintenance.executeOrganize
-      : t.maintenance.generateOrganizePreview;
+    : presetId === "import_local"
+      ? hasPreviewResults
+        ? t.maintenance.executeImport
+        : t.maintenance.generateImportPreview
+      : hasPreviewResults
+        ? t.maintenance.executeOrganize
+        : t.maintenance.generateOrganizePreview;
 
   return (
     <>
@@ -107,23 +110,21 @@ export function MaintenanceBatchBarView({
               dialogDescription={t.maintenance.returnDescription}
               onConfirm={onReturnToSetup}
             />
-            {supportsExecution && (
-              <Button
-                onClick={async () => {
-                  if (!usesDiffView && hasPreviewResults) {
-                    onExecute();
-                    return;
-                  }
+            <Button
+              onClick={async () => {
+                if (!usesDiffView && hasPreviewResults) {
+                  onExecute();
+                  return;
+                }
 
-                  await onPreview();
-                }}
-                disabled={!canRunPrimaryAction}
-                className="h-9 rounded-lg px-4"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {previewActionLabel}
-              </Button>
-            )}
+                await onPreview();
+              }}
+              disabled={!canRunPrimaryAction}
+              className="h-9 rounded-lg px-4"
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {previewActionLabel}
+            </Button>
             {usesDiffView && (
               <Button
                 variant="secondary"

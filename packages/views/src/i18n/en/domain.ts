@@ -4,7 +4,10 @@ import type { MaintenanceDiffField, MaintenancePresetId } from "@mdcz/shared/typ
 
 export const domain = {
   maintenancePresets: {
-    inspect_local: { label: "Inspect locally", description: "Scan local files and read existing NFO and asset status" },
+    import_local: {
+      label: "Import locally",
+      description: "Read existing NFO files and images into the library without changing any files",
+    },
     refresh_metadata: { label: "Refresh in place", description: "Refresh metadata online and compare NFO differences" },
     local_organize: { label: "Organize locally", description: "Reorganize the file and folder structure by the rules" },
     rebuild_all: {

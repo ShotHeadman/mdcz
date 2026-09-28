@@ -1,4 +1,4 @@
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { OutputLibraryScanner } from "@main/services/library";
@@ -14,7 +14,8 @@ import { type ActorImageService, ScrapeRunner } from "@mdcz/runtime/scrape";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { ScrapeConfirmUncensoredInput, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import type { UncensoredConfirmResponse } from "@mdcz/shared/types";
-import { applyDesktopPosterTagBadges, probeVideoMetadataOrWarn } from "./output";
+import { app } from "electron";
+import { applyDesktopPosterTagBadges } from "./output";
 import { resolveSingleFilePaths } from "./pathResolver";
 import { ScraperServiceError } from "./ScraperServiceError";
 import { translationMappingStore } from "./translationMappingStore";
@@ -66,8 +67,7 @@ export class ScraperService {
         mappingStore: translationMappingStore,
         platform: "desktop",
         logger: this.logger,
-        probeVideoMetadata: async (sourceVideoPath) =>
-          await probeVideoMetadataOrWarn({ logger: this.logger, sourceVideoPath, warningPrefix: "Video probe failed" }),
+        mediaInfoWasmPath: app.isPackaged ? join(process.resourcesPath, "MediaInfoModule.wasm") : undefined,
         postProcessAssets: async ({
           assets,
           configuration,

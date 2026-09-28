@@ -15,7 +15,6 @@ export * from "./ipcTypes";
 export * from "./libraryPagination";
 export * from "./llm";
 export * from "./logFormatting";
-export * from "./maintenancePresets";
 export * from "./maintenanceTasks";
 export * from "./manualScrapeUrl";
 export * from "./mediaCandidate";

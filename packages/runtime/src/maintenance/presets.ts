@@ -4,7 +4,6 @@ import type { MaintenancePresetId } from "@mdcz/shared/types";
 export interface MaintenancePreset {
   id: MaintenancePresetId;
   requiresNetwork: boolean;
-  supportsExecution: boolean;
   dataSource: "local" | "online";
   output: "none" | "write" | "move";
   assetPolicy: "preserve" | "refresh" | "replace";
@@ -12,10 +11,9 @@ export interface MaintenancePreset {
 }
 
 export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset> = {
-  inspect_local: {
-    id: "inspect_local",
+  import_local: {
+    id: "import_local",
     requiresNetwork: false,
-    supportsExecution: false,
     dataSource: "local",
     output: "none",
     assetPolicy: "preserve",
@@ -24,7 +22,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
   refresh_metadata: {
     id: "refresh_metadata",
     requiresNetwork: true,
-    supportsExecution: true,
     dataSource: "online",
     output: "write",
     assetPolicy: "refresh",
@@ -45,7 +42,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
   local_organize: {
     id: "local_organize",
     requiresNetwork: false,
-    supportsExecution: true,
     dataSource: "local",
     output: "move",
     assetPolicy: "preserve",
@@ -59,7 +55,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
   rebuild_all: {
     id: "rebuild_all",
     requiresNetwork: true,
-    supportsExecution: true,
     dataSource: "online",
     output: "move",
     assetPolicy: "replace",
@@ -78,7 +73,5 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
     },
   },
 };
-
-export const supportsMaintenanceExecution = (preset: MaintenancePreset): boolean => preset.supportsExecution;
 
 export const getMaintenancePreset = (id: MaintenancePresetId): MaintenancePreset => MAINTENANCE_PRESETS[id];

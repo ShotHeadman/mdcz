@@ -246,6 +246,8 @@ describe("parseFileInfo", () => {
       resolution: "1080P",
     });
 
+    expect(parseFileInfo("/tmp/ABC-123 - 800p.mp4")).toMatchObject({ number: "ABC-123", resolution: "800P" });
+
     expect(parseFileInfo("/tmp/ABC-123-UC.mp4")).toMatchObject({
       number: "ABC-123",
       isUncensored: true,

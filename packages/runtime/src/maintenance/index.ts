@@ -16,4 +16,4 @@ export { MaintenanceRuntime } from "./MaintenanceRuntime";
 export * from "./movieTags";
 export { type ParsedNfoSnapshot, parseNfoSnapshot } from "./nfoSnapshot";
 export type { MaintenancePreset } from "./presets";
-export { getMaintenancePreset, MAINTENANCE_PRESETS, supportsMaintenanceExecution } from "./presets";
+export { getMaintenancePreset, MAINTENANCE_PRESETS } from "./presets";

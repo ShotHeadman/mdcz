@@ -1,5 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { MaintenancePreviewItem } from "@mdcz/shared/types";
 import { buildMaintenanceEntryViewModel } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import {
@@ -50,8 +49,6 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
 
   const t = useT();
-  const supportsExecution = getMaintenancePresetMeta(presetId).supportsExecution;
-  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const activeExecution = executionStatus !== "idle";
   const paused = executionStatus === "paused";
   const stopping = executionStatus === "stopping";
@@ -101,10 +98,6 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   );
 
   const handlePreview = async (): Promise<void> => {
-    if (!supportsExecution) {
-      return;
-    }
-
     if (isScraping) {
       toast.warning(t.maintenance.scrapeRunningCannotMaintain);
       return;
@@ -133,11 +126,6 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   };
 
   const handleExecute = async (previewMapOverride?: Record<string, MaintenancePreviewItem>) => {
-    if (!supportsExecution) {
-      toast.info(t.maintenance.inspectLocalNoExecute);
-      return;
-    }
-
     if (isScraping) {
       toast.warning(t.maintenance.scrapeRunningCannotMaintain);
       return;
@@ -260,8 +248,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       recentResults={Object.values(itemResults)}
       selectedCount={selectedCount}
       stopping={stopping}
-      supportsExecution={supportsExecution}
-      usesDiffView={usesDiffView}
+      presetId={presetId}
     />
   );
 }

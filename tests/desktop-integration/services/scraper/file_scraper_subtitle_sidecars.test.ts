@@ -2,7 +2,6 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import * as scraperOutput from "@main/services/scraper/output";
 import type {
   AggregationService,
   DownloadManager,
@@ -78,12 +77,6 @@ describe("FileScraper subtitle sidecars", () => {
 
   const createScraper = (plan: OrganizePlan, writeNfo: ReturnType<typeof vi.fn>) => {
     mockConfigManager(config);
-    vi.spyOn(scraperOutput, "probeVideoMetadataOrWarn").mockResolvedValue({
-      durationSeconds: 120,
-      width: 1920,
-      height: 1080,
-      bitrate: 1_000_000,
-    });
     return createFileScraper({
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData())),

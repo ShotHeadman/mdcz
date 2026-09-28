@@ -7,7 +7,7 @@ import {
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { cleanupPublicationStaging } from "@mdcz/runtime";
+import { recoverInterruptedPublications } from "@mdcz/runtime";
 import type Database from "better-sqlite3";
 import { acquireDatabaseLease } from "../databaseFiles";
 
@@ -67,7 +67,7 @@ export class ServerPersistenceService {
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
       const mediaRoots = new MediaRootRepository(database);
-      await cleanupPublicationStaging(await mediaRoots.list());
+      await recoverInterruptedPublications(await mediaRoots.list());
       this.state = {
         database,
         repositories: {

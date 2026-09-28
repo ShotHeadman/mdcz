@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryRepository, ScrapeRunManifest, ScrapeRunRecord, ScrapeRunRepository } from "@mdcz/persistence";
 import { type Configuration, configurationSchema } from "@mdcz/shared/config";
@@ -32,7 +32,6 @@ import type {
   ScrapeResult,
   UncensoredChoice,
   UncensoredConfirmResponse,
-  VideoMeta,
 } from "@mdcz/shared/types";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
@@ -42,6 +41,7 @@ import { committedMovieRows, toCommittedMovie } from "../publication/committedMo
 import { MoveOutput } from "../publication/MoveOutput";
 import { movieOutputResultAssets } from "../publication/outputLibrary";
 import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
 import { WriteOutput } from "../publication/WriteOutput";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
 import {
@@ -67,10 +67,12 @@ import { FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
 import { admitScrapeGroups, type MovieGroup } from "./movieGroups";
 import { NfoGenerator } from "./nfo";
+import { versionKey } from "./organize/versionLabels";
 import { checkScrapeTargets } from "./preflightScrapeTask";
 import { TranslateService } from "./TranslateService";
 import type { TranslationMappingStore } from "./translate/types";
 import { expandScrapeRetryItems } from "./utils/number";
+import { createVideoProbe } from "./utils/video";
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5000;
 
@@ -179,7 +181,7 @@ export interface ScrapeRunnerDependencies {
     error(message: string, error?: unknown): void;
     debug?(message: string): void;
   };
-  probeVideoMetadata?: (sourcePath: string) => Promise<VideoMeta | undefined>;
+  mediaInfoWasmPath?: string;
   postProcessAssets?: (input: {
     assets: DownloadedAssets;
     configuration: Configuration;
@@ -216,6 +218,7 @@ export class ScrapeRunner {
   private readonly translateService: TranslateService;
   private readonly nfoGenerator = new NfoGenerator();
   private readonly fileOrganizer = new FileOrganizer();
+  private readonly probeVideo: ReturnType<typeof createVideoProbe>;
   private coordinatorInstance: RunnerCoordinator | null = null;
   private closed = false;
   private readonly terminalSnapshots = new Map<string, ScrapeRunSnapshotDto>();
@@ -235,6 +238,7 @@ export class ScrapeRunner {
       warn: (msg: string, error?: unknown) => rawLogger.warn(msg, error),
       error: (msg: string, error?: unknown) => rawLogger.error(msg, error),
     };
+    this.probeVideo = createVideoProbe(deps.mediaInfoWasmPath);
     this.translateService = new TranslateService(deps.networkClient, {
       logger: this.logger,
       mappingStore: deps.mappingStore,
@@ -921,6 +925,46 @@ export class ScrapeRunner {
           logger: this.logger,
         }),
         fileOrganizer: this.fileOrganizer,
+        findExistingMovie: async (targetVideoPath, number, sourcePaths) => {
+          const directory = dirname(targetVideoPath);
+          const sources = new Set(
+            await Promise.all(
+              sourcePaths.map(async (sourcePath) => filesystemPathKey(await inventory.entryPath(sourcePath))),
+            ),
+          );
+          const entries = await inventory.mediaEntries(directory);
+          // A source already at its target (an in-place re-scrape) is the version being scraped, not a sibling.
+          const refs = (
+            await Promise.all(
+              entries
+                .filter((entry) => versionKey(join(directory, entry.name)) === versionKey(targetVideoPath))
+                .map(async (entry) => {
+                  const videoPath = join(directory, entry.name);
+                  return {
+                    ...toRootFileRef(videoPath, [...roots.values()]),
+                    entryIdentity: filesystemPathKey(await inventory.entryPath(videoPath)),
+                  };
+                }),
+            )
+          ).filter((ref) => !sources.has(ref.entryIdentity));
+          const ownership = this.deps.persistence.library.inventoryOwnership(refs);
+          const [movieId, ...others] = new Set(ownership.map((entry) => entry.movieId));
+          if (!movieId || others.length) return undefined;
+          const movie = await this.deps.persistence.library.getEntryById(movieId);
+          if (movie.number?.trim().toUpperCase() !== number.trim().toUpperCase()) return undefined;
+          return {
+            movieId,
+            assets: ownership
+              .filter((entry) => entry.kind !== "video")
+              .map((entry) => ({
+                rootId: entry.rootId,
+                relativePath: entry.relativePath,
+                fileId: entry.fileId,
+                kind: entry.kind,
+                published: Boolean(entry.published),
+              })),
+          };
+        },
         signalService: {
           setProgress: (value, current) => reporter.progress(manifest.items[current - 1]?.id ?? "", value),
           showLogText: () => undefined,
@@ -932,7 +976,11 @@ export class ScrapeRunner {
         getConfiguration: async () => configuration,
         logger: this.logger,
         postProcessAssets: this.deps.postProcessAssets,
-        probeVideoMetadata: this.deps.probeVideoMetadata,
+        probeVideoMetadata: async (sourcePath) =>
+          await this.probeVideo(sourcePath).catch((error: unknown) => {
+            this.logger.warn(`Video probe failed: ${toErrorMessage(error)}`);
+            return undefined;
+          }),
       },
       {
         mode: manifest.executionMode,

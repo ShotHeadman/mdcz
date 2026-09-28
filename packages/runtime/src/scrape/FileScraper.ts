@@ -29,6 +29,7 @@ import type { DownloadManager } from "./download";
 import type { FileOrganizer, ResolvedPublicationLayout } from "./FileOrganizer";
 import { resolveFileInfoWithSubtitles } from "./media";
 import { getNfoReadCandidates, getNfoWritePaths, type NfoGenerator, type NfoOptions } from "./nfo";
+import { assignVersionLabels, versionKey } from "./organize/versionLabels";
 import {
   downloadCrawlerAssets,
   prepareOutputCrawlerData,
@@ -72,6 +73,11 @@ export interface FileScraperDependencies {
   aggregationService: Pick<AggregationService, "aggregate">;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
+  findExistingMovie?(
+    targetVideoPath: string,
+    number: string,
+    sourcePaths: readonly string[],
+  ): Promise<Pick<PreparedMovieGroup, "movieId" | "assets"> | undefined>;
   getConfiguration(): Promise<Configuration>;
   logger: { info(message: string): void; warn(message: string): void; error(message: string): void };
   nfoGenerator: NfoGenerator;
@@ -280,6 +286,7 @@ export class FileScraper {
         }
         inspected.push({
           ...member,
+          size: facts.size,
           roots: options.roots,
           subtitleSidecars: resolved.subtitleSidecars,
           localState,
@@ -300,14 +307,49 @@ export class FileScraper {
         manualScrape: options.manualScrape,
         signal,
       });
+      const planMember = (
+        member: { fileInfo: FileInfo; localState?: NfoLocalState; options: FileScrapeOptions },
+        versionLabel?: string,
+      ) =>
+        this.deps.fileOrganizer.plan(member.fileInfo, crawlerData, configuration, member.localState, {
+          executionMode: this.options.mode ?? "batch",
+          outputDirectory: member.options.outputDirectory,
+          outputTemplateRoot: member.options.outputTemplateRoot,
+          versionLabel,
+        });
+      const plans = inspected.map((member) => planMember(member));
+      let movieId = inspected[0].groupMovieId ?? randomUUID();
+      let assets = inspected[0].groupAssets ?? [];
+      const occupiedKeys = new Set<string>();
+      const renaming = configuration.behavior.successFileRename && plans[0].mode === "move";
+      const sourcePaths = inspected.map((member) => member.fileInfo.filePath);
+      for (const plan of renaming ? plans : []) {
+        const existing = await this.deps.findExistingMovie?.(plan.targetVideoPath, crawlerData.number, sourcePaths);
+        if (!existing) continue;
+        if (occupiedKeys.size && existing.movieId !== movieId)
+          throw new Error("Movie versions belong to different library movies");
+        occupiedKeys.add(versionKey(plan.targetVideoPath));
+        movieId = existing.movieId;
+        assets = existing.assets;
+      }
+      const labels = renaming
+        ? assignVersionLabels(
+            inspected.map((member, index) => ({
+              sourcePath: member.fileInfo.filePath,
+              targetVideoPath: plans[index].targetVideoPath,
+              multipart: Boolean(member.fileInfo.part),
+              height: member.videoMeta?.height,
+              filenameResolution: member.fileInfo.resolution,
+              size: member.size,
+            })),
+            occupiedKeys,
+          )
+        : [];
       const preparedMembers: PreparedMovieMember[] = [];
-      for (const member of inspected) {
+      for (const [index, member] of inspected.entries()) {
+        const label = labels[index];
         const outputPlan = await this.deps.fileOrganizer.resolveOutputPlan(
-          this.deps.fileOrganizer.plan(member.fileInfo, crawlerData, configuration, member.localState, {
-            executionMode: this.options.mode ?? "batch",
-            outputDirectory: member.options.outputDirectory,
-            outputTemplateRoot: member.options.outputTemplateRoot,
-          }),
+          label ? planMember(member, label) : plans[index],
           member.fileInfo.filePath,
           {
             allowSharedDirectory:
@@ -342,8 +384,8 @@ export class FileScraper {
         status: "prepared",
         prepared: {
           inventory,
-          movieId: inspected[0].groupMovieId ?? randomUUID(),
-          assets: inspected[0].groupAssets ?? [],
+          movieId,
+          assets,
           configuration,
           crawlerData,
           translationError: translationError ? `Translation failed: ${translationError}` : undefined,

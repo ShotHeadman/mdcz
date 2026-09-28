@@ -167,7 +167,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const handle = await fixture.coordinator.startPreview({
       rootId: root.id,
-      presetId: "inspect_local",
+      presetId: "import_local",
       refs: [],
       configuration: defaultConfiguration,
       directoryScope: {
@@ -226,7 +226,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const scanning = promiseWithResolvers<void>();
     const scanned = promiseWithResolvers<LocalScanEntry[]>();
     const fixture = createCoordinator();
-    const input = { rootId: root.id, presetId: "inspect_local" as const, refs: [ref("one.mp4")] };
+    const input = { rootId: root.id, presetId: "import_local" as const, refs: [ref("one.mp4")] };
     const first = await fixture.coordinator.startPreview(input);
     const batch = await first.completion;
     vi.mocked(fixture.runtime.scanRefs).mockImplementationOnce(async () => {
@@ -275,7 +275,7 @@ describe("MaintenanceSessionCoordinator", () => {
   });
 
   it.each([
-    "inspect_local",
+    "import_local",
     "local_organize",
   ] as const)("scans unregistered refs once and retains their %s layout", async (presetId) => {
     const scanRefs = vi.fn(async () => [createEntry("one.mp4")]);
@@ -330,15 +330,6 @@ describe("MaintenanceSessionCoordinator", () => {
     expect(batch.items[0]?.affectedFiles?.map((file) => file.fileId)).toEqual(
       batch.items[0]?.movieGroup?.files.map((file) => file.fileId),
     );
-    if (presetId === "inspect_local") {
-      await expect(
-        fixture.coordinator.beginApply({
-          sessionId: handle.session.id,
-          selections: [{ previewId: batch.items[0].id }],
-        }),
-      ).rejects.toThrow("does not support execution");
-      expect(fixture.runtime.applyEntry).not.toHaveBeenCalled();
-    }
     await fixture.coordinator.close();
   });
 
@@ -775,7 +766,7 @@ describe("MaintenanceSessionCoordinator", () => {
     ]);
     const owned = await fixture.coordinator.startPreview({
       rootId: nested.id,
-      presetId: "inspect_local",
+      presetId: "import_local",
       refs: [{ rootId: nested.id, relativePath: names[0] }],
     });
     expect((await owned.completion).items[0].movieGroup).toMatchObject({

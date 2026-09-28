@@ -33,8 +33,9 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "behavior.metadataOnly": {
       label: "仅输出元数据",
-      description: "不移动原视频，仅将海报与 NFO 输出到独立目录（适合网盘挂载等场景）。",
-      aliases: ["只读", "仅输出元数据", "网盘", "原视频不动"],
+      description:
+        "不移动原视频，仅将海报与 NFO 导出到独立目录作为归档；该目录不含视频，媒体服务器无法直接将其作为媒体库。",
+      aliases: ["只读", "仅输出元数据", "归档", "原视频不动"],
     },
     "paths.metadataPath": {
       label: "元数据输出目录",

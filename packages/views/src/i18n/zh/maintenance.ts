@@ -38,6 +38,8 @@ export const maintenance: Messages["maintenance"] = {
   generateDiff: "生成对比",
   executeOrganize: "执行整理",
   generateOrganizePreview: "生成整理预览",
+  executeImport: "导入到媒体库",
+  generateImportPreview: "生成导入预览",
   reexecuteMaintenance: "重新执行维护",
   returnDescription: "返回后会清空当前维护列表、预览结果和执行记录。确定继续吗？",
   dataReplace: "数据替换",
@@ -76,7 +78,6 @@ export const maintenance: Messages["maintenance"] = {
   // MaintenanceBatchBarAdapter
   selectItemsFirst: "请先选择要执行的项目",
   previewFailed: (error: string) => `预览失败: ${error}`,
-  inspectLocalNoExecute: "“本地查看”预设只需扫描目录，无需执行。",
   noExecutableSelections: "没有可执行的项目，请先完成预览并处理阻塞项。",
   maintenanceStarted: (count: number) => `维护任务已启动，共 ${count} 项`,
   startFailed: (error: string) => `启动失败: ${error}`,
@@ -120,6 +121,6 @@ export const maintenance: Messages["maintenance"] = {
   // workbenchSession
   scrapeRunningCannotMaintain: "正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。",
   noMaintainableItems: "未发现可维护项目",
-  localInspectStarted: (count: number) => `本地读取已启动，共 ${count} 项`,
+  localImportStarted: (count: number) => `本地导入预览已启动，共 ${count} 项`,
   previewStarted: "维护预览已启动",
 };

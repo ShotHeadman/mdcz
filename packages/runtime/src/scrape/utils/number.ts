@@ -28,7 +28,8 @@ const UMR_PATTERN = new RegExp(
   `(?:^|${FILENAME_DELIMITER_SOURCE})(?:${CRACKED_CU_TOKEN_SOURCE}|UMR|破解)(?:$|${FILENAME_DELIMITER_SOURCE})`,
   "iu",
 );
-const RESOLUTION_PATTERNS = [/\b8K\b/iu, /\b4K\b/iu, /\b2160P\b/iu, /\b1080P\b/iu, /\b720P\b/iu];
+// `\d{3,4}P` also reads back the `<height>p` version labels, whose heights come from probing (e.g. 800p).
+const RESOLUTION_PATTERNS = [/\b8K\b/iu, /\b4K\b/iu, /\b\d{3,4}P\b/iu];
 const PART_PATTERN = /([-_.\s](?:CD|PART|EP)[-_\s]?(\d{1,2}))(?=$|[-_.\s])/giu;
 const FC2_JP_PART_PATTERN = /([-_.\s](前番|前編|後番|後編))(?=$|[-_.\s])/gu;
 const FC2_CIRCLED_PART_DIGITS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"] as const;

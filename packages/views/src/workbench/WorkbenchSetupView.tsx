@@ -1,4 +1,4 @@
-import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
+import { maintenancePresetIdSchema } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import { Button, Checkbox, cn, quietFieldSurfaceClass, quietPanelSurfaceClass } from "@mdcz/ui";
 import { AlertCircle, ArrowDown, Check, FolderOpen, FolderOutput, Loader2, Search, X } from "lucide-react";
@@ -344,11 +344,11 @@ export function WorkbenchSetupView({
           >
             {mode === "maintenance" ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                {MAINTENANCE_PRESET_OPTIONS.map((option) => {
-                  const active = option.id === presetId;
+                {maintenancePresetIdSchema.options.map((id) => {
+                  const active = id === presetId;
                   return (
                     <button
-                      key={option.id}
+                      key={id}
                       type="button"
                       aria-pressed={active}
                       disabled={startPending}
@@ -357,12 +357,10 @@ export function WorkbenchSetupView({
                         "flex min-h-24 flex-col items-start justify-between px-4 py-4 text-left transition-all duration-300 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20",
                         active ? "border-ring/50 ring-2 ring-ring/10" : "hover:border-ring/40",
                       )}
-                      onClick={() => onPresetChange(option.id)}
+                      onClick={() => onPresetChange(id)}
                     >
                       <div className="flex w-full items-start justify-between gap-3">
-                        <div className="text-sm font-bold tracking-tight">
-                          {t.domain.maintenancePresets[option.id].label}
-                        </div>
+                        <div className="text-sm font-bold tracking-tight">{t.domain.maintenancePresets[id].label}</div>
                         <span
                           className={cn(
                             "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
@@ -373,7 +371,7 @@ export function WorkbenchSetupView({
                         </span>
                       </div>
                       <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                        {t.domain.maintenancePresets[option.id].description}
+                        {t.domain.maintenancePresets[id].description}
                       </p>
                     </button>
                   );
