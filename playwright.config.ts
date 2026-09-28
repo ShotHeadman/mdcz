@@ -27,6 +27,8 @@ export default defineConfig({
     : [["line"], ["html", { outputFolder: reportDir, open: "never" }]],
   use: {
     baseURL,
+    // Specs assert Chinese labels, while the UI falls back to navigator.language when no locale is stored.
+    locale: "zh-CN",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: browserExecutablePath ? "off" : "retain-on-failure",

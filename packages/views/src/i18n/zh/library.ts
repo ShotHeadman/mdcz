@@ -27,7 +27,9 @@ export const library: Messages["library"] = {
   loadMore: "加载更多",
 
   // Entry card
-  fileCountWithStatus: (fileCount: number, status: string) => `${fileCount} 个文件 · ${status}`,
+  parts: (count: number) => `${count} 个分盘`,
+  partsMissing: (missing: number, total: number) => `${total} 个分盘缺失 ${missing} 个`,
+  fileActions: "文件操作",
   size: "大小",
   updatedTime: "更新时间",
   scrapeInfo: "刮削信息",
@@ -37,10 +39,8 @@ export const library: Messages["library"] = {
 
   // Availability labels
   availability: {
-    available: "全部可用",
     partial: "部分可用",
     unavailable: "全部不可用",
-    unchecked: "未检查",
   },
 
   // Delete dialog
@@ -64,7 +64,6 @@ export const library: Messages["library"] = {
 
   // Relink / remove file dialog
   relinkFileTitle: "重新关联文件",
-  lastFileWarning: "这是最后一个文件，将同时从媒体库移除该影片记录。",
   removeFileDescription: "将从媒体库移除该文件记录，其他分盘文件仍会保留。",
   mediaFolderLabel: (name: string) => `所在媒体目录：${name}`,
   newRelativePath: "新相对路径",

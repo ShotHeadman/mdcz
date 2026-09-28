@@ -25,7 +25,9 @@ export const library = {
   loadMore: "Load more",
 
   // Entry card
-  fileCountWithStatus: (fileCount: number, status: string) => `${fileCount} file(s) · ${status}`,
+  parts: (count: number) => `${count} parts`,
+  partsMissing: (missing: number, total: number) => `${missing} of ${total} parts missing`,
+  fileActions: "File actions",
   size: "Size",
   updatedTime: "Updated",
   scrapeInfo: "Scrape Info",
@@ -35,10 +37,8 @@ export const library = {
 
   // Availability labels
   availability: {
-    available: "All available",
     partial: "Partially available",
     unavailable: "All unavailable",
-    unchecked: "Unchecked",
   },
 
   // Delete dialog
@@ -62,7 +62,6 @@ export const library = {
 
   // Relink / remove file dialog
   relinkFileTitle: "Relink File",
-  lastFileWarning: "This is the last file; the movie record will also be removed from the library.",
   removeFileDescription: "This file record will be removed from the library; other disc parts will be kept.",
   mediaFolderLabel: (name: string) => `Media root: ${name}`,
   newRelativePath: "New relative path",

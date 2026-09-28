@@ -11,14 +11,31 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertCircle, Database, FolderOpen, LoaderCircle, RefreshCw, Search, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  Copy,
+  Database,
+  FolderOpen,
+  Layers,
+  Link2,
+  LoaderCircle,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useT } from "../i18n";
 
 export type LibraryAvailabilityFilter = "all" | LibraryEntryDto["available"];
@@ -324,95 +341,122 @@ function LibraryEntryRow({
     entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || displayFile?.fileName || entry.id;
   const t = useT();
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
   const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile?.lastKnownPath);
+  const isMultiFile = entry.fileRefs.length > 1;
+  const missingFileCount = entry.fileRefs.filter((file) => file.available === false).length;
+  const fileActionProps = { entry, onOpenFolder, onRemoveFile, onRelinkFile };
 
   return (
-    <div className="group relative flex items-center gap-5 rounded-quiet-lg border border-border/40 bg-surface p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)] lg:gap-6">
-      <div className="relative h-[72px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
-        {imageSrc ? (
-          <img
-            alt={title}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            onError={() => setImageLoadFailed(true)}
-            src={imageSrc}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-low to-surface-raised text-[10px] font-numeric font-bold text-muted-foreground">
-            {id.slice(0, 2).toUpperCase()}
-          </div>
-        )}
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col justify-center">
-        <div className="flex items-center gap-3">
-          <span className="shrink-0 rounded bg-foreground/5 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-foreground/60">
-            {id}
-          </span>
-          <span className="truncate text-base font-bold tracking-tight text-foreground">{title}</span>
-        </div>
-        <div className="mt-2 flex items-center gap-3 text-[11px]">
-          <ActorChips actors={entry.actors} />
-          {displayFile && (
-            <MiddleEllipsisPath rootDisplayName={displayFile.rootDisplayName} relativePath={displayFile.relativePath} />
+    <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
+      <div className="relative flex items-center gap-5 lg:gap-6">
+        <div className="relative h-[72px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
+          {imageSrc ? (
+            <img
+              alt={title}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              onError={() => setImageLoadFailed(true)}
+              src={imageSrc}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-low to-surface-raised text-[10px] font-numeric font-bold text-muted-foreground">
+              {id.slice(0, 2).toUpperCase()}
+            </div>
           )}
         </div>
-        <details className="mt-2 text-xs">
-          <summary className="cursor-pointer">
-            {t.library.fileCountWithStatus(entry.fileRefs.length, t.library.availability[entry.available])}
-          </summary>
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <div className="flex items-center gap-3">
+            <span className="shrink-0 rounded bg-foreground/5 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-foreground/60">
+              {id}
+            </span>
+            <span className="truncate text-base font-bold tracking-tight text-foreground">{title}</span>
+          </div>
+          <div className="mt-2 flex items-center gap-3 text-[11px]">
+            <ActorChips actors={entry.actors} />
+            {isMultiFile && (
+              <button
+                aria-expanded={filesOpen}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 font-semibold transition-colors",
+                  missingFileCount > 0
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                    : "border-border/80 bg-surface-low text-foreground/70 hover:text-foreground",
+                )}
+                onClick={() => setFilesOpen((open) => !open)}
+                type="button"
+              >
+                <Layers className="h-3 w-3" />
+                {missingFileCount > 0
+                  ? t.library.partsMissing(missingFileCount, entry.fileRefs.length)
+                  : t.library.parts(entry.fileRefs.length)}
+                <ChevronDown className={cn("h-3 w-3 transition-transform", filesOpen && "rotate-180")} />
+              </button>
+            )}
+            {displayFile && (
+              <MiddleEllipsisPath
+                rootDisplayName={displayFile.rootDisplayName}
+                relativePath={displayFile.relativePath}
+              />
+            )}
+          </div>
+        </div>
+        <div className="hidden shrink-0 items-center gap-8 font-numeric text-xs font-bold text-muted-foreground/60 lg:flex">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-bold uppercase opacity-50">{t.library.size}</span>
+            <span className="text-foreground/80">{formatBytes(entry.size)}</span>
+          </div>
+          <div className="flex min-w-28 flex-col items-end">
+            <span className="text-[10px] font-bold uppercase opacity-50">{t.library.updatedTime}</span>
+            <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 pl-4">
+          <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
+          <div className="flex items-center gap-1">
+            {LinkComponent ? (
+              <LinkComponent className={detailClass} entry={entry}>
+                <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
+                  {t.library.scrapeInfo}
+                </Badge>
+              </LinkComponent>
+            ) : null}
+            {canOpenFolder ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    aria-label={t.library.openFolder}
+                    className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
+                    onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t.library.openFolder}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <div className="h-8 w-8" />
+            )}
+            {!isMultiFile && displayFile ? (
+              <LibraryFileActions file={displayFile} {...fileActionProps} />
+            ) : (
+              <div className="h-8 w-8" />
+            )}
+          </div>
+        </div>
+      </div>
+      {isMultiFile && filesOpen && (
+        <div className="mt-3 ml-[68px] flex flex-col border-t border-border/40 pt-2 lg:ml-[72px]">
           {entry.fileRefs.map((file) => (
-            <LibraryFileRow
-              key={file.id}
-              entry={entry}
-              file={file}
-              onOpenFolder={onOpenFolder}
-              onRemoveFile={onRemoveFile}
-              onRelinkFile={onRelinkFile}
-            />
+            <LibraryFileRow file={file} key={file.id} {...fileActionProps} />
           ))}
-        </details>
-      </div>
-      <div className="hidden shrink-0 items-center gap-8 font-numeric text-xs font-bold text-muted-foreground/60 lg:flex">
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">{t.library.size}</span>
-          <span className="text-foreground/80">{formatBytes(entry.size)}</span>
         </div>
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">{t.library.updatedTime}</span>
-          <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-4 pl-4 lg:gap-6">
-        <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
-        <div className="flex items-center gap-1.5">
-          {LinkComponent ? (
-            <LinkComponent className={detailClass} entry={entry}>
-              <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
-                {t.library.scrapeInfo}
-              </Badge>
-            </LinkComponent>
-          ) : null}
-          {canOpenFolder ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  aria-label={t.library.openFolder}
-                  className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
-                  onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t.library.openFolder}</TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -480,101 +524,175 @@ function StatusDot({ available }: { available: LibraryEntryDto["available"] }) {
   return <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500/40" />;
 }
 
-function LibraryFileRow({
-  entry,
-  file,
-  onOpenFolder,
-  onRemoveFile,
-  onRelinkFile,
-}: {
+type LibraryFileActionProps = {
   entry: LibraryEntryDto;
   file: LibraryEntryDto["fileRefs"][number];
   onOpenFolder?: LibraryIndexViewProps["onOpenFolder"];
   onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
   onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
-}) {
+};
+
+function LibraryFileRow(props: LibraryFileActionProps) {
+  const { file } = props;
   const t = useT();
+  const statusLabel =
+    file.available === null
+      ? t.library.fileStatus.unchecked
+      : file.available
+        ? t.library.fileStatus.available
+        : t.library.fileStatus.unavailable;
+
+  return (
+    <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto_auto_auto] items-center gap-x-4 rounded-[var(--radius-quiet-sm)] px-2 py-1.5 text-xs transition-colors hover:bg-surface-low">
+      <span className="font-mono text-[11px] font-bold text-foreground/50">
+        {file.partNumber ? `CD${file.partNumber}` : ""}
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate font-semibold text-foreground/90" title={file.fileName}>
+          {file.fileName}
+        </span>
+        <span className="flex min-w-0 text-[11px]">
+          <MiddleEllipsisPath rootDisplayName={file.rootDisplayName} relativePath={file.relativePath} />
+        </span>
+        {file.availabilityError && <span className="text-destructive">{file.availabilityError}</span>}
+      </div>
+      <span className="font-numeric text-muted-foreground">{file.resolution ?? ""}</span>
+      <span className="font-numeric font-bold text-foreground/80">{formatBytes(file.size)}</span>
+      <div className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                file.available === null
+                  ? "bg-muted-foreground/30"
+                  : file.available
+                    ? "bg-emerald-500/40"
+                    : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]",
+              )}
+            />
+          </TooltipTrigger>
+          <TooltipContent>{statusLabel}</TooltipContent>
+        </Tooltip>
+        <LibraryFileActions {...props} />
+      </div>
+    </div>
+  );
+}
+
+function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkFile }: LibraryFileActionProps) {
+  const t = useT();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [action, setAction] = useState<"remove" | "relink" | null>(null);
   const [relativePath, setRelativePath] = useState(file.relativePath);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const path = file.lastKnownPath ?? file.relativePath;
+  // Single-file entries already expose "open folder" and "remove" on the card itself.
+  const isMultiFile = entry.fileRefs.length > 1;
+  const menuItemClass = "h-8 w-full justify-start gap-2 px-2 text-xs font-medium";
+  const openDialog = (next: "remove" | "relink") => {
+    setMenuOpen(false);
+    setError(null);
+    setRelativePath(file.relativePath);
+    setAction(next);
+  };
+
   return (
-    <div className="mt-2 grid gap-2 rounded border p-2">
-      <div>
-        {file.partNumber ? `CD${file.partNumber} · ` : ""}
-        {file.fileName}
-        {file.resolution ? ` · ${file.resolution}` : ""} · {formatBytes(file.size)} ·{" "}
-        {file.available === null
-          ? t.library.fileStatus.unchecked
-          : file.available
-            ? t.library.fileStatus.available
-            : t.library.fileStatus.unavailable}
-      </div>
-      <div className="break-all font-mono">{path}</div>
-      {file.availabilityError && <p className="text-destructive">{file.availabilityError}</p>}
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            void navigator.clipboard.writeText(path).catch((cause) => setError(String(cause)));
-          }}
-        >
-          {t.library.copyPath}
-        </Button>
-        {onOpenFolder && (
-          <Button size="sm" variant="ghost" onClick={() => onOpenFolder(path)}>
-            {t.library.openLocation}
+    <>
+      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            aria-label={t.library.fileActions}
+            className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
-        )}
-        {onRelinkFile && (
-          <Button size="sm" variant="ghost" onClick={() => setAction("relink")}>
-            {t.library.relink}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="flex w-44 flex-col p-1">
+          <Button
+            className={menuItemClass}
+            onClick={() => {
+              setMenuOpen(false);
+              navigator.clipboard.writeText(path).catch((cause) => toast.error(String(cause)));
+            }}
+            type="button"
+            variant="ghost"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t.library.copyPath}
           </Button>
-        )}
-        {onRemoveFile && (
-          <Button size="sm" variant="ghost" onClick={() => setAction("remove")}>
-            {t.library.removeFile}
-          </Button>
-        )}
-      </div>
-      {error && <p className="text-destructive">{error}</p>}
+          {isMultiFile && onOpenFolder && file.available !== false && (
+            <Button
+              className={menuItemClass}
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenFolder(path);
+              }}
+              type="button"
+              variant="ghost"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t.library.openLocation}
+            </Button>
+          )}
+          {onRelinkFile && (
+            <Button className={menuItemClass} onClick={() => openDialog("relink")} type="button" variant="ghost">
+              <Link2 className="h-3.5 w-3.5" />
+              {t.library.relink}
+            </Button>
+          )}
+          {isMultiFile && onRemoveFile && (
+            <Button
+              className={cn(menuItemClass, "text-destructive hover:text-destructive")}
+              onClick={() => openDialog("remove")}
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t.library.removeFile}
+            </Button>
+          )}
+        </PopoverContent>
+      </Popover>
       <Dialog
         open={action !== null}
         onOpenChange={(open) => {
           if (!open && !busy) setAction(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{action === "remove" ? t.library.removeFile : t.library.relinkFileTitle}</DialogTitle>
           </DialogHeader>
-          <p className="break-all">{path}</p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{path}</p>
           {action === "remove" ? (
             <>
-              <p>{entry.fileRefs.length === 1 ? t.library.lastFileWarning : t.library.removeFileDescription}</p>
-              <p>{t.library.diskFilesUnchanged}</p>
+              <p>{t.library.removeFileDescription}</p>
+              <p className="text-sm text-muted-foreground">{t.library.diskFilesUnchanged}</p>
             </>
           ) : (
-            <>
-              <p>{t.library.mediaFolderLabel(file.rootDisplayName)}</p>
-              <label htmlFor={`relink-path-${file.id}`}>
-                {t.library.newRelativePath}
-                <Input
-                  id={`relink-path-${file.id}`}
-                  value={relativePath}
-                  onChange={(event) => setRelativePath(event.target.value)}
-                />
-              </label>
-            </>
+            <label className="grid gap-2 text-sm" htmlFor={`relink-path-${file.id}`}>
+              <span className="text-muted-foreground">{t.library.mediaFolderLabel(file.rootDisplayName)}</span>
+              {t.library.newRelativePath}
+              <Input
+                id={`relink-path-${file.id}`}
+                value={relativePath}
+                onChange={(event) => setRelativePath(event.target.value)}
+              />
+            </label>
           )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button disabled={busy} onClick={() => setAction(null)}>
+            <Button disabled={busy} onClick={() => setAction(null)} variant="outline">
               {t.common.cancel}
             </Button>
             <Button
               disabled={busy}
+              variant={action === "remove" ? "destructive" : "default"}
               onClick={async () => {
                 setBusy(true);
                 setError(null);
@@ -594,7 +712,7 @@ function LibraryFileRow({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 
