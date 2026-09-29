@@ -547,7 +547,10 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         };
         try {
           this.assertActive(["running", "paused"]);
-          const execution = await this.execution.executePreparedGroup(entry, context.signal);
+          const execution = await runWithScrapeItem(
+            { caseId: entry.group.members[0].caseId, execution: entry.group },
+            async () => await this.execution.executePreparedGroup(entry, context.signal),
+          );
           release = execution.release;
           const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
           const eligibleIds = new Set(execution.output?.files.map((file) => file.scrape?.itemId) ?? []);
@@ -637,9 +640,8 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       runItem: async (group, context) => {
         const error = group.error;
         if (error) return { status: "failed", result: createFailedResult(group.members[0], error) };
-        const item = group.members[0];
         return await runWithScrapeItem(
-          { itemId: item.id, relativePath: item.relativePath, caseId: item.caseId },
+          { caseId: group.members[0].caseId, execution: group },
           async () => await this.execution.prepareGroup(group, context.signal),
         );
       },

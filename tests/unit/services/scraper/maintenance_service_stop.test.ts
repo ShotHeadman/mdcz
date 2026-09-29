@@ -37,6 +37,7 @@ const createEntry = (filePath: string, fileId = "ABP-123"): LocalScanEntry => ({
     genres: [],
     scene_images: [],
   },
+  nfoPaths: [],
   assets: { sceneImages: [], actorPhotos: [] },
   currentDir: path.dirname(filePath),
 });

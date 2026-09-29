@@ -563,7 +563,7 @@ export class MaintenanceRuntime {
         );
         for (const file of files) {
           for (const [kind, paths] of [
-            ["nfo", [file.nfoPath]],
+            ["nfo", file.nfoPaths],
             ["thumb", [file.assets.thumb]],
             ["poster", [file.assets.poster]],
             ["fanart", [file.assets.fanart]],
@@ -609,7 +609,7 @@ export class MaintenanceRuntime {
         throwIfAborted(signal);
         const validate = async () => {
           throwIfAborted(signal);
-          await this.inventory.assertUnchanged(files.flatMap((f) => (f.nfoPath ? [f.nfoPath] : [])));
+          await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
           throwIfAborted(signal);
         };
         const commit = () => publication.commit(movie);

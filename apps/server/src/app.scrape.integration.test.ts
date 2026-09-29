@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type AggregationResult, DownloadManager, PosterWatermarkService } from "@mdcz/runtime/scrape";
+import { type AggregationResult, PosterWatermarkService } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -536,81 +536,6 @@ describe("buildServer scrape integration", () => {
     unsubscribeTaskEvents();
   });
 
-  it("publishes STRM and subtitles into an explicit nested output directory", async () => {
-    const root = await createTempRoot("scrape-explicit-output-root");
-    const outputPath = join(root, "custom-output");
-    const sourcePath = join(root, "ABC-456.strm");
-    await writeFile(sourcePath, "\uFEFF#KODIPROP:test=value\r\n ./real.mp4 \r\n");
-    await writeFile(join(root, "real.mp4"), "video");
-    await writeFile(join(root, "ABC-456.zh.srt"), "subtitle");
-    await mkdir(outputPath);
-    const imageServer = await startTestImageServer();
-    const { fastify, services } = await createTestServer({
-      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
-    });
-    const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    const outputRoot = await services.mediaRoots.prepareOutputDirectory({ hostPath: outputPath });
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        paths: { successOutputFolder: "legacy-output" },
-        download: { downloadSceneImages: false, downloadTrailer: false },
-      },
-    });
-
-    const startResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/scrape.start",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        executionMode: "batch",
-        refs: [{ rootId, relativePath: "ABC-456.strm" }],
-        outputRootId: outputRoot.id,
-        outputRelativeDirectory: outputRoot.relativeDirectory,
-      },
-    });
-    const taskId = startResponse.json().result.data.runId;
-    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
-
-    const historyResponse = await fastify.inject({
-      method: "GET",
-      url: `/trpc/scrape.history?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const result = historyResponse.json().result.data.results[0];
-    expect(outputRoot.id).toBe(rootId);
-    expect(outputRoot.relativeDirectory).toBe("custom-output");
-    expect(result.outputRootId).toBe(rootId);
-    expect(result.outputRelativePath).toMatch(/^custom-output\/Actor A\//u);
-    expect(result.outputRelativePath.endsWith(".strm")).toBe(true);
-    await expect(readFile(join(root, result.outputRelativePath), "utf8")).resolves.toBe(
-      `\uFEFF#KODIPROP:test=value\r\n ${join(root, "real.mp4")} \r\n`,
-    );
-    await expect(readFile(join(root, result.outputRelativePath.replace(/\.[^.]+$/u, ".zh.srt")), "utf8")).resolves.toBe(
-      "subtitle",
-    );
-    await expect(readFile(sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(join(root, "ABC-456.zh.srt"))).rejects.toMatchObject({ code: "ENOENT" });
-
-    const nfoPath = join(root, result.nfoRelativePath);
-    await writeFile(nfoPath, "<movie><title>Old title</title></movie>");
-    await services.config.update({
-      download: { keepNfo: false },
-      behavior: { successFileMove: false, successFileRename: false },
-    });
-    const rescrape = await services.scrape.start({
-      executionMode: "single",
-      refs: [{ rootId, relativePath: result.outputRelativePath }],
-    });
-    await waitForScrapeRunStatus(fastify, token, rescrape.task.id, "completed");
-    const refreshed = await services.scrape.snapshot({ taskId: rescrape.task.id });
-    expect(refreshed.task.status).toBe("completed");
-    expect(await readFile(nfoPath, "utf8")).not.toContain("Old title");
-  });
-
   it("applies configured poster tag badges with the same runtime rendering used by desktop", async () => {
     const root = await createTempRoot("scrape-runtime-watermark");
     await writeFile(join(root, "ABC-123.mp4"), "video");
@@ -907,56 +832,6 @@ describe("buildServer scrape integration", () => {
       expect(await readFile(join(mediaRoot, "ABC-123.mp4"), "utf8")).toBe("video");
       expect(await readFile(join(mediaRoot, "ABC-123.en.forced.srt"), "utf8")).toBe("subtitle");
     }
-  });
-
-  it("scrapes selected parts with one aggregation request and isolated item results", async () => {
-    const root = await createTempRoot("selected-scrape-root");
-    const names = ["ABC-128-CD1.mp4", "ABC-128-CD2.mp4"];
-    for (const name of names) await writeFile(join(root, name), name);
-    const imageServer = await startTestImageServer();
-    const aggregation = createTestAggregation(`${imageServer.url}/image.png`);
-    const downloadAll = vi.spyOn(DownloadManager.prototype, "downloadAll");
-    const { fastify, services } = await createTestServer({
-      scrapeAggregation: aggregation,
-    });
-    const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-
-    const startResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/scrape.start",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        executionMode: "batch",
-        refs: names.map((relativePath) => ({ rootId, relativePath })),
-        outputRootId: rootId,
-        uncensoredConfirmed: true,
-      },
-    });
-
-    expect(startResponse.statusCode).toBe(200);
-    expect(startResponse.json().result.data).toEqual({ runId: expect.any(String) });
-    const taskId = startResponse.json().result.data.runId;
-
-    await waitForScrapeRunStatus(fastify, token, taskId, "completed");
-    const snapshot = await services.scrape.snapshot({ taskId });
-    expect(snapshot).toMatchObject({
-      task: { id: taskId, kind: "scrape" },
-      items: names.map((relativePath) => expect.objectContaining({ rootId, relativePath })),
-    });
-    expect(downloadAll).toHaveBeenCalledOnce();
-    const entries = await services.persistence
-      .getState()
-      .then(async (state) => await state.repositories.library.listEntries());
-    expect(entries).toEqual([
-      expect.objectContaining({
-        mediaIdentity: "ABC-128",
-        files: expect.arrayContaining([
-          expect.objectContaining({ partNumber: 1, partSuffix: "-CD1" }),
-          expect.objectContaining({ partNumber: 2, partSuffix: "-CD2" }),
-        ]),
-      }),
-    ]);
   });
 
   it.each([

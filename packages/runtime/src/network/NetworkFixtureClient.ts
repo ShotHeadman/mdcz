@@ -1,6 +1,8 @@
 import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
+import sharp from "sharp";
+import { parseImageDimensions } from "../scrape/utils/image";
 import {
   NetworkClient,
   type NetworkClientOptions,
@@ -36,6 +38,9 @@ interface RecordingSession {
   stagingDirectory: string;
 }
 
+type NetworkFixtureResponse = NonNullable<NetworkFixtureInteraction["response"]>;
+type NetworkFixtureBlobBody = Extract<NetworkFixtureResponse["body"], { kind: "blob" }>;
+
 interface ReplayState {
   manifest: NetworkFixtureManifest;
   consumed: Set<string>;
@@ -50,6 +55,8 @@ export interface NetworkRecordClientOptions {
 export interface NetworkReplayClientOptions {
   fixturesRoot: string;
   mockMediaRoot?: string;
+  /** Ignores local blobs so replay behaves the same on machines that never recorded them. */
+  syntheticMedia?: boolean;
   delayMs?: number;
   network?: Omit<NetworkClientOptions, "rawDispatch">;
 }
@@ -60,6 +67,27 @@ const isBlobResponse = (response: RawNetworkResponse): boolean =>
   /^(image|video)\//u.test(response.headers.get("content-type")?.toLowerCase() ?? "");
 const isNotFound = (error: unknown): boolean =>
   error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
+const readOptionalFile = async (filePath: string): Promise<Buffer | undefined> =>
+  await readFile(filePath).catch((error: unknown) => {
+    if (isNotFound(error)) return undefined;
+    throw error;
+  });
+const loadOptionalNetworkFixture = async (
+  fixturesRoot: string,
+  caseId: string,
+): Promise<NetworkFixtureManifest | undefined> =>
+  await loadNetworkFixture(fixturesRoot, caseId).catch((error: unknown) => {
+    if (isNotFound(error)) return undefined;
+    throw error;
+  });
+const isSameRequest = (
+  recorded: NetworkFixtureInteraction["request"],
+  identity: NetworkFixtureInteraction["request"],
+): boolean =>
+  recorded.method.toUpperCase() === identity.method &&
+  recorded.url === identity.url &&
+  recorded.bodyBase64 === identity.bodyBase64 &&
+  JSON.stringify(recorded.headers) === JSON.stringify(identity.headers);
 
 const seedReplayRequest = async (
   request: RawNetworkRequest,
@@ -130,6 +158,7 @@ export class NetworkRecordClient extends NetworkClient {
   private readonly stagingRoot: string;
   private readonly publishRoot: string;
   private readonly sessions = new Map<object, RecordingSession>();
+  private readonly publishedFixtures = new Map<string, Promise<NetworkFixtureManifest | undefined>>();
   private nextSessionId = 0;
   private readonly sharedExecution = {};
 
@@ -178,17 +207,47 @@ export class NetworkRecordClient extends NetworkClient {
     session.nextSequenceByChannel.set(context.channel, sequence);
 
     let response: RawNetworkResponse;
+    let bytes: Uint8Array;
     try {
-      response = await dispatch();
+      response = (await this.findRecordedMedia(context, request)) ?? (await dispatch());
+      bytes = new Uint8Array(await response.clone().arrayBuffer());
     } catch (error) {
       session.interactions.push(await this.createInteraction(session, context.channel, sequence, request, { error }));
       throw error;
     }
-    const bytes = new Uint8Array(await response.clone().arrayBuffer());
     session.interactions.push(
       await this.createInteraction(session, context.channel, sequence, request, { response, bytes }),
     );
     return response;
+  }
+
+  // Image and video URLs serve immutable content, so re-recording reuses published media instead of downloading it again.
+  private async findRecordedMedia(
+    context: NetworkRequestExecutionContext,
+    request: RawNetworkRequest,
+  ): Promise<RawNetworkResponse | undefined> {
+    let published = this.publishedFixtures.get(context.caseId);
+    if (!published) {
+      published = loadOptionalNetworkFixture(this.publishRoot, context.caseId);
+      this.publishedFixtures.set(context.caseId, published);
+    }
+    const identity = await networkRequestIdentity(request);
+    const response = (await published)?.interactions.find(
+      (candidate) =>
+        candidate.channel === context.channel &&
+        candidate.response?.body.kind === "blob" &&
+        isSameRequest(candidate.request, identity),
+    )?.response;
+    if (!response) return undefined;
+    const bytes = await readOptionalFile(resolveNetworkFixtureBlob(this.publishRoot, response.body.sha256));
+    if (!bytes) return undefined;
+    return new ReplayResponse(
+      response.status,
+      response.statusText,
+      new Headers(response.headers),
+      response.url,
+      new Uint8Array(bytes),
+    );
   }
 
   private session(context: NetworkRequestExecutionContext): RecordingSession {
@@ -237,12 +296,15 @@ export class NetworkRecordClient extends NetworkClient {
       const blobPath = resolveNetworkFixtureBlob(this.publishRoot, sha256);
       await mkdir(path.dirname(blobPath), { recursive: true });
       await atomicWriteFile(blobPath, outcome.bytes);
+      const dimensions = outcome.response.headers.get("content-type")?.toLowerCase().startsWith("image/")
+        ? parseImageDimensions(outcome.bytes)
+        : null;
       interaction.response = {
         status: outcome.response.status,
         statusText: outcome.response.statusText,
         url: outcome.response.url || request.url,
         headers: headersToFixtureList(outcome.response.headers),
-        body: { kind: "blob", sha256, byteLength: outcome.bytes.byteLength },
+        body: { kind: "blob", sha256, byteLength: outcome.bytes.byteLength, ...dimensions },
       };
     } else {
       const relativePath = path.posix.join(
@@ -307,8 +369,10 @@ export class NetworkRecordClient extends NetworkClient {
 }
 
 export class NetworkReplayClient extends NetworkClient {
+  readonly missingInteractions: string[] = [];
   private readonly fixturesRoot: string;
   private readonly mockMediaRoot: string;
+  private readonly syntheticMedia: boolean;
   private readonly delayMs: number;
   private readonly fixtures = new Map<string, Promise<NetworkFixtureManifest | undefined>>();
   private readonly states = new WeakMap<object, Map<string, ReplayState>>();
@@ -322,6 +386,7 @@ export class NetworkReplayClient extends NetworkClient {
     this.mockMediaRoot = options.mockMediaRoot
       ? path.resolve(options.mockMediaRoot)
       : path.resolve(this.fixturesRoot, "../mock-media");
+    this.syntheticMedia = options.syntheticMedia ?? false;
     this.delayMs = options.delayMs ?? 0;
     activateNetworkFixtureContext();
   }
@@ -340,8 +405,10 @@ export class NetworkReplayClient extends NetworkClient {
     }
     if (!matched) {
       const identity = await networkRequestIdentity(request);
+      const missing = `${context.caseId}/${context.channel}: ${identity.method} ${identity.url}`;
+      this.missingInteractions.push(missing);
       throw new NetworkFixtureReplayError(
-        `Missing network fixture interaction for ${context.caseId}/${context.channel} (including shared): ${identity.method} ${identity.url}; record fixtures again`,
+        `Missing network fixture interaction for ${missing} (including shared); record fixtures again`,
       );
     }
 
@@ -382,10 +449,7 @@ export class NetworkReplayClient extends NetworkClient {
       (candidate) =>
         candidate.channel === channel &&
         (!consume || !state.consumed.has(interactionKey(candidate))) &&
-        candidate.request.method.toUpperCase() === identity.method &&
-        candidate.request.url === identity.url &&
-        candidate.request.bodyBase64 === identity.bodyBase64 &&
-        JSON.stringify(candidate.request.headers) === JSON.stringify(identity.headers),
+        isSameRequest(candidate.request, identity),
     );
     return interaction ? { fixtureCaseId: state.manifest.caseId, interaction, state, consume } : undefined;
   }
@@ -400,10 +464,7 @@ export class NetworkReplayClient extends NetworkClient {
     if (existing) return existing;
     let fixture = this.fixtures.get(caseId);
     if (!fixture) {
-      fixture = loadNetworkFixture(this.fixturesRoot, caseId).catch((error: unknown) => {
-        if (isNotFound(error)) return undefined;
-        throw error;
-      });
+      fixture = loadOptionalNetworkFixture(this.fixturesRoot, caseId);
       this.fixtures.set(caseId, fixture);
     }
     const manifest = await fixture;
@@ -414,21 +475,17 @@ export class NetworkReplayClient extends NetworkClient {
   }
 
   private async loadResponseBody(caseId: string, interaction: NetworkFixtureInteraction): Promise<Uint8Array> {
-    const body = interaction.response?.body;
-    if (!body) throw new Error(`Network fixture interaction ${interaction.sequence} has no response body`);
-    let bytes: Buffer;
-    try {
-      bytes = await readFile(
-        body.kind === "file"
-          ? path.join(resolveNetworkFixtureDirectory(this.fixturesRoot, caseId), body.path)
-          : resolveNetworkFixtureBlob(this.fixturesRoot, body.sha256),
-      );
-    } catch (error) {
-      if (!isNotFound(error) || body.kind !== "blob") throw error;
-      const type = interaction.response?.headers.find(([name]) => name === "content-type")?.[1]?.toLowerCase() ?? "";
-      const file = type.startsWith("video/") ? "sample.mp4" : "sample.jpg";
-      bytes = await readFile(path.resolve(this.mockMediaRoot, file));
-      return new Uint8Array(bytes);
+    const response = interaction.response;
+    if (!response) throw new Error(`Network fixture interaction ${interaction.sequence} has no response body`);
+    const { body } = response;
+    let bytes: Buffer | undefined;
+    if (body.kind === "file") {
+      bytes = await readFile(path.join(resolveNetworkFixtureDirectory(this.fixturesRoot, caseId), body.path));
+    } else {
+      bytes = this.syntheticMedia
+        ? undefined
+        : await readOptionalFile(resolveNetworkFixtureBlob(this.fixturesRoot, body.sha256));
+      if (!bytes) return await this.synthesizeMedia(response.headers, body);
     }
     if (bytes.byteLength !== body.byteLength || sha256Hex(bytes) !== body.sha256) {
       throw new Error(
@@ -436,5 +493,25 @@ export class NetworkReplayClient extends NetworkClient {
       );
     }
     return new Uint8Array(bytes);
+  }
+
+  private async synthesizeMedia(headers: Array<[string, string]>, body: NetworkFixtureBlobBody): Promise<Uint8Array> {
+    const contentType = headers.find(([name]) => name === "content-type")?.[1]?.toLowerCase() ?? "";
+    if (contentType.startsWith("video/")) {
+      return new Uint8Array(await readFile(path.resolve(this.mockMediaRoot, "sample.mp4")));
+    }
+    // A recorded body that did not decode as an image replays as undecodable bytes of the same size.
+    if (!body.width || !body.height) return new Uint8Array(body.byteLength);
+    const [red, green, blue] = Buffer.from(body.sha256.slice(0, 6), "hex");
+    const format = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpeg";
+    const image = await sharp({
+      create: { width: body.width, height: body.height, channels: 3, background: { r: red, g: green, b: blue } },
+    })
+      .toFormat(format)
+      .toBuffer();
+    // Padding to the recorded size keeps byte-size thresholds and content-length behaving as with the real image.
+    const bytes = new Uint8Array(Math.max(body.byteLength, image.byteLength));
+    bytes.set(image);
+    return bytes;
   }
 }

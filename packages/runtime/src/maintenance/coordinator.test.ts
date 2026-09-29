@@ -36,6 +36,7 @@ const createEntry = (relativePath: string, mediaRoot = root): LocalScanEntry => 
     number: relativePath.replace(/\.mp4$/u, ""),
     isSubtitled: false,
   },
+  nfoPaths: [],
   assets: { sceneImages: [], actorPhotos: [] },
   currentDir: mediaRoot.hostPath,
 });

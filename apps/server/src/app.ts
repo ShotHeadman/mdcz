@@ -4,7 +4,7 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService } from "@mdcz/runtime/scrape";
+import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
 import { automationRecentInputSchema, automationScrapeStartInputSchema } from "@mdcz/shared/serverDtos";
@@ -47,7 +47,7 @@ export interface ServerResourceOverrides {
   actorSourceProvider?: ActorSourceProvider;
   mappingStore?: FileTranslationMappingStore;
   aggregationService?: ScrapeServiceResources["aggregationService"];
-  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
+  prepareScrapeItem?: PrepareScrapeItem;
 }
 
 export interface BuildServerOptions {

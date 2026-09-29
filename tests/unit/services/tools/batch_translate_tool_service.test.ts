@@ -39,40 +39,44 @@ type EntryOverrides = Omit<Partial<LocalScanEntry>, "assets" | "crawlerData" | "
   fileInfo?: Partial<LocalScanEntry["fileInfo"]>;
 };
 
-const createEntry = (overrides: EntryOverrides = {}): LocalScanEntry => ({
-  fileId: "file-id",
-  ref: { rootId: "test-root", relativePath: "test.mp4" },
-  fileInfo: {
-    filePath: "/library/ABC-123.mp4",
-    fileName: "ABC-123.mp4",
-    extension: ".mp4",
-    number: "ABC-123",
-    isSubtitled: false,
-    ...overrides.fileInfo,
-  },
-  nfoPath: overrides.nfoPath ?? "/library/ABC-123.nfo",
-  crawlerData: {
-    title: "Original Title",
-    title_zh: "Original Title",
-    number: "ABC-123",
-    actors: [],
-    genres: [],
-    plot: "Original Plot",
-    plot_zh: "Original Plot",
-    scene_images: [],
-    website: Website.JAVDB,
-    ...overrides.crawlerData,
-  },
-  nfoLocalState: overrides.nfoLocalState,
-  scanError: overrides.scanError,
-  assets: {
-    sceneImages: [],
-    actorPhotos: [],
-    ...overrides.assets,
-  },
-  currentDir: overrides.currentDir ?? "/library",
-  groupingDirectory: overrides.groupingDirectory ?? "/library",
-});
+const createEntry = (overrides: EntryOverrides = {}): LocalScanEntry => {
+  const nfoPath = overrides.nfoPath ?? "/library/ABC-123.nfo";
+  return {
+    fileId: "file-id",
+    ref: { rootId: "test-root", relativePath: "test.mp4" },
+    fileInfo: {
+      filePath: "/library/ABC-123.mp4",
+      fileName: "ABC-123.mp4",
+      extension: ".mp4",
+      number: "ABC-123",
+      isSubtitled: false,
+      ...overrides.fileInfo,
+    },
+    nfoPath,
+    nfoPaths: [nfoPath],
+    crawlerData: {
+      title: "Original Title",
+      title_zh: "Original Title",
+      number: "ABC-123",
+      actors: [],
+      genres: [],
+      plot: "Original Plot",
+      plot_zh: "Original Plot",
+      scene_images: [],
+      website: Website.JAVDB,
+      ...overrides.crawlerData,
+    },
+    nfoLocalState: overrides.nfoLocalState,
+    scanError: overrides.scanError,
+    assets: {
+      sceneImages: [],
+      actorPhotos: [],
+      ...overrides.assets,
+    },
+    currentDir: overrides.currentDir ?? "/library",
+    groupingDirectory: overrides.groupingDirectory ?? "/library",
+  };
+};
 
 const createService = (
   options: {

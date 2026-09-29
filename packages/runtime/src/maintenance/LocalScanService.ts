@@ -7,7 +7,7 @@ import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared
 import type { RegisteredMediaLocation } from "../library/registeredMedia";
 import { excludeGeneratedStrmPaths, isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
-import { preferredLocalNfoBaseNames, selectLocalNfoName } from "../scrape/selectLocalNfo";
+import { preferredLocalNfoBaseNames, selectLocalNfoNames } from "../scrape/selectLocalNfo";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "../scrape/utils/filesystem";
 import { parseFileInfo } from "../scrape/utils/number";
@@ -285,7 +285,10 @@ export class LocalScanService {
       : metadata?.metadataPath.trim() && metadata.mediaPath && isPathInside(metadata.mediaPath, dir)
         ? resolve(metadata.metadataPath, relative(metadata.mediaPath, dir))
         : dir;
-    const nfoPath = registered ? registered.nfoPath : await this.findNfo(metadataDir, fileInfo, inventory, signal);
+    const nfoPaths = registered
+      ? [registered.nfoPath].filter((path) => path !== undefined)
+      : await this.findNfos(metadataDir, fileInfo, inventory, signal);
+    const nfoPath = nfoPaths[0];
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
     let scanError: string | undefined;
@@ -338,6 +341,7 @@ export class LocalScanService {
       ref: { rootId: root.id, relativePath: toRootRelativePath(root, videoPath) },
       fileInfo,
       nfoPath,
+      nfoPaths,
       crawlerData,
       nfoLocalState,
       scanError,
@@ -473,12 +477,12 @@ export class LocalScanService {
   }
 
   /** Find the NFO file in a directory, preferring one that matches the video filename. */
-  private async findNfo(
+  private async findNfos(
     dir: string,
     fileInfo: LocalScanEntry["fileInfo"],
     inventory: DirectoryInventory,
     signal?: AbortSignal,
-  ): Promise<string | undefined> {
+  ): Promise<string[]> {
     try {
       throwIfAborted(signal);
       const entries = await inventory.entries(dir);
@@ -486,19 +490,16 @@ export class LocalScanService {
         (entry) => (entry.isFile() || entry.isSymbolicLink()) && extname(entry.name).toLowerCase() === ".nfo",
       );
 
-      if (nfoEntries.length === 0) {
-        return undefined;
-      }
+      if (nfoEntries.length === 0) return [];
 
       const singleMovieDirectory = await this.isSingleMovieDirectory(dirname(fileInfo.filePath), inventory);
-      const selectedName = selectLocalNfoName(
+      return selectLocalNfoNames(
         nfoEntries.map((entry) => entry.name),
         preferredLocalNfoBaseNames(fileInfo.fileName, fileInfo.part?.suffix, singleMovieDirectory),
         singleMovieDirectory,
-      );
-      return selectedName ? join(dir, selectedName) : undefined;
+      ).map((name) => join(dir, name));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
   }

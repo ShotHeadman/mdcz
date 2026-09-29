@@ -286,15 +286,15 @@ describe("buildServer maintenance integration", () => {
     expect(completed.previews.map((item) => item.relativePath)).toEqual(["ABC-211.mp4", "ABC-212.mp4"]);
   });
 
-  it("imports every part's MDCx NFO and poster untouched, then organizes them without leftovers", async () => {
+  it("imports every part's MDCx NFOs and poster untouched, then organizes them without leftovers", async () => {
     const root = await createTempRoot("maintenance-selected-root");
     const parts = ["ABC-225-cd1", "ABC-225-cd2"];
+    const nfo =
+      "<movie><title>Local Title ABC-225</title><num>ABC-225</num><javdbsearchid>ABC-225</javdbsearchid></movie>";
+    await writeFile(join(root, "movie.nfo"), nfo);
     for (const part of parts) {
       await writeFile(join(root, `${part}.mp4`), "video");
-      await writeFile(
-        join(root, `${part}.nfo`),
-        "<movie><title>Local Title ABC-225</title><num>ABC-225</num><javdbsearchid>ABC-225</javdbsearchid></movie>",
-      );
+      await writeFile(join(root, `${part}.nfo`), nfo);
       await writeFile(join(root, `${part}-poster.jpg`), `poster ${part}`);
     }
     const snapshotFiles = async () =>
@@ -345,15 +345,11 @@ describe("buildServer maintenance integration", () => {
         .filter((asset) => asset.kind === "nfo" || asset.kind === "poster")
         .map(({ kind, relativePath, published }) => ({ kind, relativePath, published }))
         .sort((left, right) => `${left.kind}${left.relativePath}`.localeCompare(`${right.kind}${right.relativePath}`)),
-    ).toEqual(
-      ["nfo", "poster"].flatMap((kind) =>
-        parts.map((part) => ({
-          kind,
-          relativePath: kind === "nfo" ? `${part}.nfo` : `${part}-poster.jpg`,
-          published: true,
-        })),
-      ),
-    );
+    ).toEqual([
+      ...parts.map((part) => ({ kind: "nfo", relativePath: `${part}.nfo`, published: true })),
+      { kind: "nfo", relativePath: "movie.nfo", published: true },
+      ...parts.map((part) => ({ kind: "poster", relativePath: `${part}-poster.jpg`, published: true })),
+    ]);
     expect(await snapshotFiles()).toEqual(before);
 
     await configureOrganizedOutput(fastify, token, root);

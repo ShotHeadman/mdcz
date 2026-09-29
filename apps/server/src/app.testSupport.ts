@@ -4,7 +4,7 @@ import { ActorSourceProvider, ActorSourceRegistry } from "@mdcz/runtime/actorSou
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService, type AggregationResult } from "@mdcz/runtime/scrape";
+import { ActorImageService, type AggregationResult, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
@@ -27,6 +27,8 @@ export interface TestServerOptions {
     url?: string;
   };
   runtimeActions?: RuntimeActionService;
+  networkClient?: NetworkClient;
+  prepareScrapeItem?: PrepareScrapeItem;
   scrapeAggregation?: ScrapeServiceResources["aggregationService"];
   createMaintenanceRuntime?: (config: ServerConfigService) => MaintenanceRuntime;
 }
@@ -62,11 +64,13 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const persistence = new ServerPersistenceService(paths);
   const mediaRoots = new MediaRootService(persistence);
   const taskEvents = createTaskEventBus();
-  const networkClient = new NetworkClient({
-    getProxyUrl: () => config.getComputed().proxyUrl,
-    getTimeoutMs: () => config.getComputed().networkTimeoutMs,
-    getRetryCount: () => config.getComputed().networkRetryCount,
-  });
+  const networkClient =
+    options.networkClient ??
+    new NetworkClient({
+      getProxyUrl: () => config.getComputed().proxyUrl,
+      getTimeoutMs: () => config.getComputed().networkTimeoutMs,
+      getRetryCount: () => config.getComputed().networkRetryCount,
+    });
   const imageHostCooldownStore = new PersistentCooldownStore({
     filePath: join(paths.dataDir, "image-host-cooldowns.json"),
   });
@@ -85,6 +89,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       actorImageService,
       actorSourceProvider: new ActorSourceProvider({ registry: new ActorSourceRegistry() }),
       aggregationService: options.scrapeAggregation,
+      prepareScrapeItem: options.prepareScrapeItem,
     },
     services: {
       auth:

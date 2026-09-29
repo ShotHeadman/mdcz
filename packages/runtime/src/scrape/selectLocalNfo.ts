@@ -11,14 +11,15 @@ export const preferredLocalNfoBaseNames = (
   ...(singleMovieDirectory ? [MOVIE_NFO_BASE_NAME] : []),
 ];
 
-export const selectLocalNfoName = (
+/** Every NFO name that belongs to the video, most preferred first. */
+export const selectLocalNfoNames = (
   nfoNames: readonly string[],
   preferredBaseNames: readonly string[],
   singleMovieDirectory: boolean,
-): string | undefined => {
-  for (const baseName of preferredBaseNames) {
-    const match = nfoNames.find((name) => path.parse(name).name.toLowerCase() === baseName.toLowerCase());
-    if (match) return match;
-  }
-  return singleMovieDirectory && nfoNames.length === 1 ? nfoNames[0] : undefined;
+): string[] => {
+  const matches = preferredBaseNames.flatMap((baseName) =>
+    nfoNames.filter((name) => path.parse(name).name.toLowerCase() === baseName.toLowerCase()),
+  );
+  if (matches.length) return [...new Set(matches)];
+  return singleMovieDirectory && nfoNames.length === 1 ? [...nfoNames] : [];
 };

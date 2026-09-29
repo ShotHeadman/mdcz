@@ -23,6 +23,7 @@ export const createMaintenanceEntry = (crawlerData?: CrawlerData): LocalScanEntr
     isSubtitled: false,
   },
   nfoPath: "/media/ABC-123.nfo",
+  nfoPaths: ["/media/ABC-123.nfo"],
   crawlerData,
   assets: {
     poster: "/media/poster.jpg",

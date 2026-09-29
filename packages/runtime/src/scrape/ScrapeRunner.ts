@@ -140,6 +140,7 @@ type ScrapeRunContext = {
   rootGuard?: ReturnType<ConfiguredMediaRootService["rootIntegrityGuard"]>;
 };
 type RunnerManualScrape = ReturnType<typeof resolveManualScrapeRoute>;
+export type PrepareScrapeItem = <T extends { fileInfo: Pick<FileInfo, "number">; caseId?: string }>(item: T) => T;
 type RunnerScrapeItem = ScrapeRunItem & {
   fileId: string;
   entryIdentity: string;
@@ -191,7 +192,7 @@ export interface ScrapeRunnerDependencies {
     signal?: AbortSignal;
     signalService: Pick<RuntimeScrapeSignalService, "showLogText" | "setProgress">;
   }) => Promise<DownloadedAssets>;
-  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T | Promise<T>;
+  prepareScrapeItem?: PrepareScrapeItem;
   onCommitted?: (runId: string, result: ScrapeResult) => void;
   onInvalidate?: (runs: Array<{ run: ScrapeRunRecord; snapshot: ScrapeRunSnapshotDto }>) => void;
   onTerminal?: (run: ScrapeRunRecord, snapshot: ScrapeRunSnapshotDto) => Promise<void> | void;
@@ -1001,22 +1002,18 @@ export class ScrapeRunner {
       outputTemplateRoot: resolveRootRelativePath(outputRoot, manifest.requestedOutputRelativeDirectory ?? ""),
     };
 
-    const movieGroups: MovieGroup<RunnerScrapeItem>[] = await Promise.all(
-      groups.map(async (group) => ({
-        ...group,
-        members: await Promise.all(
-          group.members.map(async (member) => {
-            const item: RunnerScrapeItem = {
-              ...member,
-              ...member.source,
-              id: member.fileId,
-              sourcePath: resolveRootRelativePath(requireRoot(member.source.rootId), member.source.relativePath),
-            };
-            return this.deps.prepareScrapeItem ? await this.deps.prepareScrapeItem(item) : item;
-          }),
-        ),
-      })),
-    );
+    const movieGroups: MovieGroup<RunnerScrapeItem>[] = groups.map((group) => ({
+      ...group,
+      members: group.members.map((member) => {
+        const item: RunnerScrapeItem = {
+          ...member,
+          ...member.source,
+          id: member.fileId,
+          sourcePath: resolveRootRelativePath(requireRoot(member.source.rootId), member.source.relativePath),
+        };
+        return this.deps.prepareScrapeItem?.(item) ?? item;
+      }),
+    }));
 
     return {
       concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
@@ -1071,7 +1068,7 @@ export class ScrapeRunner {
         );
       },
       executePreparedGroup: async ({ group, prepared }, signal) => {
-        const executed = await fileScraper.executePreparedFiles(prepared, signal, group.members[0]?.caseId);
+        const executed = await fileScraper.executePreparedFiles(prepared, signal);
         return {
           ...executed,
           results: executed.results.map((result, index) => ({

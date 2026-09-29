@@ -29,6 +29,7 @@ const createEntry = (crawlerData: CrawlerData): LocalScanEntry => ({
     isSubtitled: false,
   },
   nfoPath: "/media/ABC-123.nfo",
+  nfoPaths: ["/media/ABC-123.nfo"],
   crawlerData,
   assets: {
     poster: "/media/poster.jpg",

@@ -7,7 +7,7 @@ import {
 } from "./networkExecution";
 
 interface FixtureExecutionContext {
-  item?: ScrapeItemExecutionContext & { active: boolean; execution: object };
+  item?: ScrapeItemExecutionContext & { active: boolean };
   source?: { website: Website; active: boolean };
   channel?: { active: boolean; name: string };
   sharedData?: { active: boolean };
@@ -22,7 +22,7 @@ const hooks: NetworkExecutionHooks = {
     return (() => storage.run(store, run)) as T;
   },
   runWithScrapeItem: async <T>(context: ScrapeItemExecutionContext, run: () => Promise<T>): Promise<T> => {
-    const item = { ...context, active: true, execution: {} };
+    const item = { ...context, active: true };
     try {
       return await storage.run({ item }, run);
     } finally {
@@ -55,10 +55,6 @@ const hooks: NetworkExecutionHooks = {
     } finally {
       sharedData.active = false;
     }
-  },
-  getScrapeItem: () => {
-    const item = storage.getStore()?.item;
-    return item?.active ? { itemId: item.itemId, relativePath: item.relativePath, caseId: item.caseId } : undefined;
   },
   getCrawlerSource: () => {
     const source = storage.getStore()?.source;

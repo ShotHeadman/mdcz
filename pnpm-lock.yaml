@@ -29,9 +29,6 @@ importers:
       '@biomejs/biome':
         specifier: ^2.3.0
         version: 2.4.13
-      '@playwright/test':
-        specifier: ^1.61.1
-        version: 1.61.1
       '@types/node':
         specifier: ^24.3.1
         version: 24.12.2
@@ -71,6 +68,9 @@ importers:
       lucide-react:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.5)
+      playwright:
+        specifier: ^1.61.1
+        version: 1.61.1
       react:
         specifier: 'catalog:'
         version: 19.2.5
@@ -1456,11 +1456,6 @@ packages:
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
-
-  '@playwright/test@1.61.1':
-    resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
-    engines: {node: '>=18'}
-    hasBin: true
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
@@ -5609,10 +5604,6 @@ snapshots:
   '@nodable/entities@2.1.0': {}
 
   '@pinojs/redact@0.4.0': {}
-
-  '@playwright/test@1.61.1':
-    dependencies:
-      playwright: 1.61.1
 
   '@polka/url@1.0.0-next.29': {}
 

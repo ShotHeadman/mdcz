@@ -263,6 +263,7 @@ const createEntry = (): LocalScanEntry => ({
     number: "ABC-001",
     isSubtitled: false,
   },
+  nfoPaths: [],
   assets: { sceneImages: [], actorPhotos: [] },
   currentDir: "/media",
 });

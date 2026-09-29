@@ -183,7 +183,10 @@ export interface LocalScanEntry {
   fileId: FileId;
   ref: RootFileRef;
   fileInfo: FileInfo;
+  /** The NFO metadata is read from; always the first of `nfoPaths`. */
   nfoPath?: string;
+  /** Every NFO sidecar belonging to the video, e.g. both `<movie>.nfo` and `movie.nfo`. */
+  nfoPaths: string[];
   crawlerData?: CrawlerData;
   nfoLocalState?: NfoLocalState;
   scanError?: string;

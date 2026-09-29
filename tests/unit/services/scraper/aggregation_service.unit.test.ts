@@ -171,7 +171,7 @@ describe("AggregationService", () => {
     const config = makeConfig({ scrape: { sites: [Website.DMM, Website.JAVDB] } });
 
     await runWithScrapeItem(
-      { itemId: "item", relativePath: "movie.mp4", caseId: "movie-case" },
+      { caseId: "movie-case", execution: {} },
       async () => await new AggregationService(provider, { config }).aggregate("ABF-075"),
     );
     releaseLateReads();

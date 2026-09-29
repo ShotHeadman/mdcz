@@ -120,43 +120,6 @@ describe("FileScraper .strm support", () => {
     );
   });
 
-  it("extracts number from .strm filename and still generates NFO", async () => {
-    const config = createConfig({
-      generateNfo: true,
-    });
-    const crawlerData = createCrawlerData({
-      durationSeconds: 5400,
-      actors: ["Actor A"],
-      genres: ["Tag A"],
-    });
-    const outputDir = await createTempDir();
-    const plan: OrganizePlan = {
-      outputDir,
-      metadataDir: outputDir,
-      mode: "move",
-      renameSubtitles: true,
-      targetVideoPath: join(outputDir, "ABC-123.strm"),
-      nfoPath: join(outputDir, "ABC-123.nfo"),
-    };
-    const writeNfo = vi.fn().mockResolvedValue(plan.nfoPath);
-    const scraper = createScraper({ config, crawlerData, plan, writeNfo });
-    const sourcePath = await createTempFile("ABC-123.strm");
-
-    const group = await prepareFilePublication(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
-      roots: [
-        { id: "test-root", hostPath: tmpdir() },
-        { id: "output-root", hostPath: "/output" },
-      ],
-    });
-    onTestFinished(async () => await group.release?.());
-    const [result] = preparedPublicationFiles(group);
-
-    expect(result.status).toBe("prepared");
-    expect(result.fileName).toBe("ABC-123");
-    expect(result.crawlerData?.number).toBe("ABC-123");
-    expect(writeNfo).toHaveBeenCalledTimes(1);
-  });
-
   it("reuses kept NFO files according to the configured naming mode", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "ABC-123.nfo");

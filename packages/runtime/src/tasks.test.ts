@@ -1,6 +1,8 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
+import { getNetworkRequestExecutionContext, runWithNetworkChannel } from "./network/networkExecution";
+import { activateNetworkFixtureContext } from "./network/networkFixtureContext";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import { ScrapeTargetConflictError } from "./scrape/preflightScrapeTask";
 import { type ScrapeRunExecution, type ScrapeRunItem, ScrapeRunSession, TaskExecutor } from "./tasks";
@@ -88,6 +90,7 @@ const executionFor = (): ScrapeRunExecution<ScrapeRunItem, string> => {
     rootId: "root",
     relativePath: `${id}.mp4`,
     sourcePath: `/media/${id}.mp4`,
+    caseId: id,
   }));
   return {
     movieGroups: [
@@ -109,20 +112,29 @@ const executionFor = (): ScrapeRunExecution<ScrapeRunItem, string> => {
 };
 
 describe("scrape movie groups", () => {
-  it("retains whole-group preparation across pause and resume", async () => {
+  it("retains whole-group preparation and its network scrape across pause and resume", async () => {
+    activateNetworkFixtureContext();
+    const networkScrape = async () =>
+      await runWithNetworkChannel("media", async () => getNetworkRequestExecutionContext()?.execution);
     const execution = executionFor();
     const started = deferred();
     const release = deferred();
     const prepared: string[][] = [];
+    const networkScrapes: Array<object | undefined> = [];
     execution.prepareGroup = async (group) => {
       prepared.push(group.members.map((item) => item.id));
       if (group.members[0].id === "one") {
+        networkScrapes.push(await networkScrape());
         started.resolve();
         await release.promise;
       }
       return { status: "prepared", prepared: group.members.map((item) => item.id).join(",") };
     };
-    const execute = vi.fn(execution.executePreparedGroup);
+    const executePreparedGroup = execution.executePreparedGroup;
+    const execute = vi.fn<typeof executePreparedGroup>(async (entry, signal) => {
+      if (entry.group.members[0].id === "one") networkScrapes.push(await networkScrape());
+      return await executePreparedGroup(entry, signal);
+    });
     execution.executePreparedGroup = execute;
     const session = new ScrapeRunSession({
       runId: "group-pause",
@@ -147,6 +159,10 @@ describe("scrape movie groups", () => {
       ["independent"],
     ]);
     expect(session.snapshot()).toMatchObject({ status: "completed", progress: { completedItems: 3 } });
+    // A recording keeps one network scrape per movie, so publishing must stay in the scrape that crawled.
+    const [preparedIn, executedIn] = networkScrapes;
+    expect(preparedIn).toBeDefined();
+    expect(executedIn).toBe(preparedIn);
   });
 
   it.each([

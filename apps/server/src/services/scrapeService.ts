@@ -10,6 +10,7 @@ import {
   NfoGenerator,
   PosterCropService,
   PosterWatermarkService,
+  type PrepareScrapeItem,
   ScrapeRunner,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
@@ -50,7 +51,7 @@ export interface ScrapeServiceResources {
   actorSourceProvider?: ActorSourceProvider;
   mappingStore?: TranslationMappingStore;
   aggregationService?: Pick<AggregationService, "aggregate">;
-  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
+  prepareScrapeItem?: PrepareScrapeItem;
 }
 
 export class ScrapeService {
@@ -63,7 +64,7 @@ export class ScrapeService {
   private readonly actorSourceProvider?: ActorSourceProvider;
   private readonly mappingStore?: TranslationMappingStore;
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
-  private readonly prepareScrapeItem: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
+  private readonly prepareScrapeItem?: PrepareScrapeItem;
   private posterWatermarkService: PosterWatermarkService | null = null;
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
@@ -84,7 +85,7 @@ export class ScrapeService {
     this.actorSourceProvider = resources.actorSourceProvider;
     this.mappingStore = resources.mappingStore;
     this.aggregationService = resources.aggregationService;
-    this.prepareScrapeItem = resources.prepareScrapeItem ?? ((item) => item);
+    this.prepareScrapeItem = resources.prepareScrapeItem;
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, new NfoGenerator(), this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,

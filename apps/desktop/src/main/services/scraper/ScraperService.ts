@@ -10,7 +10,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { type ActorImageService, ScrapeRunner } from "@mdcz/runtime/scrape";
+import { type ActorImageService, type PrepareScrapeItem, ScrapeRunner } from "@mdcz/runtime/scrape";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { ScrapeConfirmUncensoredInput, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import type { UncensoredConfirmResponse } from "@mdcz/shared/types";
@@ -42,8 +42,7 @@ export class ScraperService {
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
-    private readonly prepareScrapeItem: <T extends { relativePath: string; caseId?: string }>(item: T) => T = (item) =>
-      item,
+    private readonly prepareScrapeItem?: PrepareScrapeItem,
   ) {
     this.mediaRoots = mediaRoots ?? createDesktopMediaRootService(this.persistenceService);
   }

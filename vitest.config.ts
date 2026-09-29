@@ -104,7 +104,6 @@ export default defineConfig({
             "**/*.component.test.tsx",
             "**/*.contract.test.ts",
             "**/*.integration.test.ts",
-            "**/*.live.integration.test.ts",
           ],
           environment: "node",
           setupFiles: ["tests/unit/setup.ts"],
@@ -124,7 +123,6 @@ export default defineConfig({
           ],
           environment: "node",
           testTimeout: 120000,
-          exclude: [...configDefaults.exclude, "**/*.live.integration.test.ts"],
         },
       },
       {
@@ -138,18 +136,6 @@ export default defineConfig({
           environment: "node",
           setupFiles: ["tests/unit/setup.ts"],
           testTimeout: 120000,
-          exclude: [...configDefaults.exclude, "**/*.live.integration.test.ts"],
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "integration-live",
-          include: ["tests/**/*.live.integration.test.ts"],
-          environment: "node",
-          testTimeout: 90_000,
-          // Explicit live project only — never pulled into ordinary test/integration/coverage.
-          fileParallelism: false,
         },
       },
       {

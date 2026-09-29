@@ -24,6 +24,7 @@ const initialEntries = [
       number: "ONE",
       isSubtitled: false,
     },
+    nfoPaths: [],
     assets: { sceneImages: [], actorPhotos: [] },
     currentDir: "/media",
   },

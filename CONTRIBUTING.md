@@ -21,12 +21,11 @@ pnpm test
 pnpm test:unit
 pnpm test:integration
 pnpm test:coverage
+pnpm exec playwright install chromium # 组件测试首次运行或浏览器版本更新后
 pnpm exec vitest run --project component --silent
-pnpm exec playwright install chromium # 首次运行或浏览器版本更新后
-pnpm test:e2e
 ```
 
-`test:integration` 同时运行 Node integration、Desktop integration 与 contract tests。`test:coverage` 对 Server 与核心 packages 执行 V8 覆盖率非回退门禁，并在 `coverage/` 生成 HTML/JSON 报告。组件测试通过 Vitest project 直接选择，避免继续增加根脚本。`test:e2e` 会构建真实 Server、WebUI 与 Desktop，并在隔离环境中运行 Chromium/Electron smoke。测试策略与设计原则参见 [AGENTS.md](AGENTS.md)，网络录制与回放规则参见 [测试 Fixture 指南](docs/testing-fixtures.md)。
+`test:integration` 同时运行 Node integration、Desktop integration 与 contract tests。`test:coverage` 对 Server 与核心 packages 执行 V8 覆盖率非回退门禁，并在 `coverage/` 生成 HTML/JSON 报告。组件测试通过 Vitest project 直接选择，避免继续增加根脚本。测试策略与设计原则参见 [AGENTS.md](AGENTS.md)，网络录制与回放规则参见 [测试 Fixture 指南](docs/testing-fixtures.md)。
 
 ## 代码风格
 

@@ -14,6 +14,8 @@ interface FixtureCaseExpectation {
   caseId: string;
   number: string;
   expectedTitle: string;
+  /** AVBASE drops actor names that end a title. */
+  expectedAvbaseTitle?: string;
   expectedActors: string[];
   expectedStudio?: string;
   expectedDirector?: string;
@@ -33,10 +35,13 @@ const fixtureCases: FixtureCaseExpectation[] = [
     expectedActors: ["浅野こころ"],
   },
   {
-    caseId: "start-608",
-    number: "START-608",
-    expectedTitle: "性欲処理専門セックス外来医院27 特別編 SODSTAR 神木麗 妻として、看護師として、性医療に生きる。",
-    expectedActors: ["神木麗"],
+    caseId: "snos-334",
+    number: "SNOS-334",
+    expectedTitle:
+      "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！ 瀬戸環奈",
+    expectedAvbaseTitle:
+      "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+    expectedActors: ["瀬戸環奈"],
   },
 ];
 
@@ -45,13 +50,14 @@ describe("Crawler actual fixture replay", () => {
     caseId,
     number,
     expectedTitle,
+    expectedAvbaseTitle,
     expectedActors,
     expectedStudio,
     expectedDirector,
   }) => {
     it("parses DMM recorded network data", async () => {
       const replay = new NetworkReplayClient({ fixturesRoot });
-      const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
+      const item = { caseId, execution: {} };
 
       const response = await runWithScrapeItem(
         item,
@@ -82,7 +88,7 @@ describe("Crawler actual fixture replay", () => {
         fixturesRoot,
         network: { getRetryCount: () => 1 },
       });
-      const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
+      const item = { caseId, execution: {} };
 
       const response = await runWithScrapeItem(
         item,
@@ -107,7 +113,7 @@ describe("Crawler actual fixture replay", () => {
 
     it("parses AVBASE recorded network data", async () => {
       const replay = new NetworkReplayClient({ fixturesRoot });
-      const item = { itemId: caseId, relativePath: `${number}.mp4`, caseId };
+      const item = { caseId, execution: {} };
 
       const response = await runWithScrapeItem(
         item,
@@ -124,7 +130,7 @@ describe("Crawler actual fixture replay", () => {
       const data = response.result.data;
       expect(data.website).toBe(Website.AVBASE);
       expect(data.number).toBe(number);
-      expect(data.title.replace(/\s*（BOD）$/u, "")).toBe(expectedTitle);
+      expect(data.title.replace(/\s*（BOD）$/u, "")).toBe(expectedAvbaseTitle ?? expectedTitle);
       expect(data.actors).toEqual(expectedActors);
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();

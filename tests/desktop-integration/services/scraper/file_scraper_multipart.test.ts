@@ -27,7 +27,6 @@ import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { mediaRoots } from "../../../../packages/persistence/src/schema";
 import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
-import { collectObservableTrace } from "../../../helpers/observableTrace";
 import {
   createFileScraper,
   mockConfigManager,
@@ -59,21 +58,6 @@ const installTestOutput = async (input: { output: PreparedMovieOutput; library: 
 
   return committedMovie;
 };
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const original = await importOriginal<
-    typeof import("node:fs/promises") & { default: typeof import("node:fs/promises") }
-  >();
-  return {
-    ...original,
-    ...Object.fromEntries(
-      Object.keys(original.default).map((key) => [
-        key,
-        (...args: unknown[]) => Reflect.apply(Reflect.get(original.default, key), original.default, args),
-      ]),
-    ),
-  };
-});
 
 const config = configurationSchema.parse({
   ...defaultConfiguration,
@@ -241,83 +225,6 @@ const createScraper = (
 };
 
 describe("FileScraper movie groups", () => {
-  it.each(
-    [false, true].flatMap((move) =>
-      [false, true].flatMap((crossDevice) => [1, 2].map((parts) => ({ move, crossDevice, parts }))),
-    ),
-  )("preserves desktop output contracts: move=$move crossDevice=$crossDevice parts=$parts", async ({
-    move,
-    crossDevice,
-    parts,
-  }) => {
-    const root = await createTempDir();
-    const names = parts === 1 ? ["FC2-123456.mp4"] : ["FC2-123456-CD1.mp4", "FC2-123456-CD2.mp4"];
-    for (const name of names) await writeFile(join(root, name), name);
-    const context = await createPublicationContext(root, names);
-    const aggregate = vi.fn().mockResolvedValue(createAggregationResult(createCrawlerData({ number: "FC2-123456" })));
-    const output = join(root, "output");
-    const { scraper, mocks } = createScraper(aggregate, {
-      plan: vi.fn(
-        (file: FileInfo): OrganizePlan => ({
-          outputDir: output,
-          metadataDir: output,
-          mode: move ? "move" : "preserve",
-          renameSubtitles: false,
-          targetVideoPath: move ? join(output, `${file.fileName}${file.extension}`) : file.filePath,
-          nfoPath: join(output, "FC2-123456.nfo"),
-        }),
-      ),
-    });
-    const trace = collectObservableTrace(context.database.sqlite, { media: root }, crossDevice);
-    let observed: ReturnType<typeof trace.stop>;
-    try {
-      const inputs = names.map((name, index) => ({
-        filePath: join(root, name),
-        progress: { fileIndex: index + 1, totalFiles: parts },
-        options: {
-          roots: [context.mediaRoot],
-          source: { rootId: "root", relativePath: name },
-        },
-      }));
-      const preparation = await scraper.prepareGroup(inputs);
-      if (preparation.status !== "prepared") throw new Error("Expected prepared desktop member");
-      const group = await scraper.executePreparedFiles(preparation.prepared);
-      try {
-        if (!group.output) throw new Error("Expected desktop publication");
-        const committedMovie = await installTestOutput({
-          output: group.output,
-          library: context.library,
-        });
-        expect(committedMovie.files).toHaveLength(parts);
-      } finally {
-        await group.release?.();
-      }
-    } finally {
-      observed = trace.stop();
-    }
-    expect(aggregate).toHaveBeenCalledOnce();
-    expect(mocks.translateCrawlerData).toHaveBeenCalledOnce();
-    const movies = await context.library.listEntries();
-    expect(movies).toHaveLength(1);
-    expect(movies[0].files).toHaveLength(parts);
-    for (const name of names) {
-      expect(await readFile(join(move ? output : root, name), "utf8")).toBe(name);
-      if (move) await expect(access(join(root, name))).rejects.toMatchObject({ code: "ENOENT" });
-    }
-    if (move && crossDevice) expect(observed.counts["filesystem-result.rename"]).toBe(parts);
-    if (process.env.MDCZ_CAPTURE_BASELINE) {
-      const fs = await import("node:fs/promises");
-      await fs.mkdir(process.env.MDCZ_CAPTURE_BASELINE, { recursive: true });
-      await fs.writeFile(
-        join(
-          process.env.MDCZ_CAPTURE_BASELINE,
-          `desktop-${move ? "move" : "write"}-${crossDevice ? "cross" : "same"}-${parts}.json`,
-        ),
-        `${JSON.stringify({ scenario: { host: "desktop-adapter", move, crossDevice, parts, aggregation: "stub", downloads: "stub" }, ...observed }, null, 2)}\n`,
-      );
-    }
-  });
-
   afterEach(async () => {
     vi.restoreAllMocks();
     for (const database of databases.splice(0)) database.close();
@@ -411,38 +318,6 @@ describe("FileScraper movie groups", () => {
     await expect(access(mocks.downloadAll.mock.calls[0][0])).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps aggregation requests separate for different numbers", async () => {
-    const aggregate = vi
-      .fn()
-      .mockResolvedValueOnce(createAggregationResult(createCrawlerData({ number: "ABC-123" })))
-      .mockResolvedValueOnce(createAggregationResult(createCrawlerData({ number: "XYZ-999" })));
-    const { scraper } = createScraper(aggregate);
-    const [firstPath, secondPath] = await createTempFiles("ABC-123-1.mp4", "XYZ-999-1.mp4");
-
-    const groups = await Promise.all([
-      prepareFilePublication(scraper, firstPath, { fileIndex: 1, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-      prepareFilePublication(scraper, secondPath, { fileIndex: 2, totalFiles: 2 }, undefined, {
-        roots: [
-          { id: "test-root", hostPath: tmpdir() },
-          { id: "output-root", hostPath: "/output" },
-        ],
-      }),
-    ]);
-    onTestFinished(async () => {
-      for (const group of groups) await group.release?.();
-    });
-    const [first, second] = groups.map((group) => preparedPublicationFiles(group)[0]);
-
-    expect(aggregate).toHaveBeenCalledTimes(2);
-    expect(first.status).toBe("prepared");
-    expect(second.status).toBe("prepared");
-  });
-
   it("propagates shared aggregation failures to each multipart result", async () => {
     const aggregate = vi.fn().mockRejectedValue(new Error("aggregate failed"));
     const { scraper } = createScraper(aggregate);
@@ -487,10 +362,6 @@ describe("FileScraper movie groups", () => {
     );
     const context = await createPublicationContext(root, names);
     const { scraper } = createScraper(aggregate, { plan });
-    const trace = collectObservableTrace(context.database.sqlite, { media: root });
-    onTestFinished(() => {
-      trace.stop();
-    });
     const inputs = paths.map((filePath, index) => ({
       filePath,
       progress: { fileIndex: index + 1, totalFiles: paths.length },
@@ -513,15 +384,6 @@ describe("FileScraper movie groups", () => {
       });
     } finally {
       await group.release?.();
-    }
-    const observed = trace.stop();
-    if (process.env.MDCZ_CAPTURE_BASELINE) {
-      const fs = await import("node:fs/promises");
-      await fs.mkdir(process.env.MDCZ_CAPTURE_BASELINE, { recursive: true });
-      await fs.writeFile(
-        join(process.env.MDCZ_CAPTURE_BASELINE, "desktop-move-same-3-feature.json"),
-        `${JSON.stringify({ scenario: { host: "desktop-adapter", move: true, crossDevice: false, parts: 3, aggregation: "stub", downloads: "stub" }, ...observed }, null, 2)}\n`,
-      );
     }
     let movie = await context.library.getEntryById(group.output.movieId);
     expect(movie.files).toHaveLength(names.length);

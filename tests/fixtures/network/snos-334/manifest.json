@@ -1,0 +1,2180 @@
+{
+  "schemaVersion": 1,
+  "caseId": "snos-334",
+  "credentialSeed": {
+    "cookies": {
+      "sort_search": "mdcz-test-cookie-sort_search"
+    },
+    "tokens": {}
+  },
+  "interactions": [
+    {
+      "channel": "crawler:avbase",
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works?q=SNOS-334",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works?q=SNOS-334",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-cache, no-store, max-age=0, must-revalidate"
+          ],
+          [
+            "cf-cache-status",
+            "BYPASS"
+          ],
+          [
+            "cf-ray",
+            "a4292891ba03d5c8-NRT"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:45 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=WgXNbA4zF0cvb%2Fie2ntJbBNXrl3QvU31zPD3te3elYqJVh7oVQO1qSAbnSqnkYFmdcWomIJevgzvfVFRi335RgW5gfRxp%2FrD0%2BuaqagX7Ed7xWyL%2F84h3htU4YmANTrn\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=7,cfOrigin;dur=126"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/avbase/001.html",
+          "sha256": "fdb68a84e0884dd2ffa5b532a0df0f2baeece4a67dceffa6a5aa868cf5694b1e",
+          "byteLength": 44290
+        }
+      }
+    },
+    {
+      "channel": "crawler:avbase",
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://www.avbase.net/works/SNOS-334",
+        "headers": [
+          [
+            "referer",
+            "https://www.avbase.net/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.avbase.net/works/SNOS-334",
+        "headers": [
+          [
+            "age",
+            "1526"
+          ],
+          [
+            "cache-control",
+            "public, max-age=0"
+          ],
+          [
+            "cdn-cache-control",
+            "public, max-age=21600"
+          ],
+          [
+            "cf-cache-status",
+            "HIT"
+          ],
+          [
+            "cf-ray",
+            "a4292897e9b4d5c8-NRT"
+          ],
+          [
+            "content-encoding",
+            "br"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:46 GMT"
+          ],
+          [
+            "nel",
+            "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}"
+          ],
+          [
+            "report-to",
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=t0Wgkr9tx2B4Axh77NuvolxCKif5WuEZgW6Y0x9D%2BsDUzukFmav0LZ6S8T%2BHYqGehB%2BlbMmXsoORq4wb%2Fu3wzCgnnNq7D8FajMXSJDeXLrEWNKymRCLA1IOJ5JpQAiVH\"}]}"
+          ],
+          [
+            "server",
+            "cloudflare"
+          ],
+          [
+            "server-timing",
+            "cfCacheStatus;desc=\"HIT\", cfEdge;dur=6,cfOrigin;dur=0"
+          ],
+          [
+            "vary",
+            "Accept-Encoding"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/avbase/002.html",
+          "sha256": "033c27d6cbd4f73f33095bb2607cac6d36bf3b959893d2e651a78bec3c9953f1",
+          "byteLength": 49988
+        }
+      }
+    },
+    {
+      "channel": "crawler:dmm",
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://www.dmm.co.jp/search/=/searchstr=snos00334/sort=ranking/",
+        "headers": [
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "referer",
+            "https://www.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://www.dmm.co.jp/search/=/searchstr=snos00334/sort=ranking/",
+        "headers": [
+          [
+            "cache-control",
+            "private, no-store, no-cache, must-revalidate"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-type",
+            "text/html; charset=utf-8"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:45 GMT"
+          ],
+          [
+            "expires",
+            "0"
+          ],
+          [
+            "link",
+            "</search/_next/static/media/4473ecc91f70f139-s.p.woff>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff\", </search/_next/static/media/463dafcda517f24f-s.p.woff>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff\", </search/_next/static/css/14392d5060132f6f.css>; rel=preload; as=\"style\""
+          ],
+          [
+            "set-cookie",
+            "sort_search=mdcz-test-cookie-sort_search; Path=/; Domain=.dmm.co.jp; HttpOnly"
+          ],
+          [
+            "vary",
+            "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch, Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 a0ab8fad44e7d16e458ba0843ec3ded6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "YbZe2mM5q6HKOSP5JggVaI-3dSM9Nj0bJikY04OEFHrVCuyvl1Y0vQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P8"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-powered-by",
+            "Next.js"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm/001.html",
+          "sha256": "efd79558b4bc68d09ae8352f1d1ca61468e1a59e164ab989d1526a6b3d521756",
+          "byteLength": 65283
+        }
+      }
+    },
+    {
+      "channel": "crawler:dmm",
+      "sequence": 2,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiJzbm9zMDAzMzQiLCJzaG91bGRGZXRjaFJlbGF0ZWRUYWdzIjp0cnVlfX0="
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "5358"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:47 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm/002.json",
+          "sha256": "e3bdf08b21a6511cacb49e139e35b231094a98c684a2aba789396dbc19f787b8",
+          "byteLength": 5358
+        }
+      }
+    },
+    {
+      "channel": "crawler:dmm_tv",
+      "sequence": 1,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiIxc25vczAwMzM0Iiwic2hvdWxkRmV0Y2hSZWxhdGVkVGFncyI6dHJ1ZX19"
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "49"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:45 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm_tv/001.json",
+          "sha256": "edc391758eb12d697f4fbe2f6b4671df52aeaced6884ba962572eb295062bbaa",
+          "byteLength": 49
+        }
+      }
+    },
+    {
+      "channel": "crawler:dmm_tv",
+      "sequence": 2,
+      "request": {
+        "method": "POST",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "accept",
+            "application/graphql-response+json, application/graphql+json, application/json"
+          ],
+          [
+            "accept-language",
+            "ja-JP,ja;q=0.9"
+          ],
+          [
+            "content-type",
+            "application/json"
+          ],
+          [
+            "cookie",
+            "age_check_done=1; ckcy=1; cklg=ja"
+          ],
+          [
+            "fanza-device",
+            "BROWSER"
+          ],
+          [
+            "origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "referer",
+            "https://video.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": "eyJvcGVyYXRpb25OYW1lIjoiQ29udGVudFBhZ2VEYXRhIiwicXVlcnkiOiJxdWVyeSBDb250ZW50UGFnZURhdGEoJGlkOiBJRCEsICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzOiBCb29sZWFuID0gdHJ1ZSkgeyBwcHZDb250ZW50KGlkOiAkaWQpIHsgdGl0bGUgZGVzY3JpcHRpb24gbWFrZXJDb250ZW50SWQgbWFrZXJSZWxlYXNlZEF0IGRlbGl2ZXJ5U3RhcnREYXRlIGR1cmF0aW9uIHBhY2thZ2VJbWFnZSB7IGxhcmdlVXJsIG1lZGl1bVVybCB9IHNhbXBsZUltYWdlcyB7IGxhcmdlSW1hZ2VVcmwgfSBzYW1wbGUyRE1vdmllIHsgaGlnaGVzdE1vdmllVXJsIGhsc01vdmllVXJsIH0gYWN0cmVzc2VzIHsgbmFtZSB9IGRpcmVjdG9ycyB7IG5hbWUgfSBzZXJpZXMgeyBuYW1lIH0gbWFrZXIgeyBuYW1lIH0gbGFiZWwgeyBuYW1lIH0gZ2VucmVzIHsgbmFtZSB9IHJlbGF0ZWRUYWdzKGxpbWl0OiAxNikgQGluY2x1ZGUoaWY6ICRzaG91bGRGZXRjaFJlbGF0ZWRUYWdzKSB7IC4uLiBvbiBDb250ZW50VGFnR3JvdXAgeyB0YWdzIHsgbmFtZSB9IH0gLi4uIG9uIENvbnRlbnRUYWcgeyBuYW1lIH0gfSB9IHJldmlld1N1bW1hcnkoY29udGVudElkOiAkaWQpIHsgYXZlcmFnZSB9IH0iLCJ2YXJpYWJsZXMiOnsiaWQiOiJzbm9zMDAzMzQiLCJzaG91bGRGZXRjaFJlbGF0ZWRUYWdzIjp0cnVlfX0="
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://api.video.dmm.co.jp/graphql",
+        "headers": [
+          [
+            "access-control-allow-credentials",
+            "true"
+          ],
+          [
+            "access-control-allow-origin",
+            "https://video.dmm.co.jp"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=2592000"
+          ],
+          [
+            "content-encoding",
+            "gzip"
+          ],
+          [
+            "content-length",
+            "5358"
+          ],
+          [
+            "content-type",
+            "application/graphql-response+json"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:46 GMT"
+          ],
+          [
+            "vary",
+            "Origin,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 google"
+          ]
+        ],
+        "body": {
+          "kind": "file",
+          "path": "responses/crawler/dmm_tv/002.json",
+          "sha256": "e3bdf08b21a6511cacb49e139e35b231094a98c684a2aba789396dbc19f787b8",
+          "byteLength": 5358
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "545740"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=86400"
+          ],
+          [
+            "content-length",
+            "65536"
+          ],
+          [
+            "content-range",
+            "bytes 0-65535/834422"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Mon, 28 Sep 2026 23:07:36 GMT"
+          ],
+          [
+            "etag",
+            "\"6a54506e-cbb76\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 02:41:50 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 9afd2550e0ced91c2223cec22970051e.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "YfFUsPRYN8l88-BX_O0y7GiFPEKs73JCCqEvFiopiotl_kgkBqBllA=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5"
+          ],
+          [
+            "x-cache",
+            "Hit from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "1127573c335b2526b1a742239444a14eec64662e69ece55f6bea523059411055",
+          "byteLength": 65536,
+          "width": 2184,
+          "height": 1468
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "age",
+            "259095"
+          ],
+          [
+            "content-length",
+            "147965"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:12:39 GMT"
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 02:41:50 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 4253323510217ba917e535f9fce97efc.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "Z_vgMLPhKw6FlX4ECeXcEYmxjgTACS_OwZEWlKkZyGg9Op1TDRojSA=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P6, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "5880e95493bcfba8e9bcc41105d58b71277938bee3c51cfb752f1166a27d5fe5",
+          "byteLength": 147965,
+          "width": 800,
+          "height": 538
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 3,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "age",
+            "86441"
+          ],
+          [
+            "content-length",
+            "11586"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:12:41 GMT"
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 02:41:50 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 9dd35ba084a071771e7b94fc2bf7df88.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "muXEElxJExE0yYWLXe-xWIgMySA_mUDQsfkB1PJxWo4Hs5hYhIeR5g=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "48f9db85f1faaa6798a82246aaadcc24016e37d642aa08785b4cf716b65f5388",
+          "byteLength": 11586,
+          "width": 147,
+          "height": 200
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 4,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos334/snos334pl.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 404,
+        "statusText": "Not Found",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos334/snos334pl.jpg",
+        "headers": [
+          [
+            "age",
+            "518414"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=86400"
+          ],
+          [
+            "content-length",
+            "2732"
+          ],
+          [
+            "content-range",
+            "bytes 0-2731/2732"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:12:43 GMT"
+          ],
+          [
+            "etag",
+            "\"47671c0b-aac\""
+          ],
+          [
+            "last-modified",
+            "Tue, 18 Dec 2007 01:02:03 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 973ce73becebbf61f9bec5425f682d2e.cloudfront.net (CloudFront), 1.1 51d43bac41441e63ef10975a2fdae590.cloudfront.net (CloudFront), 1.1 9afd2550e0ced91c2223cec22970051e.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "vanuEX4eBSACGiTJBlnJCJdLtaprpkS2WdeniPHpoALMk70AwrrDQw=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT12-P4, NRT57-P5"
+          ],
+          [
+            "x-cache",
+            "Error from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT, HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
+          "byteLength": 2732,
+          "width": 90,
+          "height": 122
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 5,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "562464"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=86400"
+          ],
+          [
+            "content-length",
+            "65536"
+          ],
+          [
+            "content-range",
+            "bytes 0-65535/327506"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 22 Sep 2026 18:58:19 GMT"
+          ],
+          [
+            "etag",
+            "\"6a54506e-4ff52\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 02:41:50 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 9afd2550e0ced91c2223cec22970051e.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "CTqPab508ko6BhoQ76fy-o7x8uT9gofEfCQQWd1xmZUeN8NBsdxk2w=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5"
+          ],
+          [
+            "x-cache",
+            "Hit from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "11f43c79fa8ea28fbd9fd3749458541aedb40744a1ad886c35b0a4b42c9a72e9",
+          "byteLength": 65536,
+          "width": 1032,
+          "height": 1468
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 6,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos334/snos334ps.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 404,
+        "statusText": "Not Found",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos334/snos334ps.jpg",
+        "headers": [
+          [
+            "age",
+            "531029"
+          ],
+          [
+            "alt-svc",
+            "h3=\":443\"; ma=86400"
+          ],
+          [
+            "content-length",
+            "2732"
+          ],
+          [
+            "content-range",
+            "bytes 0-2731/2732"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:12:46 GMT"
+          ],
+          [
+            "etag",
+            "\"47671c0b-aac\""
+          ],
+          [
+            "last-modified",
+            "Tue, 18 Dec 2007 01:02:03 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 8621531f38532d2d0ce4a262486acd50.cloudfront.net (CloudFront), 1.1 2b7c30d5345be6524757ddc496ec2cce.cloudfront.net (CloudFront), 1.1 9afd2550e0ced91c2223cec22970051e.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "-3jpROyC7nB-hGerp3-8AZvXyIDeRlQ19Ax3POQ91ozP4Uw-vuQhPQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT12-P4, NRT57-P5"
+          ],
+          [
+            "x-cache",
+            "Error from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT, HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
+          "byteLength": 2732,
+          "width": 90,
+          "height": 122
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 7,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "content-length",
+            "834422"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "ef194fd0829dcec89986985c6a26ca4d54a2042e3a84482891f5b130d6f34621",
+          "byteLength": 834422,
+          "width": 2184,
+          "height": 1468
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 8,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (10000 ms) exceeded."
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 9,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (10000 ms) exceeded."
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 10,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (10000 ms) exceeded."
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 11,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "content-length",
+            "327506"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "3232ac2984346ff6afaaa49833cb7264c15153a9d3538e14566dfc4b7b2fad1e",
+          "byteLength": 327506,
+          "width": 1032,
+          "height": 1468
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 12,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334pl.jpg",
+        "headers": [
+          [
+            "age",
+            "259396"
+          ],
+          [
+            "content-length",
+            "147965"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:13:34 GMT"
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 02:41:50 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 017bcea4623003e4eb8b5df81f6048dc.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "rdxQ2It9oDnY0OvIm-2f-4oJhsFjpeNIVGNFBqKyNAmgQX23CG7LNA=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "5880e95493bcfba8e9bcc41105d58b71277938bee3c51cfb752f1166a27d5fe5",
+          "byteLength": 147965,
+          "width": 800,
+          "height": 538
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 13,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (10000 ms) exceeded."
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 14,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (10000 ms) exceeded."
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 15,
+      "request": {
+        "method": "GET",
+        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://awsimgsrc.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "transportError": {
+        "name": "TimeoutError",
+        "message": "Request timeout (10000 ms) exceeded."
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 16,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334ps.jpg",
+        "headers": [
+          [
+            "age",
+            "86425"
+          ],
+          [
+            "content-length",
+            "11586"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:21 GMT"
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 02:41:50 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 e9f4931d4872ec54c5c96165246be262.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "IyjtoMS9Z7l6w60BFlgBXac35jWyOCl1ZVJzGSLBCs3knr6KMtghvQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "48f9db85f1faaa6798a82246aaadcc24016e37d642aa08785b4cf716b65f5388",
+          "byteLength": 11586,
+          "width": 147,
+          "height": 200
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 17,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-1.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-1.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "348898"
+          ],
+          [
+            "content-length",
+            "121783"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:21 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-1dbb7\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 7e78a57e41e53126c098ff103516aa8e.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "29lKy-QQfAS2eh059YahI58D5pryJ-JgN-Fy1y-HQm4dftOgJWKW5w=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P6, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "95c1d88c5239540fd72871dcaacd897832c3ad8cf7b06f01c11a481428ffca70",
+          "byteLength": 121783,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 18,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-2.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-2.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "435"
+          ],
+          [
+            "content-length",
+            "106136"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:23 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-19e98\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 e5e9d160d4a1bdf2fa7acdd1d6b0b89e.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "hEfrZBBdAAy9qdm8n6K4ZWtuUP-sZnX9fm41Hu5q5C6zqQJ8f6z86A=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P6, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "5a1e212a913bc034f9f741db9ec800748baed73353d5a9d6ea5b168bd7abebc9",
+          "byteLength": 106136,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 19,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-3.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-3.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "345995"
+          ],
+          [
+            "content-length",
+            "98533"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:24 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-180e5\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 973ce73becebbf61f9bec5425f682d2e.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "U7ATo0vLx-gFbhsVN7r5tlqKx2FF74TCR_teHPhuInlLewr2zhG4vQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "bec34d6896fad6658e530386473b3c2b57de37caa059429a34da312df2e41dfe",
+          "byteLength": 98533,
+          "width": 800,
+          "height": 600
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 20,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-4.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-4.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "content-length",
+            "119587"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:26 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-1d323\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 40320435ee6c0ba79ad788a52054783c.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "nmAhMTmUQIPfe7maVCm7UeINUbONoRfp75cwWkNE5AFtD6eaATMRGQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P6, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "2b671c89a36fc4b672639973a7a792ddee464a4b09797e331ffda357d647a1e7",
+          "byteLength": 119587,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 21,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-5.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-5.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "2275"
+          ],
+          [
+            "content-length",
+            "63669"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:27 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-f8b5\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 2f49b142e533a08662b63624a8ad1776.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "1e6L0kA1-h9nXmiNnkJl_w76KCiEaL3VUzYU637lf8HEE7NwsbC7xQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "87dc9818febb2f2f059030981980730abf73c829714a315d890a0665fa333428",
+          "byteLength": 63669,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 22,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-6.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-6.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "604035"
+          ],
+          [
+            "content-length",
+            "86422"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:27 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-15196\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 92a0b0bf551e029202f2fbcf2f99eaf4.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "zOYaWG6Iq_LbyEsCNGfBScd5Syp9G1nOqQzYQRayhdkMaLYpKkTBig=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT20-P6, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "3a72b7c7898e942d778b48805c30b841b875c5d34e4074937bad206b455c0e87",
+          "byteLength": 86422,
+          "width": 800,
+          "height": 600
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 23,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-7.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-7.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "age",
+            "174913"
+          ],
+          [
+            "content-length",
+            "102036"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:28 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-18e94\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 017bcea4623003e4eb8b5df81f6048dc.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "aQNJ141a6RR16V-GpVF0R3DMekS8v-n075NxLt8auxWCC8oX7ZpmHg=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "24c4ef77e8088d49ce8ad341fb44aee1c8bde8a6778d0d4afb2e204a1b219cbf",
+          "byteLength": 102036,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 24,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-8.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-8.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "content-length",
+            "96672"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:29 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-179a0\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 3cf110c7ae3bb0f3c089ac76aec5869a.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "i4vMDiYnpBBFV9BJJeoh-NSOvCWF-zV-VTYVTyF4pFmDdKh78xPS1A=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "91353155a2d3776c4b24c29eaaf91bdf4dcf413c07c5148bf544cb05d15a260b",
+          "byteLength": 96672,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 25,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-9.jpg",
+        "headers": [
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00334/snos00334jp-9.jpg",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "content-length",
+            "107318"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:14:30 GMT"
+          ],
+          [
+            "etag",
+            "\"6a545cce-1a336\""
+          ],
+          [
+            "last-modified",
+            "Mon, 13 Jul 2026 03:34:38 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 017bcea4623003e4eb8b5df81f6048dc.cloudfront.net (CloudFront), 1.1 1a14b40ef6c4ba4b405703e2217e79c6.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "6i24sdBL9_xNY7MSDEtuBelwOpFjDRwa_GZ0rlrTd1TT4TnYXdqNrA=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "97048a897dbbf098e8fb761e06cc3e19b4e1778cdcfbc6d732590dbe6bf84e8e",
+          "byteLength": 107318,
+          "width": 600,
+          "height": 800
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 26,
+      "request": {
+        "method": "GET",
+        "url": "https://cc3001.dmm.co.jp/pv/PiJkMjcrGe-GdOrq41UKX3shAxaoPL-bdMh93ifBQFmchzVdulH4M0NdiRqAMW/snos00334hhb.mp4",
+        "headers": [
+          [
+            "referer",
+            "https://cc3001.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://cc3001.dmm.co.jp/pv/PiJkMjcrGe-GdOrq41UKX3shAxaoPL-bdMh93ifBQFmchzVdulH4M0NdiRqAMW/snos00334hhb.mp4",
+        "headers": [
+          [
+            "content-length",
+            "53560304"
+          ],
+          [
+            "content-type",
+            "video/mp4"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "633615db07695bfd9b7df992d4ea933b90d6816133c85116f9ef40fbed77beda",
+          "byteLength": 53560304
+        }
+      }
+    }
+  ]
+}

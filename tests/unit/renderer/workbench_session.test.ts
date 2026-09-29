@@ -74,6 +74,7 @@ describe("workbench session scrape setup", () => {
             number: ref.relativePath,
             isSubtitled: false,
           },
+          nfoPaths: [],
           assets: { sceneImages: [], actorPhotos: [] },
           crawlerData: { title: ref.relativePath, number: ref.relativePath, actors: [], genres: [], scene_images: [] },
           currentDir: "/media",
