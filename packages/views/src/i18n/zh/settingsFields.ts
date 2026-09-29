@@ -62,7 +62,8 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "scrape.filenameBlacklistTokens": {
       label: "自动扫描黑名单词",
-      description: "自动扫描时排除包含这些文字的文件；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。",
+      description:
+        "自动扫描时排除名称包含这些文字的文件和文件夹（含其下所有内容）；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。",
     },
     "scrape.threadNumber": { label: "并发线程数" },
     "scrape.javdbDelaySeconds": { label: "JavDB 请求延迟(秒)" },

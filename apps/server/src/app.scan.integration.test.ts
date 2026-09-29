@@ -147,7 +147,7 @@ describe("buildServer scan integration", () => {
     expect(retriedLibraryResponse.json().result.data.total).toBe(0);
   });
 
-  it("lists supported candidates and applies the current literal filename blacklist", async () => {
+  it("lists supported candidates and applies the current literal blacklist to file and folder names", async () => {
     mediaDirectory = await createTempDirectory("server-scan-candidates");
     await mkdir(join(mediaDirectory.path, "nested"));
     await mkdir(join(mediaDirectory.path, "JAV_output"));
@@ -155,14 +155,16 @@ describe("buildServer scan integration", () => {
     await writeFile(join(mediaDirectory.path, "nested", "trailer.mp4"), "trailer");
     await writeFile(join(mediaDirectory.path, "nested", "notes.txt"), "text");
     await writeFile(join(mediaDirectory.path, "JAV_output", "done.mp4"), "video");
-    await mkdir(join(mediaDirectory.path, "default"));
-    await writeFile(join(mediaDirectory.path, "default", "kept.mp4"), "video");
+    await mkdir(join(mediaDirectory.path, "nested", ".@__thumb", "deep"), { recursive: true });
+    await writeFile(join(mediaDirectory.path, "nested", ".@__thumb", "deep", "thumb.mp4"), "video");
     await writeFile(join(mediaDirectory.path, "nested", "DeFaUlT001.mp4"), "video");
     await writeFile(join(mediaDirectory.path, "nested", "ads+[2024].mp4"), "video");
     await writeFile(join(mediaDirectory.path, "nested", "ads-2024.mp4"), "video");
 
     const { fastify, services } = await createTestServer();
-    await services.config.update({ scrape: { filenameBlacklistTokens: ["default", "ADS+[2024]", "   "] } });
+    await services.config.update({
+      scrape: { filenameBlacklistTokens: ["default", "ADS+[2024]", ".@__THUMB", "   "] },
+    });
     const token = await loginAsAdmin(fastify);
     const response = await fastify.inject({
       method: "GET",
@@ -174,7 +176,6 @@ describe("buildServer scan integration", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().result.data.candidates).toEqual([
-      expect.objectContaining({ name: "kept.mp4" }),
       expect.objectContaining({
         name: "done.mp4",
         ref: { relativePath: "JAV_output/done.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },

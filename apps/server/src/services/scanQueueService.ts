@@ -8,7 +8,7 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
-import { createMediaFileFilter, excludeGeneratedStrmPaths, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
+import { createMediaWalkFilters, excludeGeneratedStrmPaths, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
 import { CandidatePreview } from "@mdcz/runtime/tasks";
 import type {
   LogListResponse,
@@ -161,7 +161,7 @@ export class ScanQueueService {
         excludeDirectoryPaths: excludeDirPaths,
         excludeFileSymlinks: true,
         deduplicateDirectories: true,
-        filterFile: createMediaFileFilter(configuration, supported.size ? supported : undefined),
+        ...createMediaWalkFilters(configuration, supported.size ? supported : undefined),
       }),
       (file) => file.absolutePath,
     );

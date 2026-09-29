@@ -9,7 +9,7 @@ import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles, pathExists } from "@main/util
 import { resolveRootFile } from "@mdcz/media-store";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
-  createMediaFileFilter,
+  createMediaWalkFilters,
   excludeGeneratedStrmPaths,
   getNfoReadCandidates,
   nfoGenerator,
@@ -105,7 +105,7 @@ export const createFileHandlers = (
               excludeDirPaths,
               {
                 warnings,
-                filterFile: createMediaFileFilter(configuration),
+                ...createMediaWalkFilters(configuration),
                 onFile: (filePath, stats) => {
                   const resolved = resolveRootFile(registeredRoots, filePath);
                   candidates.push({

@@ -125,7 +125,7 @@ const fields: Record<FieldKey, FieldText> = {
   "scrape.filenameBlacklistTokens": {
     label: "Auto-scan blacklist words",
     description:
-      "Files containing these words are excluded from automatic scans; matching is case-insensitive. Add with Enter, comma or space.",
+      "Files and folders (with everything inside) whose names contain these words are excluded from automatic scans; matching is case-insensitive. Add with Enter, comma or space.",
   },
   "scrape.threadNumber": { label: "Concurrent threads" },
   "scrape.javdbDelaySeconds": { label: "JavDB request delay (s)" },

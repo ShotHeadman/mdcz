@@ -35,12 +35,19 @@ export const createDirectoryScope = (
   };
 };
 
-export const createMediaFileFilter =
-  (configuration: Configuration, extensions = DEFAULT_VIDEO_EXTENSIONS): NonNullable<FileWalkOptions["filterFile"]> =>
-  (filePath) =>
-    extensions.has(extname(filePath).toLowerCase()) &&
-    isPrimaryVideoFile(filePath) &&
-    !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens);
+export const createMediaWalkFilters = (
+  configuration: Configuration,
+  extensions = DEFAULT_VIDEO_EXTENSIONS,
+): Required<Pick<FileWalkOptions, "filterFile" | "filterDirectory">> => {
+  const blacklist = configuration.scrape.filenameBlacklistTokens;
+  return {
+    filterFile: (filePath) =>
+      extensions.has(extname(filePath).toLowerCase()) &&
+      isPrimaryVideoFile(filePath) &&
+      !hasLiteralFilenameToken(basename(filePath), blacklist),
+    filterDirectory: (directoryPath) => !hasLiteralFilenameToken(basename(directoryPath), blacklist),
+  };
+};
 
 export const excludeGeneratedStrmPaths = <T>(items: readonly T[], pathOf: (item: T) => string): T[] => {
   const namesByDir = new Map<string, string[]>();
@@ -98,6 +105,7 @@ export const discoverDirectoryFiles = async (input: {
     root.realPath && isPathInside(root.realPath, scanPath)
       ? join(root.hostPath, relative(root.realPath, scanPath))
       : scope.scanDir;
+  const mediaFilters = createMediaWalkFilters(input.configuration);
   await walkFiles(namespaceScanPath, scope.recursive, signal, {
     onDirectory: (directory, canonical, entries) => {
       inventory.observeDirectory(directory, canonical, entries);
@@ -113,8 +121,9 @@ export const discoverDirectoryFiles = async (input: {
       inventory.observeFileError(file, error);
       found.push(file);
     },
+    filterDirectory: mediaFilters.filterDirectory,
     filterFile: async (file) =>
-      createMediaFileFilter(input.configuration)(file) &&
+      (await mediaFilters.filterFile(file)) &&
       (extname(file).toLowerCase() !== ".strm" ||
         (await inventory.mediaEntries(dirname(file))).some((entry) => entry.name === basename(file))),
     excludeDirectoryPaths: scope.excludeDirPaths,

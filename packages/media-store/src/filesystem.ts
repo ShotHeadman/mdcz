@@ -87,6 +87,7 @@ export interface RootFileWalkEntry {
 
 export interface FileWalkOptions {
   filterFile?: (absolutePath: string) => boolean | Promise<boolean>;
+  filterDirectory?: (absolutePath: string) => boolean;
   excludeDirectoryPaths?: readonly string[];
   excludeFileSymlinks?: boolean;
   deduplicateDirectories?: boolean;
@@ -185,7 +186,12 @@ export const walkFiles = async (
   const queue: Array<() => Promise<void>> = [];
   const visit = async (absolutePath: string, ancestors: ReadonlySet<string>, isRoot: boolean) => {
     // Skip excluded names before I/O, then reject aliases of excluded targets.
-    if (!isRoot && lexicalExcluded.some((target) => isPathInside(target, absolutePath))) return;
+    if (
+      !isRoot &&
+      (options.filterDirectory?.(absolutePath) === false ||
+        lexicalExcluded.some((target) => isPathInside(target, absolutePath)))
+    )
+      return;
     currentPath = absolutePath;
     progress();
     const key = await directoryKey(absolutePath);
