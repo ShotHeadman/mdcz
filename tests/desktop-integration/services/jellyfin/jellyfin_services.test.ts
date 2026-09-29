@@ -59,7 +59,7 @@ const createConfig = (overrides: DeepPartial<Configuration> = {}) =>
   configurationSchema.parse(mergeConfig(defaultConfiguration, overrides));
 
 class FakeNetworkClient {
-  readonly getJson = vi.fn(async (_url: string) => ({}));
+  readonly getJson = vi.fn(async (_url: string, _init?: { headers?: HeadersInit }) => ({}));
   readonly getContent = vi.fn(async (_url: string) => new Uint8Array());
   readonly postContent = vi.fn(async (_url: string, _body: Uint8Array) => undefined);
   readonly postText = vi.fn(async (_url: string, _body: string) => "");
@@ -304,7 +304,7 @@ describe("Jellyfin services", () => {
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1?");
+    expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1$/u);
     expectManagedActorPayload(
       readPostedPayload(networkClient),
       "基本资料\n血型：A型\n身高：160cm\n三围：B90 W58 H88\n罩杯：G杯\n\nActor biography\n\n别名：Alias A / Alias B",
@@ -358,14 +358,17 @@ describe("Jellyfin services", () => {
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expect(networkClient.getJson).toHaveBeenCalledWith(
-      expect.stringContaining("/Users?api_key=token"),
-      expect.anything(),
+    const requests = networkClient.getJson.mock.calls.map(([url, init]) => ({
+      url: new URL(String(url)),
+      authorization: new Headers(init?.headers).get("authorization"),
+    }));
+    expect(requests.map(({ url }) => url.pathname)).toEqual(
+      expect.arrayContaining(["/Users", `/Users/${jellyfinUserId}/Items/person-1`]),
     );
-    expect(networkClient.getJson).toHaveBeenCalledWith(
-      expect.stringContaining(`/Users/${jellyfinUserId}/Items/person-1?api_key=token`),
-      expect.anything(),
-    );
+    for (const request of requests) {
+      expect(request.authorization).toBe('MediaBrowser Token="token"');
+      expect([...request.url.searchParams.keys()].some((key) => key.toLowerCase().includes("key"))).toBe(false);
+    }
     expect(networkClient.postText).toHaveBeenCalledTimes(1);
   });
 
@@ -421,9 +424,9 @@ describe("Jellyfin services", () => {
     );
 
     expect(result).toEqual({ processedCount: 2, failedCount: 0, skippedCount: 0 });
-    expect(
-      networkClient.getJson.mock.calls.filter(([url]) => String(url).includes("/Users?api_key=token")),
-    ).toHaveLength(1);
+    expect(networkClient.getJson.mock.calls.filter(([url]) => new URL(String(url)).pathname === "/Users")).toHaveLength(
+      1,
+    );
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
   });
 

@@ -274,7 +274,7 @@ describe("Emby actor services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1?");
+    expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1$/u);
     expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
     expectStructuredActorPayload(
       readPostedPayload(networkClient),
@@ -411,7 +411,7 @@ describe("Emby actor services", () => {
       },
     );
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1/Images/Primary?");
+    expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1\/Images\/Primary$/u);
     expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
   });
 

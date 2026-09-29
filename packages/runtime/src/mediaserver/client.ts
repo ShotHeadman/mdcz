@@ -33,12 +33,6 @@ export const buildMediaServerUrl = (
   }
 
   const url = new URL(`${baseUrl}${normalizedPath}`);
-  const apiKey = getMediaServerConfig(configuration, serverKey).apiKey.trim();
-
-  if (apiKey) {
-    url.searchParams.set("api_key", apiKey);
-  }
-
   for (const [key, value] of Object.entries(query)) {
     if (!value || value.trim().length === 0) {
       continue;
@@ -60,13 +54,9 @@ export const buildMediaServerHeaders = (
     return next;
   }
 
-  next.set("x-emby-token", apiKey);
-  next.set("x-mediabrowser-token", apiKey);
-  next.set(
-    "x-emby-authorization",
-    `MediaBrowser Client="MDCz", Device="MDCz", DeviceId="mdcz-tool", Version="0.1.3", Token="${apiKey}"`,
-  );
-
+  // Jellyfin 12 disables legacy token headers and api_key by default; Emby documents X-Emby-Token for API keys.
+  if (serverKey === "jellyfin") next.set("authorization", `MediaBrowser Token="${apiKey}"`);
+  else next.set("x-emby-token", apiKey);
   return next;
 };
 
