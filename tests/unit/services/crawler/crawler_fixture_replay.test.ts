@@ -32,6 +32,7 @@ const fixtureCases: FixtureCaseExpectation[] = [
     caseId: "snos-301",
     number: "SNOS-301",
     expectedTitle: "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ",
+    expectedAvbaseTitle: "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     expectedActors: ["浅野こころ"],
   },
   {
@@ -130,7 +131,7 @@ describe("Crawler actual fixture replay", () => {
       const data = response.result.data;
       expect(data.website).toBe(Website.AVBASE);
       expect(data.number).toBe(number);
-      expect(data.title.replace(/\s*（BOD）$/u, "")).toBe(expectedAvbaseTitle ?? expectedTitle);
+      expect(data.title).toBe(expectedAvbaseTitle ?? expectedTitle);
       expect(data.actors).toEqual(expectedActors);
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();

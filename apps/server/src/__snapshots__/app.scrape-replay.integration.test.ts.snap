@@ -16,7 +16,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
         "明日葉みつは/IPZZ-907/IPZZ-907.mp4",
       ],
       "number": "IPZZ-907",
-      "title": "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム （BOD）",
+      "title": "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
     },
     {
       "actors": [
@@ -26,7 +26,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
         "浅野こころ/SNOS-301/SNOS-301.mp4",
       ],
       "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     },
     {
       "actors": [
@@ -48,7 +48,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
         "IPZZ-907",
       ],
       "originaltitle": [
-        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム （BOD）",
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
       ],
       "premiered": [
         "2026-08-07",
@@ -61,7 +61,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
       ],
       "tag": [],
       "title": [
-        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム （BOD）",
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
       ],
     },
     "output/浅野こころ/SNOS-301/SNOS-301.nfo": {
@@ -72,7 +72,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
         "SNOS-301",
       ],
       "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
       "premiered": [
         "2026-07-24",
@@ -85,7 +85,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
       ],
       "tag": [],
       "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
     },
     "output/瀬戸環奈/SNOS-334/SNOS-334.nfo": {
@@ -169,7 +169,7 @@ exports[`scrapes recorded movies end to end: 'chinese subtitle marker' 1`] = `
         "浅野こころ/SNOS-301-C/SNOS-301-C.mp4",
       ],
       "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     },
   ],
   "nfos": {
@@ -181,7 +181,7 @@ exports[`scrapes recorded movies end to end: 'chinese subtitle marker' 1`] = `
         "SNOS-301",
       ],
       "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
       "premiered": [
         "2026-07-24",
@@ -196,7 +196,7 @@ exports[`scrapes recorded movies end to end: 'chinese subtitle marker' 1`] = `
         "中文字幕",
       ],
       "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
     },
   },
@@ -234,7 +234,7 @@ exports[`scrapes recorded movies end to end: 'copy without moving source' 1`] = 
         "SNOS-301.mp4",
       ],
       "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     },
   ],
   "nfos": {
@@ -246,7 +246,7 @@ exports[`scrapes recorded movies end to end: 'copy without moving source' 1`] = 
         "SNOS-301",
       ],
       "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
       "premiered": [
         "2026-07-24",
@@ -259,7 +259,7 @@ exports[`scrapes recorded movies end to end: 'copy without moving source' 1`] = 
       ],
       "tag": [],
       "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
     },
   },
@@ -375,7 +375,7 @@ exports[`scrapes recorded movies end to end: 'rescrape replaces stale metadata' 
         "浅野こころ/SNOS-301/SNOS-301.mp4",
       ],
       "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     },
   ],
   "nfos": {
@@ -387,7 +387,7 @@ exports[`scrapes recorded movies end to end: 'rescrape replaces stale metadata' 
         "SNOS-301",
       ],
       "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
       "premiered": [
         "2026-07-24",
@@ -400,7 +400,7 @@ exports[`scrapes recorded movies end to end: 'rescrape replaces stale metadata' 
       ],
       "tag": [],
       "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
     },
   },
@@ -441,7 +441,7 @@ exports[`scrapes recorded movies end to end: 'single file' 1`] = `
         "浅野こころ/SNOS-301/SNOS-301.mp4",
       ],
       "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     },
   ],
   "nfos": {
@@ -453,7 +453,7 @@ exports[`scrapes recorded movies end to end: 'single file' 1`] = `
         "SNOS-301",
       ],
       "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
       "premiered": [
         "2026-07-24",
@@ -466,7 +466,7 @@ exports[`scrapes recorded movies end to end: 'single file' 1`] = `
       ],
       "tag": [],
       "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
     },
   },
@@ -505,7 +505,7 @@ exports[`scrapes recorded movies end to end: 'split disc' 1`] = `
         "浅野こころ/SNOS-301/SNOS-301-CD2.mp4",
       ],
       "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
     },
   ],
   "nfos": {
@@ -517,7 +517,7 @@ exports[`scrapes recorded movies end to end: 'split disc' 1`] = `
         "SNOS-301",
       ],
       "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
       "premiered": [
         "2026-07-24",
@@ -530,7 +530,7 @@ exports[`scrapes recorded movies end to end: 'split disc' 1`] = `
       ],
       "tag": [],
       "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？ 浅野こころ （BOD）",
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
       ],
     },
   },
@@ -634,7 +634,7 @@ exports[`scrapes recorded movies end to end: 'subtitle sidecars' 1`] = `
         "明日葉みつは/IPZZ-907-C/IPZZ-907-C.mp4",
       ],
       "number": "IPZZ-907",
-      "title": "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム （BOD）",
+      "title": "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
     },
   ],
   "nfos": {
@@ -646,7 +646,7 @@ exports[`scrapes recorded movies end to end: 'subtitle sidecars' 1`] = `
         "IPZZ-907",
       ],
       "originaltitle": [
-        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム （BOD）",
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
       ],
       "premiered": [
         "2026-08-07",
@@ -661,7 +661,7 @@ exports[`scrapes recorded movies end to end: 'subtitle sidecars' 1`] = `
         "中文字幕",
       ],
       "title": [
-        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム （BOD）",
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
       ],
     },
   },

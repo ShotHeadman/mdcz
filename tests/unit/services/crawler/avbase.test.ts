@@ -41,7 +41,7 @@ const createDetailWork = (options: {
 });
 
 describe("AvbaseCrawler", () => {
-  it("prefers visible or female cast lists over noisier internal actor arrays", async () => {
+  it("prefers visible cast lists and keeps cast and edition markers out of titles", async () => {
     const cases = [
       {
         number: "ABF-777",
@@ -66,6 +66,7 @@ describe("AvbaseCrawler", () => {
           }),
         }),
         expectedActors: ["千咲ちな", "別の女优"],
+        expectedTitle: "双女優テスト",
       },
       {
         number: "EBWH-241",
@@ -84,7 +85,7 @@ describe("AvbaseCrawler", () => {
           {
             work: createDetailWork({
               workId: "EBWH-241",
-              title: "AVBase DOM actor test 千咲ちな",
+              title: "AVBase DOM actor test 千咲ちな （BOD）",
               actors: [],
               detailActors: ["千咲ちな", "貞松大輔", "かめじろう"],
               products: [createProduct({ maker: "E-BODY" })],
@@ -104,10 +105,11 @@ describe("AvbaseCrawler", () => {
           `,
         ),
         expectedActors: ["千咲ちな"],
+        expectedTitle: "AVBase DOM actor test",
       },
     ];
 
-    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, expectedActors } of cases) {
+    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, expectedActors, expectedTitle } of cases) {
       const crawler = new AvbaseCrawler(
         withGateway(
           new FixtureNetworkClient(
@@ -130,6 +132,7 @@ describe("AvbaseCrawler", () => {
       }
 
       expect(response.result.data.actors).toEqual(expectedActors);
+      expect(response.result.data.title).toBe(expectedTitle);
     }
   });
 });

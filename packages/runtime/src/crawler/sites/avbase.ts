@@ -9,6 +9,8 @@ import type { Context } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 
 const AVBASE_BASE_URL = "https://www.avbase.net";
+// AVBASE titles a work after its on-demand disc edition (BOD Blu-ray, DOD DVD), which is rarely the scraped release.
+const ON_DEMAND_DISC_SUFFIX = /\s*[（(](?:BOD|DOD)[）)]$/u;
 
 interface AvbaseNextData {
   props?: {
@@ -390,7 +392,7 @@ export class AvbaseCrawler extends BaseCrawler {
 
     const actors = resolveWorkActors($, work);
     const genres = uniqueStrings((work?.genres ?? []).map((genre) => toNonEmptyString(genre.name)));
-    const title = stripTrailingActorsFromTitle(rawTitle, actors);
+    const title = stripTrailingActorsFromTitle(rawTitle.replace(ON_DEMAND_DISC_SUFFIX, ""), actors);
     const products = getProducts(work);
     const metadata = resolveProductMetadata(products);
 
