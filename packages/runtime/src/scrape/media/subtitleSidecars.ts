@@ -1,7 +1,6 @@
 import { dirname, extname, join, parse } from "node:path";
 import type { SubtitleTag } from "@mdcz/shared/types";
 import { DirectoryInventory } from "../DirectoryInventory";
-import { DEFAULT_VIDEO_EXTENSIONS } from "../utils/filesystem";
 import { parseFileInfo } from "../utils/number";
 import {
   detectSubtitleTagFromSidecarSuffix,
@@ -9,7 +8,6 @@ import {
   preferSubtitleTag,
   SUBTITLE_EXTENSIONS,
 } from "../utils/subtitles";
-import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
 
 const SIDE_NAME_SEPARATOR = /^[-_.\s]/u;
 
@@ -78,13 +76,7 @@ export const findSubtitleSidecars = async (
   const video = parse(videoPath);
   const videoBaseCandidates = buildVideoBaseCandidates(videoPath);
   const entries = await inventory.entries(video.dir);
-  const siblingVideos = (await inventory.mediaEntries(video.dir)).filter(
-    (entry) =>
-      (entry.isFile() || entry.isSymbolicLink()) &&
-      DEFAULT_VIDEO_EXTENSIONS.has(extname(entry.name).toLowerCase()) &&
-      entry.name !== video.base &&
-      !isGeneratedSidecarVideo(entry.name),
-  );
+  const siblingVideos = (await inventory.mediaEntries(video.dir)).filter((entry) => entry.name !== video.base);
   const number = parseFileInfo(videoPath).number;
   if (siblingVideos.some((entry) => parseFileInfo(entry.name).number === number)) videoBaseCandidates.splice(1);
   const matches = await Promise.all(

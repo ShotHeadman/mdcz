@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import { basename, dirname, join, parse } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { type ParsedNfoSnapshot, parseNfoSnapshot } from "../maintenance/nfoSnapshot";
+import { isPrimaryVideoFile } from "./media/generatedSidecarVideos";
 
 export class DirectoryInventory {
   readonly registeredNfos = new Map<string, readonly string[]>();
@@ -162,13 +162,13 @@ export class DirectoryInventory {
   async mediaEntries(directory: string): Promise<readonly Dirent[]> {
     const entries = await this.entries(directory);
     const candidates = entries.filter((entry) => {
-      if ((!entry.isFile() && !entry.isSymbolicLink()) || !isPrimaryVideoFileName(entry.name)) return false;
+      if ((!entry.isFile() && !entry.isSymbolicLink()) || !isPrimaryVideoFile(entry.name)) return false;
       const name = parse(entry.name);
       if (name.ext.toLowerCase() !== ".strm") return true;
       return !entries.some(
         (sibling) =>
           (sibling.isFile() || sibling.isSymbolicLink()) &&
-          isPrimaryVideoFileName(sibling.name) &&
+          isPrimaryVideoFile(sibling.name) &&
           parse(sibling.name).ext.toLowerCase() !== ".strm" &&
           filesystemPathKey(join(directory, parse(sibling.name).name)) ===
             filesystemPathKey(join(directory, name.name)),

@@ -473,7 +473,7 @@ describe("FileOrganizer filesystem organize", () => {
   it("moves generated FC2 feature videos alongside successful movie moves", async () => {
     const root = await createTempDir();
     const sourcePath = join(root, "FC2-PPV-123456.mp4");
-    const featurePath = join(root, "FC2-PPV-123456-花絮.mp4");
+    const featurePath = join(root, "FC2-PPV-123456 素人初撮り-花絮.mp4");
     const giftPath = join(root, "FC2-PPV-123456_gift.mp4");
 
     await writeFile(sourcePath, "video", "utf8");

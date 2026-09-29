@@ -11,12 +11,10 @@ import {
   buildSubtitleSidecarTargetPath,
   findGeneratedVideoSidecars,
   findSubtitleSidecars,
-  isGeneratedSidecarVideo,
   type SubtitleSidecarMatch,
 } from "./media";
 import { getNfoWritePaths } from "./nfo";
 import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
-import { DEFAULT_VIDEO_EXTENSIONS } from "./utils/filesystem";
 import { parseFileInfo } from "./utils/number";
 import { prepareMovedStrmContent } from "./utils/strm";
 
@@ -204,23 +202,15 @@ export class FileOrganizer {
       const sourceFileInfo = parseFileInfo(sourceFilePath);
       const videoFiles: string[] = [];
       for (const entry of await inventory.mediaEntries(sourceDir)) {
-        if (!DEFAULT_VIDEO_EXTENSIONS.has(parseFileInfo(entry.name).extension.toLowerCase())) continue;
         const candidate = join(sourceDir, entry.name);
         if (entry.isFile() || (entry.isSymbolicLink() && (await inventory.stats(candidate)).isFile()))
           videoFiles.push(candidate);
       }
-      const otherVideos = videoFiles.filter((filePath) => {
-        if (resolve(filePath) === resolve(sourceFilePath) || isGeneratedSidecarVideo(filePath)) {
-          return false;
-        }
-
-        const siblingFileInfo = parseFileInfo(filePath);
-        if (sourceFileInfo.number && sourceFileInfo.number === siblingFileInfo.number) {
-          return false;
-        }
-
-        return true;
-      });
+      const otherVideos = videoFiles.filter(
+        (filePath) =>
+          resolve(filePath) !== resolve(sourceFilePath) &&
+          !(sourceFileInfo.number && sourceFileInfo.number === parseFileInfo(filePath).number),
+      );
       if (otherVideos.length > 0) {
         this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
         throw new Error(

@@ -6,10 +6,10 @@ import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directo
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
 import { resolveMediaCandidateScanPlan, type WorkbenchSetupMode } from "@mdcz/shared/mediaCandidate";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { runtimeLoggerService } from "../shared";
 import { DirectoryInventory } from "./DirectoryInventory";
+import { isPrimaryVideoFile } from "./media/generatedSidecarVideos";
 import { DEFAULT_VIDEO_EXTENSIONS } from "./utils/filesystem";
 
 export const createDirectoryScope = (
@@ -39,7 +39,7 @@ export const createMediaFileFilter =
   (configuration: Configuration, extensions = DEFAULT_VIDEO_EXTENSIONS): NonNullable<FileWalkOptions["filterFile"]> =>
   (filePath) =>
     extensions.has(extname(filePath).toLowerCase()) &&
-    isPrimaryVideoFileName(filePath) &&
+    isPrimaryVideoFile(filePath) &&
     !hasLiteralFilenameToken(basename(filePath), configuration.scrape.filenameBlacklistTokens);
 
 export const excludeGeneratedStrmPaths = <T>(items: readonly T[], pathOf: (item: T) => string): T[] => {
@@ -58,9 +58,7 @@ export const excludeGeneratedStrmPaths = <T>(items: readonly T[], pathOf: (item:
     const base = parse(fileName).name.toLowerCase();
     return !(namesByDir.get(dirname(filePath)) ?? []).some(
       (name) =>
-        extname(name).toLowerCase() !== ".strm" &&
-        isPrimaryVideoFileName(name) &&
-        parse(name).name.toLowerCase() === base,
+        extname(name).toLowerCase() !== ".strm" && isPrimaryVideoFile(name) && parse(name).name.toLowerCase() === base,
     );
   });
 };

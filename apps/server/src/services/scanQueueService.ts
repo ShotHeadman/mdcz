@@ -8,7 +8,7 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
-import { createMediaFileFilter, excludeGeneratedStrmPaths } from "@mdcz/runtime/scrape";
+import { createMediaFileFilter, excludeGeneratedStrmPaths, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
 import { CandidatePreview } from "@mdcz/runtime/tasks";
 import type {
   LogListResponse,
@@ -20,7 +20,6 @@ import type {
   TaskEventDto,
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
-import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { toTaskEventDto } from "../taskDto";
 import type { TaskEventBus } from "../taskEvents";
 import type { ServerConfigService } from "./configService";
@@ -221,17 +220,15 @@ export class ScanQueueService {
     const files = excludeGeneratedStrmPaths(
       await listRootFiles(root, "", true, signal, {
         excludeDirectoryPaths: metadataPath ? [metadataPath] : [],
-        filterFile: (filePath) => isPrimaryVideoFileName(path.basename(filePath)),
+        filterFile: isPrimaryVideoFile,
       }),
       (file) => file.absolutePath,
     );
-    const videos = files
-      .filter((file) => isPrimaryVideoFileName(path.basename(file.relativePath)))
-      .map((file) => ({
-        relativePath: file.relativePath,
-        size: file.size,
-        modifiedAt: file.modifiedAt,
-      }));
+    const videos = files.map((file) => ({
+      relativePath: file.relativePath,
+      size: file.size,
+      modifiedAt: file.modifiedAt,
+    }));
     const directoryCount = new Set(videos.map((video) => path.posix.dirname(video.relativePath))).size;
 
     videos.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));

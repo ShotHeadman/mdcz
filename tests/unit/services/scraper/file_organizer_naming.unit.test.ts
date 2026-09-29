@@ -1,5 +1,5 @@
 import { join, parse, resolve } from "node:path";
-import { buildGeneratedVideoSidecarTargetPath, FileOrganizer, isGeneratedSidecarVideo } from "@mdcz/runtime/scrape";
+import { buildGeneratedVideoSidecarTargetPath, FileOrganizer, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
 import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
@@ -487,7 +487,28 @@ describe("FileOrganizer naming rules", () => {
   });
 
   it("identifies generated FC2 sidecars and builds paths from the shared movie base name", () => {
-    expect(isGeneratedSidecarVideo("FC2-123456_gift.mp4")).toBe(true);
+    const names = [
+      "FC2-123456_gift.mp4",
+      "[Thz.la]fc2-ppv-1234567-特典.mp4",
+      "FC2-PPV-1234567 メイキング2.mp4",
+      "FC2-PPV-1234567 素人初撮り-おまけ.mp4",
+      "FC2-PPV-1234567 【特典あり】素人初撮り.mp4",
+      "FC2-PPV-1234567 ※レビュー特典あり 完全版.mp4",
+      "FC2-PPV-1234567 おまけ付き.mp4",
+      "FC2-PPV-1234567 誕生日gift企画.mp4",
+      "SNOS-301-特典.mp4",
+    ];
+    expect(Object.fromEntries(names.map((name) => [name, isPrimaryVideoFile(name.normalize("NFD"))]))).toEqual({
+      "FC2-123456_gift.mp4": false,
+      "[Thz.la]fc2-ppv-1234567-特典.mp4": false,
+      "FC2-PPV-1234567 メイキング2.mp4": false,
+      "FC2-PPV-1234567 素人初撮り-おまけ.mp4": false,
+      "FC2-PPV-1234567 【特典あり】素人初撮り.mp4": true,
+      "FC2-PPV-1234567 ※レビュー特典あり 完全版.mp4": true,
+      "FC2-PPV-1234567 おまけ付き.mp4": true,
+      "FC2-PPV-1234567 誕生日gift企画.mp4": true,
+      "SNOS-301-特典.mp4": true,
+    });
     expect(
       buildGeneratedVideoSidecarTargetPath(
         {

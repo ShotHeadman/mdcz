@@ -79,99 +79,37 @@ describe("Batch2 crawlers", () => {
       verify: (_data) => {},
     },
     {
-      name: "parses fc2 and strips watermark",
-      number: "FC2-1234567",
+      name: "parses fc2 without its hidden title watermark and with an english sale date",
+      number: "FC2-4984259",
       site: Website.FC2,
       fixtures: new Map<string, unknown>([
         [
-          "https://adult.contents.fc2.com/article/1234567/",
-          `<div data-section="userInfo"><h3>【個人撮影】可愛過ぎ-q-yosqny るシスター</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2s.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
+          "https://adult.contents.fc2.com/article/4984259/",
+          `<div data-section="userInfo"><h3>【個人撮影】可愛過ぎ<span style="zoom:0.01;color:#fff;width:1px;height:1px;display:inline-block;overflow:hidden;">**znoqnxxxjn </span>るシスター</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2s.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div><div class="items_article_softDevice"><p>Sale Day : 2026/09/28</p></div><div class="items_article_softDevice"><p>Product ID : FC2 PPV 4984259</p></div>`,
         ],
       ]),
       createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
       verify: (data) => {
-        expect(data.number).toBe("FC2-1234567");
+        expect(data.number).toBe("FC2-4984259");
         expect(data.title).toBe("【個人撮影】可愛過ぎるシスター");
+        expect(data.release_date).toBe("2026-09-28");
       },
     },
     {
-      name: "parses fc2 without stripping real hyphenated english phrases",
+      name: "parses fc2 keeping visible title text and a japanese sale date",
       number: "FC2-7654321",
       site: Website.FC2,
       fixtures: new Map<string, unknown>([
         [
           "https://adult.contents.fc2.com/article/7654321/",
-          `<div data-section="userInfo"><h3>ナンパ大作戦 re-upload-more edition</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2b.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2bs.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
+          `<div data-section="userInfo"><h3>ナンパ大作戦 re-upload-more edition **限定**</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2b.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2bs.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div><div class="items_article_softDevice"><p>販売日 : 2025/01/02</p></div>`,
         ],
       ]),
       createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
       verify: (data) => {
         expect(data.number).toBe("FC2-7654321");
-        expect(data.title).toBe("ナンパ大作戦 re-upload-more edition");
-      },
-    },
-    {
-      name: "parses fc2 and strips dash-delimited obfuscated tokens between japanese phrases",
-      number: "FC2-4157003",
-      site: Website.FC2,
-      fixtures: new Map<string, unknown>([
-        [
-          "https://adult.contents.fc2.com/article/4157003/",
-          `<div data-section="userInfo"><h3>19歳のかわいい系ロシア巨乳ちゃん。-q-yosqny ぷりんぷりん</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2d.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2ds.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
-        ],
-      ]),
-      createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
-      verify: (data) => {
-        expect(data.number).toBe("FC2-4157003");
-        expect(data.title).toBe("19歳のかわいい系ロシア巨乳ちゃん。ぷりんぷりん");
-      },
-    },
-    {
-      name: "parses fc2 and strips dash-delimited obfuscated tokens with multi-letter segments",
-      number: "FC2-3933828",
-      site: Website.FC2,
-      fixtures: new Map<string, unknown>([
-        [
-          "https://adult.contents.fc2.com/article/3933828/",
-          `<div data-section="userInfo"><h3>販売停止前作品 -zqxoo-jxzq 田舎暮らし</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2e.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2es.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
-        ],
-      ]),
-      createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
-      verify: (data) => {
-        expect(data.number).toBe("FC2-3933828");
-        expect(data.title).toBe("販売停止前作品 田舎暮らし");
-      },
-    },
-    {
-      name: "parses fc2 and strips single dash-delimited watermark fragments",
-      number: "FC2-3103702",
-      site: Website.FC2,
-      fixtures: new Map<string, unknown>([
-        [
-          "https://adult.contents.fc2.com/article/3103702/",
-          `<div data-section="userInfo"><h3>【期間限定数量販売】 -sznzpjo- 【復刻版】【無】期間限定！大人気！現○女子○超スレンダー美！</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2f.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2fs.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
-        ],
-      ]),
-      createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
-      verify: (data) => {
-        expect(data.number).toBe("FC2-3103702");
-        expect(data.title).toBe("【期間限定数量販売】 【復刻版】【無】期間限定！大人気！現○女子○超スレンダー美！");
-      },
-    },
-    {
-      name: "parses fc2 and strips current star-delimited watermark fragments",
-      number: "FC2-4428347",
-      site: Website.FC2,
-      fixtures: new Map<string, unknown>([
-        [
-          "https://adult.contents.fc2.com/article/4428347/",
-          `<div data-section="userInfo"><h3>ま***pnpoz*xon りあ②</h3></div><ul class="items_article_SampleImagesArea"><li><a href="https://img.example.com/fc2c.jpg"></a></li></ul><div class="items_article_MainitemThumb"><img src="https://img.example.com/fc2cs.jpg" /></div><p class="card-text"><a href="/tag/a">TagFC2</a></p><div class="col-8">Seller FC2</div>`,
-        ],
-      ]),
-      createCrawler: (fixtures) => new Fc2Crawler(withGateway(new FixtureNetworkClient(fixtures))),
-      verify: (data) => {
-        expect(data.number).toBe("FC2-4428347");
-        expect(data.title).toBe("まりあ②");
+        expect(data.title).toBe("ナンパ大作戦 re-upload-more edition **限定**");
+        expect(data.release_date).toBe("2025-01-02");
       },
     },
   ];

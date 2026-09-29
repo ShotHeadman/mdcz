@@ -4,7 +4,7 @@ import { readlink } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
+import { isPrimaryVideoFile } from "../scrape/media/generatedSidecarVideos";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { PublicationConflictError } from "./conflicts";
 import { outputFileSystem } from "./outputFileSystem";
@@ -71,14 +71,14 @@ export class MoveOutput {
         throw new Error(`Publication source changed before mutation: ${sourcePath}`);
     };
     const assertTarget = async (move: SourceMove, sourcePath: string) => {
-      if (isPrimaryVideoFileName(move.targetPath)) {
+      if (isPrimaryVideoFile(move.targetPath)) {
         const directory = path.dirname(move.targetPath);
         const directoryKey = filesystemPathKey(directory);
         let entries = targetEntries.get(directoryKey);
         if (!entries) {
           entries = new Set(
             (await fs.readdir(directory, { withFileTypes: true }))
-              .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && isPrimaryVideoFileName(entry.name))
+              .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && isPrimaryVideoFile(entry.name))
               .map((entry) => filesystemPathKey(path.join(directory, entry.name))),
           );
           targetEntries.set(directoryKey, entries);
@@ -163,7 +163,7 @@ export class MoveOutput {
             } else {
               targetEntries.get(filesystemPathKey(path.dirname(sourcePath)))?.delete(filesystemPathKey(sourcePath));
             }
-            if (isPrimaryVideoFileName(move.targetPath))
+            if (isPrimaryVideoFile(move.targetPath))
               targetEntries
                 .get(filesystemPathKey(path.dirname(move.targetPath)))
                 ?.add(filesystemPathKey(move.targetPath));
