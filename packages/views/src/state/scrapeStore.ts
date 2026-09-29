@@ -7,6 +7,8 @@ export type ScrapeOutcome = "completed" | "failed" | "stopped" | "interrupted" |
 
 interface ScrapeState {
   snapshot: ScrapeRunSnapshotDto | null;
+  /** Earlier runs of the current retry chain, oldest first. */
+  ancestors: ScrapeRunSnapshotDto[];
   retiredTaskIds: string[];
   pending: boolean;
   error: string | null;
@@ -18,6 +20,7 @@ interface ScrapeState {
 
 const initialState = () => ({
   snapshot: null as ScrapeRunSnapshotDto | null,
+  ancestors: [] as ScrapeRunSnapshotDto[],
   retiredTaskIds: [] as string[],
   pending: false,
   error: null as string | null,
@@ -33,6 +36,8 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
       if (!previous || previous.task.id !== snapshot.task.id) {
         return {
           snapshot,
+          ancestors:
+            previous && snapshot.task.previousTaskId === previous.task.id ? [...state.ancestors, previous] : [],
           retiredTaskIds: previous ? [...state.retiredTaskIds, previous.task.id] : state.retiredTaskIds,
           error: null,
         };
@@ -93,6 +98,7 @@ const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
 });
 
 const EMPTY_SCRAPE_RESULTS: ScrapeResult[] = [];
+// A retry run only holds the retried items, so the batch view overlays it on the earlier runs of its chain.
 const scrapeResultsBySnapshot = new WeakMap<ScrapeRunSnapshotDto, ScrapeResult[]>();
 
 export const selectScrapeSnapshot = (state: ScrapeState): ScrapeRunSnapshotDto | null => state.snapshot;
@@ -105,7 +111,11 @@ export const selectScrapeResults = (state: ScrapeState): ScrapeResult[] => {
   const cached = scrapeResultsBySnapshot.get(snapshot);
   if (cached) return cached;
 
-  const results = snapshot.items.map(liveItemToScrapeResult);
+  const items = new Map<string, ScrapeLiveItemDto>();
+  for (const run of [...state.ancestors, snapshot]) {
+    for (const item of run.items) items.set(`${item.rootId}\0${item.relativePath}`, item);
+  }
+  const results = [...items.values()].map(liveItemToScrapeResult);
   scrapeResultsBySnapshot.set(snapshot, results);
   return results;
 };
@@ -127,5 +137,3 @@ export const selectScrapeOutcome = (state: ScrapeState): ScrapeOutcome => {
 export const selectIsScraping = (state: ScrapeState): boolean => selectScrapeStatus(state) !== "idle";
 export const selectScrapeHasWork = (state: ScrapeState): boolean => selectIsScraping(state) || state.snapshot !== null;
 export const selectScrapeProgress = (state: ScrapeState): number => selectScrapeSnapshot(state)?.progress.percent ?? 0;
-export const selectFailedCount = (state: ScrapeState): number =>
-  selectScrapeSnapshot(state)?.items.filter((item) => item.status === "failed").length ?? 0;

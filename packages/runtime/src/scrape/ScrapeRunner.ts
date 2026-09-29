@@ -758,28 +758,56 @@ export class ScrapeRunner {
     }
     if (!run.manifestFixedAt)
       throw new Error("Directory file list has not been generated; cannot retry, please rescan directory");
-    if (itemIds) {
-      if (itemIds.length === 0) throw new Error(`Scrape retry requires at least one item: ${run.id}`);
-      const unknownItemId = itemIds.find((itemId) => !run.items.some((item) => item.id === itemId));
-      if (unknownItemId) throw new Error(`Scrape item does not belong to run ${run.id}: ${unknownItemId}`);
+    if (itemIds?.length === 0) throw new Error(`Scrape retry requires at least one item: ${run.id}`);
+
+    // A retry run only holds the retried items, so the batch is the union of the whole retry chain with newer runs winning.
+    const lineage = [run];
+    for (let previousId = run.previousRunId; previousId; previousId = lineage[0].previousRunId) {
+      lineage.unshift(await this.deps.persistence.scrapeRuns.get(previousId));
+    }
+    const itemKey = (item: { rootId: string; relativePath: string }) => `${item.rootId}\0${item.relativePath}`;
+    const batchItems = new Map<string, (typeof run.items)[number]>();
+    const itemsById = new Map<string, (typeof run.items)[number]>();
+    for (const ancestor of lineage) {
+      for (const item of ancestor.items) {
+        batchItems.set(itemKey(item), item);
+        itemsById.set(item.id, item);
+      }
     }
     const configuration = JSON.parse(run.configurationJson ?? "{}");
-    const seedIds = itemIds ?? this.failedOrSkippedItemIds(run.id);
+    const seedKeys = new Set<string>();
+    if (itemIds) {
+      for (const itemId of itemIds) {
+        const item = itemsById.get(itemId);
+        if (!item) throw new Error(`Scrape item does not belong to run ${run.id}: ${itemId}`);
+        seedKeys.add(itemKey(item));
+      }
+    } else {
+      const statusByKey = new Map<string, string>();
+      for (const ancestor of lineage) {
+        const snapshot = this.terminalSnapshots.get(ancestor.id);
+        if (!snapshot && ancestor === run)
+          throw new Error("Task results are no longer in this session; please rescan directory");
+        for (const item of snapshot?.items ?? []) statusByKey.set(itemKey(item), item.status);
+      }
+      for (const [key, status] of statusByKey) if (status === "failed" || status === "skipped") seedKeys.add(key);
+    }
+    const seedIds = [...seedKeys].flatMap((key) => batchItems.get(key)?.id ?? []);
     const inventory = new DirectoryInventory();
     const directories = new Map<string, string>();
-    for (const item of run.items) {
+    for (const item of batchItems.values()) {
       const root = await this.deps.persistence.mediaRoots.get(item.rootId);
       const directory = dirname(resolveRootRelativePath(root, item.relativePath));
       directories.set(item.id, filesystemPathKey(await inventory.canonicalDirectory(directory)));
     }
     const retryIds = new Set(
-      expandScrapeRetryItems(run.items, seedIds, configuration.scrape?.filenameIgnoreTokens, (item) => {
+      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape?.filenameIgnoreTokens, (item) => {
         const directory = directories.get(item.id);
         if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
         return directory;
       }),
     );
-    const itemsToRetry = run.items.filter((item) => retryIds.has(item.id));
+    const itemsToRetry = [...batchItems.values()].filter((item) => retryIds.has(item.id));
     if (itemsToRetry.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
     const groups = await admitScrapeGroups({
       refs: itemsToRetry.map((item) => ({
@@ -817,14 +845,6 @@ export class ScrapeRunner {
     });
     this.runContexts.set(manifest.id, { inventory, groups });
     return manifest;
-  }
-
-  private failedOrSkippedItemIds(runId: string): string[] {
-    const snapshot = this.terminalSnapshots.get(runId);
-    if (!snapshot) throw new Error("Task results are no longer in this session; please rescan directory");
-    return snapshot.items
-      .filter((item) => item.status === "failed" || item.status === "skipped")
-      .map((item) => item.id);
   }
 
   private async discoverRun(
@@ -1223,6 +1243,7 @@ export class ScrapeRunner {
         skippedCount: manifest.skippedCount,
         error: manifest.error,
         continuity: !manifest.disposition || manifest.disposition === "interrupted" ? "interrupted" : "final",
+        previousTaskId: manifest.previousRunId,
       },
       directorySource: manifest.directoryScopeJson
         ? directoryTaskScopeSchema.parse(JSON.parse(manifest.directoryScopeJson))

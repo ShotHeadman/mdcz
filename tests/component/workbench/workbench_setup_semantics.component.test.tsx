@@ -69,7 +69,12 @@ test("submits directories without scanning and keeps explicit previews cancellab
   const start = screen.getByRole("button", { name: "开始刮削", exact: true });
   await expect.element(start).toBeEnabled();
   expect(scanCandidates).not.toHaveBeenCalled();
-  await start.click();
+  const startWholeDirectory = async () => {
+    await start.click();
+    await expect.element(screen.getByRole("dialog", { name: "处理目录内全部视频？" })).toBeVisible();
+    await screen.getByRole("dialog").getByRole("button", { name: "开始刮削" }).click();
+  };
+  await startWholeDirectory();
   expect(onStartDirectory).toHaveBeenCalledWith(
     { kind: "directory", scanDir: rootDir, recursive: true },
     "/output",
@@ -95,7 +100,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   shortcutRoute.pathname = "/workbench";
   await shortcuts.rerender(<ShortcutHandler />);
   onStartDirectory.mockRejectedValueOnce(new Error("目录不存在或无法访问"));
-  await start.click();
+  await startWholeDirectory();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("目录不存在或无法访问");
   const input = screen.getByPlaceholder("请选择需要扫描的媒体目录");
   await input.fill("/next");

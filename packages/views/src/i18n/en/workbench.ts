@@ -15,6 +15,9 @@ export const workbench = {
   scrapeReturnDescription:
     "Returning will clear the current scrape results and return to the workbench setup. Are you sure you want to continue?",
   rescrapeDirectory: "Rescrape this directory",
+  taskStateVideos: "Videos",
+  taskStateSkipped: "Skipped",
+  taskStateInaccessiblePaths: "Some paths are inaccessible",
   retryFailed: "Retry failed",
 
   // Setup view
@@ -23,7 +26,9 @@ export const workbench = {
   scopeRecursive: "Including subdirectories",
   scopeCurrentOnly: "Current directory only",
   selectedFilesSummary: (count: number, size: string) => `${count} file(s) selected · ${size}`,
-  processAllVideos: (scope: string) => `Process all videos in directory · ${scope}`,
+  startWholeDirectoryTitle: "Process all videos in the directory?",
+  startWholeDirectoryDescription: (scanDir: string, scope: string) =>
+    `Files have not been previewed, so every video in ${scanDir} will be processed (${scope}). To pick files, click "Preview files" first.`,
   backToConfig: "Back to config",
   previewFiles: "Preview files",
   startScrape: "Start Scraping",

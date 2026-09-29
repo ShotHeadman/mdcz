@@ -14,6 +14,7 @@ export interface ScrapeSnapshotManifest {
   manifestFixedAt?: Date | null;
   id: string;
   rootId: string;
+  previousRunId: string | null;
   createdAt: Date;
   items: Array<{ id: string; rootId: string; relativePath: string; manualUrl?: string | null }>;
 }
@@ -107,6 +108,7 @@ export const toScrapeRunSnapshotDto = (input: {
       skippedCount: input.snapshot.items.filter((item) => item.status === "skipped").length,
       error: input.snapshot.error,
       continuity: input.snapshot.status === "interrupted" ? "interrupted" : terminal ? "final" : "live",
+      previousTaskId: input.manifest.previousRunId,
     },
     directorySource: input.manifest.directoryScopeJson
       ? directoryTaskScopeSchema.parse(JSON.parse(input.manifest.directoryScopeJson))

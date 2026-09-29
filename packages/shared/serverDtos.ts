@@ -225,6 +225,7 @@ export const scrapeRunTaskSchema = z.object({
   error: z.string().nullable(),
   revision: z.number().int().nonnegative(),
   continuity: z.enum(["live", "final", "interrupted"]),
+  previousTaskId: z.string().nullable(),
 });
 
 export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;

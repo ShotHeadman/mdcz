@@ -16,6 +16,9 @@ export const workbench: Messages["workbench"] = {
   stop: "停止",
   scrapeReturnDescription: "返回后会清空当前刮削结果并回到工作台初始页面。确定继续吗？",
   rescrapeDirectory: "重新刮削此目录",
+  taskStateVideos: "视频",
+  taskStateSkipped: "跳过",
+  taskStateInaccessiblePaths: "部分路径无法访问",
   retryFailed: "重试失败",
 
   // Setup view
@@ -24,7 +27,9 @@ export const workbench: Messages["workbench"] = {
   scopeRecursive: "含子目录",
   scopeCurrentOnly: "仅当前目录",
   selectedFilesSummary: (count: number, size: string) => `已选 ${count} 个文件 · ${size}`,
-  processAllVideos: (scope: string) => `处理目录内全部视频 · ${scope}`,
+  startWholeDirectoryTitle: "处理目录内全部视频？",
+  startWholeDirectoryDescription: (scanDir: string, scope: string) =>
+    `尚未预览文件，将处理 ${scanDir} 内的全部视频（${scope}）。如需挑选文件，请先点击“预览文件”。`,
   backToConfig: "返回配置",
   previewFiles: "预览文件",
   startScrape: "开始刮削",

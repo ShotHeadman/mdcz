@@ -9,6 +9,7 @@ import {
   useScrapeTerminalError,
   useWorkbenchSessionSnapshot,
 } from "@mdcz/views/adapters";
+import { confirmDialog } from "@mdcz/views/common";
 import { useT } from "@mdcz/views/i18n";
 import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
 import {
@@ -156,7 +157,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   };
 
   const handleStopScrape = async () => {
-    if (!window.confirm(t.desktop.confirmStopScrape)) return;
+    if (!(await confirmDialog({ title: t.desktop.confirmStopScrape, destructive: true }))) return;
     try {
       await runScrapeRequest(stopScrape);
       toast.info(t.desktop.stopping);
@@ -189,7 +190,12 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
       return;
     }
 
-    if (!window.confirm(t.desktop.confirmBatchRetry(failedPaths.length))) {
+    if (
+      !(await confirmDialog({
+        title: t.desktop.confirmBatchRetry(failedPaths.length),
+        confirmLabel: t.workbench.retryFailed,
+      }))
+    ) {
       return;
     }
 

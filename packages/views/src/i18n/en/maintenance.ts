@@ -113,9 +113,8 @@ export const maintenance = {
   stoppingWaitingCurrent: "Stopping, waiting for current file to complete",
   noVideosToProcess: "No processable videos found",
   taskCompleted: "Maintenance task completed",
+  taskStopped: "Maintenance task stopped",
   readingLocalFiles: "Reading local files",
-  discoveryStatus: (dirs: number, videos: number, skipped: number) =>
-    `Scanned ${dirs} directories, found ${videos} videos, skipped ${skipped} items`,
   fileChanges: "File changes",
   dataCompare: "Data comparison",
 

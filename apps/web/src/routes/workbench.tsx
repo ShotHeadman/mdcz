@@ -14,6 +14,7 @@ import {
   WorkbenchSetupAdapter,
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
+import { confirmDialog } from "@mdcz/views/common";
 import { getT, useT } from "@mdcz/views/i18n";
 import { ScrapeStartErrorDialog, UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
 import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
@@ -226,7 +227,7 @@ function WorkbenchPage() {
   const handleStopScrape = async () => {
     const taskId = requireActiveScrapeTaskId();
     if (!taskId) return;
-    if (!window.confirm(t.web.stopScrapeConfirm)) return;
+    if (!(await confirmDialog({ title: t.web.stopScrapeConfirm, destructive: true }))) return;
     try {
       await runScrapeRequest(async () => {
         await api.scrape.stop({ taskId });
@@ -243,7 +244,12 @@ function WorkbenchPage() {
       toast.info(t.web.noFailedItemsToRetry);
       return;
     }
-    if (!window.confirm(t.web.retryFailedConfirm(failedCount))) {
+    if (
+      !(await confirmDialog({
+        title: t.web.retryFailedConfirm(failedCount),
+        confirmLabel: t.workbench.retryFailed,
+      }))
+    ) {
       return;
     }
     try {

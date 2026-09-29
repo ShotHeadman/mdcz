@@ -45,9 +45,7 @@ export const scrape: Messages["scrape"] = {
   taskStopped: "任务已停止",
   taskInterrupted: "任务已中断",
   preparingTask: "正在准备任务",
-  discoveryStatus: (dirs: number, videos: number, skipped: number) =>
-    `已扫描 ${dirs} 个目录，找到 ${videos} 个视频，跳过 ${skipped} 项`,
-  warnings: (paths: string[]) => `部分路径无法访问：${paths.join("、")}`,
+  taskInterruptedHint: "任务在完成前被中断，可以重新刮削此目录再次运行。",
 
   // ResultTreeAdapter
   numberEmpty: "番号为空",
@@ -56,7 +54,7 @@ export const scrape: Messages["scrape"] = {
   rescrapeFailed: "重新刮削失败",
   confirmRemoveGroup: (count: number, number: string) => `确定从媒体库移除 ${count} 项记录吗？\n${number}`,
   confirmRemoveSingle: (path: string) => `确定从媒体库移除记录吗？\n${path}`,
-  removedSuccess: "已从媒体库移除，磁盘文件保持不变",
+  removedSuccess: "已从媒体库移除",
   operationFailed: "操作失败",
   noOpenablePath: "无可打开的文件路径",
   openFolderFailed: (error: string) => `打开目录失败: ${error}`,

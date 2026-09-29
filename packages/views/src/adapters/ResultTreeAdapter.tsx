@@ -10,7 +10,7 @@ import { useUIStore } from "@mdcz/views/state/uiStore";
 import { Copy, FileText, Link2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { MediaBrowserFilter, MediaBrowserItem } from "../common";
+import { confirmDialog, type MediaBrowserFilter, type MediaBrowserItem } from "../common";
 import { getScrapeResultTitle, type ResultTreeManualUrlTarget, ResultTreeView } from "../detail";
 import { type Messages, useT } from "../i18n";
 import type { ScrapeActionPort } from "./ports";
@@ -66,15 +66,16 @@ function buildMenuContent(
   };
 
   const handleRemove = async () => {
-    if (
-      !window.confirm(
+    const confirmed = await confirmDialog({
+      title: t.scrape.removeFromLibrary,
+      description:
         groupedVideoPaths.length > 1
           ? t.scrape.confirmRemoveGroup(groupedVideoPaths.length, resultNumber)
           : t.scrape.confirmRemoveSingle(resultPath),
-      )
-    ) {
-      return;
-    }
+      confirmLabel: t.common.remove,
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await port.removeRecord?.(groupedTargets);
       toast.success(t.scrape.removedSuccess);

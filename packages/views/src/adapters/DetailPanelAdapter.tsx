@@ -6,6 +6,7 @@ import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeSto
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { confirmDialog } from "../common";
 import { type DetailPanelCompareProps, DetailPanelView, toDetailViewItemFromScrapeResult } from "../detail";
 import { buildDetailArtworkCandidates } from "../detail/imageCandidates";
 import type { DetailViewItem } from "../detail/types";
@@ -206,13 +207,13 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
   }, [item, nfoData, nfoPath, port]);
 
   const setNfoOpen = useCallback(
-    (open: boolean) => {
+    async (open: boolean) => {
       if (open) {
         setNfoOpenRaw(true);
         return;
       }
       if (nfoSaving) return;
-      if (nfoDirty && !window.confirm(getT().scrape.discardNfoChanges)) return;
+      if (nfoDirty && !(await confirmDialog({ title: getT().scrape.discardNfoChanges, destructive: true }))) return;
       setNfoOpenRaw(false);
       setNfoValidationErrors({});
     },
@@ -251,13 +252,14 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
   }, [posterCropSession]);
 
   const setPosterEditorOpenSafe = useCallback(
-    (open: boolean) => {
+    async (open: boolean) => {
       if (open) {
         setPosterEditorOpen(true);
         return;
       }
       if (posterCropSaving) return;
-      if (posterCropDirty && !window.confirm(getT().scrape.discardPosterChanges)) return;
+      if (posterCropDirty && !(await confirmDialog({ title: getT().scrape.discardPosterChanges, destructive: true })))
+        return;
       setPosterEditorOpen(false);
     },
     [posterCropDirty, posterCropSaving],

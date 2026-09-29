@@ -45,9 +45,7 @@ export const scrape = {
   taskStopped: "Task stopped",
   taskInterrupted: "Task interrupted",
   preparingTask: "Preparing task",
-  discoveryStatus: (dirs: number, videos: number, skipped: number) =>
-    `Scanned ${dirs} directories, found ${videos} videos, skipped ${skipped} items`,
-  warnings: (paths: string[]) => `Some paths are inaccessible: ${paths.join("; ")}`,
+  taskInterruptedHint: "The task was interrupted before it finished. Rescrape this directory to run it again.",
 
   // ResultTreeAdapter
   numberEmpty: "Movie code is empty",
@@ -56,7 +54,7 @@ export const scrape = {
   rescrapeFailed: "Failed to rescrape",
   confirmRemoveGroup: (count: number, number: string) => `Remove ${count} records from the library?\n${number}`,
   confirmRemoveSingle: (path: string) => `Remove this record from the library?\n${path}`,
-  removedSuccess: "Removed from the library; files on disk are unchanged",
+  removedSuccess: "Removed from the library",
   operationFailed: "Operation failed",
   noOpenablePath: "No openable file path",
   openFolderFailed: (error: string) => `Failed to open directory: ${error}`,

@@ -295,7 +295,6 @@ export function LibraryDeleteDialog({
           <DialogTitle>{t.library.removeDialogTitle}</DialogTitle>
         </DialogHeader>
         {entry && <p>{t.library.removeDialogDescription(entry.fileRefs.length, entry.assets.length)}</p>}
-        <p className="text-sm text-muted-foreground">{t.library.diskFilesUnchanged}</p>
         <DialogFooter>
           <Button disabled={submitting} variant="outline" onClick={onCancel}>
             {t.common.cancel}
@@ -670,10 +669,7 @@ function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkF
           </DialogHeader>
           <p className="break-all font-mono text-xs text-muted-foreground">{path}</p>
           {action === "remove" ? (
-            <>
-              <p>{t.library.removeFileDescription}</p>
-              <p className="text-sm text-muted-foreground">{t.library.diskFilesUnchanged}</p>
-            </>
+            <p>{t.library.removeFileDescription}</p>
           ) : (
             <label className="grid gap-2 text-sm" htmlFor={`relink-path-${file.id}`}>
               <span className="text-muted-foreground">{t.library.mediaFolderLabel(file.rootDisplayName)}</span>

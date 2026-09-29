@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { TaskStatus } from "@mdcz/shared/serverDtos";
 import {
   selectIsScraping,
   selectScrapeProgress,
@@ -6,11 +7,12 @@ import {
   selectScrapeStatus,
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
+import { CircleStop, Loader2, SearchX, TriangleAlert, Unplug } from "lucide-react";
 import { useRef } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { useT } from "../i18n";
-import { ScrapeWorkbenchFrame } from "../workbench";
+import { ScrapeWorkbenchFrame, type WorkbenchTaskStateContent, WorkbenchTaskStatePanel } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
 import { ResultTreeAdapter } from "./ResultTreeAdapter";
@@ -49,44 +51,33 @@ export function ScrapeWorkbenchAdapter({
     ? [t.scrape.stages[latestStage.stage], latestStage.relativePath?.split(/[\\/]/).at(-1)].filter(Boolean).join(" · ")
     : undefined;
 
+  const emptyStates: Partial<Record<TaskStatus, WorkbenchTaskStateContent>> = {
+    queued: { icon: Loader2, tone: "active", title: t.scrape.taskQueued },
+    discovering: { icon: Loader2, tone: "active", title: t.scrape.scanningVideoFiles },
+    stopping: { icon: Loader2, tone: "active", title: t.scrape.stoppingWaitingCurrent },
+    completed: { icon: SearchX, tone: "muted", title: t.scrape.noVideosFound },
+    stopped: { icon: CircleStop, tone: "muted", title: t.scrape.taskStopped },
+    interrupted: {
+      icon: Unplug,
+      tone: "warning",
+      title: t.scrape.taskInterrupted,
+      hint: t.scrape.taskInterruptedHint,
+    },
+  };
+
   return (
     <ScrapeWorkbenchFrame
       list={<ResultTreeAdapter port={ports.scrape} />}
       detail={
         resultsCount === 0 && snapshot ? (
-          <div className="space-y-4 p-8" role="status">
-            <h2 className="text-lg font-semibold">
-              {snapshot.task.status === "queued"
-                ? t.scrape.taskQueued
-                : snapshot.task.status === "discovering"
-                  ? t.scrape.scanningVideoFiles
-                  : snapshot.task.status === "stopping"
-                    ? t.scrape.stoppingWaitingCurrent
-                    : snapshot.task.status === "completed"
-                      ? t.scrape.noVideosFound
-                      : snapshot.task.status === "stopped"
-                        ? t.scrape.taskStopped
-                        : snapshot.task.status === "interrupted"
-                          ? t.scrape.taskInterrupted
-                          : (snapshot.task.error ?? stageMessage ?? t.scrape.preparingTask)}
-            </h2>
-            <p className="break-all text-sm">{snapshot.directorySource?.scanDir ?? snapshot.task.rootDisplayName}</p>
-            {snapshot.discovery ? (
-              <>
-                <p>
-                  {t.scrape.discoveryStatus(
-                    snapshot.discovery.directories,
-                    snapshot.discovery.candidates,
-                    snapshot.discovery.skipped,
-                  )}
-                </p>
-                <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>
-              </>
-            ) : null}
-            {snapshot.discovery?.warnings.length ? (
-              <p className="break-all text-amber-600">{t.scrape.warnings(snapshot.discovery.warnings)}</p>
-            ) : null}
-          </div>
+          <WorkbenchTaskStatePanel
+            {...(emptyStates[snapshot.task.status] ??
+              (snapshot.task.error
+                ? { icon: TriangleAlert, tone: "error", title: snapshot.task.error }
+                : { icon: Loader2, tone: "active", title: stageMessage ?? t.scrape.preparingTask }))}
+            path={snapshot.directorySource?.scanDir ?? snapshot.task.rootDisplayName}
+            discovery={snapshot.discovery}
+          />
         ) : (
           <DetailPanelAdapter port={ports.detail} />
         )

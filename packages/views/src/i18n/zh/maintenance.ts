@@ -112,9 +112,8 @@ export const maintenance: Messages["maintenance"] = {
   stoppingWaitingCurrent: "正在停止，等待当前文件处理完成",
   noVideosToProcess: "未找到待处理视频",
   taskCompleted: "维护任务已完成",
+  taskStopped: "维护任务已停止",
   readingLocalFiles: "正在读取本地文件",
-  discoveryStatus: (dirs: number, videos: number, skipped: number) =>
-    `已扫描 ${dirs} 个目录，找到 ${videos} 个视频，跳过 ${skipped} 项`,
   fileChanges: "文件变动",
   dataCompare: "数据对比",
 

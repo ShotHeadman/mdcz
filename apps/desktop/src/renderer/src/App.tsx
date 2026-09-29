@@ -1,5 +1,6 @@
 import "./index.css";
 import { Toaster, TooltipProvider } from "@mdcz/ui";
+import { ConfirmDialogHost } from "@mdcz/views/common";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { Suspense } from "react";
@@ -46,6 +47,7 @@ const App = () => {
               <RouterProvider router={router} />
             </Suspense>
             <Toaster />
+            <ConfirmDialogHost />
           </ToastProvider>
         </QueryClientProvider>
       </TooltipProvider>

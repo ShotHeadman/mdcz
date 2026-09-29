@@ -1,6 +1,18 @@
 import { maintenancePresetIdSchema } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
-import { Button, Checkbox, cn, quietFieldSurfaceClass, quietPanelSurfaceClass } from "@mdcz/ui";
+import {
+  Button,
+  Checkbox,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  quietFieldSurfaceClass,
+  quietPanelSurfaceClass,
+} from "@mdcz/ui";
 import { AlertCircle, ArrowDown, Check, FolderOpen, FolderOutput, Loader2, Search, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useT } from "../i18n";
@@ -241,6 +253,8 @@ export function WorkbenchSetupView({
   const recursiveId = useId();
   const scopeLabel = recursive ? t.workbench.scopeRecursive : t.workbench.scopeCurrentOnly;
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmingStart, setConfirmingStart] = useState(false);
+  const startsWholeDirectory = mode === "scrape" && !previewMode;
 
   useEffect(() => {
     if (!previewMode || !onExitPreview || startPending) return;
@@ -273,14 +287,14 @@ export function WorkbenchSetupView({
   const someSelected = visibleSelectedCount > 0 && !allSelected;
   const actions = (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-5">
-      <p className="mr-auto text-xs leading-5 text-muted-foreground">
-        {previewMode
-          ? t.workbench.selectedFilesSummary(
-              selectedPaths.length,
-              formatBytes(selectedSize, { trimTrailingZeros: true }),
-            )
-          : t.workbench.processAllVideos(scopeLabel)}
-      </p>
+      {previewMode ? (
+        <p className="mr-auto text-xs leading-5 text-muted-foreground">
+          {t.workbench.selectedFilesSummary(
+            selectedPaths.length,
+            formatBytes(selectedSize, { trimTrailingZeros: true }),
+          )}
+        </p>
+      ) : null}
       <Button
         type="button"
         variant="outline"
@@ -289,10 +303,35 @@ export function WorkbenchSetupView({
       >
         {previewMode ? t.workbench.backToConfig : t.workbench.previewFiles}
       </Button>
-      <Button type="button" disabled={primaryDisabled} onClick={onStart}>
+      <Button
+        type="button"
+        disabled={primaryDisabled}
+        onClick={startsWholeDirectory ? () => setConfirmingStart(true) : onStart}
+      >
         {startPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {mode === "scrape" ? t.workbench.startScrape : t.workbench.startMaintenance}
       </Button>
+      <Dialog open={confirmingStart} onOpenChange={setConfirmingStart}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.workbench.startWholeDirectoryTitle}</DialogTitle>
+            <DialogDescription>{t.workbench.startWholeDirectoryDescription(scanDir, scopeLabel)}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmingStart(false)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmingStart(false);
+                onStart();
+              }}
+            >
+              {t.workbench.startScrape}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
   return (

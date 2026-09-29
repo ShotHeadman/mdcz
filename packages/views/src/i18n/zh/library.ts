@@ -47,7 +47,6 @@ export const library: Messages["library"] = {
   removeDialogTitle: "从媒体库移除",
   removeDialogDescription: (fileCount: number, assetCount: number) =>
     `将移除 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录。`,
-  diskFilesUnchanged: "磁盘文件保持不变。",
   removing: "正在移除...",
   confirmRemove: "确认移除",
 

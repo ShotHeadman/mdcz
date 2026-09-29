@@ -45,7 +45,6 @@ export const library = {
   removeDialogTitle: "Remove from Library",
   removeDialogDescription: (fileCount: number, assetCount: number) =>
     `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s).`,
-  diskFilesUnchanged: "Disk files will remain unchanged.",
   removing: "Removing…",
   confirmRemove: "Confirm Remove",
 

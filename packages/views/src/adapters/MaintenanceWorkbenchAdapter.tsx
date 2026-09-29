@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { MaintenanceSessionStatus } from "@mdcz/shared/maintenanceTasks";
 import { findMaintenanceEntryGroup } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import {
   applyMaintenanceSessionSnapshot,
@@ -8,12 +9,13 @@ import {
   selectMaintenancePreviewResults,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
+import { CircleCheck, CircleStop, Loader2, SearchX, TriangleAlert } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { toDetailViewItemFromMaintenanceEntry } from "../detail";
 import { useT } from "../i18n";
-import { MaintenanceWorkbenchFrame } from "../workbench";
+import { MaintenanceWorkbenchFrame, type WorkbenchTaskStateContent, WorkbenchTaskStatePanel } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";
 import { MaintenanceBatchBarAdapter } from "./MaintenanceBatchBarAdapter";
 import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
@@ -99,40 +101,30 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     };
   }, [activeGroup, compareResult, detailEntry]);
 
+  const maintenanceEmptyStates: Partial<Record<MaintenanceSessionStatus, WorkbenchTaskStateContent>> = {
+    queued: { icon: Loader2, tone: "active", title: t.maintenance.queued },
+    discovering: { icon: Loader2, tone: "active", title: t.maintenance.scanningFiles },
+    stopping: { icon: Loader2, tone: "active", title: t.maintenance.stoppingWaitingCurrent },
+    stopped: { icon: CircleStop, tone: "muted", title: t.maintenance.taskStopped },
+    completed:
+      snapshot?.totalEntries === 0
+        ? { icon: SearchX, tone: "muted", title: t.maintenance.noVideosToProcess }
+        : { icon: CircleCheck, tone: "muted", title: t.maintenance.taskCompleted },
+  };
+
   return (
     <MaintenanceWorkbenchFrame
       list={<MaintenanceEntryListAdapter port={ports.maintenance} />}
       detail={
         entries.length === 0 && snapshot ? (
-          <div role="status" className="space-y-4 p-8">
-            <h2 className="text-lg font-semibold">
-              {snapshot.status === "discovering"
-                ? t.maintenance.scanningFiles
-                : snapshot.status === "queued"
-                  ? t.maintenance.queued
-                  : snapshot.status === "stopping"
-                    ? t.maintenance.stoppingWaitingCurrent
-                    : snapshot.status === "completed"
-                      ? snapshot.totalEntries === 0
-                        ? t.maintenance.noVideosToProcess
-                        : t.maintenance.taskCompleted
-                      : (snapshot.error ?? t.maintenance.readingLocalFiles)}
-            </h2>
-            <p className="break-all text-sm">{snapshot.directoryScope?.scanDir}</p>
-            {snapshot.discovery ? (
-              <>
-                <p>
-                  {t.maintenance.discoveryStatus(
-                    snapshot.discovery.directories,
-                    snapshot.discovery.candidates,
-                    snapshot.discovery.skipped,
-                  )}
-                </p>
-                <p className="break-all text-sm">{snapshot.discovery.currentPath}</p>
-                <p className="break-all text-amber-600">{t.scrape.warnings(snapshot.discovery.warnings)}</p>
-              </>
-            ) : null}
-          </div>
+          <WorkbenchTaskStatePanel
+            {...(maintenanceEmptyStates[snapshot.status] ??
+              (snapshot.error
+                ? { icon: TriangleAlert, tone: "error", title: snapshot.error }
+                : { icon: Loader2, tone: "active", title: t.maintenance.readingLocalFiles }))}
+            path={snapshot.directoryScope?.scanDir}
+            discovery={snapshot.discovery}
+          />
         ) : (
           <div className="flex h-full flex-col overflow-auto">
             {snapshot?.previews.find((preview) => preview.entry?.fileId === detailEntry?.fileId)?.affectedFiles
