@@ -1,7 +1,8 @@
-import { mkdir, realpath, stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   canonicalizeRootFileRefs,
+  canonicalPath,
   filesystemPathKey,
   isPathInside,
   type MediaRoot,
@@ -66,7 +67,7 @@ export class ConfiguredMediaRootService {
   async registerPathIntent(hostPath: string): Promise<MediaRoot> {
     this.validatePathSyntax(hostPath.trim());
     const normalized = normalizeHostPath(hostPath);
-    const canonical = await realpath(normalized).catch((error: NodeJS.ErrnoException) => {
+    const canonical = await canonicalPath(normalized).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
       throw error;
     });
@@ -85,8 +86,8 @@ export class ConfiguredMediaRootService {
     const parsed = mediaRootEnsurePathInputSchema.parse(input);
     const root = await this.registerPathIntent(await this.validateMountedFilesystemPath(parsed.hostPath));
     const relativeDirectory = toRootRelativePath(
-      { hostPath: root.realPath ?? (await realpath(root.hostPath)) },
-      await realpath(parsed.hostPath),
+      { hostPath: root.realPath ?? (await canonicalPath(root.hostPath)) },
+      await canonicalPath(parsed.hostPath),
     );
     return { root, relativeDirectory, hostPath: resolveRootRelativePath(root, relativeDirectory) };
   }
@@ -127,7 +128,7 @@ export class ConfiguredMediaRootService {
         await this.registry.ensurePath(root.hostPath);
         root = await this.registry.get(id);
       }
-      const current = await realpath(root.hostPath);
+      const current = await canonicalPath(root.hostPath);
       if (root.realPath === null || filesystemPathKey(current) !== filesystemPathKey(root.realPath)) {
         throw new Error(`Media root canonical path changed: ${root.hostPath}`);
       }

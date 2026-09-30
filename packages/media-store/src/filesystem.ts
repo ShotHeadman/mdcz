@@ -1,19 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Dirent, Stats } from "node:fs";
-import {
-  copyFile,
-  stat as fsStat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { copyFile, stat as fsStat, mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { canonicalPath } from "./entryIdentity";
 import { toStorageError } from "./errors";
 import { isPathInside, type MediaRoot } from "./mediaRoot";
 import { normalizeRootRelativePath, type RootRelativePath, resolveRootRelativePath } from "./rootRelativePath";
@@ -159,7 +149,7 @@ export const walkFiles = async (
     signal?.throwIfAborted();
     let pending = keys.get(target);
     if (!pending) {
-      pending = measure("realpath", target, () => realpath(target));
+      pending = measure("realpath", target, () => canonicalPath(target));
       keys.set(target, pending);
     }
     return pending;

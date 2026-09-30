@@ -1,6 +1,7 @@
-import { realpath, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import {
+  canonicalPath,
   createMediaRoot,
   deterministicMediaRootId,
   filesystemPathKey,
@@ -50,16 +51,16 @@ export class MediaRootRepository {
 
   async ensurePath(hostPath: string, displayName?: string): Promise<PersistedMediaRoot> {
     const normalizedPath = normalizeHostPath(hostPath);
-    const canonicalPath = await realpath(normalizedPath).catch((error: NodeJS.ErrnoException) => {
+    const realPath = await canonicalPath(normalizedPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
       throw error;
     });
-    if (canonicalPath !== null && !(await stat(canonicalPath)).isDirectory())
+    if (realPath !== null && !(await stat(realPath)).isDirectory())
       throw new Error(`Media root is not a directory: ${hostPath}`);
     for (const root of await this.list()) {
       if (root.realPath !== null) continue;
       try {
-        const canonical = await realpath(root.hostPath);
+        const canonical = await canonicalPath(root.hostPath);
         await this.upsert({ ...root, realPath: canonical });
       } catch (error) {
         if (
@@ -73,10 +74,10 @@ export class MediaRootRepository {
     const transaction = this.database.sqlite.transaction(() => {
       const roots = this.database.db.select().from(mediaRoots).all().map(toMediaRoot);
       const equivalent =
-        canonicalPath === null
+        realPath === null
           ? undefined
           : roots.find(
-              (root) => root.realPath !== null && filesystemPathKey(root.realPath) === filesystemPathKey(canonicalPath),
+              (root) => root.realPath !== null && filesystemPathKey(root.realPath) === filesystemPathKey(realPath),
             );
       if (equivalent) return equivalent;
       const existing = roots.find((root) => filesystemPathKey(root.hostPath) === filesystemPathKey(normalizedPath));
@@ -85,7 +86,7 @@ export class MediaRootRepository {
         id: deterministicMediaRootId(normalizedPath),
         displayName: displayName ?? (path.basename(normalizedPath) || normalizedPath),
         hostPath: normalizedPath,
-        realPath: canonicalPath,
+        realPath,
       });
       writeMediaRoot(this.database, root);
       return root;

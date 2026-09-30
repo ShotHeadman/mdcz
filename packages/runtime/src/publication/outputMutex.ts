@@ -1,6 +1,5 @@
-import { realpath } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { filesystemPathKey } from "@mdcz/media-store";
+import { canonicalPath, filesystemPathKey } from "@mdcz/media-store";
 
 type Waiter = { promise: Promise<void>; release: () => void };
 const tails = new Map<string, Waiter>();
@@ -8,7 +7,7 @@ let registration = Promise.resolve();
 
 const resolveCanonicalOutputDirectory = async (directory: string): Promise<string> => {
   try {
-    return await realpath(directory);
+    return await canonicalPath(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     if (dirname(directory) === directory) return filesystemPathKey(directory);
