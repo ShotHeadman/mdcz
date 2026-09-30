@@ -115,9 +115,12 @@ node --env-file=.env server.js database backup /safe/backups/mdcz.sqlite
 node --env-file=.env server.js database verify /safe/backups/mdcz.sqlite
 # Stop the service before restoring:
 node --env-file=.env server.js database restore /safe/backups/mdcz.sqlite --confirm
+# Stop the service first; only when startup reports the database cannot be upgraded (the log prints the exact command):
+node server.js database rebuild /path/to/mdcz.sqlite --confirm
 ```
 
 Database backup is online and consistent. It excludes TOML profiles and `auth-state.json`; back up the configuration directory separately.
 For a complete coordinated backup, stop the server and archive the configuration and data directories together.
 Restore creates a pre-restore database backup before replacing an existing database. Restoring a database does not undo media file operations.
+Rebuild renames the current database to `mdcz.sqlite.bak-*` and starts empty on the next launch: the library index and scan/scrape history are cleared (rescan to restore the library); configuration and `auth-state.json` are kept.
 Before upgrades, save both configuration and data. Rolling back an image alone does not roll back the database schema.

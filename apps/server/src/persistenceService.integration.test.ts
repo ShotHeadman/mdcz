@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 import { runMaintenanceCli } from "./maintenanceCli";
@@ -97,6 +98,46 @@ describe("ServerPersistenceService", () => {
       }
     } finally {
       vi.unstubAllEnvs();
+      await harness.cleanup();
+    }
+  });
+
+  it("refuses to start on a database it cannot upgrade until an operator rebuilds it", async () => {
+    const harness = await createService();
+    try {
+      const { database } = await harness.service.initialize();
+      database.sqlite
+        .prepare("INSERT INTO media_roots (id, display_name, host_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        .run("old-root", "Old", "/media", 0, 0);
+      // A journal behind the actual schema is what databases from an unreleased or reshuffled lineage look like.
+      database.sqlite.exec(
+        "DELETE FROM __drizzle_migrations WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)",
+      );
+      await harness.service.close();
+
+      const blocked = new ServerPersistenceService({ databasePath: harness.databasePath });
+      await expect(blocked.initialize()).rejects.toThrow(`database rebuild "${harness.databasePath}" --confirm`);
+      await blocked.close();
+      await expect(runMaintenanceCli(["database", "rebuild", harness.databasePath])).rejects.toThrow("Usage:");
+      await runMaintenanceCli(["database", "rebuild", harness.databasePath, "--confirm"]);
+
+      const rebuilt = new ServerPersistenceService({ databasePath: harness.databasePath });
+      try {
+        const state = await rebuilt.initialize();
+        expect(state.database.sqlite.prepare("SELECT id FROM media_roots").all()).toEqual([]);
+      } finally {
+        await rebuilt.close();
+      }
+      const [backupName] = (await readdir(dirname(harness.databasePath))).filter((name) =>
+        /^mdcz\.sqlite\.bak-\d+$/u.test(name),
+      );
+      const backup = new Database(join(dirname(harness.databasePath), backupName ?? ""), { readonly: true });
+      try {
+        expect(backup.prepare("SELECT id FROM media_roots").all()).toEqual([{ id: "old-root" }]);
+      } finally {
+        backup.close();
+      }
+    } finally {
       await harness.cleanup();
     }
   });

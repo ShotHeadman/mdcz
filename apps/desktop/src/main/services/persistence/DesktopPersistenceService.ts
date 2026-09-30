@@ -1,16 +1,19 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { loggerService } from "@main/services/LoggerService";
 import {
   createPersistenceDatabase,
+  isSchemaMigrationFailure,
   LibraryRepository,
   MediaRootRepository,
+  moveDatabaseAside,
   type PersistenceDatabase,
   runMigrations,
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
 import { recoverInterruptedPublications } from "@mdcz/runtime";
-import { app } from "electron";
+import { app, dialog } from "electron";
 import { getDesktopUserDataPath } from "../../appIdentity";
 
 /**
@@ -23,6 +26,24 @@ const resolveNativeBinding = (): string =>
   app.isPackaged
     ? join(process.resourcesPath, "native", "better_sqlite3.node")
     : join(app.getAppPath(), "native", "better_sqlite3.node");
+
+const confirmDatabaseRebuild = async (databasePath: string, error: Error): Promise<boolean> => {
+  const { response } = await dialog.showMessageBox({
+    type: "warning",
+    title: "MDCz",
+    message: "数据库无法升级到当前版本",
+    detail: [
+      `数据库文件：${databasePath}`,
+      "重建会先把旧数据库重命名备份到同一目录，再创建新的数据库。媒体库索引、扫描与刮削历史会被清空，可通过重新扫描恢复；设置和媒体目录不受影响。",
+      `错误信息：${error.message}`,
+    ].join("\n\n"),
+    buttons: ["备份并重建", "退出"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  return response === 0;
+};
 
 export interface DesktopPersistenceRepositories {
   library: LibraryRepository;
@@ -76,7 +97,7 @@ export class DesktopPersistenceService {
     this.initializePromise = null;
   }
 
-  private async open(): Promise<DesktopPersistenceState> {
+  private async open(allowRebuild = true): Promise<DesktopPersistenceState> {
     await mkdir(dirname(this.databasePath), { recursive: true });
     const database = createPersistenceDatabase({
       path: this.databasePath,
@@ -101,7 +122,16 @@ export class DesktopPersistenceService {
       return this.state;
     } catch (error) {
       database.close();
-      throw error;
+      if (
+        !allowRebuild ||
+        !isSchemaMigrationFailure(error) ||
+        !(await confirmDatabaseRebuild(this.databasePath, error))
+      ) {
+        throw error;
+      }
+      const backupPath = moveDatabaseAside(this.databasePath);
+      loggerService.getLogger("Persistence").warn(`Rebuilt database; previous database moved to ${backupPath}`);
+      return await this.open(false);
     }
   }
 }

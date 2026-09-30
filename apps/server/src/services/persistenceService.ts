@@ -1,5 +1,6 @@
 import {
   createPersistenceDatabase,
+  isSchemaMigrationFailure,
   LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
@@ -82,6 +83,12 @@ export class ServerPersistenceService {
       database?.close();
       this.lease.close();
       this.lease = null;
+      if (isSchemaMigrationFailure(error)) {
+        throw new Error(
+          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept.`,
+          { cause: error },
+        );
+      }
       throw error;
     }
   }

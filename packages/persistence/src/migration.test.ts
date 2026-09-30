@@ -65,8 +65,6 @@ describe("Persistence migration baseline", () => {
       expect(columns("scrape_runs")).toContain("manifest_json");
       expect(columns("scrape_runs")).toContain("total_items");
       expect(columns("scrape_runs")).toContain("success_count");
-      expect(columns("scrape_runs")).not.toContain("execution_generation");
-      expect(columns("scrape_runs")).not.toContain("revision");
       expect(columns("library_items")).toContain("uncensored_ambiguous");
       expect(columns("library_item_files")).toEqual(
         expect.arrayContaining(["part_number", "part_suffix", "resolution"]),

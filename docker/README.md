@@ -113,6 +113,16 @@ docker compose up -d
 > [!NOTE]
 > 服务启动时会自动执行增量数据库迁移。如果升级后需要降级回滚，必须同时恢复升级前匹配的数据库备份，仅切换旧镜像可能因数据库结构向前不兼容而报错。生产部署建议锁定具体的版本号，避免使用 `latest` 引起非预期的破坏性更新。
 
+若日志提示数据库无法升级到当前版本（通常是数据库来自过旧或不兼容的版本），服务会拒绝启动，日志中会给出带数据库路径的重建命令。确认后执行：
+
+```sh
+docker compose stop mdcz
+docker compose run --rm --no-deps mdcz node server.js database rebuild /data/data/mdcz.sqlite --confirm
+docker compose up -d
+```
+
+重建会把旧数据库重命名为同目录下的 `mdcz.sqlite.bak-*` 保留，下次启动时创建新数据库。媒体库索引、扫描与刮削历史会清空，可通过重新扫描恢复；账号凭据与 TOML 配置不受影响。
+
 ## 反向代理与网络设置
 
 如果需要通过 Nginx 反向代理访问 MDCz，可参考以下配置：

@@ -103,8 +103,4 @@ ALTER TABLE `scrape_runs` ADD `skipped_count` integer DEFAULT 0 NOT NULL;
 --> statement-breakpoint
 ALTER TABLE `scrape_runs` ADD `total_bytes` integer DEFAULT 0 NOT NULL;
 --> statement-breakpoint
-ALTER TABLE `scrape_runs` DROP COLUMN `execution_generation`;
---> statement-breakpoint
-ALTER TABLE `scrape_runs` DROP COLUMN `revision`;
---> statement-breakpoint
 ALTER TABLE `media_roots` ADD `real_path` text;
