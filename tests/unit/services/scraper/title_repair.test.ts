@@ -8,17 +8,13 @@ import { describe, expect, it } from "vitest";
 
 const titleRepair = {
   enabled: true,
-  rules: [
-    { source: "催●", replacement: "催眠" },
-    { source: "●●", replacement: "秘密" },
-  ],
 };
 
 describe("title repair", () => {
-  it("repairs multiple masked fragments and retains the original title", () => {
+  it("repairs builtin masked and euphemistic terms", () => {
     const repaired = applyTitleRepair(
       {
-        title: "催●的●●课程",
+        title: "催●的●●相姦课程",
         number: "ABC-123",
         actors: [],
         genres: [],
@@ -28,11 +24,20 @@ describe("title repair", () => {
       titleRepair,
     );
 
-    expect(repaired).toMatchObject({ title: "催眠的秘密课程", original_title: "催●的●●课程" });
+    expect(repaired).toMatchObject({ title: "催眠的近親相姦课程", original_title: "催●的●●相姦课程" });
+    expect(previewTitleRepair("催〇的盗○记录", titleRepair)).toMatchObject({
+      repairedTitle: "催眠的盗撮记录",
+      matchedRules: ["催●", "盗●"],
+    });
+    expect(previewTitleRepair("痴×电车与麻*事件", titleRepair)).toMatchObject({
+      repairedTitle: "痴漢电车与麻薬事件",
+      matchedRules: ["麻●", "痴●"],
+    });
+    expect(previewTitleRepair("合意なし与閉じ込め", titleRepair).repairedTitle).toBe("レイプ与監禁");
   });
 
-  it("does not alter titles when disabled, unmatched, or already repaired", () => {
-    expect(previewTitleRepair("催●", { ...titleRepair, enabled: false }).reason).toBe("disabled");
+  it("leaves disabled, unmatched, and already repaired data unchanged", () => {
+    expect(previewTitleRepair("催●", { enabled: false }).reason).toBe("disabled");
     expect(previewTitleRepair("没有遮蔽", titleRepair).reason).toBe("no_match");
 
     const data = {
@@ -47,17 +52,7 @@ describe("title repair", () => {
     expect(applyTitleRepair(data, titleRepair)).toBe(data);
   });
 
-  it("does not derive an empty replacement result", () => {
-    const preview = previewTitleRepair("催●", {
-      ...defaultConfiguration.titleRepair,
-      enabled: true,
-      rules: [{ source: "催●", replacement: "" }],
-    });
-
-    expect(preview).toMatchObject({ repairedTitle: "催●", applied: false, reason: "no_match" });
-  });
-
-  it("keeps the original title available to NFO and naming consumers", () => {
+  it("keeps the original title available to NFO and naming", () => {
     const data = applyTitleRepair(
       {
         title: "催●课程",

@@ -1,0 +1,46 @@
+import { stat } from "node:fs/promises";
+import { filesystemPathKey, resolveEntryPath, resolveRootRelativePath } from "@mdcz/media-store";
+import { mediaPathOwnership } from "./mediaPathOwnership";
+
+export const relinkLibraryFile = async <T>(input: {
+  fileId: string;
+  rootId: string;
+  relativePath: string;
+  root: { hostPath: string };
+  resolveRoot(id: string): Promise<{ id: string; hostPath: string }>;
+  files: readonly { rootId: string; rootRelativePath: string }[];
+  relink(file: {
+    fileId: string;
+    entryIdentity: string;
+    rootId: string;
+    rootRelativePath: string;
+    size: number;
+    modifiedAt: Date;
+  }): Promise<T>;
+}): Promise<T> => {
+  const refs = [
+    ...input.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+    { rootId: input.rootId, relativePath: input.relativePath },
+  ];
+  const release = mediaPathOwnership.acquireAll(
+    await Promise.all(
+      refs.map(async (ref) =>
+        filesystemPathKey(resolveRootRelativePath(await input.resolveRoot(ref.rootId), ref.relativePath)),
+      ),
+    ),
+  );
+  try {
+    const file = await stat(resolveRootRelativePath(input.root, input.relativePath));
+    if (!file.isFile()) throw new Error("Target path is not a file");
+    return await input.relink({
+      fileId: input.fileId,
+      entryIdentity: filesystemPathKey(await resolveEntryPath(resolveRootRelativePath(input.root, input.relativePath))),
+      rootId: input.rootId,
+      rootRelativePath: input.relativePath,
+      size: file.size,
+      modifiedAt: file.mtime,
+    });
+  } finally {
+    release();
+  }
+};

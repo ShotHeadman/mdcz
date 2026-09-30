@@ -1,6 +1,5 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
-import { MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
-import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
+import type { MediaCandidate } from "@mdcz/shared/types";
 import {
   type CandidateScanResult,
   WorkbenchSetupAdapter,
@@ -8,16 +7,38 @@ import {
 } from "@mdcz/views/adapters/WorkbenchSetupAdapter";
 import { MediaBrowserList } from "@mdcz/views/common";
 import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
+import { ipc } from "@renderer/client/ipc";
+import { ShortcutHandler } from "@renderer/components/ShortcutHandler";
+import ScrapeCompletionDialog from "@renderer/components/workbench/ScrapeCompletionDialog";
+import { StrictMode } from "react";
 import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
+import { buildScrapeSnapshot } from "../../unit/renderer/scrapeTestSupport";
+
+const shortcutRoute = vi.hoisted(() => ({ pathname: "/workbench" }));
+vi.mock("@tanstack/react-router", () => ({
+  useLocation: () => shortcutRoute,
+  useNavigate: () => vi.fn(),
+}));
+vi.mock("@renderer/api/manual", () => ({ retryScrapeSelection: vi.fn(), stopScrape: vi.fn() }));
+vi.mock("@renderer/utils/playback", () => ({ playMediaPath: vi.fn() }));
+vi.mock("@renderer/client/ipc", () => ({
+  ipc: { on: { shortcut: vi.fn(() => vi.fn()) }, scraper: { confirmUncensored: vi.fn() } },
+}));
 
 const rootDir = "/media";
 
-test("serializes latest scan intent, ignores stale results, and starts only the selected snapshot", async () => {
+test("submits directories without scanning and keeps explicit previews cancellable and scoped", async () => {
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
+  useScrapeStore.setState(useScrapeStore.getInitialState(), true);
+  useUIStore.setState(useUIStore.getInitialState(), true);
+  const shortcuts = await render(<ShortcutHandler />);
+  const triggerStart = () => vi.mocked(ipc.on.shortcut).mock.calls.at(-1)?.[0]({ action: "start-or-stop-scrape" });
   const config = {
     ...defaultConfiguration,
     paths: {
@@ -25,118 +46,227 @@ test("serializes latest scan intent, ignores stale results, and starts only the 
       mediaPath: rootDir,
       successOutputFolder: "/output",
       defaultScanExcludeDirs: [],
-      softlinkPath: "/extras",
     },
-    behavior: { ...defaultConfiguration.behavior, scrapeSoftlinkPath: true },
   };
   const requests: Array<{ resolve: (result: CandidateScanResult) => void; reject: (error: Error) => void }> = [];
   const scanCandidates = vi.fn(
     () => new Promise<CandidateScanResult>((resolve, reject) => requests.push({ resolve, reject })),
   );
-  const port: WorkbenchSetupPort = { isServer: true, browseDirectory: async () => null, scanCandidates };
+  const cancelCandidates = vi.fn(async () => {
+    requests.at(-1)?.reject(new Error("cancelled"));
+  });
+  const port: WorkbenchSetupPort = {
+    isServer: true,
+    browseDirectory: async () => null,
+    scanCandidates,
+    cancelCandidates,
+  };
   const onStart = vi.fn(async () => undefined);
-  const props = { config, port, onStartScrape: onStart, onStartMaintenance: onStart };
+  const onStartDirectory = vi.fn(async (): Promise<void> => undefined);
+  const props = { config, port, onStartDirectory, onStartScrape: onStart, onStartMaintenance: onStart };
   const screen = await render(<WorkbenchSetupAdapter {...props} mode="scrape" configLoading />);
-  expect(scanCandidates).not.toHaveBeenCalled();
   await screen.rerender(<WorkbenchSetupAdapter {...props} mode="scrape" />);
-  await expect.poll(() => requests.length).toBe(1);
-  expect(scanCandidates).toHaveBeenLastCalledWith(rootDir, false, []);
-  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
-  expect(requests).toHaveLength(1);
+  const start = screen.getByRole("button", { name: "开始刮削", exact: true });
+  await expect.element(start).toBeEnabled();
+  expect(scanCandidates).not.toHaveBeenCalled();
+  const startWholeDirectory = async () => {
+    await start.click();
+    await expect.element(screen.getByRole("dialog", { name: "处理目录内全部视频？" })).toBeVisible();
+    await screen.getByRole("dialog").getByRole("button", { name: "开始刮削" }).click();
+  };
+  await startWholeDirectory();
+  expect(onStartDirectory).toHaveBeenCalledWith(
+    { kind: "directory", scanDir: rootDir, recursive: true },
+    "/output",
+    "import_local",
+  );
+  let finishStart!: () => void;
+  const pendingStart = new Promise<void>((resolve) => {
+    finishStart = resolve;
+  });
+  onStartDirectory.mockReturnValueOnce(pendingStart);
+  triggerStart();
+  triggerStart();
+  await expect.poll(() => onStartDirectory.mock.calls.length).toBe(2);
+  await expect.element(screen.getByLabelText("扫描目录", { exact: true })).toBeDisabled();
+  await expect.element(screen.getByLabelText("输出目录", { exact: true })).toBeDisabled();
+  finishStart();
+  await expect.element(start).toBeEnabled();
+  expect(onStart).not.toHaveBeenCalled();
+  shortcutRoute.pathname = "/overview";
+  await shortcuts.rerender(<ShortcutHandler />);
+  triggerStart();
+  expect(onStartDirectory).toHaveBeenCalledTimes(2);
+  shortcutRoute.pathname = "/workbench";
+  await shortcuts.rerender(<ShortcutHandler />);
+  onStartDirectory.mockRejectedValueOnce(new Error("目录不存在或无法访问"));
+  await startWholeDirectory();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("目录不存在或无法访问");
   const input = screen.getByPlaceholder("请选择需要扫描的媒体目录");
   await input.fill("/next");
-  expect(requests).toHaveLength(1);
-  await expect.element(screen.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
+  await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
+  await expect.element(start).toBeDisabled();
+  triggerStart();
+  await useWorkbenchSetupStore.getState().startTask?.();
+  expect(onStartDirectory).toHaveBeenCalledTimes(3);
   await userEvent.keyboard("{Enter}");
+  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
+  expect(scanCandidates).not.toHaveBeenCalled();
+  await screen.getByRole("button", { name: "预览文件" }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(scanCandidates).toHaveBeenLastCalledWith("/next", false, [], expect.any(String));
+  await expect.element(input).not.toBeInTheDocument();
+  await screen.getByRole("button", { name: "01 配置目录" }).click();
+  await expect.element(input).toBeVisible();
+  await input.fill("/changed");
+  await userEvent.keyboard("{Enter}");
+  await expect.poll(() => useWorkbenchSetupStore.getState().scanDir).toBe("/changed");
+  await expect.poll(() => cancelCandidates.mock.calls.length).toBe(1);
   expect(requests).toHaveLength(1);
-  requests[0].resolve({ candidates: [], supportedExtensions: ["mp4"] });
+  await screen.getByRole("button", { name: "预览文件" }).click();
   await expect.poll(() => requests.length).toBe(2);
-  expect(scanCandidates).toHaveBeenLastCalledWith("/next", true, []);
-  requests[1].resolve({ candidates: [], supportedExtensions: ["mp4"] });
-  await expect.poll(() => requests.length).toBe(3);
-  expect(scanCandidates).toHaveBeenLastCalledWith("/extras", true, []);
-  await screen.rerender(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
-  expect(requests).toHaveLength(3);
-  requests[2].reject(new Error("obsolete request failure"));
-  await expect.poll(() => requests.length).toBe(4);
-  expect(scanCandidates).toHaveBeenLastCalledWith("/next", true, []);
-  expect(useWorkbenchSetupStore.getState().scanStatus).toBe("scanning");
-  expect(useWorkbenchSetupStore.getState().scanError).toBe("");
+  expect(scanCandidates).toHaveBeenLastCalledWith("/changed", false, [], expect.any(String));
   const candidate = (name: string): MediaCandidate => ({
-    path: `/next/${name}.mp4`,
+    path: `/changed/${name}.mp4`,
     name: `${name}.mp4`,
     size: 10,
     extension: "mp4",
     lastModified: null,
-    ref: { rootId: "next", relativePath: `${name}.mp4` },
+    ref: { rootId: "changed", relativePath: `${name}.mp4` },
   });
   const first = candidate("ONE-001");
   const second = candidate("TWO-002");
   const added = candidate("NEW-003");
-  requests[3].resolve({ candidates: [first, second], supportedExtensions: ["mp4"] });
+  requests[1].resolve({
+    candidates: [first, second],
+    supportedExtensions: ["mp4"],
+    warnings: { count: 30, paths: ["/restricted/private"] },
+  });
   await expect.element(screen.getByText("已选 2 / 2 个文件")).toBeVisible();
-  await screen.getByRole("checkbox", { name: /TWO-002/ }).click();
-  await input.fill("/next/");
-  await userEvent.keyboard("{Enter}");
-  expect(requests).toHaveLength(4);
+  await expect.element(screen.getByText("/restricted/private")).not.toBeVisible();
+  await screen.getByText("部分路径无法访问，已跳过 30 项").click();
+  await expect.element(screen.getByText("/restricted/private")).toBeVisible();
+  const search = screen.getByRole("textbox", { name: "搜索文件" });
+  const visibleSelection = screen.getByRole("checkbox", { name: "选择当前可见文件" });
+  await search.fill("TWO");
+  await expect.element(visibleSelection).toBeChecked();
+  await visibleSelection.click();
+  expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([first.path]);
+  await visibleSelection.click();
+  expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([first.path, second.path]);
+  await search.fill("not-found");
+  await expect.element(visibleSelection).toBeDisabled();
+  await userEvent.keyboard("{Escape}");
+  await expect.element(search).toHaveValue("");
+  await expect.element(screen.getByText("已选 2 / 2 个文件")).toBeVisible();
+  screen
+    .getByRole("checkbox", { name: /TWO-002/ })
+    .element()
+    .closest("label")
+    ?.click();
   await expect.element(screen.getByText("已选 1 / 2 个文件")).toBeVisible();
-  await screen.getByRole("button", { name: "重新扫描" }).click();
-  await expect.poll(() => requests.length).toBe(5);
-  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
-  await screen.getByRole("checkbox", { name: "包含子目录" }).click();
-  expect(requests).toHaveLength(5);
-  requests[4].resolve({ candidates: [], supportedExtensions: ["mp4"] });
-  await expect.poll(() => requests.length).toBe(6);
-  expect(useWorkbenchSetupStore.getState().candidates).toEqual([first, second]);
-  expect(scanCandidates).toHaveBeenLastCalledWith("/next", true, []);
-  requests[5].resolve({ candidates: [first, second, added], supportedExtensions: ["mp4"] });
+  await screen.getByRole("button", { name: "刷新文件" }).click();
+  await expect.poll(() => requests.length).toBe(3);
+  requests[2].resolve({ candidates: [first, second, added], supportedExtensions: ["mp4"] });
   await expect.element(screen.getByText("已选 1 / 3 个文件")).toBeVisible();
-  await screen.getByRole("button", { name: "开始", exact: true }).click();
-  expect(onStart).toHaveBeenCalledWith([first], "read_local", undefined);
-  await input.fill("/uncommitted");
-  await expect.element(screen.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
-  await expect.element(screen.getByRole("button", { name: "重新扫描" })).toBeDisabled();
-  expect(requests).toHaveLength(6);
-  await input.fill("/next");
-  await userEvent.keyboard("{Enter}");
-  expect(requests).toHaveLength(6);
-  await screen.getByRole("button", { name: "重新扫描" }).click();
-  await expect.poll(() => requests.length).toBe(7);
-  requests[6].reject(new Error("mount I/O failed"));
-  await expect.element(screen.getByText("mount I/O failed")).toBeVisible();
-  await expect.element(screen.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
-  await screen.getByRole("button", { name: "重新扫描" }).click();
-  await expect.poll(() => requests.length).toBe(8);
+  await start.click();
+  expect(onStart).toHaveBeenCalledWith([first], "/output");
+  triggerStart();
+  await expect.poll(() => onStart.mock.calls.length).toBe(2);
+  await screen.getByRole("button", { name: "刷新文件" }).click();
+  await expect.poll(() => requests.length).toBe(4);
+  await userEvent.keyboard("{Escape}");
+  await expect.element(screen.getByRole("button", { name: "预览文件" })).toBeVisible();
+  await screen.rerender(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
+  expect(requests).toHaveLength(4);
+  await screen.getByRole("button", { name: "开始维护" }).click();
+  expect(onStartDirectory).toHaveBeenLastCalledWith(
+    { kind: "directory", scanDir: "/changed", recursive: false },
+    "/changed",
+    "import_local",
+  );
+  await screen.getByRole("button", { name: "预览文件" }).click();
+  await expect.poll(() => requests.length).toBe(5);
+  expect(useWorkbenchSetupStore.getState().activePreview).not.toBeNull();
   await screen.unmount();
+  expect(useWorkbenchSetupStore.getState().startTask).toBeNull();
+  await expect.poll(() => cancelCandidates.mock.calls.length).toBe(3);
+  await expect.poll(() => useWorkbenchSetupStore.getState().activePreview).toBeNull();
   const remounted = await render(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
-  expect(requests).toHaveLength(8);
-  await expect.element(remounted.getByRole("button", { name: "开始", exact: true })).toBeDisabled();
-  requests[7].reject(new Error("unmounted request failure"));
-  await expect.poll(() => requests.length).toBe(9);
-  expect(useWorkbenchSetupStore.getState().scanStatus).toBe("scanning");
-  expect(useWorkbenchSetupStore.getState().scanError).toBe("");
-  requests[8].resolve({ candidates: [first], supportedExtensions: ["mp4"] });
-  await expect.element(remounted.getByText("已选 1 / 1 个文件")).toBeVisible();
-  expect(useWorkbenchSetupStore.getState().scanError).toBe("");
+  expect(requests).toHaveLength(5);
+  await expect.element(remounted.getByRole("button", { name: "开始维护", exact: true })).toBeDisabled();
   await remounted.unmount();
+  useWorkbenchSetupStore.setState({ activePreview: { id: "reset-preview", stop: async () => undefined } });
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
+  expect(useWorkbenchSetupStore.getState().activePreview).toBeNull();
+  await shortcuts.unmount();
 });
 
-test("shows the complete startup rejection in one dialog", async () => {
+test("scopes task dialogs to their result lifecycle without clearing the selected result", async () => {
+  useUIStore.getState().setSelectedResultId("successful-item");
   const onClose = vi.fn();
   const error =
-    "目标路径存在冲突，本次未改动任何文件。\n\n" +
-    "目标目录已存在同名影片\n待处理：/output/ABF-981-source.mp4\n冲突文件：/output/ABF-981.mp4\n\n" +
-    "批次内多部影片目标文件名重复\n待处理：/output/ABC-123-source.mp4\n冲突文件：/output/ABC-123.mp4";
+    "目标目录已存在同名影片\n待处理：/output/ABF-981-source.mp4\n目标路径：/output/ABF-981.mp4\n\n" +
+    "多部影片目标文件名重复\n待处理：/output/ABC-123-source.mp4\n目标路径：/output/ABC-123.mp4";
   const screen = await render(<ScrapeStartErrorDialog error={error} onClose={onClose} />);
-  await expect.element(screen.getByRole("dialog", { name: "目标路径存在冲突" })).toBeVisible();
+  await expect.element(screen.getByRole("dialog", { name: "刮削任务未能完成" })).toBeVisible();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("/output/ABF-981.mp4");
   await expect.element(screen.getByRole("alert")).toHaveTextContent("/output/ABC-123.mp4");
   await expect.element(screen.getByRole("alert")).toHaveTextContent("目标目录已存在同名影片");
-  await expect.element(screen.getByRole("alert")).toHaveTextContent("批次内多部影片目标文件名重复");
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("多部影片目标文件名重复");
   await expect.element(screen.getByRole("button", { name: "保留两份" })).not.toBeInTheDocument();
+  expect(useUIStore.getState().selectedResultId).toBe("successful-item");
   await screen.getByRole("button", { name: "我知道了" }).click();
   expect(onClose).toHaveBeenCalledOnce();
+  await screen.unmount();
+
+  useScrapeStore.setState(useScrapeStore.getInitialState(), true);
+  const completion = await render(
+    <StrictMode>
+      <ScrapeCompletionDialog />
+    </StrictMode>,
+  );
+  const dialog = completion.getByRole("dialog", { name: "确认无码类型" });
+  await expect.element(dialog).not.toBeInTheDocument();
+  const snapshot = buildScrapeSnapshot({
+    ambiguousUncensoredItems: [
+      {
+        id: "ambiguous-1",
+        ref: { rootId: "root-1", relativePath: "ABC-001.mp4" },
+        fileId: "file-1",
+        fileName: "ABC-001.mp4",
+        number: "ABC-001",
+        title: null,
+        nfoRelativePath: null,
+      },
+    ],
+  });
+  for (const status of ["queued", "discovering", "running", "paused", "stopping"] as const) {
+    useScrapeStore.getState().setSnapshot({ ...snapshot, task: { ...snapshot.task, status, completedAt: null } });
+    await expect.element(dialog).not.toBeInTheDocument();
+  }
+  useScrapeStore.getState().setSnapshot(snapshot);
+  await expect.element(dialog).toBeVisible();
+  await completion.getByRole("button", { name: "跳过", exact: true }).click();
+  await expect.element(dialog).not.toBeInTheDocument();
+  useScrapeStore.getState().setSnapshot(structuredClone(snapshot));
+  await expect.element(dialog).not.toBeInTheDocument();
+
+  useScrapeStore.getState().setSnapshot({ ...snapshot, task: { ...snapshot.task, id: "task-2" } });
+  await expect.element(dialog).toBeVisible();
+  vi.mocked(ipc.scraper.confirmUncensored).mockRejectedValueOnce(new Error("写入失败"));
+  await completion.getByRole("button", { name: "确认", exact: true }).click();
+  await expect.element(completion.getByText("写入失败", { exact: true })).toBeVisible();
+  vi.mocked(ipc.scraper.confirmUncensored).mockResolvedValueOnce({ updatedCount: 1, items: [] });
+  await completion.getByRole("button", { name: "确认", exact: true }).click();
+  await expect.element(dialog).not.toBeInTheDocument();
+  expect(ipc.scraper.confirmUncensored).toHaveBeenLastCalledWith({
+    items: [{ fileId: "file-1", choice: "uncensored" }],
+  });
+  expect(useUIStore.getState().selectedResultId).toBe("successful-item");
+  await completion.unmount();
+  useScrapeStore.setState(useScrapeStore.getInitialState(), true);
+  useUIStore.getState().setSelectedResultId(null);
 });
 
 test("server workbench setup hides browse buttons and keeps path autocomplete", async () => {
@@ -149,13 +279,10 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       selectedPaths={[]}
       selectedSize={0}
       totalSize={0}
-      extensionCount={0}
       scanStatus="idle"
-      scanning={false}
       startPending={false}
       supportedExtensions={[".mp4"]}
-      presetId="read_local"
-      runSummary=""
+      presetId="import_local"
       primaryDisabled
       isServer
       formatBytes={() => "0 B"}
@@ -165,20 +292,14 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       onPresetChange={() => undefined}
       onStart={() => undefined}
       onToggleCandidate={() => undefined}
-      onToggleAll={() => undefined}
+      onSelectCandidates={() => undefined}
       onScanDirChange={() => undefined}
       onTargetDirChange={() => undefined}
       onSuggestScanDir={async () => ({
-        path: "",
-        parentPath: "",
-        exists: false,
         accessible: true,
         entries: [],
       })}
       onSuggestTargetDir={async () => ({
-        path: "",
-        parentPath: "",
-        exists: false,
         accessible: true,
         entries: [],
       })}
@@ -188,64 +309,6 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
   await expect.element(screen.getByRole("button", { name: "浏览" })).not.toBeInTheDocument();
   expect(screen.container.querySelector("datalist")).toBeNull();
   expect(screen.container.querySelectorAll('input[aria-autocomplete="list"]').length).toBe(2);
-});
-
-test("maintenance setup exposes unique copy for each preset branch", async () => {
-  const renderPreset = async (presetId: MaintenancePresetId) =>
-    await render(
-      <WorkbenchSetupView
-        mode="maintenance"
-        scanDir={rootDir}
-        candidates={[
-          {
-            path: "/media/ABC-123.mp4",
-            name: "ABC-123.mp4",
-            size: 1,
-            lastModified: null,
-            extension: ".mp4",
-            ref: { rootId: "test-root", relativePath: "ABC-123.mp4" },
-          },
-        ]}
-        selectedPaths={["/media/ABC-123.mp4"]}
-        selectedSize={1}
-        totalSize={1}
-        extensionCount={1}
-        scanStatus="success"
-        scanning={false}
-        startPending={false}
-        supportedExtensions={[".mp4"]}
-        presetId={presetId}
-        runSummary="1 个文件"
-        primaryDisabled={false}
-        isServer={false}
-        formatBytes={() => "1 B"}
-        onBrowseScanDir={() => undefined}
-        onRefreshScan={() => undefined}
-        onPresetChange={() => undefined}
-        onStart={() => undefined}
-        onToggleCandidate={() => undefined}
-        onToggleAll={() => undefined}
-        onScanDirChange={() => undefined}
-      />,
-    );
-
-  expect(MAINTENANCE_PRESET_OPTIONS.map((option) => [option.id, option.label])).toEqual([
-    ["read_local", "读取本地"],
-    ["refresh_data", "刷新数据"],
-    ["organize_files", "整理目录"],
-    ["rebuild_all", "全量重整"],
-  ]);
-
-  for (const option of MAINTENANCE_PRESET_OPTIONS) {
-    const screen = await renderPreset(option.id);
-    await expect.element(screen.getByText("维护预设")).toBeVisible();
-    await expect.element(screen.getByText(option.label)).toBeVisible();
-    await expect.element(screen.getByText(option.description)).toBeVisible();
-    if (option.id === "read_local") {
-      await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
-    }
-    await screen.unmount();
-  }
 });
 
 test("media browser list distinguishes processing and paused queue states", async () => {

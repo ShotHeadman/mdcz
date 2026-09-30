@@ -1,5 +1,4 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { getMaintenancePresetMeta } from "@mdcz/shared/maintenancePresets";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import {
   buildMaintenanceEntryViewModel,
@@ -20,6 +19,7 @@ import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { MediaBrowserItemStatus } from "../common";
+import { type Messages, useT } from "../i18n";
 import { MaintenanceEntryListView, type MaintenanceEntryListViewItem } from "../maintenance";
 import type { MaintenanceActionPort } from "./ports";
 
@@ -38,27 +38,27 @@ const matchesFilter = (filter: MaintenanceFilter, status: MediaBrowserItemStatus
   return status === filter;
 };
 
-const buildGroupSubtitle = (group: MaintenanceEntryGroupViewModel): string => {
+const buildGroupSubtitle = (t: Messages, group: MaintenanceEntryGroupViewModel): string => {
   const baseTitle = getTitle(group.representative);
   if (group.items.length <= 1) {
     return baseTitle;
   }
 
-  return `${baseTitle} · 共 ${group.items.length} 个分盘文件`;
+  return t.maintenance.multiPartTitle(baseTitle, group.items.length);
 };
 
-function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
+function buildMenuContent(t: Messages, entry: LocalScanEntry, port: MaintenanceActionPort) {
   const handleOpenFolder = async () => {
     const filePath = entry.fileInfo.filePath.trim();
     if (!filePath) {
-      toast.info("无可打开的文件路径");
+      toast.info(t.maintenance.noOpenablePath);
       return;
     }
 
     try {
       await port.openFolder?.(filePath);
     } catch (error) {
-      toast.error(`打开目录失败: ${toErrorMessage(error)}`);
+      toast.error(t.maintenance.openFolderFailed(toErrorMessage(error)));
     }
   };
 
@@ -73,31 +73,31 @@ function buildMenuContent(entry: LocalScanEntry, port: MaintenanceActionPort) {
       {typeof port.openFolder === "function" ? (
         <ContextMenuItem onClick={handleOpenFolder}>
           <FolderOpen className="mr-2 h-4 w-4" />
-          打开目录
+          {t.maintenance.openFolder}
         </ContextMenuItem>
       ) : null}
       {typeof port.play === "function" ? (
         <ContextMenuItem onClick={handlePlay}>
           <Play className="mr-2 h-4 w-4" />
-          播放
+          {t.maintenance.play}
         </ContextMenuItem>
       ) : null}
       <ContextMenuItem onClick={handleOpenNfo}>
         <FileText className="mr-2 h-4 w-4" />
-        编辑 NFO
+        {t.maintenance.editNfo}
       </ContextMenuItem>
     </>
   );
 }
 
 export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionPort }) {
-  const { entries, selectedIds, activeId, filter, presetId, setFilter, setActiveId } = useMaintenanceStore(
+  const t = useT();
+  const { entries, selectedIds, activeId, filter, setFilter, setActiveId } = useMaintenanceStore(
     useShallow((state) => ({
       entries: selectMaintenanceEntries(state),
       selectedIds: state.selectedIds,
       activeId: state.activeId,
       filter: state.filter,
-      presetId: state.presetId,
       setFilter: state.setFilter,
       setActiveId: state.setActiveId,
     })),
@@ -110,7 +110,6 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
     })),
   );
   const previewResults = useMaintenanceStore(selectMaintenancePreviewResults);
-  const showsSelection = getMaintenancePresetMeta(presetId).supportsExecution !== false;
   const selectionLocked = executionStatus !== "idle";
   const groupedEntries = useMemo(
     () => buildMaintenanceEntryViewModel(entries, { itemResults, previewResults }).groups,
@@ -152,19 +151,17 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       id: group.id,
       active: group.items.some((entry) => activeId === entry.fileId),
       title: representative.fileInfo.number,
-      subtitle: buildGroupSubtitle(group),
+      subtitle: buildGroupSubtitle(t, group),
       errorText: group.errorText,
       status: group.status,
       selected: checkedState,
       selectionDisabled: selectionLocked,
-      onSelectionChange: showsSelection
-        ? () => {
-            toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
-          }
-        : undefined,
+      onSelectionChange: () => {
+        toggleMaintenanceSelectedIds(group.items.map((entry) => entry.fileId));
+      },
       onClick: () =>
         setActiveId(group.items.find((entry) => entry.fileId === activeId)?.fileId ?? representative.fileId),
-      menuContent: buildMenuContent(group.items.find((entry) => entry.fileId === activeId) ?? representative, port),
+      menuContent: buildMenuContent(t, group.items.find((entry) => entry.fileId === activeId) ?? representative, port),
     };
   });
 
@@ -174,7 +171,6 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
       loading={pending || executionStatus === "previewing"}
       filter={filter}
       onFilterChange={(nextFilter) => setFilter(nextFilter)}
-      showSelection={showsSelection}
       selectionDisabled={selectionLocked}
       allVisibleSelected={allVisibleSelected}
       someVisibleSelected={someVisibleSelected}
@@ -185,10 +181,10 @@ export function MaintenanceEntryListAdapter({ port }: { port: MaintenanceActionP
         toggleMaintenanceSelectedIds(visibleIds);
       }}
       stats={[
-        { label: "总计", value: String(groupedEntries.length) },
-        ...(showsSelection ? [{ label: "已选", value: String(selectedCount) }] : []),
-        { label: "处理中", value: String(processingCount) },
-        { label: "异常", value: String(blockedCount), tone: "negative" },
+        { label: t.maintenance.metrics.total, value: String(groupedEntries.length) },
+        { label: t.maintenance.metrics.selected, value: String(selectedCount) },
+        { label: t.maintenance.metrics.processing, value: String(processingCount) },
+        { label: t.maintenance.metrics.blocked, value: String(blockedCount), tone: "negative" },
       ]}
     />
   );

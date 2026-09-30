@@ -1,3 +1,4 @@
+export * from "./entryIdentity";
 export * from "./errors";
 export * from "./filesystem";
 export * from "./mediaRoot";

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Configuration, DeepPartial } from "./config";
+import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { Website } from "./enums";
 import {
   LLM_API_FORMAT_OPTIONS,
@@ -11,7 +12,7 @@ import { assetRefSchema, type RootFileRef, rootFileRefSchema, wireRelativeDirect
 import { normalizedCropRegionSchema } from "./posterCrop";
 import type { MediaCandidate } from "./types";
 
-export const maintenancePresetIdSchema = z.enum(["read_local", "refresh_data", "organize_files", "rebuild_all"]);
+export const maintenancePresetIdSchema = z.enum(["import_local", "refresh_metadata", "local_organize", "rebuild_all"]);
 export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({
@@ -127,6 +128,7 @@ export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
 export const taskStatusSchema = z.enum([
   "queued",
+  "discovering",
   "running",
   "paused",
   "stopping",
@@ -216,14 +218,14 @@ export const scrapeRunTaskSchema = z.object({
   updatedAt: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
-  totalItems: z.number().int().nonnegative(),
+  totalItems: z.number().int().nonnegative().nullable(),
   successCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
   error: z.string().nullable(),
   revision: z.number().int().nonnegative(),
-  executionGeneration: z.number().int().nonnegative(),
   continuity: z.enum(["live", "final", "interrupted"]),
+  previousTaskId: z.string().nullable(),
 });
 
 export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;
@@ -246,7 +248,10 @@ export const scanStartInputSchema = z.object({
 
 export type ScanStartInput = z.infer<typeof scanStartInputSchema>;
 
+export const cancelCandidatesInputSchema = z.object({ scanId: z.string().min(1) });
+
 export const scanCandidatesInputSchema = z.object({
+  scanId: z.string().min(1).optional(),
   recursive: z.boolean(),
   excludeDirPaths: z.array(z.string().trim().min(1)).optional(),
   scanDir: z.string().trim().min(1),
@@ -296,7 +301,8 @@ const scrapeSingleStartInputSchema = z.object({
   manualUrl: z.string().trim().min(1).optional(),
 });
 
-export const scrapeStartInputSchema = z.discriminatedUnion("executionMode", [
+export const scrapeStartInputSchema = z.union([
+  z.object({ executionMode: z.literal("batch"), source: directorySourceSchema, targetDir: z.string().trim().min(1) }),
   scrapeBatchStartInputSchema,
   scrapeSingleStartInputSchema,
 ]);
@@ -310,9 +316,11 @@ export const scrapeTaskControlInputSchema = z.object({
 
 export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema>;
 
+export const scrapeRerunDirectoryInputSchema = z.object({ taskId: z.string().trim().min(1) });
+export type ScrapeRerunDirectoryInput = z.infer<typeof scrapeRerunDirectoryInputSchema>;
+
 export const scrapeConfirmUncensoredInputSchema = z.object({
-  taskId: z.string().trim().min(1),
-  items: z.array(z.object({ itemId: z.string().trim().min(1), choice: z.enum(["umr", "leak", "uncensored"]) })).min(1),
+  items: z.array(z.object({ fileId: z.string().trim().min(1), choice: z.enum(["umr", "leak", "uncensored"]) })).min(1),
 });
 
 export type ScrapeConfirmUncensoredInput = z.infer<typeof scrapeConfirmUncensoredInputSchema>;
@@ -330,6 +338,7 @@ export const posterCropSaveInputSchema = scrapeResultIdInputSchema.extend({
 export type PosterCropSaveInput = z.infer<typeof posterCropSaveInputSchema>;
 
 export const posterCropSessionResponseSchema = z.object({
+  rootId: z.string().trim().min(1),
   sourceRelativePath: z.string().trim().min(1),
   targetRelativePath: z.string().trim().min(1),
   width: z.number().int().positive(),
@@ -407,6 +416,18 @@ export type ScrapeResultDto = z.infer<typeof scrapeResultSchema>;
  * can therefore describe pending and processing work as well as a committed
  * terminal outcome.
  */
+export const scrapeRunStageSchema = z.enum([
+  "discovering",
+  "prepare",
+  "check-output",
+  "execute",
+  "search",
+  "download",
+  "completed",
+]);
+
+export type ScrapeRunStage = z.infer<typeof scrapeRunStageSchema>;
+
 export const scrapeLiveItemSchema = z.object({
   id: z.string(),
   resultId: z.string().nullable(),
@@ -500,13 +521,21 @@ export const fileActionResponseSchema = z.object({
 
 export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
 
-export const maintenanceStartInputSchema = z.object({
-  rootId: z.string().trim().min(1),
-  presetId: maintenancePresetIdSchema,
-  refs: z.array(scrapeFileRefSchema).min(1),
-  outputRootId: z.string().trim().min(1).optional(),
-  outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
-});
+export const maintenanceStartInputSchema = z.union([
+  z.object({ rerunSessionId: z.string().min(1) }),
+  z.object({
+    source: directorySourceSchema,
+    targetDir: z.string().trim().min(1).optional(),
+    presetId: maintenancePresetIdSchema,
+  }),
+  z.object({
+    rootId: z.string().trim().min(1),
+    presetId: maintenancePresetIdSchema,
+    refs: z.array(scrapeFileRefSchema).min(1),
+    outputRootId: z.string().trim().min(1).optional(),
+    outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
+  }),
+]);
 
 export type MaintenanceStartInput = z.infer<typeof maintenanceStartInputSchema>;
 
@@ -568,15 +597,25 @@ export type LogListResponse = z.infer<typeof logListResponseSchema>;
 export const scrapeRunSnapshotSchema = z.object({
   task: scrapeRunTaskSchema,
   progress: z.object({
-    percent: z.number().min(0).max(100),
+    percent: z.number().min(0).max(100).nullable(),
     completedItems: z.number().int().nonnegative(),
-    totalItems: z.number().int().nonnegative(),
+    totalItems: z.number().int().nonnegative().nullable(),
   }),
+  directorySource: directoryTaskScopeSchema.nullable(),
+  discovery: z
+    .object({
+      directories: z.number(),
+      candidates: z.number(),
+      skipped: z.number(),
+      elapsedMs: z.number(),
+      currentPath: z.string().nullable(),
+      warnings: z.array(z.string()),
+    })
+    .nullable(),
   items: z.array(scrapeLiveItemSchema),
   latestStage: z
     .object({
-      stage: z.string(),
-      message: z.string(),
+      stage: scrapeRunStageSchema,
       relativePath: z.string().nullable(),
     })
     .nullable(),
@@ -598,9 +637,7 @@ export const scrapeMutationAckSchema = z.object({
 
 export type ScrapeMutationAckDto = z.infer<typeof scrapeMutationAckSchema>;
 
-export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema.extend({
-  taskId: z.string(),
-});
+export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema;
 
 export type ScrapePendingUncensoredConfirmationItemDto = z.infer<typeof scrapePendingUncensoredConfirmationItemSchema>;
 
@@ -627,26 +664,18 @@ export type TaskNotificationDto = z.infer<typeof taskNotificationSchema>;
 export const libraryEntrySchema = z.object({
   id: z.string(),
   mediaIdentity: z.string().nullable(),
-  rootId: z.string(),
-  rootDisplayName: z.string(),
-  relativePath: z.string(),
-  fileName: z.string(),
-  directory: z.string(),
+  displayFileId: z.string(),
   size: z.number(),
-  modifiedAt: z.string().nullable(),
-  runId: z.string().nullable(),
-  scrapeOutcomeId: z.string().nullable(),
   title: z.string().nullable(),
   number: z.string().nullable(),
   actors: z.array(z.string()),
   crawlerData: crawlerDataSchema.nullable(),
   thumbnailPath: z.string().nullable(),
   thumbnailRootId: z.string().nullable().optional(),
-  lastKnownPath: z.string().nullable(),
   createdAt: z.string(),
   lastRefreshedAt: z.string().nullable(),
   hiddenFromRecentAt: z.string().nullable(),
-  available: z.boolean().nullable(),
+  available: z.enum(["available", "partial", "unavailable", "unchecked"]),
   fileRefs: z.array(
     z.object({
       id: z.string(),
@@ -658,12 +687,19 @@ export const libraryEntrySchema = z.object({
       size: z.number(),
       modifiedAt: z.string().nullable(),
       lastKnownPath: z.string().nullable(),
+      partNumber: z.number().int().positive().nullable(),
+      partSuffix: z.string().nullable(),
+      resolution: z.string().nullable(),
+      runId: z.string().nullable(),
+      scrapeOutcomeId: z.string().nullable(),
       available: z.boolean().nullable(),
+      availabilityError: z.string().nullable(),
     }),
   ),
   assets: z.array(
     z.object({
       id: z.string(),
+      fileId: z.string().nullable(),
       kind: z.string(),
       uri: z.string(),
       rootId: z.string().nullable(),
@@ -691,14 +727,22 @@ export const libraryDetailInputSchema = z.object({
 
 export type LibraryDetailInput = z.infer<typeof libraryDetailInputSchema>;
 
-export const libraryRelinkInputSchema = libraryDetailInputSchema.extend({
+export const libraryRelinkInputSchema = z.object({
+  fileId: z.string().trim().min(1),
   rootId: z.string().trim().min(1),
   relativePath: z.string().trim().min(1),
 });
 
 export type LibraryRelinkInput = z.infer<typeof libraryRelinkInputSchema>;
 
+export const libraryFileRemoveInputSchema = z.object({
+  fileId: z.string().trim().min(1),
+});
+export type LibraryFileRemoveInput = z.infer<typeof libraryFileRemoveInputSchema>;
+
 export const libraryListResponseSchema = z.object({
+  fileCount: z.number(),
+  totalBytes: z.number(),
   entries: z.array(libraryEntrySchema),
   hasMore: z.boolean(),
   nextCursor: z.string().nullable(),
@@ -717,11 +761,12 @@ export const libraryAvailabilityResponseSchema = z.object({
   entries: z.array(
     z.object({
       id: z.string(),
-      available: z.boolean().nullable(),
+      available: z.enum(["available", "partial", "unavailable", "unchecked"]),
       fileRefs: z.array(
         z.object({
           id: z.string(),
           available: z.boolean().nullable(),
+          availabilityError: z.string().nullable(),
         }),
       ),
     }),
@@ -756,7 +801,6 @@ export const overviewOutputSummarySchema = z.object({
   totalBytes: z.number(),
   outputAt: z.string().nullable(),
   rootPath: z.string().nullable(),
-  unresolvedRepairCount: z.number().int().nonnegative(),
 });
 
 export type OverviewOutputSummaryDto = z.infer<typeof overviewOutputSummarySchema>;
@@ -776,14 +820,6 @@ export const healthResponseSchema = z.object({
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export const aboutLinkSchema = z.object({
-  label: z.string(),
-  url: z.string(),
-  description: z.string().optional(),
-});
-
-export type AboutLinkDto = z.infer<typeof aboutLinkSchema>;
-
 export const systemAboutResponseSchema = z.object({
   productName: z.string(),
   version: z.string().nullable(),
@@ -796,10 +832,6 @@ export const systemAboutResponseSchema = z.object({
     node: z.string(),
     platform: z.string(),
     arch: z.string(),
-  }),
-  community: z.object({
-    feedback: aboutLinkSchema,
-    links: z.array(aboutLinkSchema),
   }),
 });
 
@@ -906,10 +938,11 @@ export type CrawlerProbeSiteConnectivityInput = z.infer<typeof crawlerProbeSiteC
 
 export const siteConnectivityProbeResponseSchema = z.object({
   ok: z.boolean(),
-  message: z.string(),
   latencyMs: z.number(),
   status: z.number().optional(),
   resolvedUrl: z.string().optional(),
+  /** Raw request error when the probe could not get an HTTP response. */
+  error: z.string().optional(),
 });
 
 export type SiteConnectivityProbeResponse = z.infer<typeof siteConnectivityProbeResponseSchema>;
@@ -932,8 +965,8 @@ export const networkCheckCookiesResponseSchema = z.object({
     z.object({
       site: z.string(),
       valid: z.boolean(),
-      message: z.string(),
       status: networkCookieCheckStatusSchema,
+      error: z.string().optional(),
     }),
   ),
 });
@@ -956,8 +989,10 @@ export const translateTestLlmInputSchema = z.object({
 export type TranslateTestLlmInputDto = z.infer<typeof translateTestLlmInputSchema>;
 
 export const translateTestLlmResponseSchema = z.object({
-  success: z.boolean(),
-  message: z.string(),
+  status: z.enum(["ok", "missing_model", "missing_api_key", "failed"]),
+  /** Translated sample title when status is "ok". */
+  sample: z.string().optional(),
+  error: z.string().optional(),
 });
 
 export type TranslateTestLlmResponse = z.infer<typeof translateTestLlmResponseSchema>;
@@ -1016,7 +1051,7 @@ const profileNameSchema = z
   .string()
   .trim()
   .min(1)
-  .regex(/^[\p{L}\p{N}_-]+$/u, '档案名仅支持字母、数字、"_" 和 "-"');
+  .regex(/^[\p{L}\p{N}_-]+$/u, 'Profile name only supports letters, numbers, "_" and "-"');
 
 export const configProfileNameInputSchema = z.object({
   name: profileNameSchema,
@@ -1139,7 +1174,6 @@ export type ToolExecuteInput = z.input<typeof toolExecuteInputSchema>;
 export const toolExecuteResponseSchema = z.object({
   toolId: z.string(),
   ok: z.boolean(),
-  message: z.string(),
   data: z.any().optional(),
 });
 

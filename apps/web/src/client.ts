@@ -207,6 +207,7 @@ export const api: ServerApiContract = {
     stop: (input) => trpcMutation("maintenance.stop", input),
   },
   library: {
+    removeFile: (input) => trpcMutation("library.removeFile", input),
     availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),
     detail: (input) => trpcQuery("library.detail", input),
@@ -232,6 +233,7 @@ export const api: ServerApiContract = {
     execute: (input) => trpcMutation("tools.execute", input),
   },
   scans: {
+    cancelCandidates: (input) => trpcMutation("scans.cancelCandidates", input),
     candidates: (input) => trpcQuery("scans.candidates", input),
     detail: (input) => trpcQuery("scans.detail", input),
     events: (input) => trpcQuery("scans.events", input),
@@ -243,7 +245,7 @@ export const api: ServerApiContract = {
     liveRuns: () => trpcQuery("scrape.liveRuns"),
     snapshot: (input) => trpcQuery("scrape.snapshot", input),
     pendingUncensoredConfirmation: () => trpcQuery("scrape.pendingUncensoredConfirmation"),
-    deleteFile: (input) => trpcMutation("scrape.deleteFile", input),
+    removeRecord: (input) => trpcMutation("scrape.removeRecord", input),
     history: (input) => trpcQuery("scrape.history", input),
     nfoRead: (input) => trpcQuery("scrape.nfoRead", input),
     nfoWrite: (input) => trpcMutation("scrape.nfoWrite", input),
@@ -253,6 +255,7 @@ export const api: ServerApiContract = {
     result: (input) => trpcQuery("scrape.result", input),
     resume: (input) => trpcMutation("scrape.resume", input),
     retry: (input) => trpcMutation("scrape.retry", input),
+    rerunDirectory: (input) => trpcMutation("scrape.rerunDirectory", input),
     confirmUncensored: (input) => trpcMutation("scrape.confirmUncensored", input),
     start: (input) => trpcMutation("scrape.start", input),
     stop: (input) => trpcMutation("scrape.stop", input),

@@ -1,15 +1,16 @@
 import { cn } from "@mdcz/ui";
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 
 interface SettingsSearchProps {
   disabled?: boolean;
-  placeholder?: string;
   className?: string;
 }
 
-export function SettingsSearch({ disabled = false, placeholder = "搜索设置", className }: SettingsSearchProps) {
+export function SettingsSearch({ disabled = false, className }: SettingsSearchProps) {
+  const t = useT();
   const search = useOptionalSettingsSearch();
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -37,7 +38,7 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
           ref={inputRef}
           type="text"
           disabled={disabled}
-          placeholder={placeholder}
+          placeholder={t.settings.layout.searchPlaceholder}
           className={cn(
             "h-9 w-full rounded-[var(--radius-quiet)] border border-border/40 bg-surface-low/80 pl-9 pr-9 text-sm text-foreground",
             "placeholder:text-muted-foreground outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60",
@@ -106,7 +107,7 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
             search.focusFirstMatch();
           }
         }}
-        placeholder={placeholder}
+        placeholder={t.settings.layout.searchPlaceholder}
         className={cn(
           "h-9 w-full rounded-[var(--radius-quiet)] border border-border/40 bg-surface-low/80 pl-9 pr-14 text-sm text-foreground",
           "placeholder:text-muted-foreground outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-60",
@@ -117,7 +118,7 @@ export function SettingsSearch({ disabled = false, placeholder = "搜索设置",
       {search.query && !disabled ? (
         <button
           type="button"
-          aria-label="清空搜索"
+          aria-label={t.settings.layout.clearSearch}
           onClick={() => {
             search.setQuery("");
             setActiveSuggestionIndex(0);

@@ -14,6 +14,7 @@ import {
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect, useRef } from "react";
+import { getT } from "../i18n";
 import type { MaintenanceActionPort } from "./ports";
 
 export type WorkbenchMode = "scrape" | "maintenance";
@@ -122,10 +123,10 @@ export interface UncensoredConfirmationSelection {
 export const buildUncensoredConfirmationItems = (
   ambiguousItems: AmbiguousUncensoredItemDto[],
   selections: UncensoredConfirmationSelection[],
-): Array<{ itemId: string; choice: UncensoredChoice }> => {
+): Array<{ fileId: string; choice: UncensoredChoice }> => {
   const choicesById = new Map(selections.map((selection) => [selection.id, selection.choice]));
   return ambiguousItems.map((item) => ({
-    itemId: item.fileId,
+    fileId: item.fileId,
     choice: choicesById.get(item.id) ?? "uncensored",
   }));
 };
@@ -154,8 +155,9 @@ export interface StartMaintenanceFlowOptions {
 }
 
 export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions): Promise<void> => {
+  const t = getT();
   if (options.isScraping) {
-    options.toast.warning("正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。");
+    options.toast.warning(t.maintenance.scrapeRunningCannotMaintain);
     return;
   }
 
@@ -169,7 +171,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     const refs = options.candidates.map((candidate) => candidate.ref);
     if (refs.length === 0) {
       executionStore.setPending(false);
-      options.toast.info("未发现可维护项目");
+      options.toast.info(t.maintenance.noMaintainableItems);
       await options.onRefreshConfig?.();
       return;
     }
@@ -177,7 +179,9 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     await options.port.preview(refs, options.presetId, options.targetDir);
     await options.onRefreshConfig?.();
     options.toast.success(
-      options.presetId === "read_local" ? `本地读取已启动，共 ${options.candidates.length} 项` : "维护预览已启动",
+      options.presetId === "import_local"
+        ? t.maintenance.localImportStarted(options.candidates.length)
+        : t.maintenance.previewStarted,
     );
   } catch (error) {
     if (options.toErrorMessage(error) === "Operation aborted") {
@@ -186,6 +190,6 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     }
 
     executionStore.setError(options.toErrorMessage(error));
-    options.toast.error(`启动失败: ${options.toErrorMessage(error)}`);
+    options.toast.error(t.maintenance.startFailed(options.toErrorMessage(error)));
   }
 };

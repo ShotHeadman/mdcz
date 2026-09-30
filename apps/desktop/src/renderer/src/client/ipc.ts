@@ -1,5 +1,6 @@
 import { createClient } from "@egoist/tipc/renderer";
 import type { Configuration } from "@mdcz/shared/config";
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import type { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
@@ -53,9 +54,13 @@ export const ipc = {
     getOutputSummary: () => client[IpcChannel.Overview_GetOutputSummary](undefined),
   },
   library: {
+    relinkFile: (input: import("@mdcz/shared/serverDtos").LibraryRelinkInput) =>
+      client[IpcChannel.Library_RelinkFile](input),
+    removeFile: (input: import("@mdcz/shared/serverDtos").LibraryFileRemoveInput) =>
+      client[IpcChannel.Library_RemoveFile](input),
     availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
-    delete: (input: { deleteMode?: "none" | "assets" | "all"; id: string }) => client[IpcChannel.Library_Delete](input),
+    delete: (input: { id: string }) => client[IpcChannel.Library_Delete](input),
   },
   mediaRoots: {
     ensurePath: (input: MediaRootEnsurePathInput) => client[IpcChannel.MediaRoots_EnsurePath](input),
@@ -84,6 +89,7 @@ export const ipc = {
     pause: () => client[IpcChannel.Scraper_Pause](undefined),
     resume: () => client[IpcChannel.Scraper_Resume](undefined),
     getStatus: (taskId?: string) => client[IpcChannel.Scraper_GetStatus]({ taskId }),
+    rerunDirectory: (runId: string) => launchScrape(() => client[IpcChannel.Scraper_RerunDirectory]({ runId })),
     retry: (runId: string, itemIds?: readonly string[]) =>
       launchScrape(
         () => client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
@@ -103,8 +109,10 @@ export const ipc = {
     testLlm: (input: TranslateTestLlmInput) => client[IpcChannel.Translate_TestLlm](input),
   },
   file: {
-    listMediaCandidates: (dirPath: string, recursive: boolean, excludeDirPaths?: readonly string[]) =>
+    cancelMediaCandidates: (scanId: string) => client[IpcChannel.File_CancelMediaCandidates]({ scanId }),
+    listMediaCandidates: (dirPath: string, recursive: boolean, excludeDirPaths?: readonly string[], scanId?: string) =>
       client[IpcChannel.File_ListMediaCandidates]({
+        scanId,
         dirPath,
         recursive,
         excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
@@ -112,8 +120,6 @@ export const ipc = {
     exists: (path: LocalFileTarget) => client[IpcChannel.File_Exists]({ path }),
     browse: (type: "file" | "directory", filters?: Array<{ name: string; extensions: string[] }>) =>
       client[IpcChannel.File_Browse]({ type, filters }),
-    delete: (targets: RootFileRef[], containingFolder?: boolean) =>
-      client[IpcChannel.File_Delete]({ targets, containingFolder }),
     nfoRead: (nfoPath: LocalFileTarget, videoPath?: LocalFileTarget) =>
       client[IpcChannel.File_NfoRead]({ nfoPath, videoPath }),
     nfoWrite: (nfoPath: LocalFileTarget, data: CrawlerData, videoPath?: LocalFileTarget) =>
@@ -141,6 +147,17 @@ export const ipc = {
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },
   maintenance: {
+    rerunDirectory: async (rerunSessionId: string) => {
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ rerunSessionId });
+      useMaintenanceStore.getState().setSnapshot(response.snapshot);
+    },
+    directory: async (source: DirectorySource, presetId: MaintenancePresetId, targetDir: string) => {
+      const previous = useMaintenanceStore.getState().snapshot;
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ source, presetId, targetDir });
+      if (useMaintenanceStore.getState().snapshot === previous)
+        useMaintenanceStore.getState().setSnapshot(response.snapshot);
+      return response;
+    },
     preview: async (
       refs: RootFileRef[],
       presetId: MaintenancePresetId,

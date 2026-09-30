@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { AmazonPosterToolService } from "@main/services/tools/AmazonPosterToolService";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import type { AmazonJpImageService } from "@mdcz/runtime/tools";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,19 +52,13 @@ const createService = (options?: {
   } as unknown as NetworkClient;
 
   const amazonJpImageService = {
-    enhance:
-      options?.enhance ??
-      vi.fn(async () => ({
-        upgraded: false,
-        reason: "搜索无结果",
-      })),
+    enhance: options?.enhance ?? vi.fn(async () => ({ reason: "no_results" as const })),
   } as unknown as AmazonJpImageService;
 
   return {
     service: new AmazonPosterToolService(networkClient, amazonJpImageService, {
       getState: async () => ({
         repositories: {
-          publicationJournal: createMemoryPublicationJournal(),
           mediaRoots: {
             list: async () => [{ id: "tmp", hostPath: tmpdir() }],
             ensurePath: async (hostPath: string) => ({ id: "tmp", hostPath }),
@@ -166,18 +159,17 @@ describe("AmazonPosterToolService", () => {
 
   it("returns lookup misses without writing posters and reports successful Amazon hits", async () => {
     const missRoot = await createTempDir();
-    const missEnhance = vi.fn(async () => ({ upgraded: false, reason: "搜索无结果" }));
+    const missEnhance = vi.fn(async () => ({ reason: "no_results" as const }));
     const missService = createService({ enhance: missEnhance }).service;
 
     const missResult = await missService.lookup(join(missRoot, "ABC-123.nfo"), "Lookup Title");
     expect(missResult.amazonPosterUrl).toBeNull();
-    expect(missResult.reason).toBe("搜索无结果");
+    expect(missResult.reason).toBe("no_results");
 
     const hitRoot = await createTempDir();
     const posterPath = join(hitRoot, "poster.jpg");
     const hitEnhance = vi.fn(async () => ({
-      upgraded: true,
-      reason: "已升级为Amazon商品海报",
+      reason: "found" as const,
       poster_url: "https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg",
     }));
     const { service } = createService({ enhance: hitEnhance });
@@ -186,12 +178,7 @@ describe("AmazonPosterToolService", () => {
 
     expect(hitResult.amazonPosterUrl).toBe("https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg");
     expect(hitEnhance).toHaveBeenCalledTimes(1);
-    const firstCall = hitEnhance.mock.calls.at(0) as unknown[] | undefined;
-    expect(firstCall?.[0] as Record<string, unknown> | undefined).toMatchObject({
-      title: "Custom Amazon Title",
-      poster_url: "lookup",
-    });
-    expect(firstCall).toHaveLength(1);
+    expect(hitEnhance).toHaveBeenCalledWith("Custom Amazon Title");
     await expect(stat(posterPath)).rejects.toThrow();
   });
 

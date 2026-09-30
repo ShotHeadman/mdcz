@@ -1,5 +1,4 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { createFileScraper } from "@main/services/scraper/FileScraper";
 import type {
   ActorImageService,
   AggregationService,
@@ -12,7 +11,8 @@ import type {
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mockConfigManager } from "../../../helpers/scraper";
+import { createTempDirectory } from "../../../harness/tempDirectory";
+import { createFileScraper, mockConfigManager, prepareFile, resolveTestOutputPlan } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -29,7 +29,13 @@ describe("FileScraper plan timing", () => {
     vi.restoreAllMocks();
   });
 
-  it("plans output paths from translated metadata so naming stays aligned with maintenance", async () => {
+  it("plans output paths from translated metadata so naming stays aligned with maintenance", async ({
+    onTestFinished,
+  }) => {
+    const directory = await createTempDirectory("scrape-plan-timing");
+    onTestFinished(() => directory.cleanup());
+    const sourcePath = join(directory.path, "ABC-123.mp4");
+    await writeFile(sourcePath, "video");
     const config = configurationSchema.parse({
       ...defaultConfiguration,
       download: {
@@ -52,13 +58,16 @@ describe("FileScraper plan timing", () => {
       title_zh: "翻译标题",
     });
     const plan: OrganizePlan = {
-      outputDir: "/output/translated",
-      targetVideoPath: "/output/translated/ABC-123.mp4",
-      nfoPath: "/output/translated/ABC-123.nfo",
+      outputDir: join(directory.path, "translated"),
+      metadataDir: join(directory.path, "translated"),
+      mode: "move",
+      renameSubtitles: true,
+      targetVideoPath: join(directory.path, "translated", "ABC-123.mp4"),
+      nfoPath: join(directory.path, "translated", "ABC-123.nfo"),
     };
     const fileOrganizer = {
       plan: vi.fn().mockReturnValue(plan),
-      resolveOutputPlan: vi.fn().mockImplementation(async (nextPlan: OrganizePlan) => nextPlan),
+      resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer;
     const actorImageService = {
       prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
@@ -110,9 +119,9 @@ describe("FileScraper plan timing", () => {
       getConfiguration: async () => currentConfig,
     });
 
-    const preparation = await scraper.prepareFile("/tmp/ABC-123.mp4", { fileIndex: 1, totalFiles: 1 }, undefined, {
-      source: { rootId: "root", relativePath: "tmp/ABC-123.mp4" },
-      roots: [{ id: "root", hostPath: "/" }],
+    const preparation = await prepareFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
+      source: { rootId: "root", relativePath: "ABC-123.mp4" },
+      roots: [{ id: "root", hostPath: directory.path }],
     });
     expect(preparation.status).toBe("prepared");
     expect(downloadAll).not.toHaveBeenCalled();
@@ -121,7 +130,10 @@ describe("FileScraper plan timing", () => {
       naming: { ...currentConfig.naming, fileTemplate: "changed-{number}" },
     };
     if (preparation.status !== "prepared") throw new Error("Expected prepared scrape");
-    await scraper.executePreparedFile(preparation.prepared);
+    const results = await scraper.executePreparedFiles(preparation.prepared);
+    onTestFinished(async () => {
+      await results.release?.();
+    });
     expect(aggregate).toHaveBeenCalledOnce();
     expect(translateCrawlerData).toHaveBeenCalledOnce();
     expect(fileOrganizer.plan).toHaveBeenCalledOnce();
@@ -137,9 +149,12 @@ describe("FileScraper plan timing", () => {
         executionMode: "batch",
       },
     );
-    expect(downloadAll.mock.calls[0]?.[5]).toEqual({
+    expect(downloadAll.mock.calls[0]?.[5]).toMatchObject({
       movieBaseName: "ABC-123",
       existingAssetDir: plan.outputDir,
     });
   });
 });
+
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";

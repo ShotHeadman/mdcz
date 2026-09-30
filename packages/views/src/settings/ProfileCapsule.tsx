@@ -1,6 +1,7 @@
 import { cn, Popover, PopoverContent, PopoverTrigger } from "@mdcz/ui";
 import { Check, ChevronDown, Download, type LucideIcon, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useT } from "../i18n";
 
 interface ProfileCapsuleProps {
   profiles: string[];
@@ -27,6 +28,7 @@ export function ProfileCapsule({
   onImportProfile,
   className,
 }: ProfileCapsuleProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const visibleProfiles = useMemo(() => profiles.filter((profile) => profile.length > 0), [profiles]);
   const resolvedActiveProfile = activeProfile?.trim() || visibleProfiles[0] || "default";
@@ -73,7 +75,7 @@ export function ProfileCapsule({
         {visibleProfiles.length > 0 && (
           <div className="space-y-0.5 pb-2">
             <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-              配置档案
+              {t.settings.profiles.menuTitle}
             </div>
             {visibleProfiles.map((profile) => {
               const isActive = profile === resolvedActiveProfile;
@@ -97,13 +99,25 @@ export function ProfileCapsule({
         )}
         <div className="h-px bg-border/50" />
         <div className="space-y-0.5 pt-2">
-          <MenuAction icon={Plus} label="新建配置档案" onClick={() => runAction(onCreateProfile)} />
-          <MenuAction icon={Upload} label="导入配置档案..." onClick={() => runAction(onImportProfile)} />
-          <MenuAction icon={Download} label="导出当前档案..." onClick={() => runAction(onExportProfile)} />
+          <MenuAction icon={Plus} label={t.settings.profiles.create} onClick={() => runAction(onCreateProfile)} />
+          <MenuAction icon={Upload} label={t.settings.profiles.importMenu} onClick={() => runAction(onImportProfile)} />
+          <MenuAction
+            icon={Download}
+            label={t.settings.profiles.exportMenu}
+            onClick={() => runAction(onExportProfile)}
+          />
           {hasOtherProfiles && (
-            <MenuAction icon={Trash2} label="删除配置档案..." onClick={() => runAction(onDeleteProfile)} />
+            <MenuAction
+              icon={Trash2}
+              label={t.settings.profiles.deleteMenu}
+              onClick={() => runAction(onDeleteProfile)}
+            />
           )}
-          <MenuAction icon={RotateCcw} label="恢复默认设置" onClick={() => runAction(onResetConfig)} />
+          <MenuAction
+            icon={RotateCcw}
+            label={t.settings.profiles.resetDefaults}
+            onClick={() => runAction(onResetConfig)}
+          />
         </div>
       </PopoverContent>
     </Popover>

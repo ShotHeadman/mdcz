@@ -16,6 +16,7 @@ import {
 } from "@mdcz/ui";
 import { FolderOpen } from "lucide-react";
 import { useState } from "react";
+import { useT } from "../../i18n";
 import { ToolField as Field, ToolShell } from "../ToolScaffold";
 
 const TOOL_INPUT_CLASS =
@@ -50,6 +51,7 @@ export function SingleFileScraperDetail({
   onRun,
   workbenchLink,
 }: SingleFileScraperDetailProps) {
+  const t = useT();
   const [rootId, setRootId] = useState("");
   const [relativePath, setRelativePath] = useState("");
   const [manualUrl, setManualUrl] = useState("");
@@ -59,7 +61,7 @@ export function SingleFileScraperDetail({
   return (
     <div className="space-y-5">
       <div className="grid gap-4 lg:grid-cols-2">
-        <Field label="媒体目录">
+        <Field label={t.tools.mediaDirectory}>
           <select
             className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
             value={rootId}
@@ -70,7 +72,7 @@ export function SingleFileScraperDetail({
               onRootChange?.(nextRootId);
             }}
           >
-            <option value="">选择媒体目录</option>
+            <option value="">{t.tools.selectMediaDirectory}</option>
             {enabledRoots.map((root) => (
               <option key={root.id} value={root.id}>
                 {root.displayName}
@@ -78,19 +80,19 @@ export function SingleFileScraperDetail({
             ))}
           </select>
         </Field>
-        <Field label="手动 URL">
+        <Field label={t.tools.manualUrl}>
           <Input
             value={manualUrl}
             onChange={(event) => setManualUrl(event.target.value)}
-            placeholder="可选：站点详情页 URL"
+            placeholder={t.tools.manualUrlPlaceholder}
           />
         </Field>
       </div>
-      <Field label="相对路径">
+      <Field label={t.tools.relativePath}>
         <Input
           value={relativePath}
           onChange={(event) => setRelativePath(event.target.value)}
-          placeholder="从下方选择，或输入 rootId 下的相对路径"
+          placeholder={t.tools.relativePathPlaceholder}
         />
       </Field>
       <div className="grid max-h-[320px] gap-2 overflow-y-auto rounded-quiet border border-border/50 bg-surface-low/40 p-3">
@@ -108,16 +110,18 @@ export function SingleFileScraperDetail({
           </button>
         ))}
         {rootId && files.length === 0 && (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground">根目录暂无文件。</p>
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground">{t.tools.rootNoFiles}</p>
         )}
-        {!rootId && <p className="px-3 py-8 text-center text-sm text-muted-foreground">请选择媒体目录。</p>}
+        {!rootId && (
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground">{t.tools.pleaseSelectMediaDirectory}</p>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button
           disabled={!rootId || !relativePath.trim() || state?.pending}
           onClick={() => onRun({ rootId, relativePath: relativePath.trim(), manualUrl: manualUrl.trim() || undefined })}
         >
-          启动单文件刮削
+          {t.tools.startSingleFileScrape}
         </Button>
         {workbenchLink}
       </div>
@@ -157,29 +161,30 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
       manualUrl: manualUrl.trim() || undefined,
     });
 
+  const t = useT();
   return (
     <div className="space-y-5">
       <div className={TOOL_SUBSECTION_CLASS}>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="站点">
+          <Field label={t.tools.site}>
             <Select value={selectedSite} onValueChange={(value) => setSite(value === "all" ? "" : value)}>
               <SelectTrigger className={TOOL_SELECT_TRIGGER_CLASS}>
-                <SelectValue placeholder="选择站点" />
+                <SelectValue placeholder={t.tools.selectSite} />
               </SelectTrigger>
               <SelectContent>
-                {!siteOptions ? <SelectItem value="all">按配置聚合</SelectItem> : null}
+                {!siteOptions ? <SelectItem value="all">{t.tools.aggregateByConfig}</SelectItem> : null}
                 {sites.map((option) => (
                   <SelectItem key={option.site} value={option.site}>
                     <span className="flex items-center gap-2">
                       {option.name}
                       {option.enabled ? (
                         <Badge variant="secondary" className="h-5 rounded-quiet-capsule px-2 text-[10px]">
-                          已启用
+                          {t.common.enabled}
                         </Badge>
                       ) : null}
                       {!option.native ? (
                         <Badge variant="outline" className="h-5 rounded-quiet-capsule px-2 text-[10px]">
-                          浏览器
+                          {t.tools.browser}
                         </Badge>
                       ) : null}
                     </span>
@@ -188,11 +193,11 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
               </SelectContent>
             </Select>
           </Field>
-          <Field label="番号">
+          <Field label={t.tools.movieCode}>
             <Input
               value={number}
               onChange={(event) => setNumber(event.target.value)}
-              placeholder="例如: ABP-001"
+              placeholder={t.tools.movieCodePlaceholder}
               className={TOOL_INPUT_CLASS}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -202,11 +207,11 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
             />
           </Field>
           {!siteOptions ? (
-            <Field label="手动 URL">
+            <Field label={t.tools.manualUrl}>
               <Input
                 value={manualUrl}
                 onChange={(event) => setManualUrl(event.target.value)}
-                placeholder="可选：站点详情页 URL"
+                placeholder={t.tools.manualUrlPlaceholder}
                 className={TOOL_INPUT_CLASS}
               />
             </Field>
@@ -219,7 +224,7 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
         className={cn(TOOL_SECONDARY_BUTTON_CLASS, "w-full sm:w-auto")}
         onClick={run}
       >
-        {state?.pending ? "测试中..." : siteOptions ? "开始测试" : "运行爬虫测试"}
+        {state?.pending ? t.tools.testing : siteOptions ? t.tools.startTest : t.tools.runCrawlerTest}
       </Button>
       {result ? <CrawlerTesterResult result={result} /> : null}
       <ToolState state={state} pre />
@@ -228,34 +233,37 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
 }
 
 function CrawlerTesterResult({ result }: { result: NonNullable<CrawlerTesterDetailProps["result"]> }) {
+  const t = useT();
   return (
     <div className={TOOL_SUBSECTION_CLASS}>
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <span className="font-medium">
           {result.data ? (
-            <span className="text-emerald-600 dark:text-emerald-400">测试成功</span>
+            <span className="text-emerald-600 dark:text-emerald-400">{t.tools.testSuccess}</span>
           ) : (
-            <span className="text-destructive">测试失败</span>
+            <span className="text-destructive">{t.tools.testFailed}</span>
           )}
         </span>
-        <span className="font-numeric text-muted-foreground">耗时 {(result.elapsed / 1000).toFixed(1)}s</span>
+        <span className="font-numeric text-muted-foreground">
+          {t.tools.elapsedSeconds((result.elapsed / 1000).toFixed(1))}
+        </span>
       </div>
 
       {result.error ? <p className="mt-3 text-sm text-destructive">{result.error}</p> : null}
 
       {result.data ? (
         <div className="mt-3 grid gap-2 text-sm leading-7">
-          {result.data.title ? <CrawlerTesterResultRow label="标题" value={result.data.title} /> : null}
+          {result.data.title ? <CrawlerTesterResultRow label={t.tools.title} value={result.data.title} /> : null}
           {result.data.actors?.length ? (
-            <CrawlerTesterResultRow label="演员" value={result.data.actors.join(", ")} />
+            <CrawlerTesterResultRow label={t.tools.actors} value={result.data.actors.join(", ")} />
           ) : null}
           {result.data.genres?.length ? (
-            <CrawlerTesterResultRow label="标签" value={result.data.genres.join(", ")} />
+            <CrawlerTesterResultRow label={t.tools.tags} value={result.data.genres.join(", ")} />
           ) : null}
           {result.data.release_date ? (
-            <CrawlerTesterResultRow label="发行日期" value={result.data.release_date} />
+            <CrawlerTesterResultRow label={t.tools.releaseDate} value={result.data.release_date} />
           ) : null}
-          {result.data.studio ? <CrawlerTesterResultRow label="片商" value={result.data.studio} /> : null}
+          {result.data.studio ? <CrawlerTesterResultRow label={t.tools.studio} value={result.data.studio} /> : null}
         </div>
       ) : null}
     </div>
@@ -279,6 +287,7 @@ export interface SymlinkManagerDetailProps {
 }
 
 export function SymlinkManagerDetail({ state, onBrowseDestDir, onBrowseSourceDir, onRun }: SymlinkManagerDetailProps) {
+  const t = useT();
   const [sourceDir, setSourceDir] = useState("");
   const [destDir, setDestDir] = useState("");
   const [copyFiles, setCopyFiles] = useState(false);
@@ -296,13 +305,13 @@ export function SymlinkManagerDetail({ state, onBrowseDestDir, onBrowseSourceDir
     <div className="space-y-5">
       <div className="grid gap-4 lg:grid-cols-2">
         <div className={TOOL_SUBSECTION_CLASS}>
-          <Field label="源目录">
+          <Field label={t.tools.sourceDirectory}>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Input
                 value={sourceDir}
                 onChange={(event) => setSourceDir(event.target.value)}
                 className={cn(TOOL_INPUT_CLASS, "flex-1")}
-                placeholder="原始视频存放目录"
+                placeholder={t.tools.sourceDirectoryPlaceholder}
               />
               {onBrowseSourceDir ? (
                 <Button
@@ -319,13 +328,13 @@ export function SymlinkManagerDetail({ state, onBrowseDestDir, onBrowseSourceDir
           </Field>
         </div>
         <div className={TOOL_SUBSECTION_CLASS}>
-          <Field label="目标目录">
+          <Field label={t.tools.destDirectory}>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Input
                 value={destDir}
                 onChange={(event) => setDestDir(event.target.value)}
                 className={cn(TOOL_INPUT_CLASS, "flex-1")}
-                placeholder="软链接存放目录"
+                placeholder={t.tools.destDirectoryPlaceholder}
               />
               {onBrowseDestDir ? (
                 <Button
@@ -345,7 +354,7 @@ export function SymlinkManagerDetail({ state, onBrowseDestDir, onBrowseSourceDir
       <div className="flex items-center gap-3 rounded-quiet-lg bg-surface-low/90 p-4">
         <Checkbox id="copyFiles" checked={copyFiles} onCheckedChange={(checked) => setCopyFiles(Boolean(checked))} />
         <Label htmlFor="copyFiles" className="cursor-pointer text-sm leading-6">
-          同时同步 NFO、图片及字幕等附属文件
+          {t.tools.syncSidecarFiles}
         </Label>
       </div>
       <Button
@@ -354,7 +363,7 @@ export function SymlinkManagerDetail({ state, onBrowseDestDir, onBrowseSourceDir
         disabled={!sourceDir.trim() || !destDir.trim() || state?.pending}
         onClick={() => onRun({ sourceDir, destDir, copyFiles, dryRun })}
       >
-        {state?.pending ? "正在处理..." : "立即建立映射"}
+        {state?.pending ? t.tools.processing : t.tools.createMappingNow}
       </Button>
       <ToolState state={state} pre />
     </div>

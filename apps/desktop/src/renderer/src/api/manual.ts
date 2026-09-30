@@ -1,5 +1,6 @@
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData } from "@mdcz/shared/types";
+import { getT } from "@mdcz/views/i18n";
 import { selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { ipc } from "@/client/ipc";
 
@@ -51,18 +52,6 @@ export const startSelectedScrape = async (
   return { data };
 };
 
-export const deleteFile = async (target: RootFileRef | RootFileRef[]) => {
-  const data = await ipc.file.delete(Array.isArray(target) ? target : [target]);
-  if (data.failedCount > 0) throw new Error(`删除失败：${data.failedCount} 个文件未删除`);
-  return { data };
-};
-
-export const deleteFileAndFolder = async (target: RootFileRef) => {
-  const data = await ipc.file.delete([target], true);
-  if (data.failedCount > 0) throw new Error("删除文件夹失败");
-  return { data };
-};
-
 export const readNfo = async (path: LocalFileTarget, videoPath?: LocalFileTarget) => {
   const response = await ipc.file.nfoRead(asNfoTarget(path), videoPath);
   const data: NfoResponse = {
@@ -97,14 +86,14 @@ export const updateNfo = async (path: LocalFileTarget, crawlerData: CrawlerData,
 
 export const retryScrapeSelection = async (itemIds?: readonly string[]) => {
   const snapshot = selectScrapeSnapshot(useScrapeStore.getState());
-  if (!snapshot) throw new Error("没有可重试的刮削任务");
+  if (!snapshot) throw new Error(getT().desktop.noScrapeTaskToRetry);
   if (
     snapshot.task.status === "queued" ||
     snapshot.task.status === "running" ||
     snapshot.task.status === "paused" ||
     snapshot.task.status === "stopping"
   ) {
-    throw new Error("当前刮削任务仍在进行，请等待任务结束后再重试");
+    throw new Error(getT().desktop.scrapeTaskInProgress);
   }
   return {
     data: itemIds ? await ipc.scraper.retry(snapshot.task.id, itemIds) : await ipc.scraper.retry(snapshot.task.id),

@@ -1,34 +1,71 @@
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
-import { isPathInside, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import type { LibraryEntryRecord } from "@mdcz/persistence";
+import { isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import { toErrorMessage } from "@mdcz/shared/error";
+import type { MaintenanceMovieGroup } from "@mdcz/shared/maintenanceTasks";
 import type {
   CrawlerData,
+  DiscoveredAssets,
+  DownloadedAssets,
   FieldDiff,
+  FileInfo,
   LocalScanEntry,
   MaintenanceImageAlternatives,
   MaintenancePresetId,
   MaintenancePreviewStatus,
+  NfoLocalState,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { PreparedPublicationPlan } from "../publication";
+import type { RuntimeCrawlerProvider } from "../crawler/types";
+import { registeredMediaLocations } from "../library/registeredMedia";
+import { resolvePublicationAssetLayout } from "../publication/assetLayout";
+import type { CommittedMovie } from "../publication/committedMovie";
+import { toCommittedMovie } from "../publication/committedMovie";
+import { PublicationConflictError } from "../publication/conflicts";
+import { MoveOutput } from "../publication/MoveOutput";
 import {
-  type AggregationService,
+  MANAGED_MOVIE_ASSET_KINDS,
+  type MovieArtifacts,
+  prepareMovieArtifacts,
+  retainedRegisteredFeatures,
+} from "../publication/movieArtifacts";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
+import { WriteOutput } from "../publication/WriteOutput";
+import {
   applyScrapeNetworkPolicy,
   type DownloadManager,
+  downloadCrawlerAssets,
   type FileOrganizer,
   type NfoGenerator,
+  prepareOutputCrawlerData,
+  type ResolvedPublicationLayout,
   type ScrapeNetworkPolicyClient,
   type TranslateService,
+  writePreparedNfo,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
+import { AggregationService } from "../scrape/aggregation";
+import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import { assignVersionLabels } from "../scrape/organize/versionLabels";
+import { prepareOnlineMetadata } from "../scrape/prepareOnlineMetadata";
+import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
+import { type RuntimeLogger, runtimeLoggerService } from "../shared";
+import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
+import { diffPaths } from "./diffPaths";
 import { LocalScanService } from "./LocalScanService";
-import {
-  MaintenanceFileScraper,
-  type MaintenanceFileScraperDependencies,
-  type MaintenanceSignalService,
-} from "./MaintenanceFileScraper";
-import type { CommittedMaintenanceFile } from "./MaintenancePreparationService";
-import { getMaintenancePreset, supportsMaintenanceExecution } from "./presets";
+import { buildMovieTags } from "./movieTags";
+import { getMaintenancePreset, type MaintenancePreset } from "./presets";
+
+export interface MaintenanceSignalService {
+  setProgress(value: number, current: number, total: number): void;
+  showLogText(message: string): void;
+}
 
 export interface MaintenanceRuntimeConfigProvider {
   get(): Promise<Configuration>;
@@ -37,30 +74,46 @@ export interface MaintenanceRuntimeConfigProvider {
 export interface MaintenanceRuntimeDependencies {
   actorImageService: RuntimeActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
-  aggregationService: AggregationService;
+  aggregationService?: Pick<AggregationService, "aggregate">;
+  crawlerProvider?: RuntimeCrawlerProvider;
+  logger?: RuntimeLogger;
   config: MaintenanceRuntimeConfigProvider;
-  downloadManager: DownloadManager;
-  fileOrganizer: FileOrganizer;
-  /**
-   * All HTTP-owning maintenance dependencies must share this client. It is
-   * configured from the current scrape policy before preview or apply work.
-   */
+  downloadManager?: DownloadManager;
+  fileOrganizer: Pick<FileOrganizer, "plan" | "resolveOutputPlan">;
   networkPolicyClient?: ScrapeNetworkPolicyClient;
-  nfoGenerator: NfoGenerator;
+  nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   signalService: MaintenanceSignalService;
-  translateService: TranslateService;
-  postProcessAssets?: MaintenanceFileScraperDependencies["postProcessAssets"];
+  translateService?: TranslateService;
+  postProcessAssets?: (input: {
+    assets: DownloadedAssets;
+    configuration: Configuration;
+    crawlerData: CrawlerData;
+    fileInfo: FileInfo;
+    localState?: NfoLocalState;
+    signal?: AbortSignal;
+    signalService: Pick<MaintenanceSignalService, "showLogText" | "setProgress">;
+  }) => Promise<DownloadedAssets>;
 }
 
-export interface MaintenanceRuntimePreviewEntriesInput {
+export interface MaintenanceRuntimePreviewMovieInput {
   root: MediaRoot;
   presetId: MaintenancePresetId;
-  entries: LocalScanEntry[];
-  sharedData?: CommittedMaintenanceFile;
+  entry: LocalScanEntry;
+  files: LocalScanEntry[];
+  signal?: AbortSignal;
+}
+
+export interface MaintenanceRuntimePreviewPathsInput {
+  presetId: MaintenancePresetId;
+  entry: LocalScanEntry;
+  files: LocalScanEntry[];
+  crawlerData: CrawlerData | undefined;
   signal?: AbortSignal;
 }
 
 export interface MaintenanceRuntimePreviewItem {
+  files?: LocalScanEntry[];
+  affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   entry: LocalScanEntry;
   rootId: string;
   relativePath: string;
@@ -74,30 +127,35 @@ export interface MaintenanceRuntimePreviewItem {
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
-  root: MediaRoot;
   presetId: MaintenancePresetId;
   entry: LocalScanEntry;
-  sharedOutput?: LocalScanEntry;
+  files?: LocalScanEntry[];
   committed?: {
     crawlerData?: CrawlerData;
     imageAlternatives?: MaintenanceImageAlternatives;
     assetDecisions?: import("@mdcz/shared/types").MaintenanceAssetDecisions;
   };
-  progress?: { fileIndex: number; totalFiles: number };
-  signalService?: MaintenanceSignalService;
+  publication: {
+    commit(movie: CommittedMovie): void;
+    roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
+    identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
+  };
   signal?: AbortSignal;
+  preserveRegisteredMetadata?: boolean;
+}
+
+export interface MaintenanceRuntimeApplyLibraryEntryInput
+  extends Omit<MaintenanceRuntimeApplyEntryInput, "entry" | "files"> {
+  root: MediaRoot;
+  entry: LibraryEntryRecord;
+  localState?: NfoLocalState;
 }
 
 export interface MaintenanceRuntimeApplySuccess {
   status: "success";
-  entry: LocalScanEntry;
   crawlerData?: CrawlerData;
-  fieldDiffs?: FieldDiff[];
-  unchangedFieldDiffs?: FieldDiff[];
-  pathDiff?: PathDiff;
-  outputRelativePath: string;
-  plan?: PreparedPublicationPlan;
-  release?: () => Promise<void>;
+  output?: MovieArtifacts & { assets: DiscoveredAssets; nfoPath?: string };
+  error?: string | null;
 }
 
 export interface MaintenanceRuntimeApplyFailure {
@@ -133,31 +191,47 @@ export class MaintenanceRuntime {
   constructor(
     private readonly deps: MaintenanceRuntimeDependencies,
     private readonly sourceMediaPath?: string,
+    private readonly outputTemplateRoot?: string,
+    readonly inventory = new DirectoryInventory(),
   ) {}
 
+  async getConfiguration(): Promise<Configuration> {
+    return structuredClone(await this.deps.config.get());
+  }
+
   async createSession(input: {
+    inventory: DirectoryInventory;
+    configuration?: Configuration;
     root: MediaRoot;
     outputRoot: MediaRoot;
     outputRelativeDirectory: string;
-    registerRoot: (hostPath: string) => Promise<unknown>;
+    signal?: AbortSignal;
   }): Promise<MaintenanceRuntime> {
-    const config = structuredClone(await this.deps.config.get());
+    const config = structuredClone(input.configuration ?? (await this.getConfiguration()));
     const sourceMediaPath = config.paths.mediaPath.trim() || input.root.hostPath;
     const outputBaseDirectory = input.outputRelativeDirectory
       ? resolveRootRelativePath(input.outputRoot, input.outputRelativeDirectory)
       : input.outputRoot.hostPath;
-    config.paths.mediaPath = isPathInside(sourceMediaPath, outputBaseDirectory)
-      ? sourceMediaPath
-      : input.outputRoot.hostPath;
-    config.paths.successOutputFolder = outputBaseDirectory;
-    if (config.paths.metadataPath.trim()) {
-      this.deps.fileOrganizer.resolveMetadataDir(outputBaseDirectory, config);
-      await input.registerRoot(config.paths.metadataPath.trim());
-    }
-    return new MaintenanceRuntime({ ...this.deps, config: { get: async () => config } }, sourceMediaPath);
+    return new MaintenanceRuntime(
+      {
+        ...this.deps,
+        aggregationService:
+          this.deps.aggregationService ??
+          (this.deps.crawlerProvider
+            ? new AggregationService(this.deps.crawlerProvider, {
+                config,
+                logger: this.deps.logger,
+                signal: input.signal,
+              })
+            : undefined),
+        config: { get: async () => config },
+      },
+      sourceMediaPath,
+      outputBaseDirectory,
+      input.inventory,
+    );
   }
 
-  /** Applies the current per-site scrape policy to maintenance HTTP work. */
   async applyNetworkPolicy(): Promise<void> {
     if (!this.deps.networkPolicyClient) return;
     applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
@@ -167,110 +241,582 @@ export class MaintenanceRuntime {
     root: MediaRoot;
     refs: Array<{ relativePath: string }>;
     signal?: AbortSignal;
+    registeredOutputs?: Map<string, { nfoPath?: string }>;
   }): Promise<LocalScanEntry[]> {
-    const config = await this.getPresetConfig("read_local", input.root);
+    const config = await this.getPresetConfig("import_local");
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
     return await this.localScanService.scanFiles(input.root, filePaths, config.paths.sceneImagesFolder, input.signal, {
       mediaPath: this.sourceMediaPath ?? config.paths.mediaPath,
-      metadataPath: config.paths.metadataPath,
+      metadataPath: "",
+      registeredOutputs: input.registeredOutputs,
+      inventory: this.inventory,
     });
   }
 
-  async previewEntries(input: MaintenanceRuntimePreviewEntriesInput): Promise<MaintenanceRuntimePreviewItem[]> {
+  async previewMovie(input: MaintenanceRuntimePreviewMovieInput): Promise<MaintenanceRuntimePreviewItem> {
     const preset = getMaintenancePreset(input.presetId);
-    const config = await this.getPresetConfig(input.presetId, input.root);
-    const entries = input.entries;
+    const config = await this.getPresetConfig(input.presetId);
+    const { entry, files, signal } = input;
+    try {
+      throwIfAborted(signal);
 
-    if (!supportsMaintenanceExecution(preset)) {
-      return entries.map((entry) => this.localEntryToPreviewItem(input.root, entry));
-    }
+      if (preset.dataSource === "local" && entry.scanError) {
+        throw new Error(entry.scanError);
+      }
 
-    const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(), preset);
-    const items: MaintenanceRuntimePreviewItem[] = [];
-    for (const entry of entries) {
-      const relativePath = this.toRelativePath(input.root, entry.fileInfo.filePath);
-      const preview = await scraper.previewFile(entry, config, input.signal, input.sharedData);
-      items.push({
+      let crawlerData: CrawlerData | undefined;
+      let imageAlternatives: MaintenanceImageAlternatives = {};
+      if (preset.dataSource === "online") {
+        if (!this.deps.aggregationService || !this.deps.translateService) {
+          throw new Error("Online preset lacks required aggregation or translation services");
+        }
+        const prepared = await prepareOnlineMetadata({
+          number: entry.fileInfo.number,
+          configuration: config,
+          aggregationService: this.deps.aggregationService,
+          translateService: this.deps.translateService,
+          signal,
+        });
+        crawlerData = prepared.crawlerData;
+        imageAlternatives = prepared.aggregation.imageAlternatives;
+      } else {
+        crawlerData = entry.crawlerData;
+        if (crawlerData) crawlerData = canonicalizeCrawlerDataActorAliases(crawlerData, config);
+      }
+
+      const { fieldDiffs, unchangedFieldDiffs } = this.partitionDiffs(
+        entry,
+        config,
+        preset,
+        crawlerData,
+        imageAlternatives,
+      );
+
+      const { pathDiff, affectedFiles } = await this.previewPaths({
+        presetId: input.presetId,
+        entry,
+        files,
+        crawlerData,
+        signal,
+      });
+
+      return {
         entry,
         rootId: input.root.id,
-        relativePath,
-        status: preview.status,
-        error: preview.error ?? null,
-        fieldDiffs: preview.fieldDiffs ?? [],
-        unchangedFieldDiffs: preview.unchangedFieldDiffs ?? [],
-        pathDiff: preview.pathDiff ?? null,
-        proposedCrawlerData: preview.proposedCrawlerData ?? null,
-        imageAlternatives: preview.imageAlternatives,
-      });
+        relativePath: this.toRelativePath(input.root, entry.fileInfo.filePath),
+        status: "ready",
+        error: null,
+        fieldDiffs: fieldDiffs ?? [],
+        unchangedFieldDiffs: unchangedFieldDiffs ?? [],
+        pathDiff: pathDiff ?? null,
+        proposedCrawlerData: crawlerData ?? null,
+        imageAlternatives,
+        affectedFiles,
+        files,
+      };
+    } catch (error) {
+      if (isAbortError(error) || signal?.aborted) throw error;
+      return {
+        entry,
+        rootId: input.root.id,
+        relativePath: this.toRelativePath(input.root, entry.fileInfo.filePath),
+        status: "blocked",
+        error: toErrorMessage(error),
+        fieldDiffs: [],
+        unchangedFieldDiffs: [],
+        pathDiff: null,
+        proposedCrawlerData: null,
+        files,
+      };
     }
+  }
 
-    items.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
-    return items;
+  async previewPaths(input: MaintenanceRuntimePreviewPathsInput): Promise<{
+    pathDiff?: PathDiff;
+    affectedFiles: Array<{ fileId: string; currentPath: string; targetPath: string }>;
+  }> {
+    const preset = getMaintenancePreset(input.presetId);
+    const config = await this.getPresetConfig(input.presetId);
+    const failed = preset.dataSource === "local" ? input.files.find((file) => file.scanError) : undefined;
+    if (failed?.scanError) throw new Error(failed.scanError);
+    const plans = await this.buildPlans(input.files, config, preset, input.crawlerData, input.signal);
+    return {
+      pathDiff: plans[this.memberIndex(input.files, input.entry)].pathDiff,
+      affectedFiles: input.files.map((file, index) => ({
+        fileId: file.fileId,
+        currentPath: file.fileInfo.filePath,
+        targetPath:
+          preset.output === "move" && plans[index].plan ? plans[index].plan.targetVideoPath : file.fileInfo.filePath,
+      })),
+    };
+  }
+
+  async applyLibraryEntry(input: MaintenanceRuntimeApplyLibraryEntryInput): Promise<MaintenanceRuntimeApplyResult> {
+    const libraryEntry = input.entry;
+    const roots = new Map(input.publication.roots.map((root) => [root.id, root]));
+    const resolveRoot = async (id: string) => {
+      const root = roots.get(id);
+      if (!root) throw new Error(`Publication root not found: ${id}`);
+      return root;
+    };
+    const locations = await registeredMediaLocations(libraryEntry, resolveRoot);
+    const runtime = await this.createSession({
+      inventory: this.inventory,
+      root: input.root,
+      outputRoot: input.root,
+      outputRelativeDirectory: "",
+      signal: input.signal,
+    });
+    const files: LocalScanEntry[] = [];
+    const storedData = libraryEntry.crawlerDataJson
+      ? (JSON.parse(libraryEntry.crawlerDataJson) as CrawlerData)
+      : undefined;
+    for (const rootId of new Set(libraryEntry.files.map((file) => file.rootId))) {
+      const root = await resolveRoot(rootId);
+      const records = libraryEntry.files.filter((file) => file.rootId === rootId);
+      const scanned = await runtime.scanRefs({
+        root: { ...input.root, ...root },
+        refs: records.map((file) => ({ relativePath: file.rootRelativePath })),
+        registeredOutputs: locations,
+        signal: input.signal,
+      });
+      for (const record of records) {
+        const file = scanned.find((candidate) => candidate.ref.relativePath === record.rootRelativePath);
+        if (!file) throw new Error(`Maintenance scan omitted library file: ${record.id}`);
+        files.push({
+          ...file,
+          fileId: record.id,
+          crawlerData: file.crawlerData ?? storedData,
+          nfoLocalState: { ...file.nfoLocalState, ...input.localState },
+        });
+      }
+    }
+    if (!files.length) throw new Error("Library movie has no media files");
+    return runtime.applyEntry({ ...input, entry: files[0], files });
   }
 
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {
     const preset = getMaintenancePreset(input.presetId);
-    if (!supportsMaintenanceExecution(preset)) {
+    const { entry, files = [entry], committed, publication, signal } = input;
+    const config = await this.getPresetConfig(input.presetId);
+    throwIfAborted(signal);
+
+    const crawlerData = committed?.crawlerData ?? entry.crawlerData;
+    if (!crawlerData) throw new Error("Maintenance output requires movie metadata");
+
+    const plans = await this.buildPlans(files, config, preset, crawlerData, signal, input.preserveRegisteredMetadata);
+    const sharedPlan = plans[this.memberIndex(files, entry)];
+    const members = await Promise.all(
+      files.map(async (file, index) => {
+        const layout = plans[index].plan;
+        if (!layout) throw new Error(`Maintenance file has no resolved layout: ${file.fileId}`);
+        const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layout;
+        return {
+          source: file.ref,
+          fileId: file.fileId,
+          fileInfo: file.fileInfo,
+          layout: outputLayout,
+          assetLayout: await resolvePublicationAssetLayout({
+            inventory: this.inventory,
+            layout,
+            config,
+            crawlerData,
+            existingAssets: file.assets,
+            assetDecisions: committed?.assetDecisions,
+            movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : undefined,
+          }),
+          existingAssets: file.assets,
+          existingNfoPath: file.nfoPath,
+        };
+      }),
+    );
+
+    let stagingDir: string | undefined;
+    try {
+      const stagingParent = members[0].layout.metadataDir;
+      if (preset.dataSource === "online") {
+        await mkdir(stagingParent, { recursive: true });
+        stagingDir = await mkdtemp(join(stagingParent, ".mdcz-staging-"));
+      }
+
+      const preparedOutputData = stagingDir
+        ? await prepareOutputCrawlerData({
+            actorImageService: this.deps.actorImageService,
+            actorSourceProvider: this.deps.actorSourceProvider,
+            config,
+            crawlerData,
+            enabled: Boolean(sharedPlan.plan),
+            movieDir: stagingDir,
+            sourceVideoPath: entry.fileInfo.filePath,
+            signal,
+          })
+        : { data: crawlerData, actorPhotoPaths: [] };
+      throwIfAborted(signal);
+
+      let preparedCrawlerData = preparedOutputData.data ?? crawlerData;
+      const preparedActorPhotoPaths = preparedOutputData.actorPhotoPaths;
+
+      let downloadedAssets: DownloadedAssets = {
+        poster: undefined,
+        fanart: undefined,
+        thumb: undefined,
+        trailer: undefined,
+        sceneImages: [],
+        downloaded: [],
+      };
+
+      if (stagingDir && preset.dataSource === "online") {
+        if (!this.deps.downloadManager) {
+          throw new Error("Online preset lacks download service");
+        }
+        const downloaded = await downloadCrawlerAssets({
+          config,
+          crawlerData: preparedCrawlerData,
+          downloadManager: this.deps.downloadManager,
+          fileInfo: entry.fileInfo,
+          imageAlternatives: committed?.imageAlternatives,
+          movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : entry.fileInfo.fileName,
+          outputDir: stagingDir,
+          existingAssetDir: stagingParent,
+          existingAssets: entry.assets,
+          inventory: this.inventory,
+          sources: undefined,
+          callbacks: {
+            signal,
+            assetDecisions: committed?.assetDecisions,
+            forceReplace: {
+              thumb: committed?.assetDecisions?.thumb === "replace",
+              poster: committed?.assetDecisions?.poster === "replace",
+              fanart: committed?.assetDecisions?.fanart === "replace",
+            },
+          },
+        });
+        downloadedAssets = downloaded.assets;
+        preparedCrawlerData = downloaded.crawlerData;
+      }
+      throwIfAborted(signal);
+
+      if (this.deps.postProcessAssets && stagingDir && preset.dataSource === "online") {
+        downloadedAssets = await this.deps.postProcessAssets({
+          assets: downloadedAssets,
+          configuration: config,
+          crawlerData: preparedCrawlerData,
+          fileInfo: entry.fileInfo,
+          localState: entry.nfoLocalState,
+          signal,
+          signalService: this.deps.signalService,
+        });
+      }
+
+      const published = await prepareMovieArtifacts({
+        inventory: this.inventory,
+        roots: publication.roots,
+        members,
+        retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.assets),
+        stagingDir,
+        downloadedAssets,
+        actorPhotoPaths: preparedActorPhotoPaths,
+        assetDecisions: committed?.assetDecisions,
+        relocateExistingArtifacts: input.presetId === "local_organize",
+        ownedAssetPaths: await Promise.all(
+          publication.identity.assets
+            .filter((asset) => asset.published && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind))
+            .map(async (asset) => {
+              const root = publication.roots.find((root) => root.id === asset.rootId);
+              if (!root) throw new Error(`Publication root not found: ${asset.rootId}`);
+              return resolveRootRelativePath(root, asset.relativePath);
+            }),
+        ),
+        nfoNaming: config.download.nfoNaming,
+        writeNfo: async (assets, writeFile) =>
+          preset.output === "none"
+            ? entry.nfoPath
+            : await writePreparedNfo({
+                assets,
+                config,
+                crawlerData: preparedCrawlerData,
+                enabled: Boolean((preset.dataSource === "online" || config.download.generateNfo) && sharedPlan.plan),
+                fileInfo: entry.fileInfo,
+                localState: entry.nfoLocalState,
+                buildTags: buildMovieTags,
+                nfoGenerator: this.deps.nfoGenerator,
+                nfoPath: sharedPlan.plan?.nfoPath,
+                sourceVideoPath: entry.fileInfo.filePath,
+                sources: undefined,
+                writeFile,
+              }),
+      });
+      throwIfAborted(signal);
+
+      if (!published.files.some((candidate) => candidate.fileId === entry.fileId))
+        throw new Error("Maintenance publication requires the selected media member");
+      if (preset.output === "none" && (published.moves.length || published.artifacts.length))
+        throw new Error("Importing local metadata must not change files");
+
+      const movieAssets = [...published.movieAssets];
+      if (preset.output === "none") {
+        // The shared layout keeps one NFO and image set per directory; import must also own every other member's set.
+        const registered = new Set(
+          movieAssets.flatMap((asset) =>
+            asset.type === "local" ? [`${asset.kind}\0${asset.file.rootId}\0${asset.file.relativePath}`] : [],
+          ),
+        );
+        for (const file of files) {
+          for (const [kind, paths] of [
+            ["nfo", file.nfoPaths],
+            ["thumb", [file.assets.thumb]],
+            ["poster", [file.assets.poster]],
+            ["fanart", [file.assets.fanart]],
+            ["trailer", [file.assets.trailer]],
+            ["scene", file.assets.sceneImages],
+            ["actor", file.assets.actorPhotos],
+          ] as const) {
+            for (const path of paths) {
+              if (!path) continue;
+              const ref = toRootFileRef(path, publication.roots);
+              const key = `${kind}\0${ref.rootId}\0${ref.relativePath}`;
+              if (registered.has(key)) continue;
+              registered.add(key);
+              movieAssets.push({ type: "local", kind, file: ref });
+            }
+          }
+        }
+      }
+      const movie = toCommittedMovie(
+        {
+          ...published,
+          movieId: publication.identity.movieId,
+          movieAssets,
+          // Imported NFOs and images become MDCz-owned so later refreshes may rewrite them.
+          publishedTargets:
+            preset.output === "none"
+              ? movieAssets.flatMap((asset) =>
+                  asset.type === "local" && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind) ? [asset.file] : [],
+                )
+              : published.publishedTargets,
+        },
+        { crawlerData: preparedCrawlerData, sources: undefined },
+      );
+
+      const unlock = await acquireOutputDirectories(
+        [
+          ...published.moves.map((move) => move.targetPath),
+          ...published.artifacts.map((artifact) => artifact.targetPath),
+        ],
+        (directory) => this.inventory.canonicalDirectory(directory),
+      );
+      try {
+        throwIfAborted(signal);
+        const validate = async () => {
+          throwIfAborted(signal);
+          await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
+          throwIfAborted(signal);
+        };
+        const commit = () => publication.commit(movie);
+        if (published.moves.length) {
+          await new MoveOutput(undefined, this.deps.logger).install({
+            reorganize: true,
+            moves: published.moves,
+            artifacts: published.artifacts,
+            protectedMediaFiles: published.protectedMediaFiles,
+            validate,
+            commit,
+          });
+        } else {
+          await new WriteOutput(undefined, this.deps.logger).install(published.artifacts, {
+            protectedMediaFiles: published.protectedMediaFiles,
+            validate,
+            commit,
+          });
+        }
+      } finally {
+        unlock();
+      }
+
       return {
         status: "success",
-        entry: input.entry,
-        outputRelativePath: this.toRelativePath(input.root, input.entry.fileInfo.filePath),
+        crawlerData: preparedCrawlerData,
+        output: published,
+        error: null,
+      };
+    } catch (error) {
+      if (isAbortError(error) || error instanceof PublicationConflictError || publication === undefined) throw error;
+      return { status: "failed", error: toErrorMessage(error) };
+    } finally {
+      if (stagingDir) {
+        try {
+          await rm(stagingDir, { recursive: true, force: true });
+        } catch (error) {
+          (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+            `Failed to remove maintenance staging ${stagingDir}: ${toErrorMessage(error)}`,
+          );
+        }
+      }
+    }
+  }
+
+  private memberIndex(files: readonly LocalScanEntry[], entry: LocalScanEntry): number {
+    const index = files.findIndex((file) => file.fileInfo.filePath === entry.fileInfo.filePath);
+    if (index < 0) throw new Error(`Maintenance movie does not contain the selected file: ${entry.fileInfo.filePath}`);
+    return index;
+  }
+
+  private async buildPlans(
+    files: readonly LocalScanEntry[],
+    config: Configuration,
+    preset: MaintenancePreset,
+    crawlerData: CrawlerData | undefined,
+    signal?: AbortSignal,
+    preserveRegisteredMetadata = false,
+  ): Promise<Array<{ plan?: ResolvedPublicationLayout; pathDiff?: PathDiff }>> {
+    const labels =
+      preset.output === "move" && crawlerData && config.behavior.successFileRename
+        ? assignVersionLabels(
+            await Promise.all(
+              files.map(async (file) => ({
+                sourcePath: file.fileInfo.filePath,
+                targetVideoPath: this.planMove(file, config, crawlerData).targetVideoPath,
+                multipart: Boolean(file.fileInfo.part),
+                filenameResolution: file.fileInfo.resolution,
+                size: (await this.inventory.stats(file.fileInfo.filePath)).size,
+              })),
+            ),
+          )
+        : [];
+    return await Promise.all(
+      files.map((file, index) =>
+        this.buildPlan(file, config, preset, crawlerData, signal, preserveRegisteredMetadata, labels[index]),
+      ),
+    );
+  }
+
+  private planMove(entry: LocalScanEntry, config: Configuration, crawlerData: CrawlerData, versionLabel?: string) {
+    return this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState, {
+      outputTemplateRoot:
+        this.outputTemplateRoot ??
+        resolve(config.paths.mediaPath || entry.currentDir, config.paths.successOutputFolder),
+      versionLabel,
+    });
+  }
+
+  private async buildPlan(
+    entry: LocalScanEntry,
+    config: Configuration,
+    preset: MaintenancePreset,
+    crawlerData: CrawlerData | undefined,
+    signal?: AbortSignal,
+    preserveRegisteredMetadata = false,
+    versionLabel?: string,
+  ): Promise<{
+    plan?: ResolvedPublicationLayout;
+    pathDiff?: PathDiff;
+  }> {
+    throwIfAborted(signal);
+
+    if (!crawlerData) {
+      throw new Error("Local NFO does not exist or failed to parse; cannot proceed with subsequent steps");
+    }
+
+    if (preset.output !== "move") {
+      const layout = this.deps.fileOrganizer.plan(entry.fileInfo, crawlerData, config, entry.nfoLocalState);
+      const metadataDir = entry.nfoPath ? dirname(entry.nfoPath) : layout.metadataDir;
+      return {
+        plan: await this.deps.fileOrganizer.resolveOutputPlan(
+          {
+            outputDir: entry.currentDir,
+            metadataDir,
+            metadataRoot: metadataDir,
+            mode: "preserve",
+            targetVideoPath: entry.fileInfo.filePath,
+            nfoPath:
+              entry.nfoPath && !isMovieNfoBaseName(basename(entry.nfoPath, ".nfo"))
+                ? entry.nfoPath
+                : join(metadataDir, basename(layout.nfoPath)),
+            renameSubtitles: false,
+          },
+          entry.fileInfo.filePath,
+          {
+            allowSharedDirectory: true,
+            existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
+            inventory: this.inventory,
+          },
+        ),
+        pathDiff: undefined,
       };
     }
 
-    const entry = input.entry;
-    const config = await this.getPresetConfig(input.presetId, input.root);
-    const scraper = new MaintenanceFileScraper(this.createFileScraperDependencies(input.signalService), preset);
-    const result = await scraper.processFile(
-      entry,
-      config,
-      input.progress ?? { fileIndex: 1, totalFiles: 1 },
-      input.signal,
-      input.committed,
-      input.sharedOutput,
+    const rawPlan = this.planMove(entry, config, crawlerData, versionLabel);
+
+    const registeredMetadataPath = preserveRegisteredMetadata ? entry.nfoPath : undefined;
+    const metadataDir = registeredMetadataPath ? dirname(registeredMetadataPath) : rawPlan.metadataDir;
+    const plan = await this.deps.fileOrganizer.resolveOutputPlan(
+      registeredMetadataPath
+        ? {
+            ...rawPlan,
+            metadataDir,
+            nfoPath: entry.nfoPath ?? join(metadataDir, basename(rawPlan.nfoPath)),
+          }
+        : rawPlan,
+      entry.fileInfo.filePath,
+      {
+        allowSharedDirectory:
+          config.naming.assetNamingMode === "followVideo" && config.download.nfoNaming === "filename",
+        existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
+        inventory: this.inventory,
+      },
     );
 
-    if (result.status !== "success") {
-      return { status: "failed", error: result.error ?? "维护应用失败" };
-    }
-
-    const updatedEntry = result.updatedEntry ?? entry;
-    const plan = result.publicationPlan;
-    if (!plan) {
-      return { status: "failed", error: "维护应用未生成发布计划" };
-    }
     return {
-      status: "success",
-      entry: updatedEntry,
-      crawlerData: result.crawlerData,
-      fieldDiffs: result.fieldDiffs,
-      unchangedFieldDiffs: result.unchangedFieldDiffs,
-      pathDiff: result.pathDiff,
-      outputRelativePath: this.toRelativePath(input.root, updatedEntry.fileInfo.filePath),
       plan,
-      release: result.release,
+      pathDiff: diffPaths(entry, plan),
     };
   }
 
-  private localEntryToPreviewItem(root: MediaRoot, entry: LocalScanEntry): MaintenanceRuntimePreviewItem {
-    const relativePath = this.toRelativePath(root, entry.fileInfo.filePath);
-    return {
+  private partitionDiffs(
+    entry: LocalScanEntry,
+    config: Configuration,
+    preset: MaintenancePreset,
+    crawlerData: CrawlerData | undefined,
+    imageAlternatives: MaintenanceImageAlternatives,
+  ): { fieldDiffs?: FieldDiff[]; unchangedFieldDiffs?: FieldDiff[] } {
+    if (preset.dataSource === "local" || !crawlerData) {
+      return { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
+    }
+
+    const comparisonBase = this.buildDiffBaseline(entry, crawlerData);
+    if (!comparisonBase) {
+      return { fieldDiffs: undefined, unchangedFieldDiffs: undefined };
+    }
+
+    return partitionCrawlerDataWithOptions(comparisonBase, crawlerData, {
+      includeTranslatedFields: config.translate.enableTranslation,
       entry,
-      rootId: root.id,
-      relativePath,
-      status: entry.scanError ? "blocked" : "ready",
-      error: entry.scanError ?? null,
-      fieldDiffs: [],
-      unchangedFieldDiffs: [],
-      pathDiff: {
-        changed: false,
-        currentDir: entry.currentDir,
-        currentVideoPath: entry.fileInfo.filePath,
-        fileId: entry.fileId,
-        targetDir: entry.currentDir,
-        targetVideoPath: entry.fileInfo.filePath,
-      },
-      proposedCrawlerData: entry.crawlerData ?? null,
+      imageAlternatives,
+    });
+  }
+
+  private buildDiffBaseline(entry: LocalScanEntry, crawlerData: CrawlerData | undefined): CrawlerData | undefined {
+    if (entry.crawlerData) {
+      return {
+        ...entry.crawlerData,
+        trailer_url:
+          entry.crawlerData.trailer_url ||
+          (entry.assets.trailer ? entry.assets.trailer.split(/[\\/]/u).pop() : undefined),
+      };
+    }
+
+    if (!crawlerData) {
+      return undefined;
+    }
+
+    return {
+      title: "",
+      number: crawlerData.number || entry.fileInfo.number,
+      actors: [],
+      genres: [],
+      scene_images: [],
+      trailer_url: entry.assets.trailer ? entry.assets.trailer.split(/[\\/]/u).pop() : undefined,
+      website: crawlerData.website,
     };
   }
 
@@ -282,32 +828,9 @@ export class MaintenanceRuntime {
     }
   }
 
-  private createFileScraperDependencies(signalService?: MaintenanceSignalService): MaintenanceFileScraperDependencies {
-    return {
-      actorImageService: this.deps.actorImageService,
-      actorSourceProvider: this.deps.actorSourceProvider,
-      aggregationService: this.deps.aggregationService,
-      downloadManager: this.deps.downloadManager,
-      fileOrganizer: this.deps.fileOrganizer,
-      nfoGenerator: this.deps.nfoGenerator,
-      signalService: signalService ?? this.deps.signalService,
-      translateService: this.deps.translateService,
-      postProcessAssets: this.deps.postProcessAssets,
-    };
-  }
-
-  private async getPresetConfig(presetId: MaintenancePresetId, root: MediaRoot): Promise<Configuration> {
+  private async getPresetConfig(presetId: MaintenancePresetId): Promise<Configuration> {
     const preset = getMaintenancePreset(presetId);
-    const baseConfig = await this.deps.config.get();
-    return mergeDeep(
-      {
-        ...baseConfig,
-        paths: {
-          ...baseConfig.paths,
-          mediaPath: baseConfig.paths.mediaPath.trim() || root.hostPath,
-        },
-      },
-      preset.configOverrides,
-    );
+    const baseConfig = await this.getConfiguration();
+    return mergeDeep(baseConfig, preset.configOverrides);
   }
 }

@@ -6,7 +6,6 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import {
-  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
@@ -14,6 +13,8 @@ import {
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
+import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -50,6 +51,7 @@ export class MaintenanceService {
   private readonly persistenceService: DesktopPersistenceService;
   private readonly imageHostCooldownStore: PersistentCooldownStore;
   private readonly runtime: MaintenanceRuntime;
+  private readonly mediaRoots: ConfiguredMediaRootService;
   private readonly coordinator: MaintenanceSessionCoordinator;
 
   constructor(deps: MaintenanceServiceDependencies) {
@@ -57,6 +59,7 @@ export class MaintenanceService {
     this.persistenceService = deps.persistenceService;
     this.imageHostCooldownStore = deps.imageHostCooldownStore;
     const mediaRoots = deps.mediaRoots ?? createDesktopMediaRootService(deps.persistenceService);
+    this.mediaRoots = mediaRoots;
     this.runtime =
       deps.runtime ??
       createDesktopMaintenanceRuntime({
@@ -71,25 +74,34 @@ export class MaintenanceService {
       deps.coordinator ??
       new MaintenanceSessionCoordinator({
         roots: {
+          assertRootIntegrity: (ids) => mediaRoots.assertRootIntegrity(ids),
           get: async (rootId) => {
             return await mediaRoots.get(rootId);
           },
           list: async () => await mediaRoots.listRoots(),
-          ensurePathRecord: async (input) => await mediaRoots.ensurePathRecord(input),
         },
         runtime: this.runtime,
-        library: createMaintenanceLibraryPort({
-          getRepositories: async () => {
+        discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
+          return (
+            await discoverDirectoryFiles({
+              scope,
+              configuration,
+              signal,
+              onProgress,
+              inventory,
+              mediaRoots,
+              platform: "desktop",
+            })
+          ).refs;
+        },
+        persistence: {
+          get: async () => {
             const { repositories } = await this.persistenceService.getState();
             return {
               library: repositories.library,
-              mediaRoots: repositories.mediaRoots,
-              publicationJournal: repositories.publicationJournal,
-              libraryRepairIssues: repositories.libraryRepairIssues,
             };
           },
-          resolveRoot: async (rootId) => await mediaRoots.get(rootId),
-        }),
+        },
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       });
   }
@@ -115,6 +127,33 @@ export class MaintenanceService {
     };
   }
 
+  async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
+    return await this.coordinator.rerunDirectory(sessionId);
+  }
+
+  async startDirectory(
+    source: DirectorySource,
+    presetId: MaintenancePresetId,
+    targetDir?: string,
+  ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
+    const configuration = await this.runtime.getConfiguration();
+    const directoryScope = createDirectoryScope(source, targetDir ?? source.scanDir, configuration, "maintenance");
+    const scan = await this.mediaRoots.admitDirectory({ hostPath: directoryScope.scanDir });
+    const output =
+      directoryScope.targetDir === directoryScope.scanDir
+        ? { id: scan.root.id, relativeDirectory: scan.relativeDirectory }
+        : await this.mediaRoots.prepareOutputDirectory({ hostPath: directoryScope.targetDir });
+    return await this.coordinator.startPreview({
+      rootId: scan.root.id,
+      presetId,
+      refs: [],
+      outputRootId: output.id,
+      outputRelativeDirectory: output.relativeDirectory,
+      directoryScope,
+      configuration,
+    });
+  }
+
   async startPreview(
     refs: RootFileRef[],
     presetId: MaintenancePresetId,
@@ -122,9 +161,15 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (refs.length === 0) throw new Error("No files selected");
     const rootId = refs[0]?.rootId;
-    if (!rootId) throw new Error("维护文件缺少媒体目录");
+    if (!rootId) throw new Error("Maintenance file is missing a media directory");
     this.signalService.invalidate("maintenance");
-    return await this.coordinator.startPreview({ rootId, presetId, refs, ...output });
+    return await this.coordinator.startPreview({
+      rootId,
+      presetId,
+      refs,
+      ...output,
+      configuration: await this.runtime.getConfiguration(),
+    });
   }
 
   async execute(
@@ -133,11 +178,10 @@ export class MaintenanceService {
   ): Promise<MaintenanceRunHandle<MaintenanceApplyBatch>> {
     if (selections.length === 0) throw new Error("No entries to process");
     const session = await this.requireActiveSession();
-    if (session.presetId !== presetId) throw new Error("维护预设与当前任务不一致");
-    if (presetId === "read_local") throw new Error("当前预设仅用于扫描本地数据，无需执行");
+    if (session.presetId !== presetId) throw new Error("Maintenance preset does not match current task");
     const previewIds = new Set(session.previews.map((preview) => preview.id));
     if (selections.some((selection) => !previewIds.has(selection.previewId))) {
-      throw new Error("维护项目不属于当前任务");
+      throw new Error("Maintenance item does not belong to the current task");
     }
     this.signalService.invalidate("maintenance");
     const handle = await this.coordinator.beginApply({ sessionId: session.id, selections });
@@ -185,7 +229,7 @@ export class MaintenanceService {
 
   private async requireActiveSession(): Promise<MaintenanceActiveSessionSnapshot> {
     const session = await this.coordinator.getActiveSession();
-    if (!session) throw new Error("维护会话不存在或已过期");
+    if (!session) throw new Error("Maintenance session does not exist or has expired");
     return session;
   }
 

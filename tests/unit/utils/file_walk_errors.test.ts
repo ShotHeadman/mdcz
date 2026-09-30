@@ -85,9 +85,22 @@ describe("recursive file walking", () => {
     let active = 0;
     let maximum = 0;
     const calls: Array<[string, string]> = [];
+    let blockReads = false;
+    let releaseRead!: () => void;
+    let readStarted!: () => void;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const enteredRead = new Promise<void>((resolve) => {
+      readStarted = resolve;
+    });
     const io = async <T>(operation: string, path: string, value: T): Promise<T> => {
       calls.push([operation, path]);
       maximum = Math.max(maximum, ++active);
+      if (blockReads && operation === "readdir") {
+        readStarted();
+        await readGate;
+      }
       await new Promise((resolve) => setTimeout(resolve, 1));
       active -= 1;
       return value;
@@ -167,5 +180,21 @@ describe("recursive file walking", () => {
     if (backend === "runtime")
       await expect(scan(true, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
     else await expect(scan(true, controller.signal)).rejects.toBe(reason);
+    calls.length = 0;
+    const cancelling = new AbortController();
+    blockReads = true;
+    const progress = vi.fn();
+    const pending = storage.walkFiles(rootPath, true, cancelling.signal, {
+      filterFile: (path) => path.endsWith(".mp4"),
+      onProgress: progress,
+    });
+    await enteredRead;
+    cancelling.abort(reason);
+    expect(active).toBe(1);
+    releaseRead();
+    await expect(pending).rejects.toBe(reason);
+    expect(active).toBe(0);
+    expect(calls.filter(([operation]) => operation === "readdir")).toEqual([["readdir", rootPath]]);
+    expect(progress).toHaveBeenCalled();
   });
 });

@@ -189,7 +189,7 @@ const expectStructuredActorPayload = (
 };
 
 describe("Emby actor services", () => {
-  it("returns layered diagnostics and an admin-key hint for a healthy Emby connection", async () => {
+  it("returns layered diagnostics with an admin-key notice step for a healthy Emby connection", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(
       createMockGetJson({
@@ -205,14 +205,13 @@ describe("Emby actor services", () => {
 
     expect(result.success).toBe(true);
     expect(result.serverInfo).toEqual({ serverName: "Emby", version: "4.9.0.41" });
-    expect(result.steps.map((step) => [step.key, step.status])).toEqual([
-      ["server", "ok"],
-      ["auth", "ok"],
-      ["peopleRead", "ok"],
-      ["peopleWrite", "ok"],
-      ["adminKey", "skipped"],
+    expect(result.steps).toEqual([
+      { key: "server", status: "ok" },
+      { key: "auth", status: "ok" },
+      { key: "peopleRead", status: "ok" },
+      { key: "peopleWrite", status: "ok" },
+      { key: "adminKey", status: "skipped" },
     ]);
-    expect(result.steps[4]?.message).toContain("管理员 API Key");
   });
 
   it("uses the resolved Emby user id for people-read diagnostics", async () => {
@@ -275,7 +274,7 @@ describe("Emby actor services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1?");
+    expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1$/u);
     expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
     expectStructuredActorPayload(
       readPostedPayload(networkClient),
@@ -412,7 +411,7 @@ describe("Emby actor services", () => {
       },
     );
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toContain("/Items/person-1/Images/Primary?");
+    expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1\/Images\/Primary$/u);
     expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
   });
 
@@ -618,6 +617,7 @@ describe("Emby actor services", () => {
     const result = await service.run(createEmbyConfig(), "all");
 
     expect(result).toEqual({ processedCount: 0, failedCount: 0, skippedCount: 0 });
+    expect(signalService.showLogText).toHaveBeenCalledWith("Emby returned no actors to sync", "warn");
     expect(actorSourceProvider.lookup).not.toHaveBeenCalled();
     expect(networkClient.postText).not.toHaveBeenCalled();
     expect(

@@ -97,11 +97,6 @@ const buildMaintenanceSnapshotView = (snapshot: MaintenanceActiveSessionSnapshot
                   batchId: snapshot.currentBatch?.id,
                   status: result?.status ?? item.status,
                   ...(result?.error ? { error: result.error } : {}),
-                  ...(result?.crawlerData ? { crawlerData: result.crawlerData } : {}),
-                  ...(result?.entry ? { updatedEntry: result.entry } : {}),
-                  ...(result?.fieldDiffs ? { fieldDiffs: result.fieldDiffs } : {}),
-                  ...(result?.unchangedFieldDiffs ? { unchangedFieldDiffs: result.unchangedFieldDiffs } : {}),
-                  ...(result?.pathDiff ? { pathDiff: result.pathDiff } : {}),
                 },
               ],
             ];
@@ -134,7 +129,7 @@ const initialState = () => ({
   retiredSessionIds: [] as string[],
   selectedIds: [] as string[],
   activeId: null as string | null,
-  presetId: "read_local" as MaintenancePresetId,
+  presetId: "import_local" as MaintenancePresetId,
   filter: "all" as MaintenanceFilter,
   currentPath: "",
   pending: false,
@@ -154,6 +149,7 @@ export const selectMaintenanceExecutionStatus = (state: MaintenanceState): Maint
   const session = state.snapshot;
   if (!session) return state.pending ? "previewing" : "idle";
   if (session.status === "paused" || session.status === "stopping") return session.status;
+  if (session.status === "discovering") return "scanning";
   if (session.status === "queued" || session.status === "running") {
     return session.phase === "preview" ? "previewing" : "executing";
   }
@@ -174,8 +170,6 @@ export const useMaintenanceStore = create<MaintenanceState>()((set) => ({
   setSnapshot: (snapshot) =>
     set((state) => {
       if (snapshot && state.retiredSessionIds.includes(snapshot.id)) return state;
-      if (snapshot && state.snapshot?.id === snapshot.id && snapshot.generation < state.snapshot.generation)
-        return state;
       const retiredSessionIds =
         state.snapshot && state.snapshot.id !== snapshot?.id
           ? [...state.retiredSessionIds, state.snapshot.id]

@@ -1,20 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, stat, unlink } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
-import { Website } from "@mdcz/shared/enums";
 import type {
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
+import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import type { RuntimeDownloadNetworkClient } from "../network";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
+import type { PublicationOutputPort } from "../publication/types";
+import { WriteOutput } from "../publication/WriteOutput";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
-import type { RuntimeLogger } from "../shared";
-import { AmazonJpImageService, type AmazonJpNetworkClient } from "./AmazonJpImageService";
+import { type RuntimeLogger, runtimeLoggerService } from "../shared";
+import {
+  AmazonJpImageService,
+  type AmazonJpNetworkClient,
+  type AmazonJpPosterEnhanceResult,
+} from "./AmazonJpImageService";
 
 const POSTER_FILE_NAME = "poster.jpg";
 
@@ -101,18 +109,17 @@ const findCurrentPosterPath = async (
   return null;
 };
 
-export interface AmazonPosterEnhanceResult {
-  poster_url?: string;
-  reason: string;
-}
-
 export interface AmazonPosterDependencies {
   validateImage?: (filePath: string) => Promise<ImageValidation>;
-  enhanceAmazonPoster?: (data: CrawlerData) => Promise<AmazonPosterEnhanceResult>;
+  enhanceAmazonPoster?: (title: string) => Promise<AmazonJpPosterEnhanceResult>;
   logger?: Pick<RuntimeLogger, "warn">;
 }
 
-export type AmazonPosterApplyDependencies = AmazonPosterDependencies & RegisteredPublicationContext;
+export type AmazonPosterApplyDependencies = AmazonPosterDependencies & {
+  roots: readonly { id: string; hostPath: string }[];
+  outputs?: PublicationOutputPort;
+  library?: MovieLibrary;
+};
 
 const defaultAmazonPosterDependencies: Required<Pick<AmazonPosterDependencies, "validateImage">> = {
   validateImage,
@@ -189,18 +196,9 @@ export const lookupAmazonPoster = async (
   const normalizedNfoPath = resolve(nfoPath.trim());
   const startedAt = Date.now();
   try {
-    const data: CrawlerData = {
-      title: title.replace(/\s+/gu, " ").trim(),
-      number: basename(normalizedNfoPath, extname(normalizedNfoPath)),
-      actors: [],
-      genres: [],
-      scene_images: [],
-      website: Website.JAVDB,
-      poster_url: "lookup",
-    };
     const result = dependencies.enhanceAmazonPoster
-      ? await dependencies.enhanceAmazonPoster(data)
-      : await new AmazonJpImageService(networkClient, dependencies.logger).enhance(data);
+      ? await dependencies.enhanceAmazonPoster(title)
+      : await new AmazonJpImageService(networkClient, dependencies.logger).enhance(title);
     return {
       nfoPath: normalizedNfoPath,
       amazonPosterUrl: result.poster_url ?? null,
@@ -211,7 +209,8 @@ export const lookupAmazonPoster = async (
     return {
       nfoPath: normalizedNfoPath,
       amazonPosterUrl: null,
-      reason: `查询失败: ${toErrorText(error)}`,
+      reason: "query_failed",
+      error: toErrorText(error),
       elapsedMs: Date.now() - startedAt,
     };
   }
@@ -223,6 +222,7 @@ export const applyAmazonPosters = async (
   dependencies: AmazonPosterApplyDependencies,
 ): Promise<AmazonPosterApplyResultItem[]> => {
   const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
+  const logger = dependencies.logger ?? runtimeLoggerService.getLogger("AmazonPoster");
   const results: AmazonPosterApplyResultItem[] = [];
   for (const item of items) {
     const normalizedNfoPath = resolve(item.nfoPath.trim());
@@ -239,23 +239,54 @@ export const applyAmazonPosters = async (
           (await countNamedNfoFiles(directory)) <= 1,
         )[0] ?? savedPosterPath;
       replacedExisting = await pathExists(savedPosterPath);
-      const tempPosterPath = join(directory, `.amazon-poster-${randomUUID()}.jpg`);
+      await mkdir(dirname(savedPosterPath), { recursive: true });
+      const tempPosterPath = join(dirname(savedPosterPath), `.mdcz-staging-${randomUUID()}.jpg`);
       try {
         await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
         const validation = await validateImageFn(tempPosterPath);
         if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
-        const data = await readFile(tempPosterPath);
-        await commitRegisteredPublication(
-          {
-            operationId: `amazon-poster:${savedPosterPath}`,
-            operationType: "maintenance",
-            artifacts: [{ targetPath: savedPosterPath, content: { kind: "bytes" as const, data } }],
-            replaceExistingArtifacts: true,
-          },
-          { journal: dependencies.journal, repairIssues: dependencies.repairIssues, roots: dependencies.roots },
+        const staged = await stat(tempPosterPath);
+        const registered = dependencies.outputs
+          ? await resolveRegisteredNfoPaths(normalizedNfoPath, dependencies.outputs, async (id) => {
+              const root = dependencies.roots.find((root) => root.id === id);
+              if (!root) throw new Error(`Publication root not found: ${id}`);
+              return root;
+            })
+          : undefined;
+        const inventory = new DirectoryInventory();
+        const release = await acquireOutputDirectories([savedPosterPath], (directory) =>
+          inventory.canonicalDirectory(directory),
         );
+        try {
+          await new WriteOutput(undefined, logger).install(
+            [{ targetPath: savedPosterPath, sourcePath: tempPosterPath, size: staged.size, consume: true }],
+            {
+              protectedMediaFiles: registered?.mediaPaths,
+              commit: async () => {
+                if (!registered) return;
+                if (!dependencies.library) throw new Error("Registered poster write requires library updates");
+                const ref = toRootFileRef(savedPosterPath, dependencies.roots);
+                await writePublishedMovie(dependencies.library, registered.movieId, [
+                  {
+                    kind: "poster",
+                    uri: ref.relativePath,
+                    rootId: ref.rootId,
+                    relativePath: ref.relativePath,
+                    published: true,
+                  },
+                ]);
+              },
+            },
+          );
+        } finally {
+          release();
+        }
       } finally {
-        await unlink(tempPosterPath).catch(() => undefined);
+        try {
+          await rm(tempPosterPath, { force: true });
+        } catch (error) {
+          logger.warn(`Failed to remove poster staging ${tempPosterPath}: ${toErrorText(error)}`);
+        }
       }
       results.push({
         directory,

@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@mdcz/shared/error";
 import type { AmazonPosterLookupResult, AmazonPosterScanItem } from "@mdcz/shared/ipcTypes";
 import {
   Badge,
@@ -18,6 +19,7 @@ import { ArrowRight, Check, FolderOpen, ImageIcon, LoaderCircle, Minus, Search }
 import type { ComponentType, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { ImageOptionCard, type ResolveImageOptionCandidates } from "../../common";
+import { type Messages, useT } from "../../i18n";
 
 const LOOKUP_CONCURRENCY = 2;
 const TOOL_ICON_BUTTON_CLASS =
@@ -93,21 +95,24 @@ function getFileNameFromPath(path: string | null | undefined): string | undefine
     .at(-1);
 }
 
-function getStatusBadge(state: ItemState): {
+function getStatusBadge(
+  state: ItemState,
+  t: Messages,
+): {
   label: string;
   variant: "default" | "secondary" | "outline" | "destructive";
   icon: ComponentType<{ className?: string }>;
 } {
   if (state.lookupStatus === "pending") {
-    return { label: "待查询", variant: "secondary", icon: Search };
+    return { label: t.tools.statusPendingQuery, variant: "secondary", icon: Search };
   }
 
   if (state.lookupStatus === "loading") {
-    return { label: "查询中", variant: "secondary", icon: LoaderCircle };
+    return { label: t.tools.statusQuerying, variant: "secondary", icon: LoaderCircle };
   }
-  if (state.lookupStatus === "error") return { label: "查询失败", variant: "destructive", icon: Minus };
-  if (!state.lookup?.amazonPosterUrl) return { label: "无结果", variant: "outline", icon: Minus };
-  if (state.selection === "current") return { label: "保留当前", variant: "outline", icon: Check };
+  if (state.lookupStatus === "error") return { label: t.tools.statusQueryFailed, variant: "destructive", icon: Minus };
+  if (!state.lookup?.amazonPosterUrl) return { label: t.tools.statusNoResults, variant: "outline", icon: Minus };
+  if (state.selection === "current") return { label: t.tools.statusKeepCurrent, variant: "outline", icon: Check };
   return { label: "✓ Amazon", variant: "default", icon: Check };
 }
 
@@ -167,6 +172,7 @@ export function AmazonPosterWorkspaceDetail({
 }: AmazonPosterWorkspaceDetailProps) {
   const [directory, setDirectory] = useState("");
   const [itemStates, setItemStates] = useState<ItemState[]>([]);
+  const t = useT();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -218,7 +224,8 @@ export function AmazonPosterWorkspaceDetail({
           result = {
             nfoPath: items[currentIndex].nfoPath,
             amazonPosterUrl: null,
-            reason: error instanceof Error ? `查询失败: ${error.message}` : "查询失败",
+            reason: "query_failed",
+            error: toErrorMessage(error),
             elapsedMs: 0,
           };
         }
@@ -229,7 +236,7 @@ export function AmazonPosterWorkspaceDetail({
           ...state,
           lookupSearchTitle: queryTitle,
           lookup: result,
-          lookupStatus: result.reason.startsWith("查询失败:") ? "error" : "done",
+          lookupStatus: result.reason === "query_failed" ? "error" : "done",
           selection: result.amazonPosterUrl ? (state.selection === "current" ? "current" : "amazon") : state.selection,
         }));
       }
@@ -292,7 +299,7 @@ export function AmazonPosterWorkspaceDetail({
     const target = itemStates[index];
     const queryTitle = target?.searchTitle.trim();
     if (!target || !queryTitle) {
-      showError?.("请输入标题 / URL / ASIN");
+      showError?.(t.tools.enterSearchQuery);
       return;
     }
 
@@ -309,7 +316,8 @@ export function AmazonPosterWorkspaceDetail({
       result = {
         nfoPath: target.scan.nfoPath,
         amazonPosterUrl: null,
-        reason: error instanceof Error ? `查询失败: ${error.message}` : "查询失败",
+        reason: "query_failed",
+        error: toErrorMessage(error),
         elapsedMs: 0,
       };
     }
@@ -321,7 +329,7 @@ export function AmazonPosterWorkspaceDetail({
               ...state,
               lookupSearchTitle: queryTitle,
               lookup: result,
-              lookupStatus: result.reason.startsWith("查询失败:") ? "error" : "done",
+              lookupStatus: result.reason === "query_failed" ? "error" : "done",
               selection: result.amazonPosterUrl ? "amazon" : null,
             }
           : state,
@@ -346,14 +354,14 @@ export function AmazonPosterWorkspaceDetail({
           htmlFor="amazon-poster-dir"
           className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
         >
-          目标目录
+          {t.tools.targetDirectory}
         </Label>
         <div className="flex flex-col gap-3 sm:flex-row">
           <Input
             id="amazon-poster-dir"
             value={directory}
             onChange={(event) => setDirectory(event.target.value)}
-            placeholder="输入已刮削完成的输出目录"
+            placeholder={t.tools.targetDirectoryPlaceholder}
             className={cn(TOOL_INPUT_CLASS, "flex-1")}
           />
           {onBrowseDirectory ? (
@@ -368,7 +376,7 @@ export function AmazonPosterWorkspaceDetail({
             </Button>
           ) : null}
         </div>
-        <p className={TOOL_NOTE_CLASS}>扫描完成后会打开批量处理弹窗，便于集中确认需要替换的海报条目。</p>
+        <p className={TOOL_NOTE_CLASS}>{t.tools.amazonPosterScanNote}</p>
       </div>
 
       <Button
@@ -377,7 +385,7 @@ export function AmazonPosterWorkspaceDetail({
         disabled={scanning}
         className={cn(TOOL_SECONDARY_BUTTON_CLASS, "w-full sm:w-auto")}
       >
-        {scanning ? "正在扫描..." : "开始扫描"}
+        {scanning ? t.tools.scanning : t.tools.startScan}
       </Button>
 
       <Dialog
@@ -392,9 +400,9 @@ export function AmazonPosterWorkspaceDetail({
             <DialogHeader className="space-y-3 text-left">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <DialogTitle>Amazon 海报增强</DialogTitle>
+                  <DialogTitle>{t.tools.amazonPosterEnhance}</DialogTitle>
                   <DialogDescription>
-                    已完成 {completedCount}/{itemStates.length}，命中 {hitCount} 条
+                    {t.tools.amazonProgress({ completed: completedCount, total: itemStates.length, hits: hitCount })}
                   </DialogDescription>
                 </div>
               </div>
@@ -406,12 +414,12 @@ export function AmazonPosterWorkspaceDetail({
             <div className="space-y-3 pr-3">
               {itemStates.length === 0 ? (
                 <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-                  未找到可处理的 NFO 条目
+                  {t.tools.noNfoEntries}
                 </div>
               ) : (
                 itemStates.map((state, index) => {
                   const isExpanded = index === expandedIndex;
-                  const statusBadge = getStatusBadge(state);
+                  const statusBadge = getStatusBadge(state, t);
                   const StatusIcon = statusBadge.icon;
                   const thumbnailLoading = state.lookupStatus === "loading" || state.lookupStatus === "pending";
                   const amazonEmpty = !thumbnailLoading && !state.lookup?.amazonPosterUrl;
@@ -464,7 +472,7 @@ export function AmazonPosterWorkspaceDetail({
                             />
                           )}
                           <Badge variant={statusBadge.variant} className="h-6 gap-1 rounded-full px-2">
-                            <StatusIcon className={cn("h-3 w-3", statusBadge.label === "查询中" && "animate-spin")} />
+                            <StatusIcon className={cn("h-3 w-3", state.lookupStatus === "loading" && "animate-spin")} />
                             {statusBadge.label}
                           </Badge>
                         </div>
@@ -484,7 +492,7 @@ export function AmazonPosterWorkspaceDetail({
                                 <div className="break-all text-sm text-muted-foreground">{state.scan.title}</div>
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                耗时 {formatElapsed(state.lookup?.elapsedMs)}
+                                {t.tools.elapsed(formatElapsed(state.lookup?.elapsedMs))}
                               </div>
                             </div>
 
@@ -493,7 +501,7 @@ export function AmazonPosterWorkspaceDetail({
                                 htmlFor={`amazon-search-title-${index}`}
                                 className="text-xs font-medium text-muted-foreground"
                               >
-                                标题 / URL / ASIN
+                                {t.tools.titleUrlOrAsin}
                               </Label>
                               <div className="flex flex-col gap-2 sm:flex-row">
                                 <Input
@@ -515,7 +523,7 @@ export function AmazonPosterWorkspaceDetail({
                                   ) : (
                                     <Search className="h-4 w-4" />
                                   )}
-                                  重新查询
+                                  {t.tools.reQuery}
                                 </Button>
                               </div>
                             </div>
@@ -526,7 +534,7 @@ export function AmazonPosterWorkspaceDetail({
                                 defaultAspectRatio={2 / 3}
                                 src={state.scan.currentPosterPath ?? ""}
                                 resolveImageCandidates={resolveImageCandidates}
-                                label="当前海报"
+                                label={t.tools.currentPoster}
                                 width={state.scan.currentPosterWidth || null}
                                 height={state.scan.currentPosterHeight || null}
                                 imageFrameClassName="max-w-48"
@@ -540,7 +548,7 @@ export function AmazonPosterWorkspaceDetail({
                                     : undefined
                                 }
                                 empty={!state.scan.currentPosterPath}
-                                emptyText="当前无海报"
+                                emptyText={t.tools.noCurrentPoster}
                               />
 
                               <ImageOption
@@ -548,7 +556,7 @@ export function AmazonPosterWorkspaceDetail({
                                 defaultAspectRatio={2 / 3}
                                 src={state.lookup?.amazonPosterUrl ?? ""}
                                 resolveImageCandidates={resolveImageCandidates}
-                                label="Amazon 海报"
+                                label={t.tools.amazonPoster}
                                 imageFrameClassName="max-w-48"
                                 metadataClassName="max-w-48"
                                 showDimensions
@@ -562,7 +570,13 @@ export function AmazonPosterWorkspaceDetail({
                                 loading={thumbnailLoading}
                                 empty={amazonEmpty}
                                 emptyText={
-                                  thumbnailLoading ? "正在查询 Amazon" : state.lookup?.reason || "未命中 Amazon 海报"
+                                  thumbnailLoading
+                                    ? t.tools.queryingAmazon
+                                    : state.lookup
+                                      ? [t.tools.amazonLookupReasons[state.lookup.reason], state.lookup.error]
+                                          .filter(Boolean)
+                                          .join(": ")
+                                      : t.tools.noAmazonPosterHit
                                 }
                               />
                             </div>
@@ -577,17 +591,19 @@ export function AmazonPosterWorkspaceDetail({
           </ScrollArea>
 
           <DialogFooter className="border-t px-6 py-4 sm:items-center sm:justify-between">
-            <div className="text-sm text-muted-foreground">已选择 {selectedAmazonItems.length} 条替换</div>
+            <div className="text-sm text-muted-foreground">
+              {t.tools.selectedForReplace(selectedAmazonItems.length)}
+            </div>
             <div className="flex items-center gap-2">
               <Button type="button" variant="outline" onClick={() => onDialogOpenChange(false)}>
-                取消
+                {t.common.cancel}
               </Button>
               <Button
                 type="button"
                 onClick={() => setConfirmOpen(true)}
                 disabled={selectedAmazonItems.length === 0 || applying}
               >
-                确认替换
+                {t.tools.confirmReplace}
               </Button>
             </div>
           </DialogFooter>
@@ -597,21 +613,19 @@ export function AmazonPosterWorkspaceDetail({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>确认替换海报</DialogTitle>
-            <DialogDescription>
-              即将替换 {selectedAmazonItems.length} 个条目的海报文件。此操作会覆盖现有海报。
-            </DialogDescription>
+            <DialogTitle>{t.tools.confirmReplaceTitle}</DialogTitle>
+            <DialogDescription>{t.tools.confirmReplaceDescription(selectedAmazonItems.length)}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)} disabled={applying}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button
               type="button"
               onClick={() => void handleApply()}
               disabled={selectedAmazonItems.length === 0 || applying}
             >
-              {applying ? "替换中..." : "确认"}
+              {applying ? t.tools.replacing : t.common.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>

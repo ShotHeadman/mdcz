@@ -103,6 +103,16 @@ describe("runtime config helpers", () => {
     const merged = mergeRuntimeConfig(defaultConfiguration, { network: { timeout: 33 } });
 
     expect(parseRuntimeConfiguration(merged).network.timeout).toBe(33);
+    for (const successFileMove of [false, true]) {
+      expect(() =>
+        parseRuntimeConfiguration({
+          behavior: { metadataOnly: true, successFileMove },
+          paths: { metadataPath: "/metadata" },
+          naming: { folderTemplate: "{actor}", assetNamingMode: "fixed" },
+          download: { nfoNaming: "movie" },
+        }),
+      ).toThrow(RuntimeConfigValidationError);
+    }
     expect(() => parseRuntimeConfiguration({ download: { nfoNaming: "invalid" } })).toThrow(
       RuntimeConfigValidationError,
     );
@@ -111,7 +121,7 @@ describe("runtime config helpers", () => {
         naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number} {title}" },
       }).items[0],
     ).toMatchObject({
-      label: "普通",
+      sample: "standard",
       file: "ABC-123 示例中文标题.mp4",
     });
     expect(
@@ -126,7 +136,7 @@ describe("runtime config helpers", () => {
         fileTemplate: "{rawNumber}-{4K}{cnword}-{title}",
         cnwordStyle: "-SUB",
       },
-    }).items.find((item) => item.label === "中文字幕");
+    }).items.find((item) => item.sample === "subtitled");
 
     expect(expandedPreview).toMatchObject({
       folder: "A-ABC-456-SUB",

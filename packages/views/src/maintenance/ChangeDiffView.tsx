@@ -3,6 +3,7 @@ import { cn, Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz
 import { ChevronLeft, ChevronRight, Clock, ImageIcon, LoaderCircle, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ImageOptionCard } from "../common";
+import { getT, useT } from "../i18n";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
 
@@ -122,7 +123,7 @@ export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): Maintenanc
 
 const formatValue = (value: unknown): string => {
   if (!hasMaintenanceFieldValue(value)) {
-    return "(空)";
+    return getT().maintenance.empty;
   }
   if (Array.isArray(value)) {
     if (value.every((item) => typeof item === "string")) {
@@ -144,12 +145,8 @@ const formatValue = (value: unknown): string => {
 };
 
 const toDisplaySourceValue = (value: unknown): string => {
-  if (typeof value !== "string") {
-    return "(空)";
-  }
-
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : "(空)";
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized.length > 0 ? normalized : getT().maintenance.empty;
 };
 
 const resolveImageSourceValue = (
@@ -278,6 +275,7 @@ function DefaultSceneImageGallery({
   baseDir,
   resolveImageCandidates = defaultResolveImageCandidates,
 }: MaintenanceSceneImageOptionProps) {
+  const t = useT();
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const isOpen = lightboxIndex >= 0;
   const visibleThumbnails = images.slice(0, maxThumbnails);
@@ -362,14 +360,14 @@ function DefaultSceneImageGallery({
           showCloseButton={false}
           className="flex w-fit max-w-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent p-0 shadow-none backdrop-blur-none sm:max-w-none"
         >
-          <DialogTitle className="sr-only">剧照预览</DialogTitle>
+          <DialogTitle className="sr-only">{t.maintenance.galleryTitle}</DialogTitle>
           <DialogDescription className="sr-only">
-            查看剧照大图预览，当前第 {lightboxIndex + 1} 张，共 {images.length} 张，可使用左右方向键切换。
+            {t.maintenance.galleryDescription(lightboxIndex + 1, images.length)}
           </DialogDescription>
           <button
             type="button"
             onClick={closeLightbox}
-            aria-label="关闭剧照预览"
+            aria-label={t.maintenance.closeGallery}
             className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
           >
             <X className="h-4 w-4" />
@@ -382,7 +380,7 @@ function DefaultSceneImageGallery({
               <button
                 type="button"
                 onClick={goPrev}
-                aria-label="上一张剧照"
+                aria-label={t.maintenance.prevGallery}
                 className="absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -390,7 +388,7 @@ function DefaultSceneImageGallery({
               <button
                 type="button"
                 onClick={goNext}
-                aria-label="下一张剧照"
+                aria-label={t.maintenance.nextGallery}
                 className="absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
               >
                 <ChevronRight className="h-5 w-5" />
@@ -613,6 +611,7 @@ export function ChangeDiffView({
   resolveImageCandidates = defaultResolveImageCandidates,
   imageBaseDir,
 }: ChangeDiffViewProps) {
+  const t = useT();
   const baseDir = imageBaseDir || getMaintenanceImageBaseDir(entry);
   const renderResolvedImageOption = (props: MaintenanceImageOptionProps) =>
     renderImageOption({
@@ -646,12 +645,15 @@ export function ChangeDiffView({
             ...imageDisplayProps,
             src: oldImage.src,
             fallbackSrcs: oldImage.fallbackSrcs,
-            label: "旧 (当前)",
+            label: t.maintenance.oldCurrent,
             selected: selectedSide === "old",
             empty: !hasOldValue,
-            emptyText: "旧值为空",
+            emptyText: t.maintenance.oldValueEmpty,
             sourceRows: [
-              { label: "图片来源", value: resolveImageSourceValue(entry?.crawlerData, diff, "old", oldImage.src) },
+              {
+                label: t.maintenance.imageSource,
+                value: resolveImageSourceValue(entry?.crawlerData, diff, "old", oldImage.src),
+              },
             ],
             onClick: hasOldValue && hasNewValue ? () => selectField(diff.field, "old") : undefined,
           })}
@@ -659,13 +661,13 @@ export function ChangeDiffView({
             ...imageDisplayProps,
             src: newImage.src,
             fallbackSrcs: newImage.fallbackSrcs,
-            label: "新 (预览)",
+            label: t.maintenance.newPreview,
             selected: selectedSide === "new",
             empty: !hasNewValue,
-            emptyText: "新值为空",
+            emptyText: t.maintenance.newValueEmpty,
             sourceRows: [
               {
-                label: "图片来源",
+                label: t.maintenance.imageSource,
                 value: resolveImageSourceValue(preview?.proposedCrawlerData, diff, "new", newImage.src),
               },
             ],
@@ -682,21 +684,21 @@ export function ChangeDiffView({
       return (
         <div className="grid gap-3 md:grid-cols-2">
           <SceneImageOption
-            title="旧 (当前)"
+            title={t.maintenance.oldCurrent}
             images={oldImages}
             selected={selectedSide === "old"}
             disabled={!hasOldValue}
-            emptyText="当前没有本地剧照"
+            emptyText={t.maintenance.noLocalStills}
             onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "old") : undefined}
             renderSceneImages={renderResolvedSceneImages}
             baseDir={baseDir}
           />
           <SceneImageOption
-            title="新 (预览)"
+            title={t.maintenance.newPreview}
             images={newImages}
             selected={selectedSide === "new"}
             disabled={!hasNewValue}
-            emptyText="新值为空"
+            emptyText={t.maintenance.newValueEmpty}
             onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "new") : undefined}
             renderSceneImages={renderResolvedSceneImages}
             baseDir={baseDir}
@@ -725,21 +727,21 @@ export function ChangeDiffView({
       return (
         <div className="grid gap-3 md:grid-cols-2">
           <TrailerOptionCard
-            title="旧 (当前)"
+            title={t.maintenance.oldCurrent}
             candidates={oldTrailerCandidates}
             selected={selectedSide === "old"}
             disabled={!hasOldValue && oldTrailerCandidates.length === 0}
-            emptyText="当前没有预告片"
+            emptyText={t.maintenance.noTrailer}
             onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "old") : undefined}
             baseDir={baseDir}
             resolveImageCandidates={resolveImageCandidates}
           />
           <TrailerOptionCard
-            title="新 (预览)"
+            title={t.maintenance.newPreview}
             candidates={newTrailerCandidates}
             selected={selectedSide === "new"}
             disabled={!hasNewValue && newTrailerCandidates.length === 0}
-            emptyText="新预告片为空"
+            emptyText={t.maintenance.newTrailerEmpty}
             onClick={hasOldValue && hasNewValue ? () => selectField(diff.field, "new") : undefined}
             baseDir={baseDir}
             resolveImageCandidates={resolveImageCandidates}
@@ -751,14 +753,14 @@ export function ChangeDiffView({
     return (
       <div className="grid gap-3 md:grid-cols-2">
         <DiffOption
-          title="旧 (当前)"
+          title={t.maintenance.oldCurrent}
           value={diff.oldValue}
           selected={selectedSide === "old"}
           disabled={!hasOldValue}
           onClick={() => selectField(diff.field, "old")}
         />
         <DiffOption
-          title="新 (预览)"
+          title={t.maintenance.newPreview}
           value={diff.newValue}
           selected={selectedSide === "new"}
           disabled={!hasNewValue}
@@ -775,12 +777,15 @@ export function ChangeDiffView({
         ...getImageDisplayProps(diff.field),
         src: current.src,
         fallbackSrcs: current.fallbackSrcs,
-        label: "当前值",
+        label: t.maintenance.currentValue,
         sourceRows: [
-          { label: "图片来源", value: resolveImageSourceValue(entry?.crawlerData, diff, "old", current.src) },
+          {
+            label: t.maintenance.imageSource,
+            value: resolveImageSourceValue(entry?.crawlerData, diff, "old", current.src),
+          },
         ],
         empty: !hasMaintenanceDiffSideValue(diff, "old") && !hasMaintenanceDiffSideValue(diff, "new"),
-        emptyText: "当前值为空",
+        emptyText: t.maintenance.currentValueEmpty,
       });
     }
 
@@ -789,7 +794,7 @@ export function ChangeDiffView({
       if (currentImages.length === 0) {
         return (
           <div className="flex min-h-20 items-center justify-center rounded-lg border border-dashed bg-muted/20 text-sm text-muted-foreground">
-            当前没有剧照
+            {t.maintenance.noStills}
           </div>
         );
       }
@@ -817,18 +822,18 @@ export function ChangeDiffView({
       if (candidates.length === 0) {
         return (
           <div className="flex min-h-20 items-center justify-center rounded-lg border border-dashed bg-muted/20 text-sm text-muted-foreground">
-            当前没有预告片
+            {t.maintenance.noTrailer}
           </div>
         );
       }
       return (
         <div className="rounded-quiet bg-surface-floating p-3">
           <TrailerOptionCard
-            title="当前预告片"
+            title={t.maintenance.currentTrailer}
             candidates={candidates}
             selected={false}
             disabled={false}
-            emptyText="当前没有预告片"
+            emptyText={t.maintenance.noTrailer}
             baseDir={baseDir}
             resolveImageCandidates={resolveImageCandidates}
           />
@@ -846,8 +851,8 @@ export function ChangeDiffView({
   const renderDiffCard = (diff: FieldDiff, mode: "changed" | "unchanged") => {
     const isUnchangedSceneImages = mode === "unchanged" && diff.kind === "imageCollection";
     const title = isUnchangedSceneImages
-      ? `${diff.label} (${resolveMaintenanceDiffImageCollection(diff, "old").length})`
-      : diff.label;
+      ? `${t.domain.maintenanceDiffFields[diff.field]} (${resolveMaintenanceDiffImageCollection(diff, "old").length})`
+      : t.domain.maintenanceDiffFields[diff.field];
 
     return (
       <section key={`${fileId}-${mode}-${diff.field}`} className="rounded-quiet-lg bg-surface-low/75 p-4 md:p-5">
@@ -865,15 +870,17 @@ export function ChangeDiffView({
         {isProcessing ? (
           <>
             <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm font-medium">正在获取数据并生成对比...</p>
+            <p className="text-sm font-medium">{t.maintenance.fetchingDataAndDiff}</p>
           </>
         ) : isPending ? (
           <>
             <Clock className="h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm font-medium">排队等待中...</p>
+            <p className="text-sm font-medium">{t.maintenance.waitingInQueue}</p>
           </>
         ) : (
-          <p className="text-sm font-medium">{hasResult ? "当前预览未生成字段差异" : "预览后将在此显示字段差异"}</p>
+          <p className="text-sm font-medium">
+            {hasResult ? t.maintenance.noFieldDiffs : t.maintenance.diffsWillShowHere}
+          </p>
         )}
       </div>
     );
@@ -890,7 +897,7 @@ export function ChangeDiffView({
 
       {sortedUnchangedDiffs.length > 0 && (
         <section className="space-y-4">
-          <div className="px-1 text-xs font-medium text-muted-foreground">未变更字段</div>
+          <div className="px-1 text-xs font-medium text-muted-foreground">{t.maintenance.unchangedFields}</div>
           {sortedUnchangedDiffs.map((diff) => renderDiffCard(diff, "unchanged"))}
         </section>
       )}

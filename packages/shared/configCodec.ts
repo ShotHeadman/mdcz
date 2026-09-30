@@ -18,10 +18,10 @@ export const inferConfigurationFileFormat = (filePath: string): ConfigurationFil
 
 const ACTOR_ALIASES_HEADER = "[personSync.actorAliases]";
 const ACTOR_ALIASES_COMMENTS = [
-  "# 演员别名映射：将不同来源的演员写法统一为一个规范名称。规范名称必须使用引号；每行是一个独立的演员组。",
-  "# 新刮削会以键名输出演员、{actor} 路径和 NFO 名称，同时保留原始写法为人物资料别名，用于头像和资料查询。",
-  "# 修改 active profile 文件后，请重启 Desktop 或 Server，或通过导入/切换 profile 使配置重新加载。已有影片和 NFO 不会被自动重命名。",
-  "# 示例：",
+  "# Actor alias mapping: unifies actor name variants from different sources into a canonical name. Canonical names must be quoted; each line is an independent actor group.",
+  "# New scrapes output the canonical name for actors, {actor} path, and NFO name, while retaining raw spellings as actor profile aliases for avatar and profile queries.",
+  "# After modifying the active profile file, restart Desktop or Server, or reload by importing/switching profiles. Existing movies and NFOs are not automatically renamed.",
+  "# Example:",
   '# "河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]',
   '# "三上悠亚" = ["鬼頭桃菜", "鬼头桃菜"]',
 ].join("\n");

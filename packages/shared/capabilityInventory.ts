@@ -108,6 +108,13 @@ export const CROSS_HOST_CAPABILITIES = [
     reason: "Desktop accepts an optional site; server requires a validated site.",
   },
   { desktop: IpcChannel.Library_Availability, server: "library.availability", status: "aligned" },
+  { desktop: IpcChannel.Library_RemoveFile, server: "library.removeFile", status: "aligned" },
+  {
+    desktop: IpcChannel.Library_RelinkFile,
+    server: "library.relink",
+    status: "adapted",
+    reason: "Desktop returns an acknowledgement; server returns the updated movie.",
+  },
   {
     desktop: IpcChannel.Library_Delete,
     server: "library.delete",
@@ -186,8 +193,7 @@ export const CROSS_HOST_CAPABILITIES = [
   {
     desktop: IpcChannel.Scraper_ConfirmUncensored,
     server: "scrape.confirmUncensored",
-    status: "blocked",
-    reason: SCRAPE_EXECUTION_REASON,
+    status: "aligned",
   },
   {
     desktop: IpcChannel.File_NfoRead,
@@ -222,6 +228,12 @@ export const CROSS_HOST_CAPABILITIES = [
   {
     desktop: IpcChannel.Scraper_Resume,
     server: "scrape.resume",
+    status: "blocked",
+    reason: SCRAPE_EXECUTION_REASON,
+  },
+  {
+    desktop: IpcChannel.Scraper_RerunDirectory,
+    server: "scrape.rerunDirectory",
     status: "blocked",
     reason: SCRAPE_EXECUTION_REASON,
   },
@@ -267,10 +279,7 @@ export const DESKTOP_ONLY_CHANNELS = [
   { channel: IpcChannel.Event_Shortcut, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.Event_TaskSnapshot, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.File_Browse, reason: "Native file dialog; no server procedure." },
-  {
-    channel: IpcChannel.File_Delete,
-    reason: "Deletes by absolute path; server scrape.deleteFile is root-relative and not 1:1.",
-  },
+  { channel: IpcChannel.File_CancelMediaCandidates, reason: "Cancel an explicit filesystem preview." },
   { channel: IpcChannel.File_Exists, reason: "Local filesystem probe." },
   {
     channel: IpcChannel.File_ListMediaCandidates,
@@ -351,7 +360,6 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "health.read", reason: "Server process health." },
   { path: "library.detail", reason: "Server-only library item view." },
   { path: "library.refresh", reason: "Server-only library item refresh." },
-  { path: "library.relink", reason: "Server-only library relink." },
   { path: "library.rescan", reason: "Server-only per-item rescan." },
   { path: "logs.clearRuntime", reason: "Server log store." },
   { path: "logs.list", reason: "Server log store." },
@@ -365,17 +373,15 @@ export const SERVER_ONLY_PROCEDURES = [
     path: "scans.candidates",
     reason: "Media-root scoped scan candidates; desktop File_ListMediaCandidates is local FS.",
   },
+  { path: "scans.cancelCandidates", reason: "Cancel an explicit filesystem preview." },
   { path: "scans.detail", reason: "Server scan task API." },
   { path: "scans.events", reason: "Server scan task API." },
   { path: "scans.list", reason: "Server scan task API." },
   { path: "scans.retry", reason: "Server scan task API." },
   { path: "scans.start", reason: "Server scan task API." },
-  { path: "scrape.deleteFile", reason: "Root-relative delete; desktop File_Delete uses absolute paths." },
+  { path: "scrape.removeRecord", reason: "Removes library records while retaining all files." },
   { path: "scrape.liveRuns", reason: "Web-only authoritative in-process scrape snapshot read." },
-  {
-    path: "scrape.pendingUncensoredConfirmation",
-    reason: "Web-only durable post-processing query for terminal scrape outcomes.",
-  },
+  { path: "scrape.pendingUncensoredConfirmation", reason: "Web task synchronization for pending uncensored entries." },
   { path: "scrape.result", reason: "Server persisted scrape result detail." },
   { path: "scrape.snapshot", reason: "Server scrape task snapshot API; desktop uses Scraper_GetStatus." },
   { path: "scrape.history", reason: "Server scrape history query; desktop stores in-process." },

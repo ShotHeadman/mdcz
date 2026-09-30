@@ -1,5 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { LlmApiFormat, LlmOutputFormat, LlmReasoning, LlmServiceType } from "@mdcz/shared/llm";
+import type { TranslateTestLlmResponse } from "@mdcz/shared/serverDtos";
 import {
   isMissingRequiredLlmApiKey,
   type LlmApiClient,
@@ -23,17 +24,12 @@ export interface TranslateTestLlmInput {
   llmTimeout?: number;
 }
 
-export interface TranslateTestLlmResult {
-  success: boolean;
-  message: string;
-}
-
 export const testLlmConnectivity = async (
   input: TranslateTestLlmInput | undefined,
   configuration: Configuration,
   llmApiClient: LlmApiClient,
   logger?: Pick<RuntimeLogger, "error" | "info">,
-): Promise<TranslateTestLlmResult> => {
+): Promise<TranslateTestLlmResponse> => {
   const config: Configuration = {
     ...configuration,
     translate: {
@@ -44,11 +40,11 @@ export const testLlmConnectivity = async (
   const { llmModelName, llmApiKey, llmBaseUrl } = config.translate;
 
   if (!llmModelName.trim()) {
-    return { success: false, message: "请先填写 LLM 模型名称" };
+    return { status: "missing_model" };
   }
 
   if (isMissingRequiredLlmApiKey(llmBaseUrl, llmApiKey)) {
-    return { success: false, message: "请先填写 LLM 密钥（默认 OpenAI 地址需要）" };
+    return { status: "missing_api_key" };
   }
 
   const normalizedBaseUrl = normalizeLlmBaseUrl(llmBaseUrl);
@@ -62,10 +58,10 @@ export const testLlmConnectivity = async (
       config,
     );
     logger?.info("Test LLM connectivity: Success");
-    return { success: true, message: `元数据翻译样本验证通过：${translation.title}` };
+    return { status: "ok", sample: translation.title ?? undefined };
   } catch (error) {
     const message = toErrorMessage(error);
     logger?.error(`Test LLM connectivity: Failed, error=${message}`);
-    return { success: false, message: `连接失败: ${message}` };
+    return { status: "failed", error: message };
   }
 };

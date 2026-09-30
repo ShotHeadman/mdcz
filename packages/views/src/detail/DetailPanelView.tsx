@@ -27,6 +27,7 @@ import {
 import { type Dispatch, type SetStateAction, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
 import { NaturalAspectImageFrame } from "../common";
+import { useT } from "../i18n";
 import { ChangeDiffView, type MaintenanceFieldSelectionSide, PathPlanView } from "../maintenance";
 import { type EditableNfoData, NfoEditorDialog, type NfoValidationErrors } from "../nfo";
 import { formatBitrate, formatDuration } from "./detailViewAdapters";
@@ -66,6 +67,7 @@ export interface DetailPanelViewProps {
   nfo: DetailPanelNfoState;
   onPlay?: () => void;
   onOpenFolder?: () => void;
+  onOpenMetadataFolder?: () => void;
   onOpenNfo?: () => void;
   onPosterError?: () => void;
   onThumbError?: () => void;
@@ -103,9 +105,12 @@ function DetailPathBlock({ label, value }: { label: string; value: string }) {
 }
 
 function DetailErrorBlock({ value }: { value: string }) {
+  const t = useT();
   return (
     <div className="rounded-quiet bg-red-50/70 p-4 dark:bg-red-950/20">
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-destructive/80">错误详情</div>
+      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-destructive/80">
+        {t.detail.errorDetails}
+      </div>
       <div className="text-sm leading-relaxed text-destructive">{value}</div>
     </div>
   );
@@ -128,10 +133,18 @@ interface DetailActionButtonsProps {
   nfoLoading: boolean;
   onPlay?: () => void;
   onOpenFolder?: () => void;
+  onOpenMetadataFolder?: () => void;
   onOpenNfo?: () => void;
 }
 
-function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: DetailActionButtonsProps) {
+function DetailActionButtons({
+  nfoLoading,
+  onPlay,
+  onOpenFolder,
+  onOpenMetadataFolder,
+  onOpenNfo,
+}: DetailActionButtonsProps) {
+  const t = useT();
   return (
     <>
       {onPlay ? (
@@ -142,7 +155,7 @@ function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: De
           onClick={onPlay}
         >
           <Play className="h-4 w-4" />
-          播放
+          {t.detail.play}
         </Button>
       ) : null}
       {onOpenFolder ? (
@@ -153,9 +166,15 @@ function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: De
           onClick={onOpenFolder}
         >
           <FolderOpen className="h-4 w-4" />
-          打开文件夹
+          {t.detail.openSourceFolder}
         </Button>
       ) : null}
+      {onOpenMetadataFolder && (
+        <Button size="sm" variant="ghost" onClick={onOpenMetadataFolder}>
+          <FolderOpen className="h-4 w-4" />
+          {t.detail.openMetadataFolder}
+        </Button>
+      )}
       {onOpenNfo ? (
         <Button
           size="sm"
@@ -165,7 +184,7 @@ function DetailActionButtons({ nfoLoading, onPlay, onOpenFolder, onOpenNfo }: De
           disabled={nfoLoading}
         >
           <FileText className="h-4 w-4" />
-          编辑 NFO
+          {t.detail.editNfo}
         </Button>
       ) : null}
     </>
@@ -180,7 +199,7 @@ const getDirFromPath = (path: string): string => {
 
 export function DetailPanelView({
   item,
-  emptyMessage = "请选择一个项目以查看详情",
+  emptyMessage,
   compare,
   posterSrc = "",
   thumbSrc = "",
@@ -188,6 +207,7 @@ export function DetailPanelView({
   nfo,
   onPlay,
   onOpenFolder,
+  onOpenMetadataFolder,
   onOpenNfo,
   onPosterError,
   onThumbError,
@@ -196,10 +216,11 @@ export function DetailPanelView({
   showFilePath,
   posterEditor,
 }: DetailPanelViewProps) {
+  const t = useT();
   const [thumbPreviewOpen, setThumbPreviewOpen] = useState(false);
 
   if (!item) {
-    return <EmptyState message={emptyMessage} />;
+    return <EmptyState message={emptyMessage ?? t.detail.selectItemPrompt} />;
   }
 
   if (compare) {
@@ -218,7 +239,7 @@ export function DetailPanelView({
             <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
               <Badge variant="outline" className="gap-1 self-start rounded-full px-2.5 py-1 text-xs sm:self-auto">
                 <GitCompareArrows className="h-3.5 w-3.5" />
-                {compare.badgeLabel ?? "数据对比"}
+                {compare.badgeLabel ?? t.detail.dataCompare}
               </Badge>
             </div>
           </div>
@@ -226,7 +247,9 @@ export function DetailPanelView({
 
         <ScrollArea className="flex-1 min-h-0">
           <div className="flex min-h-full flex-col space-y-4 px-5 pb-24 md:px-6">
-            {showFilePath && compareError && item.path ? <DetailPathBlock label="文件路径" value={item.path} /> : null}
+            {showFilePath && compareError && item.path ? (
+              <DetailPathBlock label={t.detail.filePath} value={item.path} />
+            ) : null}
             {compareError ? <DetailErrorBlock value={compareError} /> : null}
 
             {shouldRenderDiffs ? (
@@ -258,22 +281,26 @@ export function DetailPanelView({
   const topMetaNumber = item.title?.trim() ? item.number : undefined;
   const posterAlt = item.title?.trim() || item.number;
   const metadataLeftColumn = [
-    item.actors && item.actors.length > 0 ? { label: "演员", value: item.actors.join(", ") } : undefined,
-    item.studio ? { label: "制片", value: item.studio } : undefined,
-    item.releaseDate ? { label: "发行日期", value: item.releaseDate } : undefined,
-    item.series ? { label: "系列", value: item.series } : undefined,
+    item.actors && item.actors.length > 0
+      ? { label: t.detail.fields.actors, value: item.actors.join(", ") }
+      : undefined,
+    item.studio ? { label: t.detail.fields.studio, value: item.studio } : undefined,
+    item.releaseDate ? { label: t.detail.fields.releaseDate, value: item.releaseDate } : undefined,
+    item.series ? { label: t.detail.fields.series, value: item.series } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
   const metadataRightColumn = [
-    item.director ? { label: "导演", value: item.director } : undefined,
-    item.genres && item.genres.length > 0 ? { label: "标签", value: item.genres.join(", ") } : undefined,
+    item.director ? { label: t.detail.fields.director, value: item.director } : undefined,
+    item.genres && item.genres.length > 0
+      ? { label: t.detail.fields.genres, value: item.genres.join(", ") }
+      : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
   const technicalFields = [
-    item.resolution ? { label: "分辨率", value: item.resolution } : undefined,
-    bitrateLabel ? { label: "码率", value: bitrateLabel } : undefined,
+    item.resolution ? { label: t.detail.fields.resolution, value: item.resolution } : undefined,
+    bitrateLabel ? { label: t.detail.fields.bitrate, value: bitrateLabel } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
   const supportingFields = [
-    durationLabel ? { label: "时长", value: durationLabel } : undefined,
-    item.publisher ? { label: "发行商", value: item.publisher } : undefined,
+    durationLabel ? { label: t.detail.fields.duration, value: durationLabel } : undefined,
+    item.publisher ? { label: t.detail.fields.publisher, value: item.publisher } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
   const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== posterSrc;
 
@@ -285,7 +312,7 @@ export function DetailPanelView({
             {item.minimalErrorView ? (
               <>
                 <div className="space-y-3">
-                  <DetailSectionTitle>详情</DetailSectionTitle>
+                  <DetailSectionTitle>{t.detail.sections.details}</DetailSectionTitle>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-3xl font-extrabold tracking-tight text-foreground">{titleLabel}</h2>
                     <div className="flex flex-wrap gap-2">
@@ -293,12 +320,13 @@ export function DetailPanelView({
                         nfoLoading={nfo.loading}
                         onPlay={onPlay}
                         onOpenFolder={onOpenFolder}
+                        onOpenMetadataFolder={onOpenMetadataFolder}
                         onOpenNfo={onOpenNfo}
                       />
                     </div>
                   </div>
                 </div>
-                {showFilePath && item.path ? <DetailPathBlock label="文件路径" value={item.path} /> : null}
+                {showFilePath && item.path ? <DetailPathBlock label={t.detail.filePath} value={item.path} /> : null}
                 {item.errorMessage ? <DetailErrorBlock value={item.errorMessage} /> : null}
               </>
             ) : (
@@ -321,14 +349,14 @@ export function DetailPanelView({
                                   type="button"
                                   size="icon-sm"
                                   variant="secondary"
-                                  aria-label="编辑封面"
+                                  aria-label={t.detail.editCover}
                                   className="absolute right-2 bottom-2 bg-surface-floating/90 opacity-90 shadow-sm backdrop-blur-sm hover:opacity-100"
                                   onClick={posterEditor.onOpen}
                                 >
                                   <Crop />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent side="right">编辑封面</TooltipContent>
+                              <TooltipContent side="right">{t.detail.editCover}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         ) : null}
@@ -362,6 +390,7 @@ export function DetailPanelView({
                           nfoLoading={nfo.loading}
                           onPlay={onPlay}
                           onOpenFolder={onOpenFolder}
+                          onOpenMetadataFolder={onOpenMetadataFolder}
                           onOpenNfo={onOpenNfo}
                         />
                       </div>
@@ -403,7 +432,7 @@ export function DetailPanelView({
 
                 {item.plot ? (
                   <section className="space-y-3">
-                    <DetailSectionTitle>内容简介</DetailSectionTitle>
+                    <DetailSectionTitle>{t.detail.sections.plot}</DetailSectionTitle>
                     <p className="max-w-4xl whitespace-pre-wrap text-[15px] leading-7 text-foreground/88">
                       {item.plot}
                     </p>
@@ -412,7 +441,7 @@ export function DetailPanelView({
 
                 {shouldShowThumb ? (
                   <section className="space-y-3">
-                    <DetailSectionTitle>缩略图</DetailSectionTitle>
+                    <DetailSectionTitle>{t.detail.sections.poster}</DetailSectionTitle>
                     <button
                       type="button"
                       className="block w-full max-w-4xl cursor-zoom-in transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
@@ -420,7 +449,7 @@ export function DetailPanelView({
                     >
                       <NaturalAspectImageFrame
                         src={thumbSrc}
-                        alt={`${posterAlt} 缩略图`}
+                        alt={t.detail.posterThumbAlt(posterAlt)}
                         className="rounded-quiet-lg border border-black/5 bg-surface-low/70 shadow-[0_18px_48px_rgba(0,0,0,0.08)]"
                         onError={onThumbError}
                       />
@@ -433,7 +462,7 @@ export function DetailPanelView({
                     <SceneImageGallery
                       images={item.sceneImages}
                       baseDir={item.outputPath ?? (item.path ? getDirFromPath(item.path) : undefined)}
-                      label="剧照"
+                      label={t.detail.sections.stills}
                       resolveImageCandidates={resolveImageCandidates}
                       variant="filmstrip"
                     />
@@ -442,7 +471,7 @@ export function DetailPanelView({
 
                 {trailerSrc ? (
                   <section className="space-y-3">
-                    <DetailSectionTitle>预告片</DetailSectionTitle>
+                    <DetailSectionTitle>{t.detail.sections.trailer}</DetailSectionTitle>
                     {/* biome-ignore lint/a11y/useMediaCaption: Remote trailers do not provide a caption track. */}
                     <video
                       className="w-full max-w-4xl rounded-quiet-lg bg-black"
@@ -454,7 +483,7 @@ export function DetailPanelView({
                   </section>
                 ) : null}
 
-                {showFilePath && item.path ? <DetailPathBlock label="文件路径" value={item.path} /> : null}
+                {showFilePath && item.path ? <DetailPathBlock label={t.detail.filePath} value={item.path} /> : null}
                 {item.errorMessage ? <DetailErrorBlock value={item.errorMessage} /> : null}
               </>
             )}
@@ -488,12 +517,12 @@ export function DetailPanelView({
           showCloseButton={false}
           className="flex w-fit max-w-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent p-0 shadow-none backdrop-blur-none sm:max-w-none"
         >
-          <DialogTitle className="sr-only">缩略图预览</DialogTitle>
-          <DialogDescription className="sr-only">查看当前缩略图的大图预览。</DialogDescription>
+          <DialogTitle className="sr-only">{t.detail.posterPreviewTitle}</DialogTitle>
+          <DialogDescription className="sr-only">{t.detail.posterPreviewDescription}</DialogDescription>
           <button
             type="button"
             onClick={() => setThumbPreviewOpen(false)}
-            aria-label="关闭缩略图预览"
+            aria-label={t.detail.closePosterPreview}
             className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
           >
             <X className="h-4 w-4" />
@@ -502,7 +531,7 @@ export function DetailPanelView({
             {shouldShowThumb ? (
               <img
                 src={thumbSrc}
-                alt={`${posterAlt} 缩略图大图预览`}
+                alt={t.detail.posterPreviewAlt(posterAlt)}
                 className="block max-h-[82vh] max-w-[90vw] object-contain"
                 onError={onThumbError}
               />

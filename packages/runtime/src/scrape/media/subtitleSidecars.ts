@@ -1,7 +1,6 @@
-import { readdir, stat } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import type { SubtitleTag } from "@mdcz/shared/types";
-import { DEFAULT_VIDEO_EXTENSIONS } from "../utils/filesystem";
+import { DirectoryInventory } from "../DirectoryInventory";
 import { parseFileInfo } from "../utils/number";
 import {
   detectSubtitleTagFromSidecarSuffix,
@@ -9,7 +8,6 @@ import {
   preferSubtitleTag,
   SUBTITLE_EXTENSIONS,
 } from "../utils/subtitles";
-import { isGeneratedSidecarVideo } from "./generatedSidecarVideos";
 
 const SIDE_NAME_SEPARATOR = /^[-_.\s]/u;
 
@@ -71,17 +69,14 @@ export interface SubtitleSidecarMatch {
   subtitleTag: SubtitleTag;
 }
 
-export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleSidecarMatch[]> => {
+export const findSubtitleSidecars = async (
+  videoPath: string,
+  inventory = new DirectoryInventory(),
+): Promise<SubtitleSidecarMatch[]> => {
   const video = parse(videoPath);
   const videoBaseCandidates = buildVideoBaseCandidates(videoPath);
-  const entries = await readdir(video.dir, { withFileTypes: true }).catch(() => []);
-  const siblingVideos = entries.filter(
-    (entry) =>
-      (entry.isFile() || entry.isSymbolicLink()) &&
-      DEFAULT_VIDEO_EXTENSIONS.has(extname(entry.name).toLowerCase()) &&
-      entry.name !== video.base &&
-      !isGeneratedSidecarVideo(entry.name),
-  );
+  const entries = await inventory.entries(video.dir);
+  const siblingVideos = (await inventory.mediaEntries(video.dir)).filter((entry) => entry.name !== video.base);
   const number = parseFileInfo(videoPath).number;
   if (siblingVideos.some((entry) => parseFileInfo(entry.name).number === number)) videoBaseCandidates.splice(1);
   const matches = await Promise.all(
@@ -92,7 +87,10 @@ export const findSubtitleSidecars = async (videoPath: string): Promise<SubtitleS
 
       const sidecarPath = join(video.dir, entry.name);
       if (entry.isSymbolicLink()) {
-        const targetStats = await stat(sidecarPath).catch(() => null);
+        const targetStats = await inventory.stats(sidecarPath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
         if (!targetStats?.isFile()) {
           return null;
         }

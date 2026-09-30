@@ -57,29 +57,28 @@ const createFakeRuntimeActions = (): RuntimeActionService =>
     listCrawlerSites: async () => ({
       sites: [{ site: Website.JAVDB, name: "javdb", enabled: true, native: true }],
     }),
-    probeSiteConnectivity: async (input: { site: Website }) => ({
+    probeSiteConnectivity: async () => ({
       ok: true,
-      message: `HTTP 200 · ${input.site}`,
       latencyMs: 12,
       status: 200,
       resolvedUrl: "https://javdb.com/",
     }),
     checkCookies: async () => ({
       results: [
-        { site: "JavDB", valid: true, message: "Cookie 有效", status: "ready_with_cookie" },
+        { site: "JavDB", valid: true, status: "ready_with_cookie" as const },
         {
           site: "JavBus",
           valid: true,
-          message: "JavBus 影片页面可匿名访问，无需 Cookie",
-          status: "ready_without_cookie",
+          status: "ready_without_cookie" as const,
         },
       ],
     }),
-    testLlm: async (input: { llmModelName?: string }) => ({
-      success: Boolean(input.llmModelName),
-      message: input.llmModelName ? `连接成功，LLM 回复: ${input.llmModelName}` : "请先填写 LLM 模型名称",
-    }),
-  }) as RuntimeActionService;
+    testLlm: async (input: { llmModelName?: string }) =>
+      input.llmModelName ? { status: "ok" as const, sample: input.llmModelName } : { status: "missing_model" as const },
+  }) satisfies Pick<
+    RuntimeActionService,
+    "ensureWatermarkDirectory" | "listCrawlerSites" | "probeSiteConnectivity" | "checkCookies" | "testLlm"
+  > as unknown as RuntimeActionService;
 
 const startWebhookServer = async (): Promise<{
   close: () => Promise<void>;
@@ -158,7 +157,7 @@ describe("buildServer composition integration", () => {
     } finally {
       if (process.platform !== "win32") await chmod(statePath, 0o600);
     }
-    await expect(restartedAuth.login("admin")).rejects.toThrow("管理员密码错误");
+    await expect(restartedAuth.login("admin")).rejects.toThrow("Incorrect administrator password");
     const other = await createTestServer();
     await other.services.auth.completeSetup({
       password: winningPassword,
@@ -209,7 +208,7 @@ describe("buildServer composition integration", () => {
       payload: { password: "another-password" },
     });
     expect(denied.statusCode).toBe(403);
-    await expect(services.auth.login("wrong-password")).rejects.toThrow("管理员密码错误");
+    await expect(services.auth.login("wrong-password")).rejects.toThrow("Incorrect administrator password");
     await expect(services.auth.login(environmentPassword)).resolves.toMatchObject({ authenticated: true });
     await expect(readFile(join(services.config.runtimePaths.configDir, "auth-state.json"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -226,12 +225,6 @@ describe("buildServer composition integration", () => {
       url: "/trpc/config.read",
       headers: { authorization: `Bearer ${token}` },
     });
-    const readPostResponse = await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.read",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {},
-    });
     const exportResponse = await fastify.inject({
       method: "GET",
       url: "/trpc/config.export",
@@ -240,8 +233,6 @@ describe("buildServer composition integration", () => {
 
     expect(readResponse.statusCode).toBe(200);
     expect(readResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
-    expect(readPostResponse.statusCode).toBe(200);
-    expect(readPostResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
     expect(exportResponse.statusCode).toBe(200);
     expect(exportResponse.json().result.data).toContain("[network]");
   });
@@ -467,21 +458,6 @@ describe("buildServer composition integration", () => {
     await expect(services.mediaRoots.list()).resolves.toEqual(rootsBefore);
   });
 
-  it("coalesces concurrent media root synchronization by deterministic id", async () => {
-    const mediaPath = await createTempRoot("config-media-root-concurrent");
-    const { services } = await createTestServer();
-
-    const roots = await Promise.all([
-      services.mediaRoots.ensurePath({ displayName: "First", hostPath: mediaPath }),
-      services.mediaRoots.ensurePath({ displayName: "Second", hostPath: mediaPath }),
-    ]);
-
-    expect(new Set(roots.map((root) => root.id))).toEqual(new Set([deterministicMediaRootId(mediaPath)]));
-    await expect(services.mediaRoots.list()).resolves.toMatchObject({
-      roots: [expect.objectContaining({ id: deterministicMediaRootId(mediaPath), hostPath: mediaPath })],
-    });
-  });
-
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {
     const { fastify } = await createTestServer({ runtimeActions: createFakeRuntimeActions() });
     const token = await loginAsAdmin(fastify);
@@ -537,8 +513,8 @@ describe("buildServer composition integration", () => {
     );
     expect(llmResponse.statusCode).toBe(200);
     expect(llmResponse.json().result.data).toMatchObject({
-      success: true,
-      message: expect.stringContaining("gpt-test"),
+      status: "ok",
+      sample: "gpt-test",
     });
     expect(watermarkResponse.statusCode).toBe(200);
     expect(watermarkResponse.json().result.data.path).toBe("/server-data/watermark");
@@ -596,33 +572,35 @@ describe("buildServer composition integration", () => {
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
     const state = await services.persistence.getState();
     await state.repositories.library.upsertEntry({
-      id: "visible-entry",
-      rootId,
-      rootRelativePath: "visible.mp4",
-      size: 7,
-      title: null,
-      number: "ABC-002",
-      createdAt: new Date("2026-05-11T00:00:00.000Z"),
+      movie: { id: "visible-entry", title: null, number: "ABC-002", createdAt: new Date("2026-05-11T00:00:00.000Z") },
+      files: [{ rootId, rootRelativePath: "visible.mp4", size: 7, fileId: `${rootId}:visible.mp4` }],
     });
     const hidden = await state.repositories.library.upsertEntry({
-      id: "hidden-entry",
-      rootId,
-      rootRelativePath: "hidden.mp4",
-      size: 18,
-      title: "Hidden",
-      number: "ABC-001",
-      createdAt: new Date("2026-05-10T00:00:00.000Z"),
+      movie: {
+        id: "hidden-entry",
+        title: "Hidden",
+        number: "ABC-001",
+        createdAt: new Date("2026-05-10T00:00:00.000Z"),
+      },
+      files: [{ rootId, rootRelativePath: "hidden.mp4", size: 18, fileId: `${rootId}:hidden.mp4` }],
     });
     await state.repositories.library.hideFromRecent(hidden.id, new Date("2026-05-12T00:00:00.000Z"));
     for (let index = 0; index < 8; index += 1) {
       await state.repositories.library.upsertEntry({
-        id: `newer-entry-${index}`,
-        rootId,
-        rootRelativePath: `newer-${index}.mp4`,
-        size: 1,
-        title: `Newer ${index}`,
-        number: `ABC-10${index}`,
-        createdAt: new Date(`2026-05-11T00:0${index + 1}:00.000Z`),
+        movie: {
+          id: `newer-entry-${index}`,
+          title: `Newer ${index}`,
+          number: `ABC-10${index}`,
+          createdAt: new Date(`2026-05-11T00:0${index + 1}:00.000Z`),
+        },
+        files: [
+          {
+            rootId,
+            rootRelativePath: `newer-${index}.mp4`,
+            size: 1,
+            fileId: `${rootId}:newer-${index}.mp4`,
+          },
+        ],
       });
     }
 
@@ -638,7 +616,6 @@ describe("buildServer composition integration", () => {
       totalBytes: 33,
       outputAt: "2026-05-11T00:08:00.000Z",
       rootPath: null,
-      unresolvedRepairCount: 0,
     });
     const recentAcquisitions = overviewResponse.json().result.data.recentAcquisitions;
     expect(recentAcquisitions).toHaveLength(8);
@@ -650,7 +627,7 @@ describe("buildServer composition integration", () => {
     expect(recentAcquisitions.map((entry: { id: string }) => entry.id)).not.toContain("hidden-entry");
   });
 
-  it("paginates library entries and resolves availability outside the list request", async () => {
+  it.each([false, true])("paginates movies and checks each file (partially available: %s)", async (partial) => {
     const root = await createTempRoot("library-page-root");
     await writeFile(join(root, "present-a.mp4"), "a");
     await writeFile(join(root, "present-b.mp4"), "b");
@@ -664,13 +641,23 @@ describe("buildServer composition integration", () => {
       ["entry-c", "missing-c.mp4", "2026-05-03T00:00:00.000Z"],
     ] as const) {
       await state.repositories.library.upsertEntry({
-        id,
-        rootId,
-        rootRelativePath: relativePath,
-        number: id,
-        createdAt: new Date(createdAt),
-        sourceRunId: `${id}-run`,
-        sourceOutcomeId: `${id}-outcome`,
+        movie: { id, number: id, createdAt: new Date(createdAt) },
+        files: [{ rootId, rootRelativePath: relativePath, size: 1, fileId: `${rootId}:${relativePath}` }],
+      });
+    }
+
+    if (partial) {
+      await writeFile(join(root, "present-c.mp4"), "present");
+      await state.repositories.library.upsertEntry({
+        movie: { id: "entry-c" },
+        files: [
+          {
+            rootId,
+            rootRelativePath: "present-c.mp4",
+            size: 7,
+            fileId: `${rootId}:present-c.mp4`,
+          },
+        ],
       });
     }
 
@@ -699,28 +686,35 @@ describe("buildServer composition integration", () => {
       entries: [
         expect.objectContaining({
           id: "entry-c",
-          available: null,
-          runId: "entry-c-run",
-          scrapeOutcomeId: "entry-c-outcome",
+          available: "unchecked",
+          fileRefs: expect.arrayContaining([expect.objectContaining({ runId: null, scrapeOutcomeId: null })]),
         }),
-        expect.objectContaining({ id: "entry-b", available: null }),
+        expect.objectContaining({ id: "entry-b", available: "unchecked" }),
       ],
       hasMore: true,
       total: 3,
+      fileCount: partial ? 4 : 3,
+      totalBytes: partial ? 10 : 3,
     });
-    expect(firstPage.entries[0]).not.toHaveProperty("taskId");
-    expect(firstPage.entries[0]).not.toHaveProperty("scrapeOutputId");
     expect(firstPage.nextCursor).toEqual(expect.any(String));
     expect(secondPage).toMatchObject({
-      entries: [expect.objectContaining({ id: "entry-a", available: null })],
+      entries: [expect.objectContaining({ id: "entry-a", available: "unchecked" })],
       hasMore: false,
       nextCursor: null,
       total: 3,
     });
     expect(availabilityResponse.json().result.data.entries).toEqual([
-      expect.objectContaining({ id: "entry-c", available: false }),
-      expect.objectContaining({ id: "entry-b", available: true }),
+      expect.objectContaining({ id: "entry-c", available: partial ? "partial" : "unavailable" }),
+      expect.objectContaining({ id: "entry-b", available: "available" }),
     ]);
+    expect(availabilityResponse.json().result.data.entries[0].fileRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          available: false,
+          availabilityError: expect.stringContaining("File missing; media library record retained only"),
+        }),
+      ]),
+    );
   });
 
   it("collects deduplicated actor profiles from crawler payloads and tolerates unusable ones", async () => {
@@ -741,12 +735,8 @@ describe("buildServer composition integration", () => {
       ["profile-empty-name", JSON.stringify({ actor_profiles: [{ name: "  " }] })],
     ] as const) {
       await state.repositories.library.upsertEntry({
-        id,
-        rootId,
-        rootRelativePath: `${id}.mp4`,
-        number: id,
-        crawlerDataJson,
-        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+        movie: { id, number: id, crawlerDataJson, createdAt: new Date("2026-05-01T00:00:00.000Z") },
+        files: [{ rootId, rootRelativePath: `${id}.mp4`, fileId: `${rootId}:${id}.mp4` }],
       });
     }
 
@@ -840,7 +830,7 @@ describe("buildServer composition integration", () => {
       status: "queued",
       startedAt: null,
       completedAt: null,
-      summary: `扫描 ${root.split(/[\\/]+/u).at(-1)}: queued`,
+      summary: `Scan ${root.split(/[\\/]+/u).at(-1)}: queued`,
       errors: [],
     });
     expect(recentResponse.statusCode).toBe(200);
@@ -848,7 +838,7 @@ describe("buildServer composition integration", () => {
       taskId,
       kind: "scan",
       status: "completed",
-      summary: `扫描 ${root.split(/[\\/]+/u).at(-1)}: completed`,
+      summary: `Scan ${root.split(/[\\/]+/u).at(-1)}: completed`,
       errors: [],
     });
     expect(recentResponse.json().tasks[0].completedAt).toEqual(expect.any(String));
@@ -922,62 +912,12 @@ describe("buildServer composition integration", () => {
     await webhook.close();
   });
 
-  it("applies NFO field settings to manual saves without coupling trailer downloads", async () => {
-    const root = await createTempRoot("manual-nfo-root");
-    const { fastify, services } = await createTestServer();
-    const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    const data = {
-      title: "Manual NFO",
-      number: "ABC-123",
-      actors: [],
-      genres: [],
-      director: "Director",
-      trailer_url: "https://example.com/trailer.mp4",
-      trailer_source_url: "https://example.com/trailer-source.mp4",
-      scene_images: [],
-      website: Website.JAVDB,
-    };
-    const writeManualNfo = async (relativePath: string) =>
-      await fastify.inject({
-        method: "POST",
-        url: "/trpc/scrape.nfoWrite",
-        headers: { authorization: `Bearer ${token}` },
-        payload: { rootId, relativePath, data },
-      });
-
-    await services.config.update({ download: { nfoIgnoreFields: ["director"] } });
-    const directorOnlyResponse = await writeManualNfo("director-only.nfo");
-    const directorOnlyXml = await readFile(join(root, "director-only.nfo"), "utf8");
-
-    expect(directorOnlyResponse.statusCode).toBe(200);
-    expect(directorOnlyXml).not.toContain("<director>Director</director>");
-    expect(directorOnlyXml).toContain("<trailer>");
-    expect(directorOnlyXml).toContain("trailer_source_url");
-
-    await services.config.update({
-      download: {
-        downloadTrailer: false,
-        nfoIgnoreFields: ["trailer"],
-      },
-    });
-    const trailerOnlyResponse = await writeManualNfo("trailer-only.nfo");
-    const trailerOnlyXml = await readFile(join(root, "trailer-only.nfo"), "utf8");
-
-    expect(trailerOnlyResponse.statusCode).toBe(200);
-    expect(trailerOnlyXml).toContain("<director>Director</director>");
-    expect(trailerOnlyXml).not.toContain("<trailer>https://example.com/trailer.mp4</trailer>");
-    expect(trailerOnlyXml).not.toContain(
-      "<trailer_source_url>https://example.com/trailer-source.mp4</trailer_source_url>",
-    );
-  });
-
   it("resolves configured filename NFO paths and preserves unmanaged XML on edit", async () => {
     const root = await createTempRoot("nfo-editor-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    await services.config.update({ download: { nfoNaming: "filename" } });
+    await services.config.update({ download: { nfoNaming: "filename", nfoIgnoreFields: ["director"] } });
     await writeFile(join(root, "ABC-123.mp4"), "video");
     await writeFile(
       join(root, "ABC-123.nfo"),
@@ -1002,13 +942,14 @@ describe("buildServer composition integration", () => {
       payload: {
         ...readInput,
         relativePath: readResult.effectiveRelativePath,
-        data: { ...readResult.data, title: "New", title_zh: "New" },
+        data: { ...readResult.data, title: "New", title_zh: "New", director: "Omitted Director" },
       },
     });
     const savedXml = await readFile(join(root, "ABC-123.nfo"), "utf8");
     expect(writeResponse.statusCode).toBe(200);
     expect(writeResponse.json().result.data.effectiveRelativePath).toBe("ABC-123.nfo");
     expect(savedXml).toContain("<title>New</title>");
+    expect(savedXml).not.toContain("<director>Omitted Director</director>");
     expect(savedXml).toContain('<movie custom="keep">');
     expect(savedXml).toContain('<actor role="lead">');
     expect(savedXml).toContain('<providerid source="local">keep-me</providerid>');

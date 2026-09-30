@@ -1,0 +1,688 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
+{
+  "aggregations": [
+    "IPZZ-907",
+    "SNOS-301",
+    "SNOS-334",
+  ],
+  "library": [
+    {
+      "actors": [
+        "明日葉みつは",
+      ],
+      "files": [
+        "明日葉みつは/IPZZ-907/IPZZ-907.mp4",
+      ],
+      "number": "IPZZ-907",
+      "title": "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
+    },
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "浅野こころ/SNOS-301/SNOS-301.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+    {
+      "actors": [
+        "瀬戸環奈",
+      ],
+      "files": [
+        "瀬戸環奈/SNOS-334/SNOS-334.mp4",
+      ],
+      "number": "SNOS-334",
+      "title": "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+    },
+  ],
+  "nfos": {
+    "output/明日葉みつは/IPZZ-907/IPZZ-907.nfo": {
+      "actors": [
+        "明日葉みつは",
+      ],
+      "num": [
+        "IPZZ-907",
+      ],
+      "originaltitle": [
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
+      ],
+      "premiered": [
+        "2026-08-07",
+      ],
+      "runtime": [
+        "159",
+      ],
+      "studio": [
+        "アイデアポケット",
+      ],
+      "tag": [],
+      "title": [
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
+      ],
+    },
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+    "output/瀬戸環奈/SNOS-334/SNOS-334.nfo": {
+      "actors": [
+        "瀬戸環奈",
+      ],
+      "num": [
+        "SNOS-334",
+      ],
+      "originaltitle": [
+        "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+      ],
+      "premiered": [
+        "2026-08-07",
+      ],
+      "runtime": [
+        "160",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+      ],
+    },
+  },
+  "results": [
+    [
+      "a/SNOS-301.mp4: success",
+      "b/IPZZ-907.mp4: success",
+      "SNOS-334.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/明日葉みつは/IPZZ-907/IPZZ-907.mp4 "ipzz"",
+    "output/明日葉みつは/IPZZ-907/IPZZ-907.nfo",
+    "output/明日葉みつは/IPZZ-907/extrafanart/fanart1.jpg 800x534",
+    "output/明日葉みつは/IPZZ-907/extrafanart/fanart2.jpg 800x534",
+    "output/明日葉みつは/IPZZ-907/extrafanart/fanart3.jpg 800x534",
+    "output/明日葉みつは/IPZZ-907/fanart.jpg 2184x1468",
+    "output/明日葉みつは/IPZZ-907/movie.nfo",
+    "output/明日葉みつは/IPZZ-907/poster.jpg 1032x1468",
+    "output/明日葉みつは/IPZZ-907/thumb.jpg 2184x1468",
+    "output/明日葉みつは/IPZZ-907/trailer.mp4 <2087 bytes>",
+    "output/浅野こころ/SNOS-301/SNOS-301.mp4 "snos"",
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart1.jpg 534x800",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart2.jpg 800x534",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart3.jpg 800x534",
+    "output/浅野こころ/SNOS-301/fanart.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/movie.nfo",
+    "output/浅野こころ/SNOS-301/poster.jpg 1032x1468",
+    "output/浅野こころ/SNOS-301/thumb.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/trailer.mp4 <2087 bytes>",
+    "output/瀬戸環奈/SNOS-334/SNOS-334.mp4 "snos334"",
+    "output/瀬戸環奈/SNOS-334/SNOS-334.nfo",
+    "output/瀬戸環奈/SNOS-334/extrafanart/fanart1.jpg 600x800",
+    "output/瀬戸環奈/SNOS-334/extrafanart/fanart2.jpg 600x800",
+    "output/瀬戸環奈/SNOS-334/extrafanart/fanart3.jpg 800x600",
+    "output/瀬戸環奈/SNOS-334/fanart.jpg 2184x1468",
+    "output/瀬戸環奈/SNOS-334/movie.nfo",
+    "output/瀬戸環奈/SNOS-334/poster.jpg 1032x1468",
+    "output/瀬戸環奈/SNOS-334/thumb.jpg 2184x1468",
+    "output/瀬戸環奈/SNOS-334/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'chinese subtitle marker' 1`] = `
+{
+  "aggregations": [
+    "SNOS-301",
+  ],
+  "library": [
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "浅野こころ/SNOS-301-C/SNOS-301-C.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+  ],
+  "nfos": {
+    "output/浅野こころ/SNOS-301-C/SNOS-301-C.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [
+        "中文字幕",
+      ],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+  },
+  "results": [
+    [
+      "snos-301-C.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/浅野こころ/SNOS-301-C/SNOS-301-C.mp4 "video"",
+    "output/浅野こころ/SNOS-301-C/SNOS-301-C.nfo",
+    "output/浅野こころ/SNOS-301-C/extrafanart/fanart1.jpg 534x800",
+    "output/浅野こころ/SNOS-301-C/extrafanart/fanart2.jpg 800x534",
+    "output/浅野こころ/SNOS-301-C/extrafanart/fanart3.jpg 800x534",
+    "output/浅野こころ/SNOS-301-C/fanart.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301-C/movie.nfo",
+    "output/浅野こころ/SNOS-301-C/poster.jpg 1032x1468",
+    "output/浅野こころ/SNOS-301-C/thumb.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301-C/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'copy without moving source' 1`] = `
+{
+  "aggregations": [
+    "SNOS-301",
+  ],
+  "library": [
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "SNOS-301.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+  ],
+  "nfos": {
+    "source/SNOS-301.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+  },
+  "results": [
+    [
+      "SNOS-301.mp4: success",
+    ],
+  ],
+  "tree": [
+    "source/SNOS-301.mp4 "video"",
+    "source/SNOS-301.nfo",
+    "source/extrafanart/fanart1.jpg 534x800",
+    "source/extrafanart/fanart2.jpg 800x534",
+    "source/extrafanart/fanart3.jpg 800x534",
+    "source/fanart.jpg 2184x1468",
+    "source/movie.nfo",
+    "source/poster.jpg 1032x1468",
+    "source/thumb.jpg 2184x1468",
+    "source/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'fc2 extra moves with its movie' 1`] = `
+{
+  "aggregations": [
+    "FC2-4984259",
+  ],
+  "library": [
+    {
+      "actors": [],
+      "files": [
+        "Unknown/FC2-4984259/FC2-4984259.mp4",
+      ],
+      "number": "FC2-4984259",
+      "title": "【最高額交渉】元人気アイドル１８才/Eカップ。脱退後、即FC2出演。最初で最後の最高額ハメ撮り映像。※高画質5GB原版先着限定配布",
+    },
+  ],
+  "nfos": {
+    "output/Unknown/FC2-4984259/FC2-4984259.nfo": {
+      "actors": [],
+      "num": [
+        "FC2-4984259",
+      ],
+      "originaltitle": [
+        "【最高額交渉】元人気アイドル１８才/Eカップ。脱退後、即FC2出演。最初で最後の最高額ハメ撮り映像。※高画質5GB原版先着限定配布",
+      ],
+      "premiered": [
+        "2026-09-28",
+      ],
+      "runtime": [
+        "60",
+      ],
+      "studio": [
+        "灰色キャット。",
+      ],
+      "tag": [
+        "无码",
+      ],
+      "title": [
+        "【最高額交渉】元人気アイドル１８才/Eカップ。脱退後、即FC2出演。最初で最後の最高額ハメ撮り映像。※高画質5GB原版先着限定配布",
+      ],
+    },
+  },
+  "results": [
+    [
+      "FC2-PPV-4984259.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/Unknown/FC2-4984259/FC2-4984259-特典.mp4 "extra"",
+    "output/Unknown/FC2-4984259/FC2-4984259.mp4 "video"",
+    "output/Unknown/FC2-4984259/FC2-4984259.nfo",
+    "output/Unknown/FC2-4984259/extrafanart/fanart1.jpg 1280x719",
+    "output/Unknown/FC2-4984259/fanart.png 1280x720",
+    "output/Unknown/FC2-4984259/movie.nfo",
+    "output/Unknown/FC2-4984259/poster.png 276x276",
+    "output/Unknown/FC2-4984259/thumb.png 1280x720",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'mixed split disc and standalone file' 1`] = `
+{
+  "aggregations": [],
+  "library": [],
+  "nfos": {},
+  "results": [
+    [
+      "SNOS-301-CD2.mp4: failed (The same movie contains both multi-part and standalone files; please check manually)",
+      "SNOS-301.mp4: failed (The same movie contains both multi-part and standalone files; please check manually)",
+    ],
+  ],
+  "tree": [
+    "source/SNOS-301-CD2.mp4 "cd2"",
+    "source/SNOS-301.mp4 "standalone"",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'rescrape replaces stale metadata' 1`] = `
+{
+  "aggregations": [
+    "SNOS-301",
+    "SNOS-301",
+  ],
+  "library": [
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "浅野こころ/SNOS-301/SNOS-301.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+  ],
+  "nfos": {
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+  },
+  "results": [
+    [
+      "SNOS-301.mp4: success",
+    ],
+    [
+      "浅野こころ/SNOS-301/SNOS-301.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/浅野こころ/SNOS-301/SNOS-301.mp4 "video"",
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart1.jpg 534x800",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart2.jpg 800x534",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart3.jpg 800x534",
+    "output/浅野こころ/SNOS-301/fanart.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/movie.nfo",
+    "output/浅野こころ/SNOS-301/poster.jpg 1032x1468",
+    "output/浅野こころ/SNOS-301/thumb.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'single file' 1`] = `
+{
+  "aggregations": [
+    "SNOS-301",
+  ],
+  "library": [
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "浅野こころ/SNOS-301/SNOS-301.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+  ],
+  "nfos": {
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+  },
+  "results": [
+    [
+      "SNOS-301.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/浅野こころ/SNOS-301/SNOS-301.mp4 "video"",
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart1.jpg 534x800",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart2.jpg 800x534",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart3.jpg 800x534",
+    "output/浅野こころ/SNOS-301/fanart.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/movie.nfo",
+    "output/浅野こころ/SNOS-301/poster.jpg 1032x1468",
+    "output/浅野こころ/SNOS-301/thumb.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'split disc' 1`] = `
+{
+  "aggregations": [
+    "SNOS-301",
+  ],
+  "library": [
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "浅野こころ/SNOS-301/SNOS-301-CD1.mp4",
+        "浅野こころ/SNOS-301/SNOS-301-CD2.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+  ],
+  "nfos": {
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+  },
+  "results": [
+    [
+      "SNOS-301-CD1.mp4: success",
+      "SNOS-301-CD2.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/浅野こころ/SNOS-301/SNOS-301-CD1.mp4 "cd1"",
+    "output/浅野こころ/SNOS-301/SNOS-301-CD2.mp4 "cd2"",
+    "output/浅野こころ/SNOS-301/SNOS-301.nfo",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart1.jpg 534x800",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart2.jpg 800x534",
+    "output/浅野こころ/SNOS-301/extrafanart/fanart3.jpg 800x534",
+    "output/浅野こころ/SNOS-301/fanart.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/movie.nfo",
+    "output/浅野こころ/SNOS-301/poster.jpg 1032x1468",
+    "output/浅野こころ/SNOS-301/thumb.jpg 2184x1468",
+    "output/浅野こころ/SNOS-301/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'strm with relative target' 1`] = `
+{
+  "aggregations": [
+    "SNOS-334",
+  ],
+  "library": [
+    {
+      "actors": [
+        "瀬戸環奈",
+      ],
+      "files": [
+        "瀬戸環奈/SNOS-334/SNOS-334.strm",
+      ],
+      "number": "SNOS-334",
+      "title": "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+    },
+  ],
+  "nfos": {
+    "output/瀬戸環奈/SNOS-334/SNOS-334.nfo": {
+      "actors": [
+        "瀬戸環奈",
+      ],
+      "num": [
+        "SNOS-334",
+      ],
+      "originaltitle": [
+        "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+      ],
+      "premiered": [
+        "2026-08-07",
+      ],
+      "runtime": [
+        "160",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
+      ],
+    },
+  },
+  "results": [
+    [
+      "SNOS-334.strm: success",
+    ],
+  ],
+  "tree": [
+    "library/SNOS-334.mp4 "video"",
+    "output/瀬戸環奈/SNOS-334/SNOS-334.nfo",
+    "output/瀬戸環奈/SNOS-334/SNOS-334.strm "#KODIPROP:inputstream=inputstream.adaptive\\n<root>/library/SNOS-334.mp4\\n"",
+    "output/瀬戸環奈/SNOS-334/extrafanart/fanart1.jpg 600x800",
+    "output/瀬戸環奈/SNOS-334/extrafanart/fanart2.jpg 600x800",
+    "output/瀬戸環奈/SNOS-334/extrafanart/fanart3.jpg 800x600",
+    "output/瀬戸環奈/SNOS-334/fanart.jpg 2184x1468",
+    "output/瀬戸環奈/SNOS-334/movie.nfo",
+    "output/瀬戸環奈/SNOS-334/poster.jpg 1032x1468",
+    "output/瀬戸環奈/SNOS-334/thumb.jpg 2184x1468",
+    "output/瀬戸環奈/SNOS-334/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'subtitle sidecars' 1`] = `
+{
+  "aggregations": [
+    "IPZZ-907",
+  ],
+  "library": [
+    {
+      "actors": [
+        "明日葉みつは",
+      ],
+      "files": [
+        "明日葉みつは/IPZZ-907-C/IPZZ-907-C.mp4",
+      ],
+      "number": "IPZZ-907",
+      "title": "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
+    },
+  ],
+  "nfos": {
+    "output/明日葉みつは/IPZZ-907-C/IPZZ-907-C.nfo": {
+      "actors": [
+        "明日葉みつは",
+      ],
+      "num": [
+        "IPZZ-907",
+      ],
+      "originaltitle": [
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
+      ],
+      "premiered": [
+        "2026-08-07",
+      ],
+      "runtime": [
+        "159",
+      ],
+      "studio": [
+        "アイデアポケット",
+      ],
+      "tag": [
+        "中文字幕",
+      ],
+      "title": [
+        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
+      ],
+    },
+  },
+  "results": [
+    [
+      "IPZZ-907.mp4: success",
+    ],
+  ],
+  "tree": [
+    "output/明日葉みつは/IPZZ-907-C/IPZZ-907-C.ass "ass"",
+    "output/明日葉みつは/IPZZ-907-C/IPZZ-907-C.mp4 "video"",
+    "output/明日葉みつは/IPZZ-907-C/IPZZ-907-C.nfo",
+    "output/明日葉みつは/IPZZ-907-C/IPZZ-907-C.zh.srt "srt"",
+    "output/明日葉みつは/IPZZ-907-C/extrafanart/fanart1.jpg 800x534",
+    "output/明日葉みつは/IPZZ-907-C/extrafanart/fanart2.jpg 800x534",
+    "output/明日葉みつは/IPZZ-907-C/extrafanart/fanart3.jpg 800x534",
+    "output/明日葉みつは/IPZZ-907-C/fanart.jpg 2184x1468",
+    "output/明日葉みつは/IPZZ-907-C/movie.nfo",
+    "output/明日葉みつは/IPZZ-907-C/poster.jpg 1032x1468",
+    "output/明日葉みつは/IPZZ-907-C/thumb.jpg 2184x1468",
+    "output/明日葉みつは/IPZZ-907-C/trailer.mp4 <2087 bytes>",
+  ],
+}
+`;

@@ -5,8 +5,13 @@ import { create } from "zustand";
 export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error";
 
 interface WorkbenchSetupState {
+  startTask: (() => Promise<void>) | null;
+  activePreview: { id: string; stop: () => Promise<void> } | null;
+  stopPreview: () => Promise<void>;
   scanDir: string;
   recursive: boolean;
+  previewMode: boolean;
+  setPreviewMode: (previewMode: boolean) => void;
   committedPlanKey: string | null;
   warnings: { count: number; paths: string[] };
   setRecursive: (recursive: boolean) => void;
@@ -28,12 +33,22 @@ interface WorkbenchSetupState {
   ) => void;
   failScan: (error: string) => void;
   toggleSelectedPath: (path: string) => void;
-  setAllSelected: (selected: boolean) => void;
+  setPathsSelected: (paths: string[], selected: boolean) => void;
 }
 
-export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set) => ({
+export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set, get) => ({
+  startTask: null,
+  activePreview: null,
+  stopPreview: async () => {
+    const current = get().activePreview;
+    if (!current) return;
+    await current.stop();
+    if (get().activePreview?.id === current.id) set({ activePreview: null });
+  },
   scanDir: "",
-  recursive: false,
+  previewMode: false,
+  setPreviewMode: (previewMode) => set({ previewMode }),
+  recursive: true,
   committedPlanKey: null,
   warnings: { count: 0, paths: [] },
   setRecursive: (recursive) => set({ recursive, scanStatus: "idle" }),
@@ -96,8 +111,17 @@ export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set) => ({
         : [...state.selectedPaths, path],
     })),
 
-  setAllSelected: (selected) =>
-    set((state) => ({
-      selectedPaths: selected ? state.candidates.map((candidate) => candidate.path) : [],
-    })),
+  setPathsSelected: (paths, selected) =>
+    set((state) => {
+      const selectedPaths = new Set(state.selectedPaths);
+      for (const path of paths) {
+        if (selected) selectedPaths.add(path);
+        else selectedPaths.delete(path);
+      }
+      return {
+        selectedPaths: state.candidates
+          .filter((candidate) => selectedPaths.has(candidate.path))
+          .map((candidate) => candidate.path),
+      };
+    }),
 }));

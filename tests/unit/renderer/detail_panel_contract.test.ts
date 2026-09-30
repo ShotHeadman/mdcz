@@ -25,6 +25,7 @@ const createEntry = (crawlerData?: CrawlerData): LocalScanEntry => ({
   fileId: "entry-1",
   ref: { rootId: "test-root", relativePath: "test.mp4" },
   nfoPath: "/media/ABC-123.nfo",
+  nfoPaths: ["/media/ABC-123.nfo"],
   fileInfo: {
     filePath: "/media/ABC-123.mp4",
     fileName: "ABC-123.mp4",

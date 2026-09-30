@@ -71,9 +71,10 @@ interface ShortcutInputProps {
   className?: string;
   disabled?: boolean;
   ref?: React.Ref<HTMLButtonElement>;
+  labels: { recording: string; unset: string; change: string; clear: string };
 }
 
-export function ShortcutInput({ value, onChange, className, disabled, ref }: ShortcutInputProps) {
+export function ShortcutInput({ value, onChange, className, disabled, ref, labels }: ShortcutInputProps) {
   const [isRecording, setIsRecording] = React.useState(false);
 
   const tokens = React.useMemo(() => shortcutParts(value), [value]);
@@ -143,7 +144,7 @@ export function ShortcutInput({ value, onChange, className, disabled, ref }: Sho
           {isRecording ? (
             <span className="text-xs font-medium text-primary animate-pulse flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-primary" />
-              录制中...
+              {labels.recording}
             </span>
           ) : tokens.length > 0 ? (
             displayTokens.map((item) => (
@@ -155,12 +156,12 @@ export function ShortcutInput({ value, onChange, className, disabled, ref }: Sho
               </kbd>
             ))
           ) : (
-            <span className="text-xs text-muted-foreground">未设置</span>
+            <span className="text-xs text-muted-foreground">{labels.unset}</span>
           )}
         </div>
         {!isRecording && !disabled && (
           <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-            修改
+            {labels.change}
           </span>
         )}
       </button>
@@ -176,7 +177,7 @@ export function ShortcutInput({ value, onChange, className, disabled, ref }: Sho
         }}
         disabled={disabled || !value}
       >
-        清空
+        {labels.clear}
       </Button>
     </div>
   );

@@ -6,7 +6,11 @@ import {
   resolvePosterEditorCropRegion,
 } from "@mdcz/shared/posterCrop";
 import sharp from "sharp";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import { type MovieLibrary, writePublishedMovie } from "../library/registeredMedia";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
+import { WriteOutput } from "../publication/WriteOutput";
+import { DirectoryInventory } from "./DirectoryInventory";
 import { resolveExistingImageAsset } from "./download/assets/helpers";
 
 const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);
@@ -33,14 +37,28 @@ export interface PosterCropSession {
 }
 
 export class PosterCropService {
-  async prepare(videoPath: string, assetNamingMode: AssetNamingMode): Promise<PosterCropSession> {
+  async prepare(
+    videoPath: string,
+    assetNamingMode: AssetNamingMode,
+    assets?: { thumb?: string; poster?: string },
+  ): Promise<PosterCropSession> {
     const outputDir = dirname(videoPath);
     const videoBaseName = basename(videoPath, extname(videoPath));
     const names = buildMovieAssetFileNames(videoBaseName, assetNamingMode);
     const thumbTargetPath = join(outputDir, names.thumb);
-    const posterTargetPath = join(outputDir, names.poster);
-    const thumbPath = await resolveExistingImageAsset(thumbTargetPath);
-    const posterPath = await resolveExistingImageAsset(posterTargetPath);
+    const posterTargetPath =
+      assets?.poster ??
+      (assets?.thumb
+        ? join(
+            dirname(assets.thumb),
+            /thumb(?=\.[^.]+$)/u.test(basename(assets.thumb))
+              ? basename(assets.thumb).replace(/thumb(?=\.[^.]+$)/u, "poster")
+              : names.poster,
+          )
+        : join(outputDir, names.poster));
+    const inventory = new DirectoryInventory();
+    const thumbPath = assets ? assets.thumb : await resolveExistingImageAsset(thumbTargetPath, inventory);
+    const posterPath = assets ? assets.poster : await resolveExistingImageAsset(posterTargetPath, inventory);
     const sourcePath = thumbPath ?? posterPath;
     if (!sourcePath) throw new Error("No local thumb or poster is available for editing");
 
@@ -61,23 +79,43 @@ export class PosterCropService {
     videoPath: string,
     assetNamingMode: AssetNamingMode,
     crop: NormalizedCropRegion,
-    publication: RegisteredPublicationContext,
+    assets?: { thumb?: string; poster?: string },
+    movie?: {
+      library: MovieLibrary;
+      movieId: string;
+      roots: readonly { id: string; hostPath: string }[];
+    },
   ): Promise<PosterCropSession & { revision: string }> {
-    const session = await this.prepare(videoPath, assetNamingMode);
+    const session = await this.prepare(videoPath, assetNamingMode, assets);
     const extension = extname(session.targetPath).toLowerCase() || ".jpg";
     if (!supportedExtensions.has(extension)) throw new Error(`Unsupported poster format: ${extension}`);
     const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
     const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
     const data = await encodePoster(source, extension).toBuffer();
-    await commitRegisteredPublication(
-      {
-        operationId: `poster-crop:${session.targetPath}`,
-        operationType: "maintenance",
-        artifacts: [{ targetPath: session.targetPath, content: { kind: "bytes", data } }],
-        replaceExistingArtifacts: true,
-      },
-      publication,
+    const inventory = new DirectoryInventory();
+    const release = await acquireOutputDirectories([session.targetPath], (directory) =>
+      inventory.canonicalDirectory(directory),
     );
+    try {
+      await new WriteOutput().install([{ targetPath: session.targetPath, data }], {
+        protectedMediaFiles: [videoPath],
+        commit: async () => {
+          if (!movie) return;
+          const ref = toRootFileRef(session.targetPath, movie.roots);
+          await writePublishedMovie(movie.library, movie.movieId, [
+            {
+              kind: "poster",
+              uri: ref.relativePath,
+              rootId: ref.rootId,
+              relativePath: ref.relativePath,
+              published: true,
+            },
+          ]);
+        },
+      });
+    } finally {
+      release();
+    }
     return { ...session, revision: String(Date.now()) };
   }
 }

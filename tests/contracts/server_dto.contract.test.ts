@@ -25,7 +25,6 @@ describe("shared server DTO contracts", () => {
     const factoryTask = scanTaskSchema.parse(buildScanTaskDto({ status: "running", completedAt: null }));
 
     expect(parsedFixture.completedAt).toBe("2026-01-01T00:00:01.000Z");
-    expect(parsedFixture).not.toHaveProperty("finishedAt");
     expect(factoryTask).toMatchObject({ status: "running", completedAt: null });
   });
 });

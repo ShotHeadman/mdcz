@@ -14,18 +14,18 @@ import { useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { OrderedSiteFieldEditor } from "../config-form/OrderedSiteField";
+import { useT } from "../i18n";
 import { normalizeEnabledSites } from "./orderedSite";
 import { buildOrderedSiteSummary } from "./orderedSiteSummary";
 import { ResetToDefaultButton } from "./ResetToDefaultButton";
 import { SettingRow } from "./SettingRow";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
+import type { AggregationPriorityKey } from "./settingsRegistry";
 import { useAutoSaveField } from "./useAutoSaveField";
 
 interface AggregationPriorityEditorFieldProps {
   options: string[];
-  name: string;
-  label: string;
-  description?: string;
+  name: AggregationPriorityKey;
 }
 
 function valuesEqual(a: string[], b: string[]): boolean {
@@ -35,12 +35,9 @@ function valuesEqual(a: string[], b: string[]): boolean {
 const EDITOR_DIALOG_CLASS_NAME =
   "w-[94vw] max-w-[94vw] gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)] sm:w-[90vw] sm:max-w-[90vw] xl:w-[72vw] xl:max-w-[72vw]";
 
-export function AggregationPriorityEditorField({
-  options,
-  name,
-  label,
-  description = "按顺序选择这个字段优先采用哪些站点；未列出的站点会在后面按实际抓取结果补位。",
-}: AggregationPriorityEditorFieldProps) {
+export function AggregationPriorityEditorField({ options, name }: AggregationPriorityEditorFieldProps) {
+  const t = useT();
+  const { label, description } = t.settingsFields.fields[name];
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
   const value = (useWatch({ control: form.control, name }) as string[] | undefined) ?? [];
@@ -54,7 +51,7 @@ export function AggregationPriorityEditorField({
     () => buildOrderedSiteSummary(normalizedValue, availableOptions),
     [availableOptions, normalizedValue],
   );
-  const { resetToDefault } = useAutoSaveField(name, { mode: "immediate", label });
+  const { resetToDefault } = useAutoSaveField(name, { mode: "immediate" });
   const [open, setOpen] = useState(false);
   const [draftValue, setDraftValue] = useState<string[]>(normalizedValue);
 
@@ -98,7 +95,7 @@ export function AggregationPriorityEditorField({
             <div className="flex items-center gap-3">
               <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
                 <span className="rounded-[var(--radius-quiet-capsule)] border border-border/50 bg-surface-low px-2.5 py-1">
-                  候选 {summary.enabledCount}/{summary.totalCount}
+                  {t.settings.aggregationPriority.candidatesSummary(summary.enabledCount, summary.totalCount)}
                 </span>
                 {summary.preview.map((site) => (
                   <span
@@ -115,7 +112,7 @@ export function AggregationPriorityEditorField({
                 )}
               </div>
               <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
-                编辑
+                {t.settings.editorDialog.edit}
               </Button>
             </div>
           }
@@ -125,7 +122,9 @@ export function AggregationPriorityEditorField({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className={EDITOR_DIALOG_CLASS_NAME}>
           <DialogHeader className="gap-3 px-7 pt-7 text-left">
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">字段聚合</p>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+              {t.settings.aggregationPriority.eyebrow}
+            </p>
             <DialogTitle className="text-2xl font-semibold tracking-tight">{label}</DialogTitle>
             <DialogDescription className="max-w-2xl text-sm leading-6">{description}</DialogDescription>
           </DialogHeader>
@@ -133,9 +132,7 @@ export function AggregationPriorityEditorField({
             <section className="space-y-4">
               <header className="space-y-1">
                 <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">{label}</h3>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  勾选参与聚合的站点并调整顺序；未列出的站点会在这些候选之后补位。
-                </p>
+                <p className="text-sm leading-6 text-muted-foreground">{t.settings.aggregationPriority.hint}</p>
               </header>
               <OrderedSiteFieldEditor value={draftValue} options={availableOptions} onChange={setDraftValue} />
             </section>
@@ -143,14 +140,14 @@ export function AggregationPriorityEditorField({
           <DialogFooter className="gap-2 px-6 pb-6">
             <DialogClose asChild>
               <Button variant="outline" className="rounded-[var(--radius-quiet-capsule)] px-5">
-                关闭
+                {t.settings.editorDialog.close}
               </Button>
             </DialogClose>
             <Button
               className={cn("rounded-[var(--radius-quiet-capsule)] px-5")}
               onClick={hasChanges ? applyDraft : () => setOpen(false)}
             >
-              {hasChanges ? "应用排序更改" : "完成"}
+              {hasChanges ? t.settings.editorDialog.applyOrder : t.settings.editorDialog.done}
             </Button>
           </DialogFooter>
         </DialogContent>

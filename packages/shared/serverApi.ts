@@ -60,6 +60,7 @@ import type {
   ScrapeLiveRunsResponse,
   ScrapeMutationAckDto,
   ScrapePendingUncensoredConfirmationResponse,
+  ScrapeRerunDirectoryInput,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
   ScrapeRunSnapshotDto,
@@ -144,6 +145,7 @@ export interface ServerApiContract {
     stop(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
   };
   library: {
+    removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
@@ -169,6 +171,7 @@ export interface ServerApiContract {
     execute(input: ToolExecuteInput): Promise<ToolExecuteResponse>;
   };
   scans: {
+    cancelCandidates(input: { scanId: string }): Promise<{ ok: true }>;
     candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse>;
     detail(input: ScanTaskIdInput): Promise<ScanTaskDetailResponse>;
     events(input: ScanTaskIdInput): Promise<TaskEventListResponse>;
@@ -180,7 +183,7 @@ export interface ServerApiContract {
     liveRuns(): Promise<ScrapeLiveRunsResponse>;
     snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto>;
     pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
-    deleteFile(input: FileActionInput): Promise<FileActionResponse>;
+    removeRecord(input: FileActionInput): Promise<FileActionResponse>;
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
@@ -190,7 +193,8 @@ export interface ServerApiContract {
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;
     resume(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
-    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<ScrapeMutationAckDto>;
+    rerunDirectory(input: ScrapeRerunDirectoryInput): Promise<ScrapeMutationAckDto>;
+    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<import("./types").UncensoredConfirmResponse>;
     start(input: ScrapeStartInput): Promise<ScrapeMutationAckDto>;
     stop(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
   };

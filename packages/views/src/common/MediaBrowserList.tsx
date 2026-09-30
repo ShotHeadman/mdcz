@@ -1,6 +1,7 @@
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger, cn, ScrollArea } from "@mdcz/ui";
 import { CheckCircle2, LoaderCircle, PauseCircle, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
+import { useT } from "../i18n";
 
 export type MediaBrowserFilter = "all" | "success" | "failed";
 export type MediaBrowserItemStatus = "success" | "failed" | "processing" | "paused" | "idle";
@@ -35,13 +36,8 @@ interface MediaBrowserListProps {
   stats?: MediaBrowserStat[];
 }
 
-const FILTER_OPTIONS: Array<{ id: MediaBrowserFilter; label: string }> = [
-  { id: "all", label: "全部" },
-  { id: "success", label: "成功" },
-  { id: "failed", label: "失败" },
-];
-
 function StatusIcon({ status }: { status?: MediaBrowserItemStatus }) {
+  const t = useT();
   if (status === "success") {
     return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />;
   }
@@ -55,7 +51,7 @@ function StatusIcon({ status }: { status?: MediaBrowserItemStatus }) {
   }
 
   if (status === "paused") {
-    return <PauseCircle aria-label="已暂停" className="h-4 w-4 shrink-0 text-muted-foreground" />;
+    return <PauseCircle aria-label={t.media.browser.paused} className="h-4 w-4 shrink-0 text-muted-foreground" />;
   }
 
   return null;
@@ -111,6 +107,13 @@ export function MediaBrowserList({
   title,
   stats = [],
 }: MediaBrowserListProps) {
+  const t = useT();
+  const filterOptions: Array<{ id: MediaBrowserFilter; label: string }> = [
+    { id: "all", label: t.media.browser.filters.all },
+    { id: "success", label: t.media.browser.filters.success },
+    { id: "failed", label: t.media.browser.filters.failed },
+  ];
+
   const visibleItems = items.filter((item) => {
     if (filter === "all") {
       return true;
@@ -152,7 +155,7 @@ export function MediaBrowserList({
           ) : null}
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-quiet-sm bg-surface-low p-1">
-              {FILTER_OPTIONS.map((option) => (
+              {filterOptions.map((option) => (
                 <button
                   key={option.id}
                   type="button"

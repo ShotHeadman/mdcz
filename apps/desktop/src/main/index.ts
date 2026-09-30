@@ -151,7 +151,6 @@ if (!app.requestSingleInstanceLock()) {
       if (windowService) {
         trayService.initialize(windowService);
         shortcutService.initialize(windowService, initialConfig);
-        loggerService.reconfigure(initialConfig.behavior.saveLog);
         windowService.applyUiConfig(initialConfig.ui);
 
         disposeShortcutConfigListener?.();
@@ -160,7 +159,6 @@ if (!app.requestSingleInstanceLock()) {
             return;
           }
           shortcutService.initialize(windowService, configuration);
-          loggerService.reconfigure(configuration.behavior.saveLog);
           windowService.applyUiConfig(configuration.ui);
         });
 

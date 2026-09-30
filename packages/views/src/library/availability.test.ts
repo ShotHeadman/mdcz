@@ -1,3 +1,4 @@
+import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import type { LibraryAvailabilityResponse, LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { describe, expect, it } from "vitest";
 import { chunkLibraryEntryIds, mergeLibraryAvailability } from "./availability";
@@ -5,19 +6,24 @@ import { chunkLibraryEntryIds, mergeLibraryAvailability } from "./availability";
 const createEntry = (id: string): LibraryEntryDto => ({
   actors: [],
   assets: [],
-  available: null,
+  available: "unchecked",
   crawlerData: null,
   createdAt: "2026-08-17T00:00:00.000Z",
-  directory: "movies",
-  fileName: `${id}.mp4`,
+  displayFileId: `file-${id}`,
   fileRefs: [
     {
       available: null,
+      availabilityError: null,
       directory: "movies",
       fileName: `${id}.mp4`,
       id: `file-${id}`,
       lastKnownPath: null,
       modifiedAt: null,
+      partNumber: null,
+      partSuffix: null,
+      resolution: null,
+      runId: null,
+      scrapeOutcomeId: null,
       relativePath: `movies/${id}.mp4`,
       rootDisplayName: "Media",
       rootId: "root-1",
@@ -26,31 +32,37 @@ const createEntry = (id: string): LibraryEntryDto => ({
   ],
   hiddenFromRecentAt: null,
   id,
-  lastKnownPath: null,
   lastRefreshedAt: null,
   mediaIdentity: id,
-  modifiedAt: null,
   number: id,
-  relativePath: `movies/${id}.mp4`,
-  rootDisplayName: "Media",
-  rootId: "root-1",
-  scrapeOutcomeId: null,
   size: 10,
-  runId: null,
   thumbnailPath: null,
   title: id,
 });
 
 describe("library availability helpers", () => {
-  it("merges entry and file availability without changing entries missing from the response", () => {
+  it.each([
+    [true, true, "available"],
+    [true, false, "partial"],
+    [false, false, "unavailable"],
+    [null, true, "unchecked"],
+  ] as const)("merges movie and file availability (%s, %s)", (firstAvailable, secondAvailable, status) => {
     const first = createEntry("ABC-001");
+    first.fileRefs.push({ ...first.fileRefs[0], id: "file-extra", available: true });
     const second = createEntry("ABC-002");
     const responses: LibraryAvailabilityResponse[] = [
       {
         entries: [
           {
-            available: true,
-            fileRefs: [{ available: false, id: "file-ABC-001" }],
+            available: libraryAvailability([{ available: firstAvailable }, { available: secondAvailable }]),
+            fileRefs: [
+              {
+                available: firstAvailable,
+                availabilityError: firstAvailable === false ? "missing" : null,
+                id: "file-ABC-001",
+              },
+              { available: secondAvailable, availabilityError: null, id: "file-extra" },
+            ],
             id: "ABC-001",
           },
         ],
@@ -59,9 +71,12 @@ describe("library availability helpers", () => {
 
     const merged = mergeLibraryAvailability([first, second], responses);
 
-    expect(merged[0]).toMatchObject({ available: true, fileRefs: [{ available: false }] });
+    expect(merged[0]).toMatchObject({
+      available: status,
+      fileRefs: [{ available: firstAvailable }, { available: secondAvailable }],
+    });
     expect(merged[1]).toBe(second);
-    expect(first.available).toBeNull();
+    expect(first.available).toBe("unchecked");
   });
 
   it("splits ids into bounded requests and rejects invalid sizes", () => {

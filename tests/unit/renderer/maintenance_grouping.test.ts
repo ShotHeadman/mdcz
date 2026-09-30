@@ -3,7 +3,6 @@ import {
   buildMaintenanceEntryGroups,
   buildMaintenanceEntryViewModel,
   countMaintenanceDisplayItems,
-  formatMaintenanceIdleStatusText,
   summarizeMaintenanceExecutionGroups,
 } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import { describe, expect, it } from "vitest";
@@ -59,7 +58,7 @@ describe("maintenance multipart grouping", () => {
       "entry-1",
       "entry-2",
     ]);
-    expect(formatMaintenanceIdleStatusText([part1, part2])).toBe("已扫描 1 项");
+    expect(countMaintenanceDisplayItems([part1, part2])).toBe(1);
   });
 
   it("marks the whole group as failed immediately when any child file fails", () => {
@@ -166,9 +165,7 @@ describe("maintenance multipart grouping", () => {
         "entry-1": {
           fileId: "entry-1",
           status: "ready",
-          fieldDiffs: [
-            createMaintenanceValueDiff({ field: "title", label: "标题", oldValue: "A", newValue: "B", changed: true }),
-          ],
+          fieldDiffs: [createMaintenanceValueDiff({ field: "title", oldValue: "A", newValue: "B", changed: true })],
           pathDiff: {
             fileId: "entry-1",
             currentVideoPath: "/media/FC2-123456-1.mp4",

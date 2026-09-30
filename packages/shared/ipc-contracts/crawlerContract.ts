@@ -1,7 +1,7 @@
 import type { Website } from "../enums";
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
-import type { CrawlerListSitesResponse } from "../serverDtos";
+import type { CrawlerListSitesResponse, SiteConnectivityProbeResponse } from "../serverDtos";
 import type { CrawlerData } from "../types";
 
 export type CrawlerIpcContract = {
@@ -10,14 +10,5 @@ export type CrawlerIpcContract = {
     { data: CrawlerData | null; error?: string; elapsed: number }
   >;
   [IpcChannel.Crawler_ListSites]: IpcProcedure<void, CrawlerListSitesResponse>;
-  [IpcChannel.Crawler_ProbeSiteConnectivity]: IpcProcedure<
-    { site?: Website },
-    {
-      ok: boolean;
-      message: string;
-      latencyMs: number;
-      status?: number;
-      resolvedUrl?: string;
-    }
-  >;
+  [IpcChannel.Crawler_ProbeSiteConnectivity]: IpcProcedure<{ site?: Website }, SiteConnectivityProbeResponse>;
 };

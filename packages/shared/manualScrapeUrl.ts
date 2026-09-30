@@ -1,17 +1,21 @@
 import { Website } from "./enums";
 
-export const MANUAL_SCRAPE_INVALID_URL_MESSAGE = "请输入有效的网址";
-export const MANUAL_SCRAPE_UNSUPPORTED_SITE_MESSAGE = "不支持的站点地址";
-export const MANUAL_SCRAPE_SUPPORTED_SITE_INVALID_MESSAGE = "请输入站点首页或详情地址";
-
 export type ManualScrapeUrlMode = "site" | "detail";
+
+export type ManualScrapeUrlInvalidReason = "invalid_url" | "unsupported_site" | "unsupported_path";
+
+const INVALID_REASON_MESSAGES: Record<ManualScrapeUrlInvalidReason, string> = {
+  invalid_url: "Enter a valid URL",
+  unsupported_site: "Unsupported site URL",
+  unsupported_path: "Enter a site home page or detail page URL",
+};
 
 export const resolveManualScrapeRoute = (
   url?: string | null,
 ): Pick<ManualScrapeUrlRoute, "site" | "detailUrl"> | undefined => {
   if (!url?.trim()) return undefined;
   const validation = validateManualScrapeUrl(url);
-  if (!validation.valid) throw new Error(validation.message);
+  if (!validation.valid) throw new Error(INVALID_REASON_MESSAGES[validation.reason]);
   return { site: validation.route.site, detailUrl: validation.route.detailUrl };
 };
 
@@ -29,8 +33,7 @@ export type ManualScrapeUrlValidation =
     }
   | {
       valid: false;
-      reason: "invalid_url" | "unsupported_site" | "unsupported_path";
-      message: string;
+      reason: ManualScrapeUrlInvalidReason;
     };
 
 interface ManualScrapeSiteRule {
@@ -182,21 +185,13 @@ const normalizeManualUrl = (url: URL): string => {
 export const validateManualScrapeUrl = (input: string): ManualScrapeUrlValidation => {
   const url = parseInputUrl(input);
   if (!url) {
-    return {
-      valid: false,
-      reason: "invalid_url",
-      message: MANUAL_SCRAPE_INVALID_URL_MESSAGE,
-    };
+    return { valid: false, reason: "invalid_url" };
   }
 
   const host = url.hostname.toLowerCase();
   const rule = SITE_RULES.find((candidate) => candidate.hosts.includes(host));
   if (!rule) {
-    return {
-      valid: false,
-      reason: "unsupported_site",
-      message: MANUAL_SCRAPE_UNSUPPORTED_SITE_MESSAGE,
-    };
+    return { valid: false, reason: "unsupported_site" };
   }
 
   const isRoot = isSiteRootUrl(url);
@@ -228,9 +223,5 @@ export const validateManualScrapeUrl = (input: string): ManualScrapeUrlValidatio
     };
   }
 
-  return {
-    valid: false,
-    reason: "unsupported_path",
-    message: MANUAL_SCRAPE_SUPPORTED_SITE_INVALID_MESSAGE,
-  };
+  return { valid: false, reason: "unsupported_path" };
 };

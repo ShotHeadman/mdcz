@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { MaintenanceSessionStatus } from "@mdcz/shared/maintenanceTasks";
 import { findMaintenanceEntryGroup } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import {
   applyMaintenanceSessionSnapshot,
@@ -8,17 +9,21 @@ import {
   selectMaintenancePreviewResults,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
+import { CircleCheck, CircleStop, Loader2, SearchX, TriangleAlert } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { toDetailViewItemFromMaintenanceEntry } from "../detail";
-import { MaintenanceWorkbenchFrame } from "../workbench";
+import { useT } from "../i18n";
+import { MaintenanceWorkbenchFrame, type WorkbenchTaskStateContent, WorkbenchTaskStatePanel } from "../workbench";
 import { DetailPanelAdapter } from "./DetailPanelAdapter";
 import { MaintenanceBatchBarAdapter } from "./MaintenanceBatchBarAdapter";
 import { MaintenanceEntryListAdapter } from "./MaintenanceEntryListAdapter";
 import type { SharedWorkbenchPorts } from "./ports";
 
 export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchPorts }) {
+  const t = useT();
+  const snapshot = useMaintenanceStore((state) => state.snapshot);
   const { entries, activeId, presetId } = useMaintenanceStore(
     useShallow((state) => ({
       entries: selectMaintenanceEntries(state),
@@ -61,7 +66,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
       activeGroup.previewItems.find((item) => item.fileId === activeId)
     );
   }, [activeGroup, activeId, detailEntry]);
-  const usesDiffView = presetId === "refresh_data" || presetId === "rebuild_all";
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const handleFieldSelectionChange = (
     fileId: string,
     field: import("@mdcz/shared/types").FieldDiff["field"],
@@ -74,7 +79,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     void ports.maintenance
       .updateDraft(previewId, { fieldSelections: selections })
       .then(async () => applyMaintenanceSessionSnapshot(await ports.maintenance.getActiveSession()))
-      .catch((error) => toast.error(`保存维护选择失败: ${toErrorMessage(error)}`));
+      .catch((error) => toast.error(t.maintenance.saveSelectionsFailed(toErrorMessage(error))));
   };
   const detailItem = useMemo(() => {
     if (!activeGroup || !detailEntry) {
@@ -96,26 +101,64 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     };
   }, [activeGroup, compareResult, detailEntry]);
 
+  const maintenanceEmptyStates: Partial<Record<MaintenanceSessionStatus, WorkbenchTaskStateContent>> = {
+    queued: { icon: Loader2, tone: "active", title: t.maintenance.queued },
+    discovering: { icon: Loader2, tone: "active", title: t.maintenance.scanningFiles },
+    stopping: { icon: Loader2, tone: "active", title: t.maintenance.stoppingWaitingCurrent },
+    stopped: { icon: CircleStop, tone: "muted", title: t.maintenance.taskStopped },
+    completed:
+      snapshot?.totalEntries === 0
+        ? { icon: SearchX, tone: "muted", title: t.maintenance.noVideosToProcess }
+        : { icon: CircleCheck, tone: "muted", title: t.maintenance.taskCompleted },
+  };
+
   return (
     <MaintenanceWorkbenchFrame
       list={<MaintenanceEntryListAdapter port={ports.maintenance} />}
       detail={
-        <DetailPanelAdapter
-          port={ports.detail}
-          item={detailItem}
-          compare={
-            usesDiffView
-              ? {
-                  result: compareResult,
-                  badgeLabel: "数据对比",
-                  entry: detailEntry ?? undefined,
-                  preview: detailPreview,
-                  fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
-                  onFieldSelectionChange: handleFieldSelectionChange,
-                }
-              : undefined
-          }
-        />
+        entries.length === 0 && snapshot ? (
+          <WorkbenchTaskStatePanel
+            {...(maintenanceEmptyStates[snapshot.status] ??
+              (snapshot.error
+                ? { icon: TriangleAlert, tone: "error", title: snapshot.error }
+                : { icon: Loader2, tone: "active", title: t.maintenance.readingLocalFiles }))}
+            path={snapshot.directoryScope?.scanDir}
+            discovery={snapshot.discovery}
+          />
+        ) : (
+          <div className="flex h-full flex-col overflow-auto">
+            {snapshot?.previews.find((preview) => preview.entry?.fileId === detailEntry?.fileId)?.affectedFiles
+              ?.length ? (
+              <section className="space-y-2 border-b p-4 text-sm">
+                <h3 className="font-semibold">{t.maintenance.fileChanges}</h3>
+                {snapshot.previews
+                  .find((preview) => preview.entry?.fileId === detailEntry?.fileId)
+                  ?.affectedFiles?.map((file) => (
+                    <p className="break-all" key={file.fileId}>
+                      {file.currentPath}
+                      {file.targetPath !== file.currentPath ? ` → ${file.targetPath}` : ""}
+                    </p>
+                  ))}
+              </section>
+            ) : null}
+            <DetailPanelAdapter
+              port={ports.detail}
+              item={detailItem}
+              compare={
+                usesDiffView
+                  ? {
+                      result: compareResult,
+                      badgeLabel: t.maintenance.dataCompare,
+                      entry: detailEntry ?? undefined,
+                      preview: detailPreview,
+                      fieldSelections: detailEntry ? fieldSelections[detailEntry.fileId] : undefined,
+                      onFieldSelectionChange: handleFieldSelectionChange,
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        )
       }
       batchBar={<MaintenanceBatchBarAdapter port={ports.maintenance} />}
     />

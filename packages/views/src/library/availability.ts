@@ -10,13 +10,13 @@ export const mergeLibraryAvailability = (
     if (!availability) {
       return entry;
     }
-    const fileAvailability = new Map(availability.fileRefs.map((file) => [file.id, file.available]));
+    const fileAvailability = new Map(availability.fileRefs.map((file) => [file.id, file]));
     return {
       ...entry,
       available: availability.available,
       fileRefs: entry.fileRefs.map((file) => ({
         ...file,
-        available: fileAvailability.get(file.id) ?? file.available,
+        ...(fileAvailability.get(file.id) ?? {}),
       })),
     };
   });

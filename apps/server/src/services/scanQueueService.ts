@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   listRootFiles,
@@ -7,8 +8,8 @@ import {
   toRootRelativePath,
 } from "@mdcz/media-store";
 import type { ScanTask } from "@mdcz/persistence";
-import { TaskScheduler } from "@mdcz/runtime/tasks";
-import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
+import { createMediaWalkFilters, excludeGeneratedStrmPaths, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
+import { CandidatePreview } from "@mdcz/runtime/tasks";
 import type {
   LogListResponse,
   ScanCandidatesInput,
@@ -19,7 +20,6 @@ import type {
   TaskEventDto,
   TaskEventListResponse,
 } from "@mdcz/shared/serverDtos";
-import { isPrimaryVideoFileName } from "@mdcz/shared/videoClassification";
 import { toTaskEventDto } from "../taskDto";
 import type { TaskEventBus } from "../taskEvents";
 import type { ServerConfigService } from "./configService";
@@ -38,13 +38,15 @@ interface ScanDirectoryResult {
   directoryCount: number;
 }
 
-const SCAN_BACKEND_INTERRUPTED_MESSAGE = "扫描后端已重启，任务已中断；请重试扫描";
-const SCAN_SERVICE_CLOSED_MESSAGE = "扫描服务已关闭，任务已中断；请重试扫描";
+const SCAN_BACKEND_INTERRUPTED_MESSAGE = "Scan backend restarted and the task was interrupted; please retry the scan";
+const SCAN_SERVICE_CLOSED_MESSAGE = "Scan service shut down and the task was interrupted; please retry the scan";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 export class ScanQueueService {
-  private readonly scheduler: TaskScheduler<ScanTask>;
+  private readonly previews = new CandidatePreview();
   private readonly queuedTaskIds: string[] = [];
+  private drainPromise: Promise<void> | null = null;
+  private drainRequested = false;
   private activeScan: { taskId: string; controller: AbortController } | null = null;
   private closing = false;
   private fault: string | null = null;
@@ -55,29 +57,7 @@ export class ScanQueueService {
     private readonly mediaRoots: MediaRootService,
     private readonly taskEvents: TaskEventBus,
     private readonly config: ServerConfigService,
-  ) {
-    this.scheduler = new TaskScheduler({
-      claimNext: async () => await this.claimNext(),
-      runExecution: async (task) => await this.runTask(task),
-      onExecutionError: async (task, error) => {
-        this.failedExecution = { taskId: task.id, error };
-        await this.failTask(task.id, error);
-        this.failedExecution = null;
-      },
-      onDrainError: async (error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        this.fault = message;
-        this.taskEvents.log({
-          id: `scan-queue:${Date.now()}`,
-          taskId: "scan-queue",
-          type: "failed",
-          message: `扫描队列停止排水：${message}`,
-          createdAt: new Date().toISOString(),
-          source: "task",
-        });
-      },
-    });
-  }
+  ) {}
 
   async start(rootId: string): Promise<ScanTaskDto> {
     this.assertAdmittable();
@@ -85,7 +65,7 @@ export class ScanQueueService {
     const state = await this.persistence.getState();
     const task = await state.repositories.scanTasks.create({ rootId });
     try {
-      await this.addEvent(task.id, "queued", "扫描任务已排队");
+      await this.addEvent(task.id, "queued", "Scan task queued");
       const queuedTask = await this.toDto(task.id);
       this.publishTask(queuedTask);
       return queuedTask;
@@ -141,7 +121,7 @@ export class ScanQueueService {
     const queued = await state.repositories.scanTasks.requeue(taskId);
     if (!queued) throw new Error(`Failed to requeue scan task: ${taskId}`);
     try {
-      await this.addEvent(taskId, "queued", "重试扫描已排队");
+      await this.addEvent(taskId, "queued", "Scan retry queued");
       const queuedTask = await this.toDto(taskId);
       this.publishTask(queuedTask);
       return queuedTask;
@@ -150,32 +130,41 @@ export class ScanQueueService {
     }
   }
 
+  async cancelCandidates(scanId: string): Promise<void> {
+    await this.previews.cancel(scanId);
+  }
+
   async candidates(input: ScanCandidatesInput): Promise<ScanCandidatesResponse> {
+    return await this.previews.run(
+      input.scanId ?? randomUUID(),
+      async (signal) => await this.scanCandidates(input, signal),
+    );
+  }
+
+  private async scanCandidates(input: ScanCandidatesInput, signal: AbortSignal): Promise<ScanCandidatesResponse> {
     if (this.closing) throw new Error("Scan queue is closing");
     const configuration = await this.config.get();
-    const hostPath = normalizeHostPath(input.scanDir);
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
-    await this.mediaRoots.ensurePathRecord({ hostPath: input.scanDir });
+    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
+    if (metadataPath) excludeDirPaths.push(metadataPath);
+    const admitted = await this.mediaRoots.admitDirectory({ hostPath: input.scanDir });
+    const root = admitted.root;
+    const hostPath = admitted.hostPath;
     const roots = await this.mediaRoots.listRoots();
-    const root = resolveRootFile(roots, hostPath).root;
     const supported = new Set(
-      (input.supportedExtensions ?? []).map((extension) => extension.replace(/^\./u, "").toLowerCase()),
+      (input.supportedExtensions ?? []).map((extension) => `.${extension.replace(/^\./u, "").toLowerCase()}`),
     );
     const warnings = { count: 0, paths: [] as string[] };
-    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, undefined, {
-      warnings,
-      excludeDirectoryPaths: excludeDirPaths,
-      excludeFileSymlinks: true,
-      filterFile: (filePath) => {
-        const name = path.basename(filePath);
-        const extension = path.extname(filePath).replace(/^\./u, "").toLowerCase();
-        return (
-          !hasLiteralFilenameToken(name, configuration.scrape.filenameBlacklistTokens) &&
-          isPrimaryVideoFileName(name) &&
-          (supported.size === 0 || supported.has(extension))
-        );
-      },
-    });
+    const files = excludeGeneratedStrmPaths(
+      await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, signal, {
+        warnings,
+        excludeDirectoryPaths: excludeDirPaths,
+        excludeFileSymlinks: true,
+        deduplicateDirectories: true,
+        ...createMediaWalkFilters(configuration, supported.size ? supported : undefined),
+      }),
+      (file) => file.absolutePath,
+    );
     return {
       warnings,
       candidates: files.map((file) => {
@@ -199,7 +188,7 @@ export class ScanQueueService {
     try {
       const state = await this.persistence.getState();
       this.activeScan = { taskId, controller };
-      await this.addEvent(taskId, "running", "开始扫描媒体目录");
+      await this.addEvent(taskId, "running", "Scanning media directory");
       this.publishTask(await this.toDto(taskId));
       const root = await this.mediaRoots.get(rootId);
       const result = await this.scanDirectory(root, controller.signal);
@@ -214,7 +203,7 @@ export class ScanQueueService {
       await this.addEvent(
         taskId,
         "completed",
-        `扫描完成：${result.videos.length} 个视频，${result.directoryCount} 个目录`,
+        `Scan complete: ${result.videos.length} videos, ${result.directoryCount} directories`,
       );
       this.publishTask(await this.toDto(taskId));
     } catch (error) {
@@ -226,14 +215,20 @@ export class ScanQueueService {
   }
 
   private async scanDirectory(root: MediaRoot, signal?: AbortSignal): Promise<ScanDirectoryResult> {
-    const files = await listRootFiles(root, "", true, signal);
-    const videos = files
-      .filter((file) => isPrimaryVideoFileName(path.basename(file.relativePath)))
-      .map((file) => ({
-        relativePath: file.relativePath,
-        size: file.size,
-        modifiedAt: file.modifiedAt,
-      }));
+    const configuration = await this.config.get();
+    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
+    const files = excludeGeneratedStrmPaths(
+      await listRootFiles(root, "", true, signal, {
+        excludeDirectoryPaths: metadataPath ? [metadataPath] : [],
+        filterFile: isPrimaryVideoFile,
+      }),
+      (file) => file.absolutePath,
+    );
+    const videos = files.map((file) => ({
+      relativePath: file.relativePath,
+      size: file.size,
+      modifiedAt: file.modifiedAt,
+    }));
     const directoryCount = new Set(videos.map((video) => path.posix.dirname(video.relativePath))).size;
 
     videos.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
@@ -249,7 +244,7 @@ export class ScanQueueService {
       id: task.id,
       kind: "scan",
       rootId: task.rootId,
-      rootDisplayName: root?.displayName ?? "未知媒体目录",
+      rootDisplayName: root?.displayName ?? "Unknown media directory",
       status: task.status,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
@@ -277,7 +272,54 @@ export class ScanQueueService {
 
   private enqueue(taskId: string): void {
     this.queuedTaskIds.push(taskId);
-    this.scheduler.drain();
+    this.requestDrain();
+  }
+
+  private requestDrain(): void {
+    if (this.closing || this.fault) return;
+    this.drainRequested = true;
+    if (!this.drainPromise) {
+      this.drainPromise = this.runDrain();
+      void this.drainPromise.catch(() => undefined);
+    }
+  }
+
+  private async waitForDrain(): Promise<void> {
+    while (this.drainPromise) await this.drainPromise;
+  }
+
+  private async runDrain(): Promise<void> {
+    try {
+      do {
+        this.drainRequested = false;
+        while (!this.closing && !this.fault) {
+          const task = await this.claimNext();
+          if (!task || this.closing) break;
+          try {
+            await this.runTask(task);
+          } catch (error) {
+            this.failedExecution = { taskId: task.id, error };
+            await this.failTask(task.id, error);
+            this.failedExecution = null;
+          }
+        }
+      } while (!this.closing && !this.fault && this.drainRequested);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.fault = message;
+      this.drainRequested = false;
+      this.taskEvents.log({
+        id: `scan-queue:${Date.now()}`,
+        taskId: "scan-queue",
+        type: "failed",
+        message: `Scan queue stopped draining: ${message}`,
+        createdAt: new Date().toISOString(),
+        source: "task",
+      });
+    } finally {
+      this.drainPromise = null;
+      if (!this.closing && !this.fault && this.drainRequested) this.requestDrain();
+    }
   }
 
   private assertAdmittable(): void {
@@ -311,23 +353,22 @@ export class ScanQueueService {
 
   async recover(): Promise<void> {
     if (this.closing) throw new Error("Scan queue is closing");
-    await this.scheduler.waitForIdle();
+    await this.waitForDrain();
     if (this.failedExecution) {
       await this.failTask(this.failedExecution.taskId, this.failedExecution.error);
       this.failedExecution = null;
     }
     this.fault = null;
-    this.scheduler.allowDrain();
-    if (this.queuedTaskIds.length > 0) this.scheduler.drain();
+    if (this.queuedTaskIds.length > 0) this.requestDrain();
   }
 
   async close(): Promise<void> {
     if (this.closing) return;
     this.closing = true;
     this.queuedTaskIds.length = 0;
-    this.scheduler.requestStop();
+    this.drainRequested = false;
     this.activeScan?.controller.abort();
-    await this.scheduler.waitForIdle();
+    await this.waitForDrain();
     await this.interruptUnfinished(SCAN_SERVICE_CLOSED_MESSAGE);
   }
 

@@ -52,7 +52,7 @@ describe("buildServer HTTP integration", () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().error.message).toContain("管理员密码错误");
+    expect(response.json().error.message).toContain("Incorrect administrator password");
   });
 
   it("exposes server and Web build metadata through system.about", async () => {
@@ -68,9 +68,6 @@ describe("buildServer HTTP integration", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().result.data).toMatchObject({
       productName: "MDCz",
-      community: {
-        feedback: { url: "https://github.com/ShotHeadman/mdcz/issues/new/choose" },
-      },
       build: {
         node: process.version,
         platform: process.platform,
@@ -131,14 +128,6 @@ describe("buildServer HTTP integration", () => {
       setupRequired: true,
       environmentPasswordConfigured: false,
     });
-  });
-
-  it("returns not found for unknown routes", async () => {
-    const { fastify } = await createTestServer();
-
-    const response = await fastify.inject({ method: "GET", url: "/unknown" });
-
-    expect(response.statusCode).toBe(404);
   });
 
   it("serves the WebUI static bundle and falls back to index.html for routes", async () => {

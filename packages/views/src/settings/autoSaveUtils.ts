@@ -1,4 +1,6 @@
-import { unflattenConfig } from "./settingsRegistry";
+import { toErrorMessage } from "@mdcz/shared/error";
+import { getT } from "../i18n";
+import { type FieldKey, unflattenConfig } from "./settingsRegistry";
 
 export interface ServerValidationPayload {
   fields: string[];
@@ -30,9 +32,16 @@ function toStringRecord(value: unknown): Record<string, string> {
   );
 }
 
+function readValidationDetails(error: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (isRecord(error.details)) return error.details;
+  // tRPC clients expose the server's config validation domain error under `data`.
+  const domainError = isRecord(error.data) && isRecord(error.data.domainError) ? error.data.domainError : undefined;
+  return domainError && isRecord(domainError.details) ? domainError.details : undefined;
+}
+
 export function extractServerValidation(error: unknown): ServerValidationPayload | null {
   if (!isRecord(error)) return null;
-  const details = isRecord(error.details) ? error.details : undefined;
+  const details = readValidationDetails(error);
   const rootFields = toStringArray(error.fields);
   const rootFieldErrors = toStringRecord(error.fieldErrors);
   const fields = rootFields.length > 0 ? rootFields : toStringArray(details?.fields);
@@ -47,7 +56,16 @@ export function extractServerValidation(error: unknown): ServerValidationPayload
     mergedFields.add(key);
   }
 
-  return { fields: [...mergedFields], fieldErrors };
+  return {
+    fields: [...mergedFields],
+    fieldErrors: Object.fromEntries(
+      Object.entries(fieldErrors).map(([field, message]) => [field, localizeConfigIssue(message)]),
+    ),
+  };
+}
+
+function localizeConfigIssue(message: string): string {
+  return getT().settings.configValidation.issues[message] ?? message;
 }
 
 function collectServerErrorPaths(errors: unknown, prefix = ""): string[] {
@@ -79,7 +97,10 @@ export function buildAutoSaveFlatPayload(
   errors: unknown,
   getValue: (fieldPath: string) => unknown,
 ): Record<string, unknown> {
-  const relatedPaths = new Set([path, ...collectServerErrorPaths(errors)]);
+  const relatedPaths = new Set([
+    path,
+    ...collectServerErrorPaths(errors).map((errorPath) => errorPath.replace(/\.\d+(?:\..*)?$/u, "")),
+  ]);
   const flatPayload: Record<string, unknown> = {};
 
   for (const relatedPath of relatedPaths) {
@@ -119,12 +140,20 @@ export function mergeConfigWithFlatPayload(
   return mergeConfigValue(baseConfig, unflattenConfig(flatPayload)) as Record<string, unknown>;
 }
 
-export function formatFieldLabel(label: string | undefined, path: string): string {
-  return label ? `“${label}”` : `“${path}”`;
+export function formatFieldLabel(path: string): string {
+  const t = getT();
+  return t.settingsFields.quote(t.settingsFields.fields[path as FieldKey]?.label ?? path);
 }
 
-export function toFieldMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+export function toConfigErrorMessage(error: unknown, fallback?: string): string {
+  const validation = extractServerValidation(error);
+  if (!validation) return toErrorMessage(error, fallback);
+  const { configValidation } = getT().settings;
+  return configValidation.failed(
+    Object.entries(validation.fieldErrors).map(([field, message]) =>
+      configValidation.detail(formatFieldLabel(field), message),
+    ),
+  );
 }
 
 export function nextRevision(revisions: Map<string, number>, path: string): number {

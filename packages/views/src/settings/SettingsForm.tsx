@@ -1,12 +1,12 @@
 import { Search } from "lucide-react";
 import type { ReactNode } from "react";
+import { useT } from "../i18n";
 import { AdvancedSettingsFooterContent } from "./SettingsFooter";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { useCrawlerSiteOptions } from "./settingsContent";
 import {
   AdvancedTopLevelSection,
   DownloadTopLevelSection,
-  FileBehaviorTopLevelSection,
   NamingTopLevelSection,
   NetworkTopLevelSection,
   PathsTopLevelSection,
@@ -37,7 +37,6 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
           <TranslateTopLevelSection />
           <NamingTopLevelSection />
           <DownloadTopLevelSection />
-          <FileBehaviorTopLevelSection />
           <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
           <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>
@@ -50,13 +49,14 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
 }
 
 function SettingsEmptyState() {
+  const t = useT();
   return (
     <div className="rounded-[var(--radius-quiet-xl)] border border-border/40 bg-surface px-6 py-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-low text-muted-foreground">
         <Search className="h-5 w-5" />
       </div>
       <div className="mt-4 space-y-1">
-        <p className="text-sm font-medium text-foreground">没有匹配的设置</p>
+        <p className="text-sm font-medium text-foreground">{t.settings.layout.noMatches}</p>
       </div>
     </div>
   );

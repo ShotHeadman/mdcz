@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, resolve, win32 } from "node:path";
+import { dirname, extname, isAbsolute, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicWriteFile } from "@mdcz/media-store";
+import { localPathStyle } from "@mdcz/shared/localPath";
 
 const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
 const STRM_PROPERTY_PATTERN = /^#KODIPROP:/iu;
@@ -97,7 +98,10 @@ export const classifyStrmTarget = (filePath: string, target: string): StrmTarget
   return {
     target: normalized,
     kind: "relative_path",
-    resolvedPath: resolve(dirname(filePath), normalized),
+    resolvedPath: (localPathStyle(filePath) === "windows" ? win32 : posix).resolve(
+      (localPathStyle(filePath) === "windows" ? win32 : posix).dirname(filePath),
+      normalized,
+    ),
   };
 };
 
@@ -152,15 +156,6 @@ export const prepareMovedStrmContent = async (sourcePath: string, targetPath: st
   if (!target) return undefined;
   const info = classifyStrmTarget(sourcePath, target);
   return info.kind === "relative_path" && info.resolvedPath ? replaceStrmTarget(content, info.resolvedPath) : undefined;
-};
-
-export const prepareStrmMirrorContent = async (sourcePath: string, outputVideoPath: string): Promise<string> => {
-  if (!isStrmFile(sourcePath)) return outputVideoPath;
-  const content = await readFile(sourcePath, "utf8");
-  const target = normalizeStrmContent(content);
-  if (!target) throw new Error(`STRM file does not contain a playable target: ${sourcePath}`);
-  const info = classifyStrmTarget(sourcePath, target);
-  return info.kind === "relative_path" && info.resolvedPath ? replaceStrmTarget(content, info.resolvedPath) : content;
 };
 
 export const resolvePlayableMediaTarget = async (

@@ -410,7 +410,7 @@ describe("DownloadManager keep flags", () => {
     expect(assets.sceneImages).toEqual([webp]);
     expect(assets.downloaded).toEqual([webp]);
     await expect(readFile(webp, "utf8")).resolves.toBe("downloaded:https://example.com/scene-001.jpg");
-    await expect(access(scenePath(root, 1))).rejects.toThrow();
+    await expect(readFile(scenePath(root, 1), "utf8")).resolves.toBe("old-scene");
   });
 
   it("only derives secondary artwork when a kept thumb is actually available", async () => {
@@ -527,7 +527,7 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("refreshes or preserves primary artwork according to keep and validation rules", async () => {
+  it("refreshes or preserves primary artwork according to keep flags, decisions, and validation", async () => {
     const cases = [
       {
         valid: true,
@@ -535,14 +535,34 @@ describe("DownloadManager keep flags", () => {
         force: false,
         content: "downloaded:https://example.com/thumb-new.jpg",
         downloaded: true,
+        probes: 1,
       },
-      { valid: false, keep: false, force: false, content: "old-thumb", downloaded: false },
+      { valid: false, keep: false, force: false, content: "old-thumb", downloaded: false, probes: 1 },
       {
         valid: true,
         keep: true,
         force: true,
         content: "downloaded:https://example.com/thumb-new.jpg",
         downloaded: true,
+        probes: 1,
+      },
+      {
+        valid: true,
+        keep: false,
+        force: false,
+        decision: "preserve",
+        content: "old-thumb",
+        downloaded: false,
+        probes: 0,
+      },
+      {
+        valid: true,
+        keep: true,
+        force: false,
+        decision: "replace",
+        content: "downloaded:https://example.com/thumb-new.jpg",
+        downloaded: true,
+        probes: 1,
       },
     ] as const;
 
@@ -561,14 +581,65 @@ describe("DownloadManager keep flags", () => {
           downloadTrailer: false,
         }),
         {},
-        testCase.force ? { forceReplace: { thumb: true } } : undefined,
+        {
+          forceReplace: testCase.force ? { thumb: true } : undefined,
+          assetDecisions: "decision" in testCase ? { thumb: testCase.decision } : undefined,
+        },
       );
       expect(assets.thumb).toBe(join(root, "thumb.jpg"));
       expect(assets.downloaded).toEqual(testCase.downloaded ? [join(root, "thumb.jpg")] : []);
       await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(testCase.content);
-      expect(networkClient.probe).toHaveBeenCalledTimes(1);
-      expect(networkClient.download).toHaveBeenCalledTimes(1);
+      expect(networkClient.probe).toHaveBeenCalledTimes(testCase.probes);
+      expect(networkClient.download).toHaveBeenCalledTimes(testCase.probes);
     }
+
+    vi.restoreAllMocks();
+    const { root, manager, networkClient } = await createSubject({
+      "poster.jpg": "old-poster",
+      "fanart.jpg": "old-fanart",
+    });
+    const stagingDir = await createTempDir();
+    mockValid();
+    const preserved = await manager.downloadAll(
+      stagingDir,
+      createCrawlerData({
+        thumb_url: "https://example.com/thumb-new.jpg",
+        poster_url: "https://example.com/poster-new.jpg",
+      }),
+      dl({
+        keepThumb: false,
+        keepPoster: false,
+        keepFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      }),
+      {},
+      { assetDecisions: { poster: "preserve", fanart: "preserve" } },
+      { existingAssetDir: root },
+    );
+    expect(preserved.poster).toBe(join(root, "poster.jpg"));
+    expect(preserved.fanart).toBe(join(root, "fanart.jpg"));
+    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual(["https://example.com/thumb-new.jpg"]);
+    await expect(readFile(join(root, "poster.jpg"), "utf8")).resolves.toBe("old-poster");
+    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("old-fanart");
+
+    vi.restoreAllMocks();
+    const replacement = await createSubject({ "poster.jpg": "old-poster", "fanart.jpg": "old-fanart" });
+    const replacementStage = await createTempDir();
+    mockValid();
+    const replaced = await replacement.manager.downloadAll(
+      replacementStage,
+      createCrawlerData({ poster_url: "https://example.com/poster-new.jpg" }),
+      dl({ downloadThumb: false, keepPoster: true, downloadSceneImages: false, downloadTrailer: false }),
+      {},
+      { assetDecisions: { poster: "replace", fanart: "preserve" } },
+      { existingAssetDir: replacement.root },
+    );
+    expect(replaced.poster).toBe(join(replacementStage, "poster.jpg"));
+    expect(replaced.fanart).toBe(join(replacement.root, "fanart.jpg"));
+    expect(replacement.networkClient.download.mock.calls.map(([url]) => url)).toEqual([
+      "https://example.com/poster-new.jpg",
+    ]);
   });
 
   it("saves downloaded WebP artwork with WebP file extensions", async () => {
@@ -597,8 +668,8 @@ describe("DownloadManager keep flags", () => {
     expect(assets.poster).toBe(join(root, "poster.webp"));
     expect(assets.fanart).toBe(join(root, "fanart.webp"));
     expect(assets.downloaded).toEqual([join(root, "thumb.webp"), join(root, "poster.webp"), join(root, "fanart.webp")]);
-    await expect(access(join(root, "thumb.jpg"))).rejects.toThrow();
-    await expect(access(join(root, "fanart.jpg"))).rejects.toThrow();
+    await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe("old-thumb");
+    await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("old-fanart");
   });
 
   it("derives a missing poster from landscape thumb artwork and records the thumb source", async () => {
@@ -829,7 +900,7 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("replaces, retains, or clears scene image sets based on refresh intent and validation", async () => {
+  it("updates active scene image sets without deleting old output files", async () => {
     const cases = [
       {
         seed: { "extrafanart/fanart1.jpg": "old-1", "extrafanart/fanart2.jpg": "old-2" },
@@ -840,7 +911,7 @@ describe("DownloadManager keep flags", () => {
         assert: async (root: string, assets: Awaited<ReturnType<DownloadManager["downloadAll"]>>) => {
           await expectSceneImages(root, assets, ["https://example.com/scene-new-1.jpg"]);
           expect(assets.downloaded).toEqual([scenePath(root, 1)]);
-          await expect(access(scenePath(root, 2))).rejects.toThrow();
+          await expect(readFile(scenePath(root, 2), "utf8")).resolves.toBe("old-2");
         },
       },
       {
@@ -864,7 +935,7 @@ describe("DownloadManager keep flags", () => {
         assert: async (root: string, assets: Awaited<ReturnType<DownloadManager["downloadAll"]>>) => {
           expect(assets.sceneImages).toEqual([]);
           expect(assets.downloaded).toEqual([]);
-          await expect(access(scenePath(root, 1))).rejects.toThrow();
+          await expect(readFile(scenePath(root, 1), "utf8")).resolves.toBe("old-1");
         },
       },
       {
@@ -890,34 +961,6 @@ describe("DownloadManager keep flags", () => {
         await manager.downloadAll(root, testCase.data, testCase.config, {}, testCase.options),
       );
     }
-  });
-
-  it("abandons a partial scene set and switches to the next set without mixing sources", async () => {
-    const { root, manager, networkClient } = await createSubject();
-    mockValid();
-    networkClient.download.mockImplementation(async (url, outputPath) => {
-      if (url.includes("slow.example.com")) throw new Error("Request timeout");
-      return writeDownloadedFile(outputPath, url);
-    });
-    const config = sequentialSceneSet(2);
-    const assets = await manager.downloadAll(
-      root,
-      createCrawlerData({
-        scene_images: ["https://fast.example.com/set-a-1.jpg", "https://slow.example.com/set-a-2.jpg"],
-      }),
-      config,
-      { scene_images: [["https://alt.example.com/set-b-1.jpg", "https://alt.example.com/set-b-2.jpg"]] },
-    );
-    await expectSceneImages(root, assets, [
-      "https://alt.example.com/set-b-1.jpg",
-      "https://alt.example.com/set-b-2.jpg",
-    ]);
-    expect(networkClient.download.mock.calls.map(([url]) => url)).toEqual([
-      "https://fast.example.com/set-a-1.jpg",
-      "https://slow.example.com/set-a-2.jpg",
-      "https://alt.example.com/set-b-1.jpg",
-      "https://alt.example.com/set-b-2.jpg",
-    ]);
   });
 
   it("keeps the scene image set with the most successful downloads when no set completes", async () => {

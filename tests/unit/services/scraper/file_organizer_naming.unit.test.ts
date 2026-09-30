@@ -1,5 +1,5 @@
 import { join, parse, resolve } from "node:path";
-import { buildGeneratedVideoSidecarTargetPath, FileOrganizer, isGeneratedSidecarVideo } from "@mdcz/runtime/scrape";
+import { buildGeneratedVideoSidecarTargetPath, FileOrganizer, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
 import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
@@ -323,8 +323,8 @@ describe("FileOrganizer naming rules", () => {
       }),
     );
 
-    expect(previews.find((item) => item.label === "中文字幕")?.file).toContain("-SUB");
-    expect(previews.find((item) => item.label === "多演员")?.folder).toContain("等演员");
+    expect(previews.find((item) => item.sample === "subtitled")?.file).toContain("-SUB");
+    expect(previews.find((item) => item.sample === "multiActor")?.folder).toContain("等演员");
 
     const fallbackPreviews = organizer.buildNamingPreview(
       createConfig({
@@ -336,8 +336,8 @@ describe("FileOrganizer naming rules", () => {
         },
       }),
     );
-    expect(fallbackPreviews.find((item) => item.label === "演员为空")?.folder).toContain("卖家：示例卖家");
-    expect(fallbackPreviews.find((item) => item.label === "普通")?.file).toBe("ABC-123Sample Original Title.mp4");
+    expect(fallbackPreviews.find((item) => item.sample === "noActor")?.folder).toContain("卖家：示例卖家");
+    expect(fallbackPreviews.find((item) => item.sample === "standard")?.file).toBe("ABC-123Sample Original Title.mp4");
 
     const expandedPreviews = organizer.buildNamingPreview(
       createConfig({
@@ -353,7 +353,7 @@ describe("FileOrganizer naming rules", () => {
         },
       }),
     );
-    const subtitlePreview = expandedPreviews.find((item) => item.label === "中文字幕");
+    const subtitlePreview = expandedPreviews.find((item) => item.sample === "subtitled");
 
     expect(subtitlePreview?.folder).toContain("ABC-456-SUB");
     expect(subtitlePreview?.folder).toContain("2024 示例导演 121 2160P ABC-456");
@@ -441,7 +441,7 @@ describe("FileOrganizer naming rules", () => {
           },
         }),
         fileInfo: createFileInfo({
-          filePath: "/input/original-name.mp4",
+          filePath: join(resolve("/input"), "original-name.mp4"),
           fileName: "original-name",
         }),
         crawlerData: createCrawlerData({
@@ -465,7 +465,7 @@ describe("FileOrganizer naming rules", () => {
           },
         }),
         fileInfo: createFileInfo({
-          filePath: "/input/original-name.mp4",
+          filePath: join(resolve("/input"), "original-name.mp4"),
           fileName: "original-name",
         }),
         crawlerData: createCrawlerData({
@@ -487,7 +487,28 @@ describe("FileOrganizer naming rules", () => {
   });
 
   it("identifies generated FC2 sidecars and builds paths from the shared movie base name", () => {
-    expect(isGeneratedSidecarVideo("FC2-123456_gift.mp4")).toBe(true);
+    const names = [
+      "FC2-123456_gift.mp4",
+      "[Thz.la]fc2-ppv-1234567-特典.mp4",
+      "FC2-PPV-1234567 メイキング2.mp4",
+      "FC2-PPV-1234567 素人初撮り-おまけ.mp4",
+      "FC2-PPV-1234567 【特典あり】素人初撮り.mp4",
+      "FC2-PPV-1234567 ※レビュー特典あり 完全版.mp4",
+      "FC2-PPV-1234567 おまけ付き.mp4",
+      "FC2-PPV-1234567 誕生日gift企画.mp4",
+      "SNOS-301-特典.mp4",
+    ];
+    expect(Object.fromEntries(names.map((name) => [name, isPrimaryVideoFile(name.normalize("NFD"))]))).toEqual({
+      "FC2-123456_gift.mp4": false,
+      "[Thz.la]fc2-ppv-1234567-特典.mp4": false,
+      "FC2-PPV-1234567 メイキング2.mp4": false,
+      "FC2-PPV-1234567 素人初撮り-おまけ.mp4": false,
+      "FC2-PPV-1234567 【特典あり】素人初撮り.mp4": true,
+      "FC2-PPV-1234567 ※レビュー特典あり 完全版.mp4": true,
+      "FC2-PPV-1234567 おまけ付き.mp4": true,
+      "FC2-PPV-1234567 誕生日gift企画.mp4": true,
+      "SNOS-301-特典.mp4": true,
+    });
     expect(
       buildGeneratedVideoSidecarTargetPath(
         {

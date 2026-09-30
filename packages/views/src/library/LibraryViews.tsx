@@ -1,5 +1,6 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
 import { formatBytes } from "@mdcz/shared/format";
+import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/serverDtos";
 import {
   Badge,
   Button,
@@ -10,16 +11,34 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertCircle, Database, FolderOpen, LoaderCircle, RefreshCw, Search, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  Copy,
+  Database,
+  FolderOpen,
+  Layers,
+  Link2,
+  LoaderCircle,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useT } from "../i18n";
 
-export type LibraryAvailabilityFilter = "all" | "available" | "unavailable";
+export type LibraryAvailabilityFilter = "all" | LibraryEntryDto["available"];
 
 export interface LibraryIndexViewProps {
   className?: string;
@@ -32,39 +51,27 @@ export interface LibraryIndexViewProps {
   hasMore?: boolean;
   query: string;
   total: number;
+  fileCount?: number;
+  totalBytes?: number;
   availabilityFilter: LibraryAvailabilityFilter;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (entry: LibraryEntryDto) => void;
+  onOpenFolder?: (path: string) => void;
+  onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
+  onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
   onLoadMore?: () => void;
   onQueryChange: (value: string) => void;
   onRefresh: () => void;
 }
 
 export interface LibraryDeleteDialogProps {
+  entry?: LibraryEntryDto | null;
   open: boolean;
-  deleteMode?: LibraryDeleteMode;
-  showFileDeleteModes?: boolean;
   submitting?: boolean;
-  onDeleteModeChange?: (value: LibraryDeleteMode) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }
-
-export type LibraryDeleteMode = "none" | "assets" | "all";
-
-const libraryDeleteModes: Array<{ description: string; label: string; value: LibraryDeleteMode }> = [
-  { value: "none", label: "仅移除记录", description: "保留视频、NFO、图片及其他附属文件。" },
-  { value: "assets", label: "同时删除附属文件", description: "删除 NFO、图片等附属文件，保留主视频文件。" },
-  { value: "all", label: "同时删除全部文件", description: "删除主视频及其 NFO、图片等所有已登记文件。" },
-];
-
-const availabilityFilters: Array<{ label: string; value: LibraryAvailabilityFilter }> = [
-  { label: "全部", value: "all" },
-  { label: "可用", value: "available" },
-  { label: "不可用", value: "unavailable" },
-];
 
 export function LibraryIndexView({
   className,
@@ -77,18 +84,35 @@ export function LibraryIndexView({
   hasMore = false,
   query,
   total,
+  fileCount,
+  totalBytes,
   availabilityFilter,
   linkComponent: LinkComponent,
   onAvailabilityFilterChange,
   onDeleteEntry,
   onOpenFolder,
+  onRemoveFile,
+  onRelinkFile,
   onLoadMore,
   onQueryChange,
   onRefresh,
 }: LibraryIndexViewProps) {
+  const t = useT();
   const mainRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLElement>(null);
   const [listOffset, setListOffset] = useState(0);
+
+  const availabilityFilters = useMemo<Array<{ label: string; value: LibraryAvailabilityFilter }>>(
+    () => [
+      { label: t.library.filter.all, value: "all" },
+      { label: t.library.filter.available, value: "available" },
+      { label: t.library.filter.unavailable, value: "unavailable" },
+      { label: t.library.filter.partial, value: "partial" },
+      { label: t.library.filter.unchecked, value: "unchecked" },
+    ],
+    [t.library.filter],
+  );
+
   const { availableCount, filteredEntries, totalSize, unknownCount, unavailableCount } = useMemo(() => {
     let availableCount = 0;
     let unavailableCount = 0;
@@ -96,13 +120,10 @@ export function LibraryIndexView({
     let totalSize = 0;
     const filteredEntries: LibraryEntryDto[] = [];
     for (const entry of entries) {
-      if (entry.available === true) availableCount += 1;
-      else if (entry.available === false) unavailableCount += 1;
-      else unknownCount += 1;
-      const matchesAvailability =
-        availabilityFilter === "all" ||
-        (availabilityFilter === "available" && entry.available === true) ||
-        (availabilityFilter === "unavailable" && entry.available === false);
+      if (entry.available === "available") availableCount += 1;
+      else if (entry.available === "unavailable") unavailableCount += 1;
+      else if (entry.available === "unchecked") unknownCount += 1;
+      const matchesAvailability = availabilityFilter === "all" || availabilityFilter === entry.available;
       if (matchesAvailability) {
         filteredEntries.push(entry);
         totalSize += Number.isFinite(entry.size) ? entry.size : 0;
@@ -131,11 +152,22 @@ export function LibraryIndexView({
       <main className={cn("h-full overflow-y-auto bg-surface-canvas text-foreground", className)} ref={mainRef}>
         <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-6 py-8 lg:px-12 lg:py-10">
           <header className="flex flex-wrap items-center justify-end gap-x-10 gap-y-4">
-            <Metric label="总数" value={total} />
-            <Metric label="可用" value={availableCount} />
-            <Metric className="text-amber-600 dark:text-amber-400" label="不可用" value={unavailableCount} />
-            <Metric label={isAvailabilityLoading ? "检查中" : "未检查"} value={unknownCount} />
-            <Metric label="大小" value={formatBytes(totalSize)} />
+            <Metric label={t.library.metrics.movies} value={total} />
+            <Metric
+              label={t.library.metrics.files}
+              value={fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0)}
+            />
+            <Metric label={t.library.metrics.available} value={availableCount} />
+            <Metric
+              className="text-amber-600 dark:text-amber-400"
+              label={t.library.metrics.unavailable}
+              value={unavailableCount}
+            />
+            <Metric
+              label={isAvailabilityLoading ? t.library.metrics.checking : t.library.metrics.unchecked}
+              value={unknownCount}
+            />
+            <Metric label={t.library.metrics.totalSize} value={formatBytes(totalBytes ?? totalSize)} />
           </header>
 
           {errorMessage && (
@@ -168,21 +200,21 @@ export function LibraryIndexView({
               <div className="relative w-full max-w-[520px]">
                 <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                 <Input
-                  aria-label="搜索媒体库"
+                  aria-label={t.library.searchAriaLabel}
                   className="h-10 border-transparent bg-surface-low pl-10 shadow-inner focus-visible:bg-surface focus-visible:ring-1"
                   onChange={(event) => onQueryChange(event.target.value)}
-                  placeholder="搜索标题、番号、演员或相对路径..."
+                  placeholder={t.library.searchPlaceholder}
                   value={query}
                 />
               </div>
               <Button className="h-10 shrink-0 px-5" onClick={onRefresh} type="button" variant="secondary">
                 <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-                刷新
+                {t.library.refresh}
               </Button>
             </div>
           </section>
 
-          <section aria-label="媒体库条目" className="flex flex-col gap-3" ref={listRef}>
+          <section aria-label={t.library.listAriaLabel} className="flex flex-col gap-3" ref={listRef}>
             {filteredEntries.length > 0 && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -201,6 +233,8 @@ export function LibraryIndexView({
                         linkComponent={LinkComponent}
                         onDeleteEntry={onDeleteEntry}
                         onOpenFolder={onOpenFolder}
+                        onRemoveFile={onRemoveFile}
+                        onRelinkFile={onRelinkFile}
                       />
                     </div>
                   );
@@ -213,13 +247,13 @@ export function LibraryIndexView({
                 {isAvailabilityLoading && availabilityFilter !== "all" && unknownCount > 0 ? (
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    正在检查可用性
+                    {t.library.checkingAvailability}
                   </div>
                 ) : (
                   <p className="text-sm font-medium">
                     {availabilityFilter !== "all" && unknownCount > 0
-                      ? `暂无已确认条目，另有 ${unknownCount} 条尚未检查`
-                      : "暂无匹配条目"}
+                      ? t.library.noConfirmedEntries(unknownCount)
+                      : t.library.noMatchingEntries}
                   </p>
                 )}
               </div>
@@ -228,7 +262,7 @@ export function LibraryIndexView({
               <div className="flex justify-center py-2">
                 <Button disabled={isLoadingMore} onClick={onLoadMore} type="button" variant="secondary">
                   <LoaderCircle className={cn("h-4 w-4", isLoadingMore && "animate-spin")} />
-                  加载更多
+                  {t.library.loadMore}
                 </Button>
               </div>
             )}
@@ -240,14 +274,13 @@ export function LibraryIndexView({
 }
 
 export function LibraryDeleteDialog({
+  entry,
   open,
-  deleteMode = "none",
-  showFileDeleteModes = false,
   submitting = false,
-  onDeleteModeChange,
   onCancel,
   onConfirm,
 }: LibraryDeleteDialogProps) {
+  const t = useT();
   return (
     <Dialog
       open={open}
@@ -259,38 +292,15 @@ export function LibraryDeleteDialog({
     >
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>从媒体库移除</DialogTitle>
+          <DialogTitle>{t.library.removeDialogTitle}</DialogTitle>
         </DialogHeader>
-        {showFileDeleteModes ? (
-          <div className="grid gap-2" role="radiogroup" aria-label="删除范围">
-            {libraryDeleteModes.map((mode) => (
-              <label
-                className="flex cursor-pointer items-start gap-3 rounded-quiet border border-border/60 bg-surface-low px-4 py-3"
-                key={mode.value}
-              >
-                <input
-                  checked={deleteMode === mode.value}
-                  className="mt-1"
-                  disabled={submitting}
-                  name="library-delete-mode"
-                  onChange={() => onDeleteModeChange?.(mode.value)}
-                  type="radio"
-                  value={mode.value}
-                />
-                <span>
-                  <span className="block text-sm font-semibold text-foreground">{mode.label}</span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">{mode.description}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        ) : null}
+        {entry && <p>{t.library.removeDialogDescription(entry.fileRefs.length, entry.assets.length)}</p>}
         <DialogFooter>
           <Button disabled={submitting} variant="outline" onClick={onCancel}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button disabled={submitting} variant="destructive" onClick={onConfirm}>
-            {submitting ? "正在移除..." : "确认移除"}
+            {submitting ? t.library.removing : t.library.confirmRemove}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -313,88 +323,139 @@ function LibraryEntryRow({
   linkComponent: LinkComponent,
   onDeleteEntry,
   onOpenFolder,
+  onRemoveFile,
+  onRelinkFile,
 }: {
   entry: LibraryEntryDto;
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (entry: LibraryEntryDto) => void;
+  onOpenFolder?: (path: string) => void;
+  onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
+  onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
 }) {
-  const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || entry.fileName;
-  const title = entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || entry.fileName;
+  const displayFile = entry.fileRefs.find((file) => file.id === entry.displayFileId);
+  const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || displayFile?.fileName || entry.id;
+  const title =
+    entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || displayFile?.fileName || entry.id;
+  const t = useT();
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
-  const canOpenFolder = Boolean(onOpenFolder && entry.available !== false && entry.lastKnownPath);
+  const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile?.lastKnownPath);
+  const isMultiFile = entry.fileRefs.length > 1;
+  const missingFileCount = entry.fileRefs.filter((file) => file.available === false).length;
+  const fileActionProps = { entry, onOpenFolder, onRemoveFile, onRelinkFile };
 
   return (
-    <div className="group relative flex items-center gap-5 rounded-quiet-lg border border-border/40 bg-surface p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)] lg:gap-6">
-      <div className="relative h-[72px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
-        {imageSrc ? (
-          <img
-            alt={title}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            onError={() => setImageLoadFailed(true)}
-            src={imageSrc}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-low to-surface-raised text-[10px] font-numeric font-bold text-muted-foreground">
-            {id.slice(0, 2).toUpperCase()}
+    <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
+      <div className="relative flex items-center gap-5 lg:gap-6">
+        <div className="relative h-[72px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
+          {imageSrc ? (
+            <img
+              alt={title}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              onError={() => setImageLoadFailed(true)}
+              src={imageSrc}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-low to-surface-raised text-[10px] font-numeric font-bold text-muted-foreground">
+              {id.slice(0, 2).toUpperCase()}
+            </div>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
+          <div className="flex items-center gap-3">
+            <span className="shrink-0 rounded bg-foreground/5 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-foreground/60">
+              {id}
+            </span>
+            <span className="truncate text-base font-bold tracking-tight text-foreground">{title}</span>
           </div>
-        )}
+          <div className="mt-2 flex items-center gap-3 text-[11px]">
+            <ActorChips actors={entry.actors} />
+            {isMultiFile && (
+              <button
+                aria-expanded={filesOpen}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 font-semibold transition-colors",
+                  missingFileCount > 0
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                    : "border-border/80 bg-surface-low text-foreground/70 hover:text-foreground",
+                )}
+                onClick={() => setFilesOpen((open) => !open)}
+                type="button"
+              >
+                <Layers className="h-3 w-3" />
+                {missingFileCount > 0
+                  ? t.library.partsMissing(missingFileCount, entry.fileRefs.length)
+                  : t.library.parts(entry.fileRefs.length)}
+                <ChevronDown className={cn("h-3 w-3 transition-transform", filesOpen && "rotate-180")} />
+              </button>
+            )}
+            {displayFile && (
+              <MiddleEllipsisPath
+                rootDisplayName={displayFile.rootDisplayName}
+                relativePath={displayFile.relativePath}
+              />
+            )}
+          </div>
+        </div>
+        <div className="hidden shrink-0 items-center gap-8 font-numeric text-xs font-bold text-muted-foreground/60 lg:flex">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] font-bold uppercase opacity-50">{t.library.size}</span>
+            <span className="text-foreground/80">{formatBytes(entry.size)}</span>
+          </div>
+          <div className="flex min-w-28 flex-col items-end">
+            <span className="text-[10px] font-bold uppercase opacity-50">{t.library.updatedTime}</span>
+            <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 pl-4">
+          <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
+          <div className="flex items-center gap-1">
+            {LinkComponent ? (
+              <LinkComponent className={detailClass} entry={entry}>
+                <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
+                  {t.library.scrapeInfo}
+                </Badge>
+              </LinkComponent>
+            ) : null}
+            {canOpenFolder ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    aria-label={t.library.openFolder}
+                    className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
+                    onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t.library.openFolder}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <div className="h-8 w-8" />
+            )}
+            {!isMultiFile && displayFile ? (
+              <LibraryFileActions file={displayFile} {...fileActionProps} />
+            ) : (
+              <div className="h-8 w-8" />
+            )}
+          </div>
+        </div>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col justify-center">
-        <div className="flex items-center gap-3">
-          <span className="shrink-0 rounded bg-foreground/5 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-foreground/60">
-            {id}
-          </span>
-          <span className="truncate text-base font-bold tracking-tight text-foreground">{title}</span>
+      {isMultiFile && filesOpen && (
+        <div className="mt-3 ml-[68px] flex flex-col border-t border-border/40 pt-2 lg:ml-[72px]">
+          {entry.fileRefs.map((file) => (
+            <LibraryFileRow file={file} key={file.id} {...fileActionProps} />
+          ))}
         </div>
-        <div className="mt-2 flex items-center gap-3 text-[11px]">
-          <ActorChips actors={entry.actors} />
-          <MiddleEllipsisPath rootDisplayName={entry.rootDisplayName} relativePath={entry.relativePath} />
-        </div>
-      </div>
-      <div className="hidden shrink-0 items-center gap-8 font-numeric text-xs font-bold text-muted-foreground/60 lg:flex">
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">大小</span>
-          <span className="text-foreground/80">{formatBytes(entry.size)}</span>
-        </div>
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] font-bold uppercase opacity-50">更新时间</span>
-          <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-4 pl-4 lg:gap-6">
-        <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
-        <div className="flex items-center gap-1.5">
-          {LinkComponent ? (
-            <LinkComponent className={detailClass} entry={entry}>
-              <Badge className="px-3 py-1 font-bold tracking-wide" variant="secondary">
-                详情
-              </Badge>
-            </LinkComponent>
-          ) : null}
-          {canOpenFolder ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  aria-label="打开所在目录"
-                  className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
-                  onClick={() => onOpenFolder?.(entry)}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>打开所在目录</TooltipContent>
-            </Tooltip>
-          ) : null}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -404,10 +465,11 @@ function StatusActionSlot({
   entry,
   onDeleteEntry,
 }: {
-  available: boolean | null;
+  available: LibraryEntryDto["available"];
   entry: LibraryEntryDto;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
 }) {
+  const t = useT();
   if (!onDeleteEntry) {
     return <StatusDot available={available} />;
   }
@@ -420,7 +482,7 @@ function StatusActionSlot({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            aria-label="从媒体库移除"
+            aria-label={t.library.removeFromLibrary}
             className="absolute inset-0 h-8 w-8 text-muted-foreground opacity-0 transition-all hover:bg-surface-raised hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
             onClick={() => onDeleteEntry(entry)}
             size="icon"
@@ -430,34 +492,224 @@ function StatusActionSlot({
             <Trash2 className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>从媒体库移除</TooltipContent>
+        <TooltipContent>{t.library.removeFromLibrary}</TooltipContent>
       </Tooltip>
     </div>
   );
 }
 
-function StatusDot({ available }: { available: boolean | null }) {
-  if (available === false) {
+function StatusDot({ available }: { available: LibraryEntryDto["available"] }) {
+  const t = useT();
+  if (available === "unavailable" || available === "partial") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="h-2 w-2 shrink-0 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
         </TooltipTrigger>
-        <TooltipContent>原路径不可用</TooltipContent>
+        <TooltipContent>{t.library.availability[available]}</TooltipContent>
       </Tooltip>
     );
   }
-  if (available === null) {
+  if (available === "unchecked") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="h-2 w-2 shrink-0 rounded-full bg-muted-foreground/30" />
         </TooltipTrigger>
-        <TooltipContent>可用性尚未检查</TooltipContent>
+        <TooltipContent>{t.library.availabilityNotChecked}</TooltipContent>
       </Tooltip>
     );
   }
   return <div className="h-2 w-2 shrink-0 rounded-full bg-emerald-500/40" />;
+}
+
+type LibraryFileActionProps = {
+  entry: LibraryEntryDto;
+  file: LibraryEntryDto["fileRefs"][number];
+  onOpenFolder?: LibraryIndexViewProps["onOpenFolder"];
+  onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
+  onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
+};
+
+function LibraryFileRow(props: LibraryFileActionProps) {
+  const { file } = props;
+  const t = useT();
+  const statusLabel =
+    file.available === null
+      ? t.library.fileStatus.unchecked
+      : file.available
+        ? t.library.fileStatus.available
+        : t.library.fileStatus.unavailable;
+
+  return (
+    <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto_auto_auto] items-center gap-x-4 rounded-[var(--radius-quiet-sm)] px-2 py-1.5 text-xs transition-colors hover:bg-surface-low">
+      <span className="font-mono text-[11px] font-bold text-foreground/50">
+        {file.partNumber ? `CD${file.partNumber}` : ""}
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate font-semibold text-foreground/90" title={file.fileName}>
+          {file.fileName}
+        </span>
+        <span className="flex min-w-0 text-[11px]">
+          <MiddleEllipsisPath rootDisplayName={file.rootDisplayName} relativePath={file.relativePath} />
+        </span>
+        {file.availabilityError && <span className="text-destructive">{file.availabilityError}</span>}
+      </div>
+      <span className="font-numeric text-muted-foreground">{file.resolution ?? ""}</span>
+      <span className="font-numeric font-bold text-foreground/80">{formatBytes(file.size)}</span>
+      <div className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                file.available === null
+                  ? "bg-muted-foreground/30"
+                  : file.available
+                    ? "bg-emerald-500/40"
+                    : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]",
+              )}
+            />
+          </TooltipTrigger>
+          <TooltipContent>{statusLabel}</TooltipContent>
+        </Tooltip>
+        <LibraryFileActions {...props} />
+      </div>
+    </div>
+  );
+}
+
+function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkFile }: LibraryFileActionProps) {
+  const t = useT();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [action, setAction] = useState<"remove" | "relink" | null>(null);
+  const [relativePath, setRelativePath] = useState(file.relativePath);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const path = file.lastKnownPath ?? file.relativePath;
+  // Single-file entries already expose "open folder" and "remove" on the card itself.
+  const isMultiFile = entry.fileRefs.length > 1;
+  const menuItemClass = "h-8 w-full justify-start gap-2 px-2 text-xs font-medium";
+  const openDialog = (next: "remove" | "relink") => {
+    setMenuOpen(false);
+    setError(null);
+    setRelativePath(file.relativePath);
+    setAction(next);
+  };
+
+  return (
+    <>
+      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            aria-label={t.library.fileActions}
+            className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="flex w-44 flex-col p-1">
+          <Button
+            className={menuItemClass}
+            onClick={() => {
+              setMenuOpen(false);
+              navigator.clipboard.writeText(path).catch((cause) => toast.error(String(cause)));
+            }}
+            type="button"
+            variant="ghost"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t.library.copyPath}
+          </Button>
+          {isMultiFile && onOpenFolder && file.available !== false && (
+            <Button
+              className={menuItemClass}
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenFolder(path);
+              }}
+              type="button"
+              variant="ghost"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t.library.openLocation}
+            </Button>
+          )}
+          {onRelinkFile && (
+            <Button className={menuItemClass} onClick={() => openDialog("relink")} type="button" variant="ghost">
+              <Link2 className="h-3.5 w-3.5" />
+              {t.library.relink}
+            </Button>
+          )}
+          {isMultiFile && onRemoveFile && (
+            <Button
+              className={cn(menuItemClass, "text-destructive hover:text-destructive")}
+              onClick={() => openDialog("remove")}
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t.library.removeFile}
+            </Button>
+          )}
+        </PopoverContent>
+      </Popover>
+      <Dialog
+        open={action !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setAction(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{action === "remove" ? t.library.removeFile : t.library.relinkFileTitle}</DialogTitle>
+          </DialogHeader>
+          <p className="break-all font-mono text-xs text-muted-foreground">{path}</p>
+          {action === "remove" ? (
+            <p>{t.library.removeFileDescription}</p>
+          ) : (
+            <label className="grid gap-2 text-sm" htmlFor={`relink-path-${file.id}`}>
+              <span className="text-muted-foreground">{t.library.mediaFolderLabel(file.rootDisplayName)}</span>
+              {t.library.newRelativePath}
+              <Input
+                id={`relink-path-${file.id}`}
+                value={relativePath}
+                onChange={(event) => setRelativePath(event.target.value)}
+              />
+            </label>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button disabled={busy} onClick={() => setAction(null)} variant="outline">
+              {t.common.cancel}
+            </Button>
+            <Button
+              disabled={busy}
+              variant={action === "remove" ? "destructive" : "default"}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  if (action === "remove") await onRemoveFile?.({ fileId: file.id });
+                  else await onRelinkFile?.({ fileId: file.id, rootId: file.rootId, relativePath });
+                  setAction(null);
+                } catch (cause) {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {t.library.confirm}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 function ActorChips({ actors }: { actors: string[] }) {
@@ -504,7 +756,7 @@ function MiddleEllipsisPath({ rootDisplayName, relativePath }: { rootDisplayName
 const formatDate = (value: string | null | undefined): string =>
   value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : "-";
 
-const latestEntryUpdate = (entry: Pick<LibraryEntryDto, "createdAt" | "lastRefreshedAt" | "modifiedAt">): string =>
-  [entry.createdAt, entry.lastRefreshedAt, entry.modifiedAt]
+const latestEntryUpdate = (entry: Pick<LibraryEntryDto, "createdAt" | "lastRefreshedAt" | "fileRefs">): string =>
+  [entry.createdAt, entry.lastRefreshedAt, ...entry.fileRefs.map((file) => file.modifiedAt)]
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? entry.createdAt;

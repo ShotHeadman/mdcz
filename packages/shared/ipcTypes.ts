@@ -46,35 +46,28 @@ export type ConnectionServerInfo = {
   version?: string;
 };
 
-export type JellyfinCheckKey = "server" | "auth" | "peopleRead" | "peopleWrite";
-export type EmbyCheckKey = "server" | "auth" | "peopleRead" | "peopleWrite" | "adminKey";
+export type MediaServerCheckKey = "server" | "auth" | "peopleRead" | "peopleWrite" | "adminKey";
 
-export type JellyfinCheckStep = {
-  key: JellyfinCheckKey;
-  label: string;
+/** Why a step ended as it did, so the UI can explain it without backend prose. */
+export type ConnectionCheckReason =
+  | "service_unreachable"
+  | "auth_rejected"
+  | "auth_unverified"
+  | "people_check_failed"
+  | "empty_library";
+
+export type MediaServerCheckStep = {
+  key: MediaServerCheckKey;
   status: ConnectionCheckStatus;
-  message: string;
+  reason?: ConnectionCheckReason;
+  /** Raw error text from the server or network layer. */
+  detail?: string;
   code?: string;
 };
 
-export type JellyfinConnectionCheckResult = {
+export type MediaServerConnectionCheckResult = {
   success: boolean;
-  steps: JellyfinCheckStep[];
-  serverInfo?: ConnectionServerInfo;
-  personCount?: number;
-};
-
-export type EmbyCheckStep = {
-  key: EmbyCheckKey;
-  label: string;
-  status: ConnectionCheckStatus;
-  message: string;
-  code?: string;
-};
-
-export type EmbyConnectionCheckResult = {
-  success: boolean;
-  steps: EmbyCheckStep[];
+  steps: MediaServerCheckStep[];
   serverInfo?: ConnectionServerInfo;
   personCount?: number;
 };
@@ -97,10 +90,22 @@ export type AmazonPosterScanItem = {
   currentPosterSize: number;
 };
 
+export type AmazonPosterLookupReason =
+  | "found"
+  | "missing_title"
+  | "search_failed"
+  | "no_results"
+  | "no_match"
+  | "detail_unreadable"
+  | "image_unreachable"
+  | "query_failed";
+
 export type AmazonPosterLookupResult = {
   nfoPath: string;
   amazonPosterUrl: string | null;
-  reason: string;
+  reason: AmazonPosterLookupReason;
+  /** Raw error text when reason is "query_failed". */
+  error?: string;
   elapsedMs: number;
 };
 

@@ -4,7 +4,7 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService } from "@mdcz/runtime/scrape";
+import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
 import { automationRecentInputSchema, automationScrapeStartInputSchema } from "@mdcz/shared/serverDtos";
@@ -19,7 +19,6 @@ import { writeTaskEventsStream } from "./http/sse";
 import { defaultWebStaticDir, registerStaticWeb } from "./http/staticWeb";
 import { createServerMaintenanceRuntime } from "./maintenanceRuntimeFactory";
 import { appRouter } from "./routers";
-import { createServerScrapeRuntime } from "./scrapeRuntimeFactory";
 import type { ServerServiceOptions, ServerServices } from "./services";
 import { AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
@@ -32,7 +31,7 @@ import { ServerPersistenceService } from "./services/persistenceService";
 import { RuntimeActionService } from "./services/runtimeActionService";
 import { RuntimeLogService } from "./services/runtimeLogService";
 import { ScanQueueService } from "./services/scanQueueService";
-import { ScrapeService } from "./services/scrapeService";
+import { ScrapeService, type ScrapeServiceResources } from "./services/scrapeService";
 import { ServerPathService } from "./services/serverPathService";
 import { SystemService } from "./services/systemService";
 import { ToolsService } from "./services/toolsService";
@@ -47,7 +46,8 @@ export interface ServerResourceOverrides {
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
   mappingStore?: FileTranslationMappingStore;
-  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
+  aggregationService?: ScrapeServiceResources["aggregationService"];
+  prepareScrapeItem?: PrepareScrapeItem;
 }
 
 export interface BuildServerOptions {
@@ -120,16 +120,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
       networkClient,
-      runtime: createServerScrapeRuntime({
-        config,
-        networkClient,
-        crawlerProvider,
-        imageHostCooldownStore,
-        actorImageService,
-        actorSourceProvider,
-        mappingStore,
-      }),
+      crawlerProvider,
       imageHostCooldownStore,
+      actorImageService,
+      actorSourceProvider,
+      mappingStore,
+      aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
   const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);

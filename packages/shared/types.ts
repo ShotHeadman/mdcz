@@ -96,6 +96,7 @@ export interface DownloadedAssets {
 }
 
 export interface ScrapeResult {
+  size?: number;
   resultId?: string;
   fileId: FileId;
   rootId: string;
@@ -125,7 +126,6 @@ export interface NfoLocalState {
 export interface UncensoredConfirmResultItem {
   fileId: FileId;
   sourceVideoPath: string;
-  sourceNfoPath?: string;
   targetVideoPath: string;
   targetNfoPath?: string;
   choice: UncensoredChoice;
@@ -136,10 +136,17 @@ export interface UncensoredConfirmResponse {
   items: UncensoredConfirmResultItem[];
 }
 
+export type NamingPreviewSampleId = "standard" | "subtitled" | "multiActor" | "noActor";
+
 export interface NamingPreviewItem {
-  label: string;
+  sample: NamingPreviewSampleId;
+  /** Output folder relative to the target root; empty when files stay in place. */
   folder: string;
   file: string;
+  sourcePath: string;
+  mediaPath: string;
+  metadataDir: string;
+  outputs: string[];
 }
 
 export interface MediaCandidate {
@@ -160,7 +167,7 @@ export interface IpcError {
 
 // ── Maintenance Mode ──────────────────────────────────────────────
 
-export type MaintenancePresetId = "read_local" | "refresh_data" | "organize_files" | "rebuild_all";
+export type MaintenancePresetId = "import_local" | "refresh_metadata" | "local_organize" | "rebuild_all";
 /** Assets discovered on disk for an existing video. */
 export interface DiscoveredAssets {
   thumb?: string;
@@ -176,7 +183,10 @@ export interface LocalScanEntry {
   fileId: FileId;
   ref: RootFileRef;
   fileInfo: FileInfo;
+  /** The NFO metadata is read from; always the first of `nfoPaths`. */
   nfoPath?: string;
+  /** Every NFO sidecar belonging to the video, e.g. both `<movie>.nfo` and `movie.nfo`. */
+  nfoPaths: string[];
   crawlerData?: CrawlerData;
   nfoLocalState?: NfoLocalState;
   scanError?: string;
@@ -195,9 +205,29 @@ export interface FieldDiffImageCollectionPreview {
   items: string[];
 }
 
+/** Fields compared in maintenance previews; display labels live in the UI locale dictionaries. */
+export type MaintenanceDiffField =
+  | "title"
+  | "title_zh"
+  | "plot"
+  | "plot_zh"
+  | "studio"
+  | "director"
+  | "publisher"
+  | "series"
+  | "release_date"
+  | "rating"
+  | "durationSeconds"
+  | "content_type"
+  | "trailer_url"
+  | "thumb_url"
+  | "poster_url"
+  | "actors"
+  | "genres"
+  | "scene_images";
+
 interface BaseFieldDiff {
-  field: keyof CrawlerData;
-  label: string;
+  field: MaintenanceDiffField;
   oldValue: unknown;
   newValue: unknown;
   changed: boolean;
@@ -256,6 +286,8 @@ export interface MaintenanceImageAlternatives {
 }
 
 export interface MaintenanceAssetDecisions {
+  thumb?: "preserve" | "replace";
+  poster?: "preserve" | "replace";
   fanart?: "preserve" | "replace";
   sceneImages?: "preserve" | "replace";
   trailer?: "preserve" | "replace";
@@ -279,7 +311,7 @@ export interface MaintenanceItemResult {
 /** Overall maintenance execution status. */
 export interface MaintenanceStatus {
   state: "idle" | "scanning" | "previewing" | "executing" | "paused" | "stopping";
-  totalEntries: number;
+  totalEntries: number | null;
   completedEntries: number;
   successCount: number;
   failedCount: number;

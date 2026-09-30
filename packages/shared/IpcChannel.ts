@@ -20,6 +20,7 @@ export enum IpcChannel {
   Scraper_Resume = "scraper:resume",
   Scraper_GetStatus = "scraper:get-status",
   Scraper_Retry = "scraper:retry",
+  Scraper_RerunDirectory = "scraper:rerunDirectory",
   Scraper_ConfirmUncensored = "scraper:confirm-uncensored",
 
   Crawler_Test = "crawler:test",
@@ -29,10 +30,10 @@ export enum IpcChannel {
   Network_CheckCookies = "network:check-cookies",
 
   Translate_TestLlm = "translate:test-llm",
+  File_CancelMediaCandidates = "file:cancel-media-candidates",
   File_ListMediaCandidates = "file:list-media-candidates",
   File_Exists = "file:exists",
   File_Browse = "file:browse",
-  File_Delete = "file:delete",
   File_NfoRead = "file:nfo-read",
   File_NfoWrite = "file:nfo-write",
   File_PosterCropSession = "file:poster-crop-session",
@@ -58,6 +59,8 @@ export enum IpcChannel {
   Library_List = "library:list",
   Library_Availability = "library:availability",
   Library_Delete = "library:delete",
+  Library_RemoveFile = "library:removeFile",
+  Library_RelinkFile = "library:relinkFile",
 
   MediaRoots_EnsurePath = "mediaRoots:ensurePath",
   MediaRoots_PrepareOutputDirectory = "mediaRoots:prepare-output-directory",

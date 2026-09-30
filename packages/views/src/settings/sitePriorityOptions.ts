@@ -1,138 +1,43 @@
 import { Website } from "@mdcz/shared/enums";
+import type { Messages } from "../i18n";
 import { normalizeEnabledSites } from "./orderedSite";
 import type { OrderedSiteSummary } from "./orderedSiteSummary";
 
-export type SitePriorityOptionId = Website | "dmm_family" | "h0930_family" | "official";
+export type SitePriorityOptionId = keyof Messages["settings"]["sitePriority"]["options"];
 
 type SitePriorityOptionStateValue = "none" | "partial" | "all";
 
 interface SitePriorityOptionDefinition {
   id: SitePriorityOptionId;
-  label: string;
-  description?: string;
   sites: Website[];
-  aliases?: string[];
 }
 
 export interface SitePriorityOptionState extends SitePriorityOptionDefinition {
   enabledSites: Website[];
   state: SitePriorityOptionStateValue;
   memberLabel: string | null;
-  statusLabel: string | null;
 }
 
 const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
-  {
-    id: "dmm_family",
-    label: "DMM/FANZA 系",
-    description:
-      "DMM/FANZA 官方售卖与配信源，主流日本 AV 作品的权威来源；标题、厂牌、封面可信度高，但受地区、登录/年龄确认和下架影响。",
-    sites: [Website.DMM, Website.DMM_TV],
-    aliases: ["dmm", "dmm tv", "dmm_tv", "fanza", "dmm/fanza"],
-  },
+  { id: "dmm_family", sites: [Website.DMM, Website.DMM_TV] },
   {
     id: "official",
-    label: "厂商官网",
-    description:
-      "聚合 MGStage、Prestige、Faleno、Dahlia、KM Produce 等厂商或厂牌自有站点，适合对应厂牌作品，覆盖范围较窄，成功率随站点和编号差异较大。",
     sites: [Website.MGSTAGE, Website.PRESTIGE, Website.FALENO, Website.DAHLIA, Website.KM_PRODUCE],
-    aliases: ["official", "maker", "studio official", "厂商", "官网", "厂牌官网"],
   },
-  {
-    id: Website.AVBASE,
-    label: Website.AVBASE,
-    description: "聚合站，字段覆盖广，标题、简介、演员与图片通常较完整，适合作为通用主来源。",
-    sites: [Website.AVBASE],
-  },
-  {
-    id: Website.R18_DEV,
-    label: "R18.dev",
-    description: "R18.dev JSON 元数据源，但图片较少。",
-    sites: [Website.R18_DEV],
-    aliases: ["r18", "r18.dev", "r18_dev"],
-  },
-  {
-    id: Website.AVWIKIDB,
-    label: Website.AVWIKIDB,
-    description: "社区整理库，适合补简介、标签和发行信息；部分网络环境下可能出现区域限制或 403。",
-    sites: [Website.AVWIKIDB],
-  },
-  {
-    id: Website.JAVDB,
-    label: Website.JAVDB,
-    description: "聚合站，封面、剧照和预告片补充能力较强；可能受地区限制，必要时可配 Cookie。",
-    sites: [Website.JAVDB],
-  },
-  {
-    id: Website.JAVBUS,
-    label: Website.JAVBUS,
-    description: "聚合站，封面和样品图通常稳定；部分环境会遇到成年验证，必要时可配 Cookie。",
-    sites: [Website.JAVBUS],
-  },
-  {
-    id: Website.JAV321,
-    label: Website.JAV321,
-    description: "检索型聚合站，适合作为额外兜底来源；字段完整度和稳定性通常低于主流聚合站。",
-    sites: [Website.JAV321],
-  },
-  {
-    id: "h0930_family",
-    label: "H0930 / H4610",
-    description: "网络自营独立制作站。采用专属站内编号（如 H0930/H4610）",
-    sites: [Website.H0930, Website.H4610],
-    aliases: ["h0930", "h0930.com", "h4610", "h4610.com"],
-  },
-  {
-    id: Website.FC2,
-    label: Website.FC2,
-    description: "FC2 官方商品页，卖家名与官方发行信息可信度高，适合 FC2 编号；无法作用于已下架作品。",
-    sites: [Website.FC2],
-  },
-  {
-    id: Website.FC2HUB,
-    label: Website.FC2HUB,
-    description: "FC2 聚合源，标题、时长、评分等补充较积极，适合作为 FC2 编号的主抓取来源之一。",
-    sites: [Website.FC2HUB],
-  },
-  {
-    id: Website.PPVDATABANK,
-    label: Website.PPVDATABANK,
-    description: "FC2 补充库，常用于回填卖家、日期、封面和样品图，适合作为 FC2 兜底来源。",
-    sites: [Website.PPVDATABANK],
-  },
-  {
-    id: Website.SOKMIL,
-    label: Website.SOKMIL,
-    description: "偏写真/gravure 和特定配信内容补充；不建议作为通用主来源。",
-    sites: [Website.SOKMIL],
-    aliases: ["gravure", "idol", "photo", "配信平台"],
-  },
-  {
-    id: Website.KINGDOM,
-    label: Website.KINGDOM,
-    description: "Kingdom 体系官网，适合 Empress、Princess、Queen、Kingdom、bambini 等特定作品，通用性较低。",
-    sites: [Website.KINGDOM],
-    aliases: ["empress", "princess", "queen", "bambini"],
-  },
-  {
-    id: Website.FANTIA,
-    label: Website.FANTIA,
-    description: "Fantia 官方站点，适合 Fantia 编号作品，通用性较低。",
-    sites: [Website.FANTIA],
-  },
+  { id: Website.AVBASE, sites: [Website.AVBASE] },
+  { id: Website.R18_DEV, sites: [Website.R18_DEV] },
+  { id: Website.AVWIKIDB, sites: [Website.AVWIKIDB] },
+  { id: Website.JAVDB, sites: [Website.JAVDB] },
+  { id: Website.JAVBUS, sites: [Website.JAVBUS] },
+  { id: Website.JAV321, sites: [Website.JAV321] },
+  { id: "h0930_family", sites: [Website.H0930, Website.H4610] },
+  { id: Website.FC2, sites: [Website.FC2] },
+  { id: Website.FC2HUB, sites: [Website.FC2HUB] },
+  { id: Website.PPVDATABANK, sites: [Website.PPVDATABANK] },
+  { id: Website.SOKMIL, sites: [Website.SOKMIL] },
+  { id: Website.KINGDOM, sites: [Website.KINGDOM] },
+  { id: Website.FANTIA, sites: [Website.FANTIA] },
 ];
-
-export const SITE_PRIORITY_EDITOR_ALIASES = Array.from(
-  new Set([
-    "site",
-    "sites",
-    "priority",
-    "source priority",
-    "站点优先级",
-    "站点分组",
-    ...SITE_PRIORITY_OPTION_DEFINITIONS.flatMap((option) => [option.label, ...option.sites, ...(option.aliases ?? [])]),
-  ]),
-);
 
 function getAvailableOptionDefinitions(availableSites: string[]): SitePriorityOptionDefinition[] {
   const available = new Set(normalizeEnabledSites(availableSites));
@@ -151,14 +56,6 @@ function normalizeConcreteSites(value: unknown, availableSites: string[]): Websi
   ).filter((site): site is Website => available.has(site));
 }
 
-function buildStatusLabel(enabledSites: Website[], totalSites: number): string | null {
-  if (enabledSites.length === 0 || enabledSites.length === totalSites) {
-    return null;
-  }
-
-  return `已启用 ${enabledSites.length}/${totalSites}`;
-}
-
 export function resolveSitePriorityOptions(value: unknown, availableSites: string[]): SitePriorityOptionState[] {
   const concreteSites = normalizeConcreteSites(value, availableSites);
   const optionDefinitions = getAvailableOptionDefinitions(availableSites);
@@ -173,7 +70,6 @@ export function resolveSitePriorityOptions(value: unknown, availableSites: strin
       enabledSites,
       state,
       memberLabel: option.sites.length > 1 ? option.sites.join(" / ") : null,
-      statusLabel: buildStatusLabel(enabledSites, option.sites.length),
     };
   });
 
@@ -246,9 +142,13 @@ export function moveSitePriorityOption(
   return flattenEnabledSites(nextOptions);
 }
 
-export function buildGroupedSitePrioritySummary(value: unknown, availableSites: string[]): OrderedSiteSummary {
+export function buildGroupedSitePrioritySummary(
+  t: Messages,
+  value: unknown,
+  availableSites: string[],
+): OrderedSiteSummary {
   const enabledOptions = resolveSitePriorityOptions(value, availableSites).filter((option) => option.state !== "none");
-  const preview = enabledOptions.slice(0, 3).map((option) => option.label);
+  const preview = enabledOptions.slice(0, 3).map((option) => t.settings.sitePriority.options[option.id].label);
 
   return {
     enabledCount: enabledOptions.length,

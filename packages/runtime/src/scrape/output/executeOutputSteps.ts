@@ -9,6 +9,7 @@ import type {
 } from "@mdcz/shared/types";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../actorOutput";
 import type { ImageAlternatives, SourceMap } from "../aggregation";
+import type { DirectoryInventory } from "../DirectoryInventory";
 import type { DownloadCallbacks, DownloadManager } from "../download";
 import { type NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields } from "../nfo";
 import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
@@ -56,6 +57,7 @@ export const downloadCrawlerAssets = async (input: {
   outputDir: string;
   existingAssetDir?: string;
   existingAssets?: DiscoveredAssets;
+  inventory?: DirectoryInventory;
   imageAlternatives?: Partial<ImageAlternatives>;
   sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "scene_images">;
   callbacks?: DownloadCallbacks;
@@ -95,6 +97,7 @@ export const downloadCrawlerAssets = async (input: {
       movieBaseName: input.movieBaseName,
       existingAssetDir: input.existingAssetDir,
       existingAssets: input.existingAssets,
+      inventory: input.inventory,
     },
   );
   const crawlerData = {
@@ -113,7 +116,7 @@ export const writePreparedNfo = async (input: {
   crawlerData?: CrawlerData;
   enabled: boolean;
   fileInfo: FileInfo;
-  nfoGenerator: NfoGenerator;
+  nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   nfoPath?: string;
   sourceVideoPath: string;
   localState?: NfoLocalState;

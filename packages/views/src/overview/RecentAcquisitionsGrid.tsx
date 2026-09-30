@@ -1,6 +1,7 @@
 import { Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
 import { AlertCircle, FolderOpen, ImageOff, Library, Loader2, Trash2 } from "lucide-react";
 import { type ComponentType, type ReactNode, useState } from "react";
+import { useT } from "../i18n";
 
 const SKELETON_KEYS = ["slot-1", "slot-2", "slot-3", "slot-4", "slot-5", "slot-6", "slot-7", "slot-8"];
 
@@ -32,18 +33,20 @@ export interface RecentAcquisitionRemoveDialogProps {
 }
 
 export function RecentAcquisitionRemoveDialog({ open, onConfirm, onOpenChange }: RecentAcquisitionRemoveDialogProps) {
+  const t = useT();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>从最近入库移除</DialogTitle>
+          <DialogTitle>{t.overview.recent.removeDialogTitle}</DialogTitle>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t.common.cancel}
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            确认
+            {t.overview.recent.confirm}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -61,6 +64,7 @@ export function RecentAcquisitionsGrid<TItem extends RecentAcquisitionViewItem =
   onItemRemove,
   onRetry,
 }: RecentAcquisitionsGridProps<TItem>) {
+  const t = useT();
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4 lg:gap-6">
@@ -75,12 +79,12 @@ export function RecentAcquisitionsGrid<TItem extends RecentAcquisitionViewItem =
     return (
       <div className="flex min-h-[260px] flex-col items-center justify-center rounded-quiet-xl bg-surface-low p-8 text-center">
         <AlertCircle className="h-8 w-8 text-destructive" />
-        <h3 className="mt-4 text-base font-semibold">最近入库加载失败</h3>
-        <p className="mt-1 text-sm text-muted-foreground">请稍后重试，或检查应用日志。</p>
+        <h3 className="mt-4 text-base font-semibold">{t.overview.recent.loadFailedTitle}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{t.overview.recent.loadFailedDescription}</p>
         {onRetry && (
           <Button type="button" variant="outline" className="mt-5 rounded-quiet-capsule" onClick={onRetry}>
             <Loader2 className="h-4 w-4" />
-            重试
+            {t.overview.recent.retry}
           </Button>
         )}
       </div>
@@ -91,8 +95,8 @@ export function RecentAcquisitionsGrid<TItem extends RecentAcquisitionViewItem =
     return (
       <div className="flex min-h-[260px] flex-col items-center justify-center rounded-quiet-xl bg-surface-low p-8 text-center">
         <Library className="h-9 w-9 text-muted-foreground" />
-        <h3 className="mt-4 text-lg font-semibold">暂无刮削记录</h3>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">完成一次刮削后，最近入库的影片会出现在这里。</p>
+        <h3 className="mt-4 text-lg font-semibold">{t.overview.recent.emptyTitle}</h3>
+        <p className="mt-1 max-w-md text-sm text-muted-foreground">{t.overview.recent.emptyDescription}</p>
       </div>
     );
   }
@@ -128,10 +132,11 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
   onOpen,
   onRemove,
 }: AcquisitionCardProps<TItem>) {
+  const t = useT();
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const imageSrc = !imageLoadFailed && item.thumbnailPath ? getImageSrc(item.thumbnailPath, item) : "";
   const title = item.title?.trim() || item.number;
-  const actorText = item.actors.filter(Boolean).join(" / ") || "未知演员";
+  const actorText = item.actors.filter(Boolean).join(" / ") || t.overview.recent.unknownActor;
   const className = cn(
     "group relative aspect-[2/3] rounded-quiet-lg bg-surface-raised text-left shadow-none outline-none transition duration-200 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring",
   );
@@ -167,7 +172,7 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         {onRemove ? (
           <Button
-            aria-label={`从最近入库移除 ${title}`}
+            aria-label={t.overview.recent.removeAriaLabel(title)}
             className="h-8 w-8 rounded-quiet-capsule bg-surface-floating/76 p-0 text-foreground backdrop-blur-md hover:bg-surface-floating"
             onClick={(event) => {
               event.preventDefault();
@@ -183,7 +188,7 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
         ) : null}
         {onOpen ? (
           <Button
-            aria-label={`打开 ${title} 所在目录`}
+            aria-label={t.overview.recent.openFolderAriaLabel(title)}
             className="h-8 w-8 rounded-quiet-capsule bg-surface-floating/76 p-0 text-foreground backdrop-blur-md hover:bg-surface-floating"
             onClick={(event) => {
               event.preventDefault();

@@ -14,6 +14,8 @@ const serverRuntimeExternals = [
   "drizzle-orm/sqlite-core",
   "fastify",
   "impit",
+  // Emscripten locates MediaInfoModule.wasm next to its own module file, so it must stay in node_modules.
+  "mediainfo.js",
   "sharp",
 ];
 

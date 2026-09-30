@@ -9,6 +9,7 @@ import type {
 } from "@mdcz/views/adapters";
 import { resolveBatchRescrapeOutput } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
+import { getT } from "@mdcz/views/i18n";
 import {
   applyMaintenanceSessionSnapshot,
   selectMaintenanceSessionId,
@@ -152,7 +153,8 @@ export const createWebDetailPort = (): DetailActionPort => ({
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
     const videoPath = item.outputPath ?? item.path;
-    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
+    const videoRelativePath =
+      videoPath && item.fileRef?.rootId === rootId ? toRelativePath(item, videoPath) : undefined;
     const response = await api.scrape.nfoRead({ rootId, relativePath, videoRelativePath });
     return {
       path: response.effectiveRelativePath,
@@ -162,23 +164,22 @@ export const createWebDetailPort = (): DetailActionPort => ({
   writeNfo: async (item, path, data) => {
     const rootId = getMetadataRootId(item);
     const videoPath = item.outputPath ?? item.path;
-    const videoRelativePath = videoPath ? toRelativePath(item, videoPath) : undefined;
+    const videoRelativePath =
+      videoPath && item.fileRef?.rootId === rootId ? toRelativePath(item, videoPath) : undefined;
     await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
   },
   preparePosterCrop: async (item) => {
-    if (!item.resultId) throw new Error("缺少刮削结果标识");
+    if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
     const response = await api.scrape.posterCropSession({ id: item.resultId });
     return {
       ...response,
-      sourceUrl: getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.sourceRelativePath }),
+      sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
     };
   },
   savePosterCrop: async (item, crop) => {
-    if (!item.resultId) throw new Error("缺少刮削结果标识");
+    if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
     const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
-    const posterUrl = new URL(
-      getLibraryAssetSrc({ rootId: getMetadataRootId(item), path: response.targetRelativePath }),
-    );
+    const posterUrl = new URL(getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }));
     if (response.revision) posterUrl.searchParams.set("revision", response.revision);
     return { posterUrl: posterUrl.toString() };
   },
@@ -188,8 +189,8 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
   rescrapeByUrl: async (targets, manualUrl) => {
     const refs = targets.map((target) => target.ref);
     const first = refs[0];
-    if (!first) throw new Error("请选择要刮削的文件");
-    const snapshot = await runScrapeRequest(async () =>
+    if (!first) throw new Error(getT().web.selectFileToScrape);
+    await runScrapeRequest(async () =>
       api.scrape.start(
         refs.length === 1
           ? { executionMode: "single", refs, manualUrl }
@@ -197,21 +198,23 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
       ),
     );
     requestScrapeLiveRunsRefresh();
-    return { message: `按 URL 刮削任务已启动：${snapshot.runId}` };
+  },
+  rerunDirectory: async (taskId) => {
+    await api.scrape.rerunDirectory({ taskId });
+    requestScrapeLiveRunsRefresh();
   },
   retryFailed: async (itemIds) => {
     const runId = selectScrapeTaskId(useScrapeStore.getState());
-    if (!runId) throw new Error("没有可重试的刮削任务");
-    const retry = await runScrapeRequest(
+    if (!runId) throw new Error(getT().web.noScrapeTaskToRetry);
+    await runScrapeRequest(
       async () => api.scrape.retry({ taskId: runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
       runId,
     );
     requestScrapeLiveRunsRefresh();
-    return { message: `重试任务已启动：${retry.runId}` };
   },
-  deleteFile: async (targets) => {
+  removeRecord: async (targets) => {
     for (const target of targets) {
-      await api.scrape.deleteFile(target.ref);
+      await api.scrape.removeRecord(target.ref);
     }
   },
   openNfo: (path) => {
@@ -223,7 +226,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   const requireSessionId = () => {
     const activeSessionId = selectMaintenanceSessionId(useMaintenanceStore.getState());
     if (!activeSessionId) {
-      throw new Error("当前没有可控制的维护会话");
+      throw new Error(getT().web.noControllableMaintenanceSession);
     }
     return activeSessionId;
   };
@@ -231,6 +234,10 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   return {
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
+    },
+    rerunDirectory: async (rerunSessionId) => {
+      await api.maintenance.start({ rerunSessionId });
+      applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
     },
     getActiveSession: async () => await api.maintenance.getActiveSession(),
     updateDraft: async (previewId, draft) => {
@@ -243,7 +250,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
     },
     preview: async (refs, presetId: MaintenancePresetId, targetDir) => {
       const rootId = refs[0]?.rootId ?? "";
-      if (!rootId) throw new Error("请选择要维护的文件");
+      if (!rootId) throw new Error(getT().web.selectFileToMaintain);
       const output = targetDir ? await api.mediaRoots.prepareOutputDirectory({ hostPath: targetDir }) : undefined;
       const { sessionId } = await api.maintenance.start({
         rootId,

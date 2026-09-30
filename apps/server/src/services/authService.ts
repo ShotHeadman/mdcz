@@ -41,7 +41,7 @@ export class AuthService {
       const actual = (await deriveKey(password, Buffer.from(salt, "hex"), 64)) as Buffer;
       valid = timingSafeEqual(actual, Buffer.from(hash, "hex"));
     }
-    if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "管理员密码错误" });
+    if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect administrator password" });
     const token = randomBytes(24).toString("base64url");
     this.#tokens.add(token);
     return { authenticated: true, token };
@@ -58,7 +58,7 @@ export class AuthService {
 
   async completeSetup(input: SetupCompleteInput): Promise<AuthSessionDto> {
     if (!(await this.status()).setupRequired) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "系统已完成初始化，请直接登录" });
+      throw new TRPCError({ code: "FORBIDDEN", message: "Setup is already complete; please sign in" });
     }
     const salt = randomBytes(16);
     const hash = (await deriveKey(input.password, salt, 64)) as Buffer;
@@ -75,7 +75,7 @@ export class AuthService {
       await link(temporaryPath, statePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        throw new TRPCError({ code: "CONFLICT", message: "管理员已创建，请登录" });
+        throw new TRPCError({ code: "CONFLICT", message: "Administrator already exists; please sign in" });
       }
       throw error;
     } finally {

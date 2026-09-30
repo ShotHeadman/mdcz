@@ -2,13 +2,11 @@ import type { AmbiguousUncensoredItemDto } from "@mdcz/shared/serverDtos";
 import { create } from "zustand";
 
 export interface TaskHydrationState {
-  uncensoredTaskId: string;
   ambiguousUncensoredItems: AmbiguousUncensoredItemDto[];
   shouldOpenUncensoredDialog: boolean;
 }
 
 export const createTaskHydrationState = (): TaskHydrationState => ({
-  uncensoredTaskId: "",
   ambiguousUncensoredItems: [],
   shouldOpenUncensoredDialog: false,
 });
@@ -32,7 +30,6 @@ export const useWorkbenchTaskStore = create<WorkbenchTaskState>((set) => ({
         ...state.hydrationState,
         ambiguousUncensoredItems: [],
         shouldOpenUncensoredDialog: false,
-        uncensoredTaskId: "",
       },
     })),
   setRefreshError: (refreshError) => set({ refreshError }),

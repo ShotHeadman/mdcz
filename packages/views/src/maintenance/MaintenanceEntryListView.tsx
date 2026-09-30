@@ -2,6 +2,7 @@ import { Checkbox } from "@mdcz/ui";
 import { FolderSearch, LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { type MediaBrowserFilter, type MediaBrowserItemStatus, MediaBrowserList } from "../common";
+import { useT } from "../i18n";
 
 export interface MaintenanceEntryListViewItem {
   active: boolean;
@@ -9,7 +10,7 @@ export interface MaintenanceEntryListViewItem {
   id: string;
   menuContent: ReactNode;
   onClick: () => void;
-  onSelectionChange?: () => void;
+  onSelectionChange: () => void;
   selected?: boolean | "indeterminate";
   selectionDisabled?: boolean;
   status?: MediaBrowserItemStatus;
@@ -32,7 +33,6 @@ export interface MaintenanceEntryListViewProps {
   onToggleVisibleSelection: () => void;
   selectedVisibleCount: number;
   selectionDisabled?: boolean;
-  showSelection?: boolean;
   someVisibleSelected: boolean;
   stats: MaintenanceEntryListViewStat[];
   visibleCount: number;
@@ -48,12 +48,12 @@ export function MaintenanceEntryListView({
   onToggleVisibleSelection,
   selectedVisibleCount,
   selectionDisabled = false,
-  showSelection = false,
   someVisibleSelected,
   stats,
   visibleCount,
   visibleIdsCount,
 }: MaintenanceEntryListViewProps) {
+  const t = useT();
   return (
     <MediaBrowserList
       items={items.map((item) => ({
@@ -65,15 +65,14 @@ export function MaintenanceEntryListView({
         status: item.status,
         menuContent: item.menuContent,
         onClick: item.onClick,
-        selectionControl:
-          showSelection && item.onSelectionChange ? (
-            <Checkbox
-              checked={item.selected ?? false}
-              disabled={item.selectionDisabled}
-              onCheckedChange={item.onSelectionChange}
-              onClick={(event) => event.stopPropagation()}
-            />
-          ) : undefined,
+        selectionControl: (
+          <Checkbox
+            checked={item.selected ?? false}
+            disabled={item.selectionDisabled}
+            onCheckedChange={item.onSelectionChange}
+            onClick={(event) => event.stopPropagation()}
+          />
+        ),
       }))}
       filter={filter}
       onFilterChange={onFilterChange}
@@ -82,29 +81,27 @@ export function MaintenanceEntryListView({
         loading ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
             <LoaderCircle className="h-12 w-12 animate-spin text-muted-foreground/30" strokeWidth={1.5} />
-            <span className="text-[13px] text-muted-foreground/50 tracking-wider">正在准备维护项目...</span>
+            <span className="text-[13px] text-muted-foreground/50 tracking-wider">{t.maintenance.preparingItems}</span>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3 py-16 select-none animate-in fade-in duration-500">
             <FolderSearch className="h-12 w-12 text-muted-foreground/20" strokeWidth={1} />
-            <span className="text-[13px] text-muted-foreground/40 tracking-wider">无维护项目</span>
+            <span className="text-[13px] text-muted-foreground/40 tracking-wider">{t.maintenance.noItems}</span>
           </div>
         )
       }
       headerLeading={
-        showSelection ? (
-          <>
-            <Checkbox
-              id="maintenance-select-all"
-              checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
-              disabled={selectionDisabled || visibleIdsCount === 0}
-              onCheckedChange={onToggleVisibleSelection}
-            />
-            <label htmlFor="maintenance-select-all" className="cursor-pointer">
-              全选 ({selectedVisibleCount}/{visibleCount})
-            </label>
-          </>
-        ) : undefined
+        <>
+          <Checkbox
+            id="maintenance-select-all"
+            checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+            disabled={selectionDisabled || visibleIdsCount === 0}
+            onCheckedChange={onToggleVisibleSelection}
+          />
+          <label htmlFor="maintenance-select-all" className="cursor-pointer">
+            {t.maintenance.selectAll(selectedVisibleCount, visibleCount)}
+          </label>
+        </>
       }
     />
   );

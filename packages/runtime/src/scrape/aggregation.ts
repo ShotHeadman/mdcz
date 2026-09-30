@@ -9,6 +9,7 @@ import { buildCrawlerOptions } from "./crawlerOptions";
 import { FieldAggregator, summarizeFailedSiteResults } from "./fieldAggregation";
 import { type AdmissionReject, resolveSiteAdmission } from "./siteAdmission";
 import { applyTitleRepair } from "./titleRepair";
+import { createAbortError, throwIfAborted } from "./utils/abort";
 
 export type { AggregationStrategy } from "./fieldAggregation";
 export { FIELD_STRATEGIES, FieldAggregator } from "./fieldAggregation";
@@ -54,13 +55,6 @@ export interface ManualScrapeOptions {
   detailUrl?: string;
 }
 
-interface CacheEntry {
-  result: AggregationResult;
-  expiresAt: number;
-}
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const MAX_CACHE_ENTRIES = 200;
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
 interface CrawlerExecutionState {
@@ -84,32 +78,75 @@ interface CrawlerExecutionContext {
 }
 
 export class AggregationService {
-  private readonly cache = new Map<string, CacheEntry>();
-  private readonly failureSummaries = new Map<string, string>();
+  private static readonly CACHE_LIMIT = 200;
+  private readonly cache = new Map<string, AggregationResult>();
+  private readonly inFlight = new Map<string, Promise<AggregationResult>>();
   private readonly logger: RuntimeLogger;
+  private readonly config: Configuration;
+  private readonly signal?: AbortSignal;
 
   constructor(
     private readonly crawlerProvider: RuntimeCrawlerProvider,
-    options: { logger?: RuntimeLogger } = {},
+    options: { config: Configuration; logger?: RuntimeLogger; signal?: AbortSignal },
   ) {
+    this.config = structuredClone(options.config);
     this.logger = options.logger ?? noopRuntimeLogger;
+    this.signal = options.signal;
   }
 
   async aggregate(
     number: string,
-    config: Configuration,
-    signal?: AbortSignal,
-    manualScrape?: ManualScrapeOptions,
-  ): Promise<AggregationResult | null> {
-    const cacheKey = this.buildCacheKey(number, manualScrape);
-    const cached = this.getFromCache(cacheKey);
+    options?: { manualScrape?: ManualScrapeOptions; signal?: AbortSignal },
+  ): Promise<AggregationResult> {
+    throwIfAborted(this.signal);
+    throwIfAborted(options?.signal);
+    const key = this.buildKey(number, options?.manualScrape);
+    const cached = this.cache.get(key);
     if (cached) {
       this.logger.info(`Cache hit for ${number}`);
-      this.clearFailureSummary(number);
-      return cached;
+      return structuredClone(cached);
     }
 
-    const { admitted: enabledSites, rejected: rejectedSites } = this.resolveActiveSites(number, config, manualScrape);
+    let pending = this.inFlight.get(key);
+    if (!pending) {
+      const execution = this.executeAggregation(number, options?.manualScrape)
+        .then((result) => {
+          const stored = structuredClone(result);
+          this.cache.set(key, stored);
+          while (this.cache.size > AggregationService.CACHE_LIMIT) {
+            const oldest = this.cache.keys().next().value;
+            if (oldest === undefined || oldest === key) break;
+            this.cache.delete(oldest);
+          }
+          return stored;
+        })
+        .finally(() => {
+          if (this.inFlight.get(key) === execution) this.inFlight.delete(key);
+        });
+      pending = execution;
+      this.inFlight.set(key, execution);
+    }
+
+    return structuredClone(await this.awaitShared(pending, options?.signal));
+  }
+
+  private async awaitShared<T>(shared: Promise<T>, waiter?: AbortSignal): Promise<T> {
+    if (!waiter) return await shared;
+    throwIfAborted(waiter);
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(createAbortError());
+      waiter.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([shared, aborted]);
+    } finally {
+      if (onAbort) waiter.removeEventListener("abort", onAbort);
+    }
+  }
+
+  private async executeAggregation(number: string, manualScrape?: ManualScrapeOptions): Promise<AggregationResult> {
+    const { admitted: enabledSites, rejected: rejectedSites } = this.resolveActiveSites(number, manualScrape);
     if (rejectedSites.length > 0) {
       this.logger.info(
         `${number} admitted ${enabledSites.length} sites; skipped: ${rejectedSites
@@ -119,24 +156,21 @@ export class AggregationService {
     }
     if (enabledSites.length === 0) {
       const message = `No active sites for ${number}`;
-      this.recordFailureSummary(number, message);
       this.logger.warn(message);
-      return null;
+      throw new Error(message);
     }
 
     this.logger.info(`Aggregating ${number} from ${enabledSites.length} sites: ${enabledSites.join(", ")}`);
     const globalStart = Date.now();
-    const { maxParallelCrawlers, perCrawlerTimeoutMs, globalTimeoutMs } = config.aggregation;
-    const fieldAggregator = this.createFieldAggregator(config);
+    const { maxParallelCrawlers, perCrawlerTimeoutMs, globalTimeoutMs } = this.config.aggregation;
+    const fieldAggregator = this.createFieldAggregator(this.config);
     const siteResults = await this.executeWithGlobalTimeout(
       enabledSites,
       number,
-      config,
       maxParallelCrawlers,
       perCrawlerTimeoutMs,
       globalTimeoutMs,
       fieldAggregator,
-      signal,
       manualScrape,
     );
 
@@ -159,9 +193,8 @@ export class AggregationService {
 
     if (successes.size === 0) {
       const message = summarizeFailedSiteResults(number, siteResults);
-      this.recordFailureSummary(number, message);
       this.logger.warn(message);
-      return null;
+      throw new Error(message);
     }
 
     const stats: AggregationStats = {
@@ -178,48 +211,23 @@ export class AggregationService {
       sources: aggregatedSources,
       imageAlternatives,
     } = fieldAggregator.aggregate(successes);
-    const data = applyTitleRepair(aggregatedData, config.titleRepair);
+    const data = applyTitleRepair(aggregatedData, this.config.titleRepair);
     const sources = aggregatedSources;
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
         `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
       );
-      this.recordFailureSummary(number, `Aggregated data for ${number} does not meet minimum threshold`);
-      return null;
+      throw new Error(`Aggregated data for ${number} does not meet minimum threshold`);
     }
 
-    const result: AggregationResult = { data, sources, imageAlternatives, stats };
-    this.putInCache(cacheKey, result);
-    this.clearFailureSummary(number);
-    return result;
-  }
-
-  getFailureSummary(number: string): string | undefined {
-    return this.failureSummaries.get(this.normalizeFailureSummaryKey(number));
-  }
-
-  private recordFailureSummary(number: string, message: string): void {
-    this.failureSummaries.set(this.normalizeFailureSummaryKey(number), message);
-  }
-
-  private clearFailureSummary(number: string): void {
-    this.failureSummaries.delete(this.normalizeFailureSummaryKey(number));
-  }
-
-  private normalizeFailureSummaryKey(number: string): string {
-    return number.trim().toUpperCase();
-  }
-
-  clearCache(): void {
-    this.cache.clear();
+    return { data, sources, imageAlternatives, stats };
   }
 
   private resolveActiveSites(
     number: string,
-    config: Configuration,
     manualScrape?: ManualScrapeOptions,
   ): ReturnType<typeof resolveSiteAdmission> {
-    const configuredSites = manualScrape ? [manualScrape.site] : [...new Set(config.scrape.sites)];
+    const configuredSites = manualScrape ? [manualScrape.site] : [...new Set(this.config.scrape.sites)];
     const cooldowns = new Map<Website, { remainingMs: number; cooldownUntil: number }>();
     for (const site of configuredSites) {
       const cooldown = this.crawlerProvider.getSiteCooldown(site);
@@ -231,7 +239,7 @@ export class AggregationService {
     return resolveSiteAdmission({
       number,
       configuredSites,
-      credentials: { fantiaCookie: config.network.fantiaCookie },
+      credentials: { fantiaCookie: this.config.network.fantiaCookie },
       cooldowns,
       manualScrape,
     });
@@ -250,16 +258,16 @@ export class AggregationService {
   private async executeWithGlobalTimeout(
     sites: Website[],
     number: string,
-    config: Configuration,
     maxConcurrent: number,
     perCrawlerTimeoutMs: number,
     globalTimeoutMs: number,
     fieldAggregator: FieldAggregator,
-    signal?: AbortSignal,
     manualScrape?: ManualScrapeOptions,
   ): Promise<SiteCrawlResult[]> {
     const abortController = new AbortController();
-    const combinedSignal = signal ? AbortSignal.any([signal, abortController.signal]) : abortController.signal;
+    const combinedSignal = this.signal
+      ? AbortSignal.any([this.signal, abortController.signal])
+      : abortController.signal;
     const abortAggregation = (): void => {
       if (!abortController.signal.aborted) {
         abortController.abort();
@@ -274,7 +282,6 @@ export class AggregationService {
       return await this.executeCrawlers(
         sites,
         number,
-        config,
         maxConcurrent,
         perCrawlerTimeoutMs,
         combinedSignal,
@@ -290,7 +297,6 @@ export class AggregationService {
   private async executeCrawlers(
     sites: Website[],
     number: string,
-    config: Configuration,
     maxConcurrent: number,
     perCrawlerTimeoutMs: number,
     signal: AbortSignal,
@@ -308,7 +314,7 @@ export class AggregationService {
     const executionContext: CrawlerExecutionContext = {
       sites,
       number,
-      config,
+      config: this.config,
       perCrawlerTimeoutMs,
       signal,
       abort: abortAggregation,
@@ -479,47 +485,10 @@ export class AggregationService {
     return new FieldAggregator(config.aggregation.fieldPriorities, config.aggregation.behavior);
   }
 
-  private getFromCache(key: string): AggregationResult | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (Date.now() >= entry.expiresAt) {
-      this.cache.delete(key);
-      return null;
-    }
-    this.cache.delete(key);
-    this.cache.set(key, entry);
-    return entry.result;
-  }
-
-  private putInCache(key: string, result: AggregationResult): void {
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    }
-    this.cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
-    this.pruneCache();
-  }
-
-  private pruneCache(): void {
-    this.evictExpired();
-    while (this.cache.size > MAX_CACHE_ENTRIES) {
-      const oldestKey = this.cache.keys().next().value;
-      if (!oldestKey) {
-        return;
-      }
-      this.cache.delete(oldestKey);
-    }
-  }
-
-  private evictExpired(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.cache) {
-      if (now >= entry.expiresAt) {
-        this.cache.delete(key);
-      }
-    }
-  }
-
-  private buildCacheKey(number: string, manualScrape?: ManualScrapeOptions): string {
-    return manualScrape ? `${number}::manual::${manualScrape.site}::${manualScrape.detailUrl ?? ""}` : number;
+  private buildKey(number: string, manualScrape?: ManualScrapeOptions): string {
+    const mode = manualScrape ? "manual" : "auto";
+    const site = manualScrape?.site ?? "";
+    const detailUrl = manualScrape?.detailUrl ?? "";
+    return `${number.trim().toUpperCase()}::${mode}::${site}::${detailUrl}`;
   }
 }

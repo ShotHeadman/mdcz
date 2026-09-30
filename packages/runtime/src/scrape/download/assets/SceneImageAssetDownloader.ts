@@ -2,17 +2,23 @@ import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicCopyFile } from "@mdcz/media-store";
 
+import type { DirectoryInventory } from "../../DirectoryInventory";
 import { throwIfAborted } from "../../utils/abort";
 import {
   buildSceneImageFileName,
   getSceneImageSets,
-  listExistingSceneImages,
-  removeStaleSceneImages,
   resolveExistingImageAsset,
+  SCENE_IMAGE_FILE_PATTERN,
   shouldKeepAsset,
   uniqueFilePaths,
 } from "./helpers";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan } from "./types";
+
+const listExistingSceneImages = async (sceneDir: string, inventory: DirectoryInventory): Promise<string[]> =>
+  (await inventory.entries(sceneDir))
+    .filter((entry) => entry.isFile() && SCENE_IMAGE_FILE_PATTERN.test(entry.name))
+    .map((entry) => join(sceneDir, entry.name))
+    .sort((a, b) => a.localeCompare(b));
 
 export class SceneImageAssetDownloader implements AssetDownloader {
   shouldDownload(plan: DownloadExecutionPlan): boolean {
@@ -31,7 +37,10 @@ export class SceneImageAssetDownloader implements AssetDownloader {
     if (keepSceneImages) {
       const preservedSceneImages =
         plan.existingAssets?.sceneImages ??
-        (await listExistingSceneImages(join(plan.existingAssetDir, plan.config.paths.sceneImagesFolder)));
+        (await listExistingSceneImages(
+          join(plan.existingAssetDir, plan.config.paths.sceneImagesFolder),
+          plan.inventory,
+        ));
       if (preservedSceneImages.length > 0) {
         assets.sceneImages.push(...preservedSceneImages);
         return;
@@ -40,17 +49,20 @@ export class SceneImageAssetDownloader implements AssetDownloader {
 
     throwIfAborted(plan.signal);
 
-    const existingSceneImages = await listExistingSceneImages(sceneDir);
+    const existingSceneImages = await listExistingSceneImages(sceneDir, plan.inventory);
     const sceneImageComparisonPaths = uniqueFilePaths([
       assets.thumb,
       plan.existingAssets?.fanart ??
-        (await resolveExistingImageAsset(join(plan.existingAssetDir, plan.assetFileNames.fanart))),
+        (await resolveExistingImageAsset(join(plan.existingAssetDir, plan.assetFileNames.fanart), plan.inventory)),
     ]);
     const targetSceneCount = Math.max(0, plan.config.aggregation.behavior.maxSceneImages);
     const sceneImageSets = getSceneImageSets(plan.data, plan.imageAlternatives, targetSceneCount);
 
     if (sceneImageSets.length === 0) {
-      await this.handleMissingSceneImageSets(plan, assets, existingSceneImages, forceReplaceSceneImages, sceneDir);
+      if (!forceReplaceSceneImages) assets.sceneImages.push(...existingSceneImages);
+      plan.callbacks?.onResolvedSceneImageUrls?.(
+        existingSceneImages.length && !forceReplaceSceneImages ? undefined : [],
+      );
       return;
     }
 
@@ -105,31 +117,6 @@ export class SceneImageAssetDownloader implements AssetDownloader {
       existingSceneImages,
       forceReplaceSceneImages,
     );
-
-    if (assets.sceneImages.length > 0 || forceReplaceSceneImages) {
-      await removeStaleSceneImages(existingSceneImages, assets.sceneImages, sceneDir);
-    }
-  }
-
-  private async handleMissingSceneImageSets(
-    plan: DownloadExecutionPlan,
-    assets: DownloadExecutionContext["assets"],
-    existingSceneImages: string[],
-    forceReplaceSceneImages: boolean,
-    sceneDir: string,
-  ): Promise<void> {
-    if (forceReplaceSceneImages && existingSceneImages.length > 0) {
-      await removeStaleSceneImages(existingSceneImages, [], sceneDir);
-    } else {
-      assets.sceneImages.push(...existingSceneImages);
-    }
-
-    if (existingSceneImages.length > 0 && !forceReplaceSceneImages) {
-      plan.callbacks?.onResolvedSceneImageUrls?.(undefined);
-      return;
-    }
-
-    plan.callbacks?.onResolvedSceneImageUrls?.([]);
   }
 
   private reportResolvedSceneImageUrls(

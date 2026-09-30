@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mdcz/ui";
+import { useT } from "@mdcz/views/i18n";
 import { LogsPanelView } from "@mdcz/views/logs";
 import { useLogStore } from "@mdcz/views/state/logStore";
 import { createFileRoute } from "@tanstack/react-router";
@@ -33,6 +34,7 @@ export const Route = createFileRoute("/logs")({
 });
 
 function LogsComponent() {
+  const t = useT();
   const { logs, clearLogs } = useLogStore();
   const [autoScroll, setAutoScroll] = useState(true);
   const [query, setQuery] = useState("");
@@ -68,12 +70,12 @@ function LogsComponent() {
       <div className="mx-auto grid w-full max-w-[1240px] gap-7 px-6 py-8 lg:px-10 lg:py-10">
         <LogsPanelView
           autoScroll={autoScroll}
-          emptyText={query ? "没有匹配的日志。" : "暂无日志。刮削或维护任务开始后，运行日志会显示在这里。"}
+          emptyText={query ? t.desktop.logsNoMatch : t.desktop.logsEmpty}
           logs={filteredLogs}
           query={query}
           onAutoScrollChange={(nextValue) => {
             setAutoScroll(nextValue);
-            toast.info(nextValue ? "已开启自动滚动" : "已关闭自动滚动");
+            toast.info(nextValue ? t.desktop.autoScrollEnabled : t.desktop.autoScrollDisabled);
           }}
           onClearRuntime={() => setIsClearDialogOpen(true)}
           onQueryChange={setQuery}
@@ -81,13 +83,13 @@ function LogsComponent() {
         <Dialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
           <DialogContent className="max-w-md gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)]">
             <DialogHeader className="space-y-2 text-left">
-              <DialogTitle>清空所有日志</DialogTitle>
-              <DialogDescription>确定要清空所有日志内容吗？</DialogDescription>
+              <DialogTitle>{t.desktop.clearAllLogsTitle}</DialogTitle>
+              <DialogDescription>{t.desktop.clearAllLogsDescription}</DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:justify-end">
               <DialogClose asChild>
                 <Button type="button" variant="secondary">
-                  取消
+                  {t.common.cancel}
                 </Button>
               </DialogClose>
               <Button
@@ -96,10 +98,10 @@ function LogsComponent() {
                 onClick={() => {
                   clearLogs();
                   setIsClearDialogOpen(false);
-                  toast.success("日志已成功清空");
+                  toast.success(t.desktop.logsCleared);
                 }}
               >
-                确定清空
+                {t.desktop.confirmClear}
               </Button>
             </DialogFooter>
           </DialogContent>

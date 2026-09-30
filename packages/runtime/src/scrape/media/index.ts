@@ -8,6 +8,7 @@ export {
   findGeneratedVideoSidecars,
   type GeneratedVideoSidecarMatch,
   isGeneratedSidecarVideo,
+  isPrimaryVideoFile,
 } from "./generatedSidecarVideos";
 export {
   buildSubtitleSidecarTargetPath,

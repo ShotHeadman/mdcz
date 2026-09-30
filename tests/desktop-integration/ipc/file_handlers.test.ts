@@ -4,7 +4,6 @@ import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
 import { createFileHandlers } from "@main/ipc/handlers/file";
 import { configManager } from "@main/services/config/ConfigManager";
-import { createMemoryPublicationJournal } from "@mdcz/runtime/publication/memoryJournal";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
@@ -75,6 +74,11 @@ const createContext = (mediaRoots?: {
       if (!root) throw new Error(`Unknown root: ${rootId}`);
       return root;
     });
+  const library = {
+    publicationRoots: () => [],
+    publicationSnapshot: () => ({ files: [], assets: [] }),
+    writeEntry: vi.fn(() => "item"),
+  };
   return {
     windowService: {
       getMainWindow: () => null,
@@ -82,7 +86,7 @@ const createContext = (mediaRoots?: {
     persistenceService: {
       getState: async () => ({
         repositories: {
-          publicationJournal: createMemoryPublicationJournal(),
+          library,
           mediaRoots: { ensurePath, get, list, upsert },
         },
       }),
@@ -227,24 +231,6 @@ describe("createFileHandlers", () => {
     );
   });
 
-  it("deletes a containing folder from its media root ref", async () => {
-    const root = await createTempDir();
-    const folder = join(root, "nested");
-    await mkdir(folder);
-    await writeFile(join(folder, "movie.mp4"), "video");
-    await writeFile(join(folder, "movie.nfo"), "metadata");
-    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
-
-    await expect(
-      handlers[IpcChannel.File_Delete].action(
-        actionArgs({
-          targets: [{ rootId: "media", relativePath: "nested/movie.mp4" }],
-          containingFolder: true,
-        }),
-      ),
-    ).resolves.toEqual({ deletedCount: 2, failedCount: 0 });
-    await expect(readFile(join(folder, "movie.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
-  });
   it("applies configured NFO fields when manually saving metadata", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "ABC-123.nfo");
@@ -325,7 +311,38 @@ describe("createFileHandlers", () => {
       thumbPath,
       '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500"><rect width="100%" height="100%" fill="#c84630"/></svg>',
     );
-    const handlers = createFileHandlers(createContext({ list: async () => [{ id: "media", hostPath: root }] }));
+    const context = createContext({ list: async () => [{ id: "media", hostPath: root }] });
+    const library = (await context.persistenceService.getState()).repositories.library;
+    Object.assign(library, {
+      getEntryById: async () => ({
+        assets: [
+          {
+            kind: "thumb",
+            uri: "thumb.jpg",
+            fileId: null,
+            rootId: "media",
+            relativePath: "thumb.jpg",
+            published: true,
+            historical: false,
+          },
+        ],
+      }),
+      publicationSnapshot: () => ({
+        files: [{ itemId: "item", fileId: "file", rootId: "media", relativePath: "ABC-123.mp4" }],
+        assets: [
+          {
+            itemId: "item",
+            fileId: null,
+            kind: "thumb",
+            rootId: "media",
+            relativePath: "thumb.jpg",
+            published: true,
+            historical: false,
+          },
+        ],
+      }),
+    });
+    const handlers = createFileHandlers(context);
     const videoRef = { rootId: "media", relativePath: "ABC-123.mp4" };
     const thumbRef = { rootId: "media", relativePath: "thumb.jpg" };
     await expect(handlers[IpcChannel.File_Exists].action(actionArgs({ path: thumbRef }))).resolves.toEqual({
@@ -346,6 +363,16 @@ describe("createFileHandlers", () => {
     );
     expect(saved.revision).toEqual(expect.any(String));
     expect((await readFile(saved.targetPath)).length).toBeGreaterThan(0);
+    expect(library.writeEntry).toHaveBeenCalledWith(
+      {
+        id: "item",
+        assets: [
+          expect.objectContaining({ kind: "thumb", relativePath: "thumb.jpg", published: true }),
+          expect.objectContaining({ kind: "poster", relativePath: "poster.jpg", published: true }),
+        ],
+      },
+      [],
+    );
   });
 
   it("does not persist media roots for file reads", async () => {

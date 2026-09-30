@@ -1,6 +1,7 @@
 import { Badge, cn } from "@mdcz/ui";
 import { ImageIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "../i18n";
 import { NaturalAspectImageFrame } from "./NaturalAspectImageFrame";
 
 export type ResolveImageOptionCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
@@ -37,9 +38,13 @@ const dedupeValues = (values: string[]): string[] =>
 
 const defaultResolveImageCandidates: ResolveImageOptionCandidates = async (candidates) => dedupeValues(candidates);
 
-const formatDimensions = (width: number | null | undefined, height: number | null | undefined): string => {
+const formatDimensions = (
+  width: number | null | undefined,
+  height: number | null | undefined,
+  unknownLabel: string,
+): string => {
   if (!width || !height) {
-    return "未知";
+    return unknownLabel;
   }
   return `${width} x ${height}`;
 };
@@ -77,7 +82,7 @@ export function ImageOptionCard({
   baseDir,
   defaultAspectRatio,
   empty = false,
-  emptyText = "暂无图片",
+  emptyText,
   fallbackSrcs = [],
   height,
   imageFrameClassName,
@@ -94,6 +99,8 @@ export function ImageOptionCard({
   subtitle,
   width,
 }: ImageOptionCardProps) {
+  const t = useT();
+  const effectiveEmptyText = emptyText ?? t.media.imageOption.emptyText;
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [measuredSize, setMeasuredSize] = useState<{ height: number; src: string; width: number } | null>(null);
   const rawCandidates = useMemo(() => {
@@ -131,7 +138,7 @@ export function ImageOptionCard({
         emptyNode={
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <ImageIcon className="h-8 w-8 opacity-40" />
-            <span className="text-xs">{emptyText}</span>
+            <span className="text-xs">{effectiveEmptyText}</span>
           </div>
         }
         onError={() => {
@@ -164,8 +171,8 @@ export function ImageOptionCard({
             </div>
             {showDimensions ? (
               <div className="text-sm text-foreground wrap-anywhere">
-                <span className="text-muted-foreground">尺寸: </span>
-                <span>{formatDimensions(resolvedWidth, resolvedHeight)}</span>
+                <span className="text-muted-foreground">{t.media.imageOption.dimensions}</span>
+                <span>{formatDimensions(resolvedWidth, resolvedHeight, t.media.imageOption.unknown)}</span>
               </div>
             ) : null}
             {sourceRows.map((row) => (

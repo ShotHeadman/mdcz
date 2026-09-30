@@ -2,6 +2,7 @@ import { Button, Checkbox, cn, FormControl } from "@mdcz/ui";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
+import { useT } from "../i18n";
 import { normalizeEnabledSites } from "../settings/orderedSite";
 
 type OrderedSiteFieldCheckboxState = boolean | "indeterminate";
@@ -29,9 +30,6 @@ interface OrderedSiteFieldProps<RowId extends string = string> {
   rows?: OrderedSiteFieldRow<RowId>[];
   selectedCount?: number;
   totalCount?: number;
-  countLabel?: string;
-  selectAllLabel?: string;
-  clearAllLabel?: string;
   onToggleRow?: (rowId: RowId, enabled: boolean) => void;
   onMoveRow?: (rowId: RowId, direction: -1 | 1) => void;
   onSelectAll?: () => void;
@@ -57,14 +55,12 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
   rows,
   selectedCount,
   totalCount,
-  countLabel = "已启用",
-  selectAllLabel = "全选",
-  clearAllLabel = "全不选",
   onToggleRow,
   onMoveRow,
   onSelectAll,
   onClearAll,
 }: OrderedSiteFieldProps<RowId>) {
+  const t = useT();
   const enabledSites = normalizeEnabledSites(value);
   const disabledSites = options.filter((site) => !enabledSites.includes(site));
   const visibleSites = [...enabledSites, ...disabledSites];
@@ -150,13 +146,13 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
       <div className="divide-y overflow-hidden rounded-[var(--radius-quiet-lg)] border border-border/60 bg-surface">
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
           <span className="mr-auto">
-            {countLabel} {resolvedSelectedCount}/{resolvedTotalCount}
+            {t.configForm.orderedSite.enabledCount(resolvedSelectedCount, resolvedTotalCount)}
           </span>
           <Button type="button" variant="ghost" size="xs" onClick={handleSelectAll} disabled={!canSelectAll}>
-            {selectAllLabel}
+            {t.configForm.selectAll}
           </Button>
           <Button type="button" variant="ghost" size="xs" onClick={handleClearAll} disabled={!canClearAll}>
-            {clearAllLabel}
+            {t.configForm.selectNone}
           </Button>
         </div>
 
@@ -205,7 +201,7 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
                     size="icon-sm"
                     disabled={moveUpDisabled}
                     onClick={() => handleMoveRow(row.id, -1)}
-                    aria-label={`上移 ${row.label}`}
+                    aria-label={t.configForm.orderedSite.moveUp(row.label)}
                   >
                     <ArrowUp className="size-3.5" />
                   </Button>
@@ -215,7 +211,7 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
                     size="icon-sm"
                     disabled={moveDisabled}
                     onClick={() => handleMoveRow(row.id, 1)}
-                    aria-label={`下移 ${row.label}`}
+                    aria-label={t.configForm.orderedSite.moveDown(row.label)}
                   >
                     <ArrowDown className="size-3.5" />
                   </Button>

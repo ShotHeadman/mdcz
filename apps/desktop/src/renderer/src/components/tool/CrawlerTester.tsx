@@ -1,5 +1,6 @@
 import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useT } from "@mdcz/views/i18n";
 import { CrawlerTesterDetail, type CrawlerTesterDetailProps, type ToolRunState } from "@mdcz/views/tools";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -9,6 +10,7 @@ import { useToast } from "@/contexts/ToastProvider";
 type CrawlerTestResult = NonNullable<CrawlerTesterDetailProps["result"]>;
 
 export function CrawlerTester() {
+  const t = useT();
   const { showError, showSuccess } = useToast();
   const sitesQ = useQuery({
     queryKey: ["crawler", "sites"],
@@ -27,11 +29,11 @@ export function CrawlerTester() {
 
   const handleCrawlerTest: CrawlerTesterDetailProps["onRun"] = async ({ number, site }) => {
     if (!site) {
-      showError("请选择站点");
+      showError(t.desktop.selectSite);
       return;
     }
     if (!number.trim()) {
-      showError("请输入番号");
+      showError(t.desktop.enterMovieNumber);
       return;
     }
 
@@ -41,12 +43,12 @@ export function CrawlerTester() {
       const result = await ipc.crawler.test(site as Website, number.trim());
       setCrawlerTestResult(result);
       if (result.data) {
-        showSuccess(`测试成功，耗时 ${(result.elapsed / 1000).toFixed(1)}s`);
+        showSuccess(t.desktop.testSucceededWithTime((result.elapsed / 1000).toFixed(1)));
       } else {
-        showError(result.error ?? "未获取到数据");
+        showError(result.error ?? t.desktop.noDataRetrieved);
       }
     } catch (error) {
-      showError(`爬虫测试失败: ${toErrorMessage(error)}`);
+      showError(t.desktop.crawlerTestFailed(toErrorMessage(error)));
     } finally {
       setCrawlerTesting(false);
     }

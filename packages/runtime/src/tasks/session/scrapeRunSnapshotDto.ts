@@ -1,17 +1,20 @@
 import path from "node:path";
-import type { AssetRef } from "@mdcz/shared/mediaRef";
+import { type DiscoveryProgress, directoryTaskScopeSchema } from "@mdcz/shared/directoryTasks";
 import type {
   AmbiguousUncensoredItemDto,
   LogEntryDto,
   ScrapeLiveItemDto,
   ScrapeRunSnapshotDto,
 } from "@mdcz/shared/serverDtos";
-import type { CrawlerData, ScrapeResult } from "@mdcz/shared/types";
-import type { ScrapeRunItemSnapshot, ScrapeRunLiveStatus, ScrapeRunSnapshot } from "./ScrapeRunSession";
+import type { ScrapeRunItemSnapshot, ScrapeRunSnapshot } from "./ScrapeRunSession";
 
 export interface ScrapeSnapshotManifest {
+  directoryScopeJson?: string | null;
+  discoveryJson?: string | null;
+  manifestFixedAt?: Date | null;
   id: string;
   rootId: string;
+  previousRunId: string | null;
   createdAt: Date;
   items: Array<{ id: string; rootId: string; relativePath: string; manualUrl?: string | null }>;
 }
@@ -56,19 +59,23 @@ const liveLogToDto = (runId: string, log: ScrapeRunSnapshot["logs"][number], ind
 };
 
 const liveAmbiguousUncensoredItems = (snapshot: ScrapeRunSnapshot): AmbiguousUncensoredItemDto[] =>
-  snapshot.items
-    .filter((item) => item.status === "success" && item.result?.uncensoredAmbiguous === true)
-    .map((item) => ({
-      id: item.result?.resultId ?? item.id,
-      ref: { rootId: item.rootId, relativePath: item.relativePath },
-      fileId: item.id,
-      fileName: path.posix.basename(item.relativePath),
-      number:
-        item.result?.crawlerData?.number ??
-        path.posix.basename(item.relativePath, path.posix.extname(item.relativePath)),
-      title: item.result?.crawlerData?.title_zh ?? item.result?.crawlerData?.title ?? null,
-      nfoRelativePath: item.result?.nfo?.relativePath ?? null,
-    }));
+  snapshot.items.flatMap((item) => {
+    if (item.status !== "success" || !item.result?.uncensoredAmbiguous || !item.result.resultId || !item.result.output)
+      return [];
+    return [
+      {
+        id: item.result.resultId,
+        ref: item.result.output,
+        fileId: item.result.resultId,
+        fileName: path.posix.basename(item.relativePath),
+        number:
+          item.result.crawlerData?.number ??
+          path.posix.basename(item.relativePath, path.posix.extname(item.relativePath)),
+        title: item.result.crawlerData?.title_zh ?? item.result.crawlerData?.title ?? null,
+        nfoRelativePath: item.result.nfo?.relativePath ?? null,
+      },
+    ];
+  });
 
 export const toScrapeRunSnapshotDto = (input: {
   manifest: ScrapeSnapshotManifest;
@@ -87,144 +94,40 @@ export const toScrapeRunSnapshotDto = (input: {
       rootId: input.manifest.rootId,
       rootDisplayName: input.rootDisplayName,
       revision: input.snapshot.revision,
-      executionGeneration: input.snapshot.executionGeneration,
       status: input.snapshot.status,
       createdAt: input.manifest.createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),
       startedAt: input.startedAt?.toISOString() ?? null,
       completedAt: completedAt?.toISOString() ?? null,
-      totalItems: input.snapshot.items.length,
+      totalItems:
+        input.manifest.directoryScopeJson && !input.manifest.manifestFixedAt
+          ? null
+          : input.snapshot.progress.totalItems,
       successCount: input.snapshot.items.filter((item) => item.status === "success").length,
       failedCount: input.snapshot.items.filter((item) => item.status === "failed").length,
       skippedCount: input.snapshot.items.filter((item) => item.status === "skipped").length,
       error: input.snapshot.error,
       continuity: input.snapshot.status === "interrupted" ? "interrupted" : terminal ? "final" : "live",
+      previousTaskId: input.manifest.previousRunId,
     },
-    progress: { ...input.snapshot.progress },
+    directorySource: input.manifest.directoryScopeJson
+      ? directoryTaskScopeSchema.parse(JSON.parse(input.manifest.directoryScopeJson))
+      : null,
+    discovery:
+      input.snapshot.discovery ??
+      (input.manifest.discoveryJson ? (JSON.parse(input.manifest.discoveryJson) as DiscoveryProgress) : null),
+    progress:
+      input.manifest.directoryScopeJson && !input.manifest.manifestFixedAt
+        ? { ...input.snapshot.progress, percent: null, totalItems: null }
+        : { ...input.snapshot.progress },
     items: input.snapshot.items.map((item) => liveItemToDto(input.manifest, item)),
     latestStage: input.snapshot.latestStage
       ? {
           stage: input.snapshot.latestStage.stage,
-          message: input.snapshot.latestStage.message,
           relativePath: input.snapshot.latestStage.relativePath,
         }
       : null,
     logs: input.snapshot.logs.map((log, index) => liveLogToDto(input.snapshot.runId, log, index)),
     ambiguousUncensoredItems: liveAmbiguousUncensoredItems(input.snapshot),
-  };
-};
-
-export interface FinalizedScrapeRun {
-  id: string;
-  executionGeneration: number;
-  revision: number;
-  disposition: Extract<ScrapeRunLiveStatus, "completed" | "failed" | "stopped" | "interrupted">;
-  error: string | null;
-  items: Array<{ id: string; rootId: string; relativePath: string }>;
-  outcomes: Array<{
-    id: string;
-    itemId: string;
-    outcome: "success" | "failed" | "skipped";
-    error: string | null;
-    crawlerDataJson: string | null;
-    nfoRootId: string | null;
-    nfoRelativePath: string | null;
-    outputRootId: string | null;
-    outputRelativePath: string | null;
-    uncensoredAmbiguous: boolean;
-    assets?: Array<{ kind: string; uri: string; rootId: string | null; relativePath: string | null }>;
-  }>;
-}
-
-const latestOutcomeByItem = (
-  outcomes: FinalizedScrapeRun["outcomes"],
-): Map<string, FinalizedScrapeRun["outcomes"][number]> => {
-  const latest = new Map<string, FinalizedScrapeRun["outcomes"][number]>();
-  for (const outcome of outcomes) latest.set(outcome.itemId, outcome);
-  return latest;
-};
-
-export const toScrapeResultFromOutcome = (
-  item: Pick<FinalizedScrapeRun["items"][number], "id" | "rootId" | "relativePath">,
-  outcome: FinalizedScrapeRun["outcomes"][number],
-): ScrapeResult => {
-  const crawlerData = outcome.crawlerDataJson ? (JSON.parse(outcome.crawlerDataJson) as CrawlerData) : undefined;
-  const assets: AssetRef[] = [];
-  for (const asset of outcome.assets ?? []) {
-    if (asset.rootId && asset.relativePath) {
-      assets.push({
-        type: "local",
-        kind: asset.kind,
-        file: { rootId: asset.rootId, relativePath: asset.relativePath },
-      });
-    } else if (asset.uri) {
-      assets.push({ type: "remote", kind: asset.kind, url: asset.uri });
-    }
-  }
-  const nfoRootId = outcome.nfoRootId ?? outcome.outputRootId ?? item.rootId;
-  return {
-    fileId: item.id,
-    rootId: item.rootId,
-    relativePath: item.relativePath,
-    fileName: path.posix.basename(item.relativePath),
-    status: outcome.outcome,
-    resultId: outcome.id,
-    assets,
-    ...(crawlerData ? { crawlerData } : {}),
-    ...(outcome.error ? { error: outcome.error } : {}),
-    ...(outcome.uncensoredAmbiguous ? { uncensoredAmbiguous: true } : {}),
-    ...(outcome.nfoRelativePath ? { nfo: { rootId: nfoRootId, relativePath: outcome.nfoRelativePath } } : {}),
-    ...(outcome.outputRootId && outcome.outputRelativePath
-      ? { output: { rootId: outcome.outputRootId, relativePath: outcome.outputRelativePath } }
-      : {}),
-  };
-};
-
-const finalizedItemSnapshot = (
-  item: FinalizedScrapeRun["items"][number],
-  outcome: FinalizedScrapeRun["outcomes"][number] | undefined,
-): ScrapeRunItemSnapshot => {
-  if (!outcome) {
-    return {
-      id: item.id,
-      rootId: item.rootId,
-      relativePath: item.relativePath,
-      sourcePath: item.relativePath,
-      status: "pending",
-      error: null,
-    };
-  }
-  return {
-    id: item.id,
-    rootId: item.rootId,
-    relativePath: item.relativePath,
-    sourcePath: item.relativePath,
-    status: outcome.outcome,
-    error: outcome.error,
-    result: toScrapeResultFromOutcome(item, outcome),
-  };
-};
-
-export const toFinalizedScrapeRunSnapshot = (run: FinalizedScrapeRun): ScrapeRunSnapshot => {
-  const latest = latestOutcomeByItem(run.outcomes);
-  const items = run.items.map((item) => finalizedItemSnapshot(item, latest.get(item.id)));
-  const completedItems = items.filter(
-    (item) => item.status === "success" || item.status === "failed" || item.status === "skipped",
-  ).length;
-  return {
-    runId: run.id,
-    executionGeneration: run.executionGeneration,
-    generation: 0,
-    revision: run.revision,
-    status: run.disposition,
-    progress: {
-      completedItems,
-      totalItems: items.length,
-      percent: items.length === 0 ? 0 : Math.round((completedItems / items.length) * 100),
-    },
-    items,
-    latestStage: null,
-    logs: [],
-    error: run.error,
   };
 };

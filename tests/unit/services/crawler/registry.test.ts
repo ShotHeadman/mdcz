@@ -5,7 +5,7 @@ import {
   listRegisteredCrawlerRequestConfigs,
   listRegisteredCrawlerSites,
 } from "@mdcz/runtime/crawler";
-import type { Website } from "@mdcz/shared/enums";
+import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 type CrawlerModule = {
@@ -38,6 +38,7 @@ describe("crawler registry", () => {
     const concreteCrawlerSites = collectConcreteCrawlerSites();
 
     expect(new Set(listRegisteredCrawlerSites())).toEqual(new Set(concreteCrawlerSites));
+    expect(new Set(concreteCrawlerSites)).toEqual(new Set(Object.values(Website)));
 
     for (const site of concreteCrawlerSites) {
       expect(getCrawlerConstructor(site)).toBeDefined();

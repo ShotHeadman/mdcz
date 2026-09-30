@@ -1,12 +1,7 @@
 import { join } from "node:path";
 
 import { throwIfAborted } from "../../utils/abort";
-import {
-  buildImageAssetPathFromSource,
-  removeStaleImageAssetVariants,
-  resolveExistingImageAsset,
-  shouldKeepAsset,
-} from "./helpers";
+import { buildImageAssetPathFromSource, resolveExistingImageAsset, shouldKeepAsset } from "./helpers";
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan } from "./types";
 
 export class FanartAssetDownloader implements AssetDownloader {
@@ -24,13 +19,15 @@ export class FanartAssetDownloader implements AssetDownloader {
 
     if (thumbPath) {
       const thumbWasRefreshed = assets.downloaded.includes(thumbPath) || plan.forceReplace.fanart;
-      const keepFanart = thumbWasRefreshed
-        ? false
-        : shouldKeepAsset(plan.assetDecisions.fanart, plan.config.download.keepFanart);
+      const keepFanart = shouldKeepAsset(
+        plan.assetDecisions.fanart,
+        thumbWasRefreshed ? false : plan.config.download.keepFanart,
+      );
       const fanartPath = buildImageAssetPathFromSource(fanartTargetPath, thumbPath);
       const existingFanart = await resolveExistingImageAsset(
         plan.existingAssets?.fanart ??
           buildImageAssetPathFromSource(join(plan.existingAssetDir, plan.assetFileNames.fanart), thumbPath),
+        plan.inventory,
       );
 
       if (keepFanart && existingFanart) {
@@ -42,11 +39,10 @@ export class FanartAssetDownloader implements AssetDownloader {
       if (createdPath) {
         assets.fanart = createdPath;
         assets.downloaded.push(createdPath);
-        await removeStaleImageAssetVariants(fanartTargetPath, createdPath);
         return;
       }
 
-      if (existingFanart) {
+      if (existingFanart && plan.assetDecisions.fanart !== "replace") {
         assets.fanart = existingFanart;
       }
       return;
@@ -54,8 +50,9 @@ export class FanartAssetDownloader implements AssetDownloader {
 
     const existingFanart = await resolveExistingImageAsset(
       plan.existingAssets?.fanart ?? join(plan.existingAssetDir, plan.assetFileNames.fanart),
+      plan.inventory,
     );
-    if (existingFanart) {
+    if (existingFanart && plan.assetDecisions.fanart !== "replace") {
       assets.fanart = existingFanart;
     }
   }

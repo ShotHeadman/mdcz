@@ -43,21 +43,20 @@ describe("workbench session scrape setup", () => {
     expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
   });
 
-  it("hydrates incremental read_local previews and rejects retired sessions", () => {
+  it("hydrates incremental import_local previews and rejects retired sessions", () => {
     const refs = ["one.mp4", "two.mp4"].map((relativePath) => ({ rootId: "root-1", relativePath }));
     const session = new MaintenanceSession({
       id: "maintenance-1",
       rootId: "root-1",
-      presetId: "read_local",
+      presetId: "import_local",
       refs,
-      generation: 1,
     });
-    session.startRunning(1);
+    session.startRunning();
     useMaintenanceStore.getState().setSnapshot(session.snapshot());
     expect(selectMaintenanceEntries(useMaintenanceStore.getState())).toEqual([]);
 
     for (const ref of refs) {
-      session.commitPreview(1, {
+      session.commitPreview({
         ...ref,
         status: "ready",
         error: null,
@@ -75,6 +74,7 @@ describe("workbench session scrape setup", () => {
             number: ref.relativePath,
             isSubtitled: false,
           },
+          nfoPaths: [],
           assets: { sceneImages: [], actorPhotos: [] },
           crawlerData: { title: ref.relativePath, number: ref.relativePath, actors: [], genres: [], scene_images: [] },
           currentDir: "/media",
@@ -86,18 +86,15 @@ describe("workbench session scrape setup", () => {
         useMaintenanceStore.getState().toggleSelectedIds(["root-1:one.mp4"]);
       }
     }
-    session.finish(1, "completed", null);
+    session.finish("completed", null);
     const completed = session.snapshot();
     useMaintenanceStore.getState().setSnapshot(completed);
     expect(selectMaintenanceEntries(useMaintenanceStore.getState())).toHaveLength(2);
     expect(selectMaintenanceProgress(useMaintenanceStore.getState())).toBe(100);
     expect(useMaintenanceStore.getState().selectedIds).toEqual(["root-1:two.mp4"]);
-    useMaintenanceStore.getState().setSnapshot({ ...completed, generation: 0, previews: [] });
-    expect(useMaintenanceStore.getState().snapshot).toBe(completed);
-
-    changeMaintenancePreset("organize_files");
+    changeMaintenancePreset("local_organize");
     useMaintenanceStore.getState().setSnapshot(completed);
     expect(useMaintenanceStore.getState().snapshot).toBeNull();
-    expect(useMaintenanceStore.getState().presetId).toBe("organize_files");
+    expect(useMaintenanceStore.getState().presetId).toBe("local_organize");
   });
 });

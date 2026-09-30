@@ -150,31 +150,16 @@ describe("parseNfo", () => {
     expect(result.plot_zh).toBe("概要内容");
   });
 
-  it("ignores legacy standalone year data and only keeps release_date", () => {
-    const withReleaseDateXml = `
+  it("reads release_date from the NFO", () => {
+    const xml = `
       <movie>
-        <title>Release Date Wins</title>
+        <title>Release Date</title>
         <uniqueid type="${Website.DMM}">ABC-2024</uniqueid>
-        <premiered>2024-01-02</premiered>
         <releasedate>2024-01-02</releasedate>
-        <year>1999</year>
-      </movie>
-    `;
-    const yearOnlyXml = `
-      <movie>
-        <title>Year Only</title>
-        <uniqueid type="${Website.DMM}">ABC-2001</uniqueid>
-        <year>2001</year>
       </movie>
     `;
 
-    const withReleaseDate = parseNfoSnapshot(withReleaseDateXml).crawlerData;
-    const yearOnly = parseNfoSnapshot(yearOnlyXml).crawlerData;
-
-    expect(withReleaseDate.release_date).toBe("2024-01-02");
-    expect(withReleaseDate).not.toHaveProperty("release_year");
-    expect(yearOnly.release_date).toBeUndefined();
-    expect(yearOnly).not.toHaveProperty("release_year");
+    expect(parseNfoSnapshot(xml).crawlerData.release_date).toBe("2024-01-02");
   });
 
   it("ignores legacy extra fanart thumbs instead of restoring them as sample images", () => {

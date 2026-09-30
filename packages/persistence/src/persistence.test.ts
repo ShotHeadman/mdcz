@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createMediaRoot } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 
 import { createPersistenceDatabase, type PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
-import { LibraryRepository } from "./libraryRepository";
+import { LibraryRepository, selectRepresentativeFile } from "./libraryRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
 import { defaultMigrationsFolder, runMigrations } from "./migrate";
 import { ScanTaskRepository } from "./scanTaskRepository";
@@ -43,16 +43,7 @@ describe("Persistence migrations", () => {
     expect(tables).toContain("scan_tasks");
     expect(tables).toContain("scan_task_events");
     expect(tables).toContain("scrape_runs");
-    expect(tables).toContain("scrape_run_items");
-    expect(tables).toContain("scrape_item_outcomes");
-    expect(tables).not.toContain("scrape_run_summaries");
-    expect(tables).not.toContain("scrape_outputs");
-    expect(tables).not.toContain("scrape_results");
-    expect(tables).not.toContain("library_entries");
-    expect(tables).not.toContain("maintenance_previews");
-    expect(tables).not.toContain("maintenance_apply_log");
-    expect(tables).not.toContain("maintenance_apply_items");
-    expect(tables).not.toContain("maintenance_executions");
+    expect(tables).not.toContain("scrape_run_items");
     expect(tables).toContain("library_items");
     expect(tables).toContain("library_item_files");
     expect(tables).toContain("library_item_assets");
@@ -65,9 +56,8 @@ describe("Persistence migrations", () => {
     expect(indexes).toEqual(
       expect.arrayContaining([
         "library_item_assets_item_idx",
-        "library_item_files_item_idx",
+        "library_item_assets_output_idx",
         "library_item_files_root_path_idx",
-        "library_items_source_run_idx",
         "scan_results_task_root_path_idx",
         "scan_tasks_queue_idx",
         "scan_task_events_task_created_at_idx",
@@ -83,7 +73,7 @@ describe("Persistence migrations", () => {
     expect(database.sqlite.pragma("synchronous", { simple: true })).toBe(2);
   });
 
-  it("upgrades the v0.11 schema through the consolidated migration", async () => {
+  it("resets the legacy library index while preserving roots, scans, and scrape history", async () => {
     const migrations = await createTempDirectory("persistence-v011-migrations");
     try {
       await mkdir(join(migrations.path, "meta"), { recursive: true });
@@ -154,7 +144,42 @@ describe("Persistence migrations", () => {
         )
         .run("asset-1", "library-1", "poster", "ABC-001/poster.jpg", "path-deterministic", "ABC-001/poster.jpg", 10);
 
+      for (const name of [
+        "0001_task_execution_and_media_root_identity.sql",
+        "0002_legacy_012_bridge.sql",
+        "0003_additive_roots_and_scan_tasks.sql",
+      ]) {
+        await cp(join(defaultMigrationsFolder, name), join(migrations.path, name));
+      }
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 3) }),
+      );
+      runMigrations(database, { migrationsFolder: migrations.path });
+      database.sqlite.exec(`
+        INSERT INTO scrape_runs (id, root_id, execution_mode, created_at)
+        VALUES ('scrape-run-1', 'path-deterministic', 'single', 20);
+        INSERT INTO scrape_run_items (id, run_id, ordinal, root_id, relative_path)
+        VALUES ('scrape-item-1', 'scrape-run-1', 0, 'path-deterministic', 'ABC-001.mp4');
+        INSERT INTO scrape_attempts (id, item_id, attempt, admitted_at)
+        VALUES ('scrape-attempt-1', 'scrape-item-1', 1, 20);
+        INSERT INTO scrape_item_outcomes (id, attempt_id, outcome, completed_at)
+        VALUES ('scrape-outcome-1', 'scrape-attempt-1', 'success', 21);
+      `);
+      await cp(
+        join(defaultMigrationsFolder, "0004_movie_file_model.sql"),
+        join(migrations.path, "0004_movie_file_model.sql"),
+      );
+      await writeFile(
+        join(migrations.path, "meta", "_journal.json"),
+        JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.idx <= 4) }),
+      );
+      runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
+      expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_runs'").all()).toEqual([
+        { name: "scrape_runs" },
+      ]);
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -172,60 +197,15 @@ describe("Persistence migrations", () => {
         { id: "mdcz-metadata-output" },
         { id: "path-deterministic" },
       ]);
-      const libraryItemColumns = database.sqlite.prepare("PRAGMA table_info(library_items)").all() as Array<{
-        name: string;
-      }>;
-      const libraryItemColumnNames = libraryItemColumns.map((column) => column.name);
-      expect(libraryItemColumnNames).toEqual(expect.arrayContaining(["source_run_id", "source_outcome_id"]));
-      expect(libraryItemColumnNames).not.toContain("source_task_id");
-      expect(libraryItemColumnNames).not.toContain("scrape_output_id");
       expect(
-        database.sqlite
-          .prepare(
-            "SELECT id, media_identity, crawler_data_json, source_run_id, source_outcome_id, title, number, actors_json, created_at, last_refreshed_at, hidden_from_recent_at FROM library_items",
-          )
-          .all(),
-      ).toEqual([
-        {
-          id: "library-1",
-          media_identity: "ABC-001",
-          crawler_data_json: '{"number":"ABC-001"}',
-          source_run_id: null,
-          source_outcome_id: null,
-          title: "Legacy title",
-          number: "ABC-001",
-          actors_json: '["Actor"]',
-          created_at: 10,
-          last_refreshed_at: 11,
-          hidden_from_recent_at: null,
-        },
-      ]);
-      expect(database.sqlite.prepare("SELECT * FROM library_item_files").all()).toEqual([
-        {
-          id: "library-1:primary",
-          item_id: "library-1",
-          root_id: "path-deterministic",
-          root_relative_path: "ABC-001/ABC-001.mp4",
-          file_name: "ABC-001.mp4",
-          directory: "ABC-001",
-          size: 123,
-          modified_at: 12,
-          last_known_path: "ABC-001/ABC-001.mp4",
-          created_at: 10,
-          updated_at: 11,
-        },
-      ]);
-      expect(database.sqlite.prepare("SELECT * FROM library_item_assets").all()).toEqual([
-        {
-          id: "asset-1",
-          item_id: "library-1",
-          kind: "poster",
-          uri: "ABC-001/poster.jpg",
-          root_id: "path-deterministic",
-          relative_path: "ABC-001/poster.jpg",
-          created_at: 10,
-        },
-      ]);
+        database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_item_outcomes'").all(),
+      ).toEqual([]);
+      expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_run_items'").all()).toEqual(
+        [],
+      );
+      expect(database.sqlite.prepare("SELECT * FROM library_items").all()).toEqual([]);
+      expect(database.sqlite.prepare("SELECT * FROM library_item_files").all()).toEqual([]);
+      expect(database.sqlite.prepare("SELECT * FROM library_item_assets").all()).toEqual([]);
     } finally {
       await migrations.cleanup();
     }
@@ -267,7 +247,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 4 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -326,7 +306,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 2 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 3 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
@@ -356,31 +336,46 @@ describe("MediaRootRepository", () => {
     await expect(repository.list()).resolves.toEqual([root]);
   });
 
-  it("reuses the enclosing root for a nested path", async () => {
+  it("registers a nested root independently of its enclosing root", async () => {
     database = createTestPersistenceDatabase();
     const repository = new MediaRootRepository(database);
+    const directory = await createTempDirectory("root-parent");
     const root = createMediaRoot({
       id: "root-parent",
       displayName: "Parent",
-      hostPath: "/media",
+      hostPath: directory.path,
       now: new Date("2026-08-22T00:00:00.000Z"),
     });
 
-    await repository.upsert(root);
-    await expect(repository.ensurePath("/media/child")).resolves.toEqual(root);
+    try {
+      await mkdir(join(directory.path, "child"));
+      await repository.upsert(root);
+      const admitted = await repository.ensurePath(join(directory.path, "child"));
+      expect(admitted.id).not.toBe(root.id);
+      expect(admitted.hostPath).toBe(join(directory.path, "child"));
+      await expect(repository.ensurePath(join(directory.path, "child"))).resolves.toEqual(admitted);
+      await expect(repository.get(root.id)).resolves.toEqual({ ...root, realPath: await realpath(directory.path) });
+      await expect(repository.list()).resolves.toHaveLength(2);
+    } finally {
+      await directory.cleanup();
+    }
   });
 
-  it("adds distinct ensured roots without changing existing roots", async () => {
+  it("coalesces concurrent registrations for the same host path", async () => {
     database = createTestPersistenceDatabase();
-    const repository = new MediaRootRepository(database);
-    const now = new Date("2026-08-22T00:00:00.000Z");
-    const firstRoot = createMediaRoot({ id: "path-first", displayName: "First", hostPath: "/first", now });
-    const secondRoot = createMediaRoot({ id: "path-second", displayName: "Second", hostPath: "/second", now });
-    await repository.upsert(firstRoot);
-    await repository.upsert(secondRoot);
-
-    const roots = await repository.list();
-    expect(roots).toEqual(expect.arrayContaining([firstRoot, secondRoot]));
+    const first = new MediaRootRepository(database);
+    const second = new MediaRootRepository(database);
+    const directory = await createTempDirectory("root-registration");
+    try {
+      const roots = await Promise.all([
+        first.ensurePath(directory.path, "First"),
+        second.ensurePath(directory.path, "Second"),
+      ]);
+      expect(roots[0].id).toBe(roots[1].id);
+      await expect(first.list()).resolves.toEqual([roots[0]]);
+    } finally {
+      await directory.cleanup();
+    }
   });
 
   it("uses stable not-found errors", async () => {
@@ -397,78 +392,143 @@ describe("MediaRootRepository", () => {
 });
 
 describe("LibraryRepository", () => {
-  it("upserts durable library entries by root path", async () => {
+  it.each([
+    {
+      files: [
+        { id: "part-2", partNumber: 2, resolution: "4K" },
+        { id: "part-1", partNumber: 1, resolution: "1080p" },
+      ],
+      expected: "part-1",
+    },
+    {
+      files: [
+        { id: "1080", partNumber: null, resolution: "1080p" },
+        { id: "4k", partNumber: null, resolution: "4K" },
+      ],
+      expected: "4k",
+    },
+    {
+      files: [
+        { id: "b", partNumber: null, resolution: "2160P" },
+        { id: "a", partNumber: null, resolution: "4k" },
+      ],
+      expected: "a",
+    },
+  ])("selects a stable representative file ($expected)", ({ files, expected }) => {
+    const candidates = files as Array<{ id: string; partNumber: number | null; resolution: string | null }>;
+    expect(selectRepresentativeFile(candidates)?.id).toBe(expected);
+    expect(selectRepresentativeFile([...candidates].reverse())?.id).toBe(expected);
+  });
+
+  it("upserts durable library entries by declared identity", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1");
     const repository = new LibraryRepository(database);
     const completedAt = new Date("2026-04-30T00:00:00.000Z");
     await repository.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "ABC-123/ABC-123.mp4",
-      size: 10,
-      sourceRunId: "task-1",
-      sourceOutcomeId: "outcome-1",
-      title: "Title",
-      number: "ABC-123",
-      actors: ["Actor"],
-      crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123", poster_url: "poster.jpg" }),
-      createdAt: completedAt,
+      movie: {
+        id: "entry",
+        title: "Title",
+        number: "ABC-123",
+        actors: ["Actor"],
+        crawlerDataJson: JSON.stringify({ title: "Title", number: "ABC-123", poster_url: "poster.jpg" }),
+        createdAt: completedAt,
+      },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          size: 10,
+          fileId: "root-1:ABC-123/ABC-123.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "ABC-123/ABC-123.mp4",
-      size: 11,
-      createdAt: new Date("2026-04-30T00:01:00.000Z"),
+      movie: { id: "entry", createdAt: new Date("2026-04-30T00:01:00.000Z") },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          size: 11,
+          fileId: "root-1:ABC-123/ABC-123.mp4",
+        },
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123-CD2.mp4",
+          size: 12,
+          fileId: "root-1:ABC-123/ABC-123-CD2.mp4",
+        },
+      ],
     });
+    const rewritten = await repository.upsertEntry({
+      movie: { id: "new-movie", title: "Rescrape", number: "ABC-123" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          size: 13,
+          fileId: "rescrape-file",
+        },
+      ],
+    });
+
+    expect(rewritten.id).toBe("entry");
+    expect(rewritten.title).toBe("Rescrape");
+    expect(rewritten.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "root-1:ABC-123/ABC-123.mp4", size: 13 }),
+        expect.objectContaining({ id: "root-1:ABC-123/ABC-123-CD2.mp4", size: 12 }),
+      ]),
+    );
+    await expect(repository.getEntryById("new-movie")).rejects.toThrow("Library entry not found");
 
     await expect(repository.listEntries()).resolves.toEqual([
       expect.objectContaining({
-        rootRelativePath: "ABC-123/ABC-123.mp4",
-        size: 11,
-        actors: [],
-        crawlerDataJson: null,
+        id: "entry",
+        title: "Rescrape",
+        files: expect.arrayContaining([
+          expect.objectContaining({ rootRelativePath: "ABC-123/ABC-123.mp4", size: 13 }),
+          expect.objectContaining({ rootRelativePath: "ABC-123/ABC-123-CD2.mp4", size: 12 }),
+        ]),
+        size: 25,
+        actors: ["Actor"],
       }),
     ]);
   });
 
-  it("loads library entries for source outcome ids in one query", async () => {
+  it("lists pending uncensored library entries", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1");
     const repository = new LibraryRepository(database);
     await repository.upsertEntry({
-      id: "entry-1",
-      rootId: "root-1",
-      rootRelativePath: "A.mp4",
-      sourceOutcomeId: "outcome-1",
-      assets: [{ kind: "poster", uri: "A.jpg", rootId: "root-1", relativePath: "A.jpg" }],
+      movie: {
+        id: "entry-1",
+        uncensoredAmbiguous: true,
+        assets: [{ kind: "poster", uri: "A.jpg", rootId: "root-1", relativePath: "A.jpg" }],
+      },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "A.mp4",
+          assets: [],
+          fileId: "root-1:A.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      id: "entry-2",
-      rootId: "root-1",
-      rootRelativePath: "B.mp4",
-      sourceOutcomeId: "outcome-2",
+      movie: { id: "entry-2", uncensoredAmbiguous: false },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "B.mp4",
+          fileId: "root-1:B.mp4",
+        },
+      ],
     });
 
-    const entries = await repository.getEntriesBySourceOutcomeIds(["outcome-1", "outcome-2", "missing"]);
-    expect([...entries.keys()].sort()).toEqual(["outcome-1", "outcome-2"]);
-    expect(entries.get("outcome-1")).toMatchObject({
-      id: "entry-1",
-      assets: [expect.objectContaining({ kind: "poster", uri: "A.jpg" })],
-    });
-    await expect(repository.getEntryBySourceOutcomeId("outcome-2")).resolves.toMatchObject({ id: "entry-2" });
-    await expect(repository.getEntryBySourceOutcomeId("missing")).resolves.toBeNull();
-    await expect(repository.getEntriesBySourceOutcomeIds([])).resolves.toEqual(new Map());
-  });
-
-  it("uses the root-path index for library entry lookup", async () => {
-    database = createTestPersistenceDatabase();
-    const plan = database.sqlite
-      .prepare(
-        "EXPLAIN QUERY PLAN SELECT * FROM library_item_files WHERE root_id = ? AND root_relative_path = ? LIMIT 1",
-      )
-      .all("root-1", "ABC-123/ABC-123.mp4") as Array<{ detail: string }>;
-
-    expect(plan.some((row) => row.detail.includes("library_item_files_root_path_idx"))).toBe(true);
+    const pending = await repository.listPendingUncensored();
+    expect(pending.map((e) => e.id)).toEqual(["entry-1"]);
+    expect(pending[0].uncensoredAmbiguous).toBe(true);
   });
 
   it("paginates library entries with a stable created-at and id cursor", async () => {
@@ -477,25 +537,34 @@ describe("LibraryRepository", () => {
     const repository = new LibraryRepository(database);
     const createdAt = new Date("2026-05-01T00:00:00.000Z");
     await repository.upsertEntry({
-      id: "entry-a",
-      rootId: "root-1",
-      rootRelativePath: "A/ABC-001.mp4",
-      title: "Alpha",
-      createdAt,
+      movie: { id: "entry-a", title: "Alpha", createdAt },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "A/ABC-001.mp4",
+          fileId: "root-1:A/ABC-001.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      id: "entry-b",
-      rootId: "root-1",
-      rootRelativePath: "B/ABC-002.mp4",
-      title: "Beta",
-      createdAt,
+      movie: { id: "entry-b", title: "Beta", createdAt },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "B/ABC-002.mp4",
+          fileId: "root-1:B/ABC-002.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      id: "entry-c",
-      rootId: "root-2",
-      rootRelativePath: "C/DEF-003.mp4",
-      title: "Gamma",
-      createdAt: new Date("2026-05-02T00:00:00.000Z"),
+      movie: { id: "entry-c", title: "Gamma", createdAt: new Date("2026-05-02T00:00:00.000Z") },
+      files: [
+        {
+          rootId: "root-2",
+          rootRelativePath: "C/DEF-003.mp4",
+          fileId: "root-2:C/DEF-003.mp4",
+        },
+      ],
     });
 
     const first = await repository.listEntriesPage({ limit: 2 });
@@ -512,17 +581,24 @@ describe("LibraryRepository", () => {
     await addRoots("root-1", "root-2");
     const repository = new LibraryRepository(database);
     await repository.upsertEntry({
-      id: "entry-1",
-      rootId: "root-1",
-      rootRelativePath: "movies/ABC-123.mp4",
-      actors: ["Actor One"],
-      title: "First title",
+      movie: { id: "entry-1", actors: ["Actor One"], title: "First title" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "movies/ABC-123.mp4",
+          fileId: "root-1:movies/ABC-123.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      id: "entry-2",
-      rootId: "root-2",
-      rootRelativePath: "other/DEF-456.mp4",
-      title: "Second title",
+      movie: { id: "entry-2", title: "Second title" },
+      files: [
+        {
+          rootId: "root-2",
+          rootRelativePath: "other/DEF-456.mp4",
+          fileId: "root-2:other/DEF-456.mp4",
+        },
+      ],
     });
 
     await expect(repository.listEntriesPage({ limit: 10, query: "actor one" })).resolves.toMatchObject({
@@ -547,18 +623,24 @@ describe("LibraryRepository", () => {
     await roots.upsert(createMediaRoot({ id: "active-root", displayName: "Active", hostPath: "/active", now }));
     await roots.upsert(createMediaRoot({ id: "deleted-root", displayName: "Deleted", hostPath: "/deleted", now }));
     await repository.upsertEntry({
-      id: "active-entry",
-      rootId: "active-root",
-      rootRelativePath: "100%-title.mp4",
-      title: "100% title",
-      createdAt: now,
+      movie: { id: "active-entry", title: "100% title", createdAt: now },
+      files: [
+        {
+          rootId: "active-root",
+          rootRelativePath: "100%-title.mp4",
+          fileId: "active-root:100%-title.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      id: "deleted-entry",
-      rootId: "deleted-root",
-      rootRelativePath: "deleted.mp4",
-      title: "Deleted title",
-      createdAt: new Date(now.getTime() - 1),
+      movie: { id: "deleted-entry", title: "Deleted title", createdAt: new Date(now.getTime() - 1) },
+      files: [
+        {
+          rootId: "deleted-root",
+          rootRelativePath: "deleted.mp4",
+          fileId: "deleted-root:deleted.mp4",
+        },
+      ],
     });
 
     await expect(repository.listEntriesPage({ limit: 1 })).resolves.toMatchObject({
@@ -578,16 +660,23 @@ describe("LibraryRepository", () => {
     const repository = new LibraryRepository(database);
 
     await repository.upsertEntry({
-      rootId: "root-1",
-      rootRelativePath: "ABC-123/ABC-123.mp4",
-      crawlerDataJson: JSON.stringify({
-        thumb_url: "ABC-123/thumb.jpg",
-        poster_url: "ABC-123/poster.jpg",
-      }),
-      thumbnailPath: "ABC-123/thumb.jpg",
-      assets: [
-        { kind: "thumb", uri: "ABC-123/thumb.jpg", rootId: "root-1", relativePath: "ABC-123/thumb.jpg" },
-        { kind: "poster", uri: "ABC-123/poster.jpg", rootId: "root-1", relativePath: "ABC-123/poster.jpg" },
+      movie: {
+        crawlerDataJson: JSON.stringify({
+          thumb_url: "ABC-123/thumb.jpg",
+          poster_url: "ABC-123/poster.jpg",
+        }),
+        assets: [
+          { kind: "thumb", uri: "ABC-123/thumb.jpg", rootId: "root-1", relativePath: "ABC-123/thumb.jpg" },
+          { kind: "poster", uri: "ABC-123/poster.jpg", rootId: "root-1", relativePath: "ABC-123/poster.jpg" },
+        ],
+      },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          assets: [],
+          fileId: "root-1:ABC-123/ABC-123.mp4",
+        },
       ],
     });
 
@@ -598,30 +687,154 @@ describe("LibraryRepository", () => {
     ]);
   });
 
-  it("relinks the primary library file without retaining the old path", async () => {
+  it("relinks a stable library file without retaining the old path", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1");
     const repository = new LibraryRepository(database);
-    await repository.upsertEntry({
-      id: "entry-1",
-      rootId: "root-1",
-      rootRelativePath: "old/ABC-123.mp4",
-      size: 10,
+    const entry = await repository.upsertEntry({
+      movie: { id: "entry-1" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "old/ABC-123.mp4",
+          size: 10,
+          fileId: "root-1:old/ABC-123.mp4",
+        },
+      ],
     });
 
-    await repository.relinkEntry({
-      id: "entry-1",
+    await repository.relinkFile({
+      fileId: entry.files[0].id,
       rootId: "root-1",
       rootRelativePath: "new/ABC-123-流出.mp4",
       size: 11,
     });
 
     await expect(repository.getEntryById("entry-1")).resolves.toMatchObject({
-      rootRelativePath: "new/ABC-123-流出.mp4",
       size: 11,
       files: [expect.objectContaining({ rootRelativePath: "new/ABC-123-流出.mp4" })],
     });
     await expect(repository.getEntry("root-1", "old/ABC-123.mp4")).rejects.toThrow("Library entry not found");
+    database.sqlite.prepare("UPDATE media_roots SET real_path = ? WHERE id = ?").run("/mnt/disk/root-1", "root-1");
+    expect(
+      repository
+        .publicationSnapshot({ paths: ["/mnt/disk/root-1/new/ABC-123-流出.mp4"] })
+        .files.map((file) => file.relativePath),
+    ).toEqual(["new/ABC-123-流出.mp4"]);
+  });
+
+  it("rejects an asset file reference owned by a different movie", async () => {
+    database = createTestPersistenceDatabase();
+    await addRoots("root-1");
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      movie: { id: "entry-1" },
+      files: [{ rootId: "root-1", rootRelativePath: "A.mp4", fileId: "root-1:A.mp4" }],
+    });
+    const second = await repository.upsertEntry({
+      movie: { id: "entry-2" },
+      files: [{ rootId: "root-1", rootRelativePath: "B.mp4", fileId: "root-1:B.mp4" }],
+    });
+
+    expect(() =>
+      database?.sqlite
+        .prepare(
+          "INSERT INTO library_item_assets (id, item_id, file_id, kind, uri, published, created_at) VALUES (?, ?, ?, 'subtitle', ?, 0, ?)",
+        )
+        .run("bad-asset", "entry-1", second.files[0].id, "B.srt", 1),
+    ).toThrow(/FOREIGN KEY constraint failed/u);
+  });
+
+  it("retains file-specific assets when another file is added to the movie", async () => {
+    database = createTestPersistenceDatabase();
+    await addRoots("root-1");
+    const repository = new LibraryRepository(database);
+    await repository.upsertEntry({
+      movie: { id: "entry-1", assets: [] },
+      files: [
+        {
+          fileId: "file-1",
+          rootId: "root-1",
+          rootRelativePath: "ABC-123-CD1.mp4",
+          size: 10,
+          partNumber: 1,
+          partSuffix: "CD1",
+          assets: [{ kind: "subtitle", uri: "ABC-123-CD1.srt", rootId: "root-1", relativePath: "ABC-123-CD1.srt" }],
+        },
+      ],
+    });
+    const firstAssetId = (await repository.getEntryById("entry-1")).assets[0]?.id;
+    await repository.upsertEntry({
+      movie: { id: "entry-1", assets: [] },
+      files: [
+        {
+          fileId: "file-2",
+          rootId: "root-1",
+          rootRelativePath: "ABC-123-CD2.mp4",
+          size: 20,
+          partNumber: 2,
+          partSuffix: "CD2",
+          assets: [{ kind: "subtitle", uri: "ABC-123-CD2.srt", rootId: "root-1", relativePath: "ABC-123-CD2.srt" }],
+        },
+      ],
+    });
+
+    const entry = await repository.getEntryById("entry-1");
+    expect(entry).toMatchObject({
+      displayFileId: "file-1",
+      size: 30,
+      files: [expect.objectContaining({ id: "file-1" }), expect.objectContaining({ id: "file-2" })],
+    });
+    expect(entry.assets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ fileId: "file-1" }),
+        expect.objectContaining({ fileId: "file-2" }),
+      ]),
+    );
+    expect(entry.assets.find((asset) => asset.fileId === "file-1")?.id).toBe(firstAssetId);
+    await expect(repository.getOverviewSummary(10)).resolves.toMatchObject({
+      fileCount: 2,
+      totalBytes: 30,
+      recentEntries: [expect.objectContaining({ id: "entry-1", size: 30 })],
+    });
+    for (const assets of [undefined, []]) {
+      await repository.upsertEntry({
+        movie: { id: "entry-1", assets },
+        files: [{ fileId: "file-2", rootId: "root-1", rootRelativePath: "ABC-123-CD2.mp4" }],
+      });
+      expect((await repository.getEntryById("entry-1")).assets).toEqual(entry.assets);
+    }
+    await repository.upsertEntry({
+      movie: { id: "entry-1", assets: [{ kind: "poster", uri: "poster.jpg" }] },
+      files: [{ fileId: "file-2", rootId: "root-1", rootRelativePath: "ABC-123-CD2.mp4" }],
+    });
+    await repository.upsertEntry({
+      movie: { id: "entry-1" },
+      files: [{ fileId: "file-2", rootId: "root-1", rootRelativePath: "ABC-123-CD2.mp4", assets: [] }],
+    });
+    expect((await repository.getEntryById("entry-1")).assets.map((asset) => asset.kind).sort()).toEqual([
+      "poster",
+      "subtitle",
+    ]);
+    for (const kind of ["subtitle", "poster"]) {
+      await expect(
+        repository.upsertEntry({
+          movie: { id: "entry-1", ...(kind === "subtitle" ? { assets: [{ kind, uri: "invalid" }] } : {}) },
+          files: [
+            {
+              fileId: "file-2",
+              rootId: "root-1",
+              rootRelativePath: "ABC-123-CD2.mp4",
+              ...(kind === "poster" ? { assets: [{ kind, uri: "invalid" }] } : {}),
+            },
+          ],
+        }),
+      ).rejects.toThrow("Invalid library asset scope");
+    }
+    expect((await repository.getEntryById("entry-1")).assets.map((asset) => asset.kind).sort()).toEqual([
+      "poster",
+      "subtitle",
+    ]);
   });
 
   it("hides entries from recent acquisitions without deleting the library item", async () => {
@@ -632,20 +845,26 @@ describe("LibraryRepository", () => {
     const hiddenAt = new Date("2026-05-12T00:00:00.000Z");
 
     await repository.upsertEntry({
-      id: "entry-1",
-      rootId: "root-1",
-      rootRelativePath: "ABC-123/ABC-123.mp4",
-      title: "Title",
-      createdAt,
+      movie: { id: "entry-1", title: "Title", createdAt },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          fileId: "root-1:ABC-123/ABC-123.mp4",
+        },
+      ],
     });
 
     await repository.hideFromRecent("entry-1", hiddenAt);
     await repository.upsertEntry({
-      id: "entry-1",
-      rootId: "root-1",
-      rootRelativePath: "ABC-123/ABC-123.mp4",
-      title: "Refreshed title",
-      createdAt: new Date("2026-05-20T00:00:00.000Z"),
+      movie: { id: "entry-1", title: "Refreshed title", createdAt: new Date("2026-05-20T00:00:00.000Z") },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          fileId: "root-1:ABC-123/ABC-123.mp4",
+        },
+      ],
     });
 
     await expect(repository.getEntryById("entry-1")).resolves.toEqual(
@@ -665,15 +884,28 @@ describe("LibraryRepository", () => {
     const repository = new LibraryRepository(database);
 
     await repository.upsertEntry({
-      id: "entry-1",
-      rootId: "root-1",
-      rootRelativePath: "ABC-123/ABC-123.mp4",
-      assets: [{ kind: "poster", uri: "ABC-123/poster.jpg", rootId: "root-1", relativePath: "ABC-123/poster.jpg" }],
+      movie: {
+        id: "entry-1",
+        assets: [{ kind: "poster", uri: "ABC-123/poster.jpg", rootId: "root-1", relativePath: "ABC-123/poster.jpg" }],
+      },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "ABC-123/ABC-123.mp4",
+          assets: [],
+          fileId: "root-1:ABC-123/ABC-123.mp4",
+        },
+      ],
     });
     await repository.upsertEntry({
-      id: "entry-2",
-      rootId: "root-1",
-      rootRelativePath: "DEF-456/DEF-456.mp4",
+      movie: { id: "entry-2" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "DEF-456/DEF-456.mp4",
+          fileId: "root-1:DEF-456/DEF-456.mp4",
+        },
+      ],
     });
 
     await repository.deleteEntry("entry-1");
@@ -682,7 +914,7 @@ describe("LibraryRepository", () => {
     await expect(repository.listEntries()).resolves.toEqual([
       expect.objectContaining({
         id: "entry-2",
-        rootRelativePath: "DEF-456/DEF-456.mp4",
+        files: [expect.objectContaining({ rootRelativePath: "DEF-456/DEF-456.mp4" })],
       }),
     ]);
   });
@@ -736,17 +968,6 @@ describe("ScanTaskRepository", () => {
         results: [{ relativePath: "fresh.mp4", size: 1, modifiedAt: null }],
       }),
     ).resolves.toMatchObject({ status: "completed", videoCount: 1 });
-  });
-
-  it("stores scan facts without a generic discriminator or recovery version", () => {
-    database = createTestPersistenceDatabase();
-    const columns = database.sqlite
-      .prepare("PRAGMA table_info(scan_tasks)")
-      .all()
-      .map((row) => (row as { name: string }).name);
-
-    expect(columns).not.toContain("kind");
-    expect(columns).not.toContain("execution_version");
   });
 
   it("rejects duplicate scan paths within one task and root", async () => {

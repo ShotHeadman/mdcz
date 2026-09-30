@@ -1,18 +1,8 @@
 import type { NetworkClient, NetworkSession } from "@mdcz/runtime/network";
 import { AmazonJpImageService } from "@mdcz/runtime/tools";
-import { Website } from "@mdcz/shared/enums";
-import type { CrawlerData } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
-const baseCrawlerData: CrawlerData = {
-  title: "原題",
-  number: "ABC-123",
-  actors: ["Actor A"],
-  genres: [],
-  scene_images: [],
-  website: Website.JAVDB,
-  poster_url: "https://javdb.com/poster.jpg",
-};
+const TITLE = "原題";
 
 class FakeNetworkClient {
   readonly sessionUrls: string[] = [];
@@ -112,34 +102,19 @@ describe("AmazonJpImageService", () => {
     );
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance(
-      {
-        ...baseCrawlerData,
-        title: rawTitle,
-        actors: ["Actor A", "Actor B"],
-      },
-      Website.JAVDB,
-    );
+    const result = await service.enhance(rawTitle);
 
-    expect(result).toEqual({
-      poster_url: imageUrl,
-      upgraded: true,
-      reason: "已升级为Amazon商品海报",
-    });
+    expect(result).toEqual({ poster_url: imageUrl, reason: "found" });
     expect(extractKeywordFromSearchUrl(networkClient.sessionUrls[0])).toBe(rawTitle);
-    expect(networkClient.sessionUrls[0]).not.toContain("Actor");
   });
 
   it("returns no result when the search page is empty", async () => {
     const networkClient = new FakeNetworkClient('<div class="s-no-results">empty</div>', new Map(), new Set());
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+    const result = await service.enhance(TITLE);
 
-    expect(result).toEqual({
-      upgraded: false,
-      reason: "搜索无结果",
-    });
+    expect(result).toEqual({ reason: "no_results" });
     expect(networkClient.head).not.toHaveBeenCalled();
   });
 
@@ -155,12 +130,9 @@ describe("AmazonJpImageService", () => {
     );
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+    const result = await service.enhance(TITLE);
 
-    expect(result).toEqual({
-      upgraded: false,
-      reason: "未找到匹配商品",
-    });
+    expect(result).toEqual({ reason: "no_match" });
     expect(networkClient.head).not.toHaveBeenCalled();
   });
 
@@ -194,13 +166,9 @@ describe("AmazonJpImageService", () => {
     );
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance({ ...baseCrawlerData, title: asin }, Website.JAVDB);
+    const result = await service.enhance(asin);
 
-    expect(result).toEqual({
-      poster_url: imageUrl,
-      upgraded: true,
-      reason: "已升级为Amazon商品海报",
-    });
+    expect(result).toEqual({ poster_url: imageUrl, reason: "found" });
     expect(networkClient.sessionUrls.some((url) => extractKeywordFromSearchUrl(url) === asin)).toBe(true);
   });
 
@@ -229,10 +197,10 @@ describe("AmazonJpImageService", () => {
     );
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+    const result = await service.enhance(TITLE);
 
     expect(result.poster_url).toBe(large);
-    expect(result.upgraded).toBe(true);
+    expect(result.reason).toBe("found");
   });
 
   it("prefers the largest dynamic image candidate over a small src thumbnail", async () => {
@@ -260,10 +228,10 @@ describe("AmazonJpImageService", () => {
     );
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+    const result = await service.enhance(TITLE);
 
     expect(result.poster_url).toBe(large);
-    expect(result.upgraded).toBe(true);
+    expect(result.reason).toBe("found");
   });
 
   it("promotes low-resolution Amazon image variants to large poster URLs", async () => {
@@ -291,9 +259,9 @@ describe("AmazonJpImageService", () => {
     );
     const service = new AmazonJpImageService(networkClient as unknown as NetworkClient);
 
-    const result = await service.enhance(baseCrawlerData, Website.JAVDB);
+    const result = await service.enhance(TITLE);
 
     expect(result.poster_url).toBe(large);
-    expect(result.upgraded).toBe(true);
+    expect(result.reason).toBe("found");
   });
 });

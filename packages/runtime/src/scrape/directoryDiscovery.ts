@@ -1,0 +1,156 @@
+import { realpath } from "node:fs/promises";
+import { basename, dirname, extname, join, parse, relative } from "node:path";
+import { type FileWalkOptions, isPathInside, resolveRootFile, walkFiles } from "@mdcz/media-store";
+import type { Configuration } from "@mdcz/shared/config";
+import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
+import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
+import { resolveMediaCandidateScanPlan, type WorkbenchSetupMode } from "@mdcz/shared/mediaCandidate";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
+import type { ConfiguredMediaRootService } from "../library/mediaRootService";
+import { runtimeLoggerService } from "../shared";
+import { DirectoryInventory } from "./DirectoryInventory";
+import { isPrimaryVideoFile } from "./media/generatedSidecarVideos";
+import { DEFAULT_VIDEO_EXTENSIONS } from "./utils/filesystem";
+
+export const createDirectoryScope = (
+  source: { scanDir: string; recursive: boolean },
+  targetDir: string,
+  configuration: Configuration,
+  mode: WorkbenchSetupMode = "scrape",
+): DirectoryTaskScope => {
+  const plan = resolveMediaCandidateScanPlan(mode, source.scanDir, source.recursive, configuration);
+  return {
+    kind: "directory",
+    ...source,
+    targetDir,
+    excludeDirPaths: [
+      ...new Set(
+        [
+          ...plan.excludeDirPaths,
+          configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "",
+          ...(mode === "scrape" && targetDir !== source.scanDir ? [targetDir] : []),
+        ].filter(Boolean),
+      ),
+    ],
+  };
+};
+
+export const createMediaWalkFilters = (
+  configuration: Configuration,
+  extensions = DEFAULT_VIDEO_EXTENSIONS,
+): Required<Pick<FileWalkOptions, "filterFile" | "filterDirectory">> => {
+  const blacklist = configuration.scrape.filenameBlacklistTokens;
+  return {
+    filterFile: (filePath) =>
+      extensions.has(extname(filePath).toLowerCase()) &&
+      isPrimaryVideoFile(filePath) &&
+      !hasLiteralFilenameToken(basename(filePath), blacklist),
+    filterDirectory: (directoryPath) => !hasLiteralFilenameToken(basename(directoryPath), blacklist),
+  };
+};
+
+export const excludeGeneratedStrmPaths = <T>(items: readonly T[], pathOf: (item: T) => string): T[] => {
+  const namesByDir = new Map<string, string[]>();
+  for (const item of items) {
+    const filePath = pathOf(item);
+    const directory = dirname(filePath);
+    const names = namesByDir.get(directory);
+    if (names) names.push(basename(filePath));
+    else namesByDir.set(directory, [basename(filePath)]);
+  }
+  return items.filter((item) => {
+    const filePath = pathOf(item);
+    const fileName = basename(filePath);
+    if (extname(fileName).toLowerCase() !== ".strm") return true;
+    const base = parse(fileName).name.toLowerCase();
+    return !(namesByDir.get(dirname(filePath)) ?? []).some(
+      (name) =>
+        extname(name).toLowerCase() !== ".strm" && isPrimaryVideoFile(name) && parse(name).name.toLowerCase() === base,
+    );
+  });
+};
+
+export const discoverDirectoryFiles = async (input: {
+  scope: DirectoryTaskScope;
+  configuration: Configuration;
+  mediaRoots: ConfiguredMediaRootService;
+  signal: AbortSignal;
+  platform: "desktop" | "server";
+  onProgress: (progress: DiscoveryProgress) => void;
+  inventory?: DirectoryInventory;
+  checkRoots?: (rootIds: Iterable<string>) => Promise<void>;
+}): Promise<{ refs: RootFileRef[]; discovery: DiscoveryProgress; inventory: DirectoryInventory }> => {
+  const { scope, signal } = input;
+  const started = performance.now();
+  const warnings = { count: 0, paths: [] as string[] };
+  const inventory = input.inventory ?? new DirectoryInventory();
+  const checkRoots = input.checkRoots ?? input.mediaRoots.rootIntegrityGuard();
+  const canonicalDirectories = new Map<string, string>();
+  const found: string[] = [];
+  let discovery: DiscoveryProgress = {
+    directories: 0,
+    candidates: 0,
+    skipped: 0,
+    elapsedMs: 0,
+    currentPath: scope.scanDir,
+    warnings: [],
+  };
+  signal.throwIfAborted();
+  const root = await input.mediaRoots.registerPathIntent(scope.scanDir);
+  await checkRoots([root.id]);
+  const output = await input.mediaRoots.prepareOutputDirectory({ hostPath: scope.targetDir });
+  await checkRoots([output.id]);
+  const scanPath = await realpath(scope.scanDir);
+  const namespaceScanPath =
+    root.realPath && isPathInside(root.realPath, scanPath)
+      ? join(root.hostPath, relative(root.realPath, scanPath))
+      : scope.scanDir;
+  const mediaFilters = createMediaWalkFilters(input.configuration);
+  await walkFiles(namespaceScanPath, scope.recursive, signal, {
+    onDirectory: (directory, canonical, entries) => {
+      inventory.observeDirectory(directory, canonical, entries);
+      canonicalDirectories.set(directory, canonical);
+    },
+    onFile: (file, facts) => {
+      const directory = canonicalDirectories.get(dirname(file));
+      if (!directory) throw new Error(`Discovery directory was not inventoried: ${file}`);
+      inventory.observeFile(file, facts, join(directory, basename(file)));
+      found.push(file);
+    },
+    onFileError: (file, error) => {
+      inventory.observeFileError(file, error);
+      found.push(file);
+    },
+    filterDirectory: mediaFilters.filterDirectory,
+    filterFile: async (file) =>
+      (await mediaFilters.filterFile(file)) &&
+      (extname(file).toLowerCase() !== ".strm" ||
+        (await inventory.mediaEntries(dirname(file))).some((entry) => entry.name === basename(file))),
+    excludeDirectoryPaths: scope.excludeDirPaths,
+    deduplicateDirectories: true,
+    excludeFileSymlinks: input.platform === "server",
+    warnings,
+    onDiagnostic:
+      process.env.MDCZ_SCAN_DIAGNOSTICS === "1"
+        ? (message) => runtimeLoggerService.getLogger("DirectoryDiscovery").info(message)
+        : undefined,
+    onProgress: (progress) => {
+      discovery = { ...progress, elapsedMs: Math.round(performance.now() - started) };
+      input.onProgress(discovery);
+    },
+  });
+  signal.throwIfAborted();
+  const roots = await input.mediaRoots.listRoots();
+  const refs = new Map<string, RootFileRef>();
+  for (const file of found.sort((left, right) => left.localeCompare(right, "zh-CN"))) {
+    const resolved = resolveRootFile(roots, file);
+    const ref = { rootId: resolved.root.id, relativePath: resolved.relativePath };
+    refs.set(`${ref.rootId}\0${ref.relativePath}`, ref);
+  }
+  await checkRoots(
+    new Set([...refs.values()].map((ref) => ref.rootId).filter((id) => id !== root.id && id !== output.id)),
+  );
+  discovery = { ...discovery, candidates: refs.size, currentPath: null };
+  input.onProgress(discovery);
+  return { refs: [...refs.values()], discovery, inventory };
+};

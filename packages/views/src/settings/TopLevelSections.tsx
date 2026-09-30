@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useT } from "../i18n";
 import { SectionAnchor } from "./SectionAnchor";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { SettingsSectionModeProvider } from "./SettingsSectionModeContext";
@@ -10,7 +11,6 @@ import {
   AggregationPrioritySection,
   AggregationScrapeSection,
   AssetDownloadsSection,
-  BehaviorSection,
   FilenameFilteringSection,
   NamingSection,
   NetworkConnectionSection,
@@ -22,7 +22,7 @@ import {
   TranslateSection,
   UiSection,
 } from "./settingsContent";
-import { type FieldAnchor, SECTION_LABELS } from "./settingsRegistry";
+import type { FieldAnchor } from "./settingsRegistry";
 
 interface SiteOptionsProps {
   siteOptions: string[];
@@ -35,23 +35,23 @@ interface SystemSectionProps {
 }
 
 const DEFERRED_SECTION_HEIGHTS = {
+  paths: 1400,
   scrape: 1040,
   network: 920,
   translate: 980,
   naming: 1260,
   download: 960,
-  fileBehavior: 760,
-  paths: 780,
   system: 840,
   advancedSettings: 1760,
 } as const;
 
 export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
   return (
     <SectionAnchor
       id="paths"
-      label={SECTION_LABELS.paths}
-      title={SECTION_LABELS.paths}
+      label={t.settingsFields.sections.paths.label}
+      title={t.settingsFields.sections.paths.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.paths}
@@ -62,22 +62,27 @@ export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolea
 }
 
 export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
+  const t = useT();
   return (
     <SectionAnchor
       id="scrape"
-      label={SECTION_LABELS.scrape}
-      title={SECTION_LABELS.scrape}
+      label={t.settingsFields.sections.scrape.label}
+      title={t.settingsFields.sections.scrape.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.scrape}
     >
-      <Subsection title="刮削站点" description="启用网站、优先级与自定义地址" className="mb-6 last:mb-0">
+      <Subsection
+        title={t.settings.subsections.scrapeSites}
+        description={t.settings.subsections.scrapeSitesDescription}
+        className="mb-6 last:mb-0"
+      >
         <SitePriorityEditorField options={siteOptions} />
       </Subsection>
-      <Subsection title="刮削节奏" className="mb-6 last:mb-0">
+      <Subsection title={t.settings.subsections.scrapePacing} className="mb-6 last:mb-0">
         <ScrapePacingSection />
       </Subsection>
-      <Subsection title="文件名过滤" className="mb-6 last:mb-0">
+      <Subsection title={t.settings.subsections.filenameFiltering} className="mb-6 last:mb-0">
         <FilenameFilteringSection />
       </Subsection>
     </SectionAnchor>
@@ -85,19 +90,20 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
 }
 
 export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
   return (
     <SectionAnchor
       id="network"
-      label={SECTION_LABELS.network}
-      title={SECTION_LABELS.network}
+      label={t.settingsFields.sections.network.label}
+      title={t.settingsFields.sections.network.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.network}
     >
-      <Subsection title="代理与请求" className="mb-6 last:mb-0">
+      <Subsection title={t.settings.subsections.proxyAndRequests} className="mb-6 last:mb-0">
         <NetworkConnectionSection />
       </Subsection>
-      <Subsection title="站点凭证" className="mb-6 last:mb-0">
+      <Subsection title={t.settings.subsections.siteCredentials} className="mb-6 last:mb-0">
         <NetworkCookiesSection />
       </Subsection>
     </SectionAnchor>
@@ -105,11 +111,12 @@ export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: bool
 }
 
 export function TranslateTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
   return (
     <SectionAnchor
       id="translate"
-      label={SECTION_LABELS.translate}
-      title={SECTION_LABELS.translate}
+      label={t.settingsFields.sections.translate.label}
+      title={t.settingsFields.sections.translate.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.translate}
@@ -120,11 +127,12 @@ export function TranslateTopLevelSection({ forceOpen = false }: { forceOpen?: bo
 }
 
 export function NamingTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
   return (
     <SectionAnchor
       id="naming"
-      label={SECTION_LABELS.naming}
-      title={SECTION_LABELS.naming}
+      label={t.settingsFields.sections.naming.label}
+      title={t.settingsFields.sections.naming.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.naming}
@@ -135,16 +143,17 @@ export function NamingTopLevelSection({ forceOpen = false }: { forceOpen?: boole
 }
 
 export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
   return (
     <SectionAnchor
       id="download"
-      label={SECTION_LABELS.download}
-      title={SECTION_LABELS.download}
+      label={t.settingsFields.sections.download.label}
+      title={t.settingsFields.sections.download.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.download}
     >
-      <Subsection title="资源下载" className="mb-6 last:mb-0">
+      <Subsection title={t.settings.subsections.assetDownloads} className="mb-6 last:mb-0">
         <AssetDownloadsSection />
       </Subsection>
       <Subsection title="NFO" className="mb-6 last:mb-0">
@@ -154,22 +163,8 @@ export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boo
   );
 }
 
-export function FileBehaviorTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
-  return (
-    <SectionAnchor
-      id="fileBehavior"
-      label={SECTION_LABELS.fileBehavior}
-      title={SECTION_LABELS.fileBehavior}
-      forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.fileBehavior}
-    >
-      <BehaviorSection />
-    </SectionAnchor>
-  );
-}
-
 export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = false }: SystemSectionProps) {
+  const t = useT();
   const services = useSettingsServices();
   const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
 
@@ -180,17 +175,17 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
   return (
     <SectionAnchor
       id="system"
-      label={SECTION_LABELS.system}
-      title={SECTION_LABELS.system}
+      label={t.settingsFields.sections.system.label}
+      title={t.settingsFields.sections.system.label}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.system}
     >
-      <Subsection title="界面" className="mb-6 last:mb-0">
+      <Subsection title={t.settings.subsections.interface} className="mb-6 last:mb-0">
         <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
       </Subsection>
       {!services.isServer ? (
-        <Subsection title="快捷键" className="mb-6 last:mb-0">
+        <Subsection title={t.settings.subsections.shortcuts} className="mb-6 last:mb-0">
           <ShortcutsSection />
         </Subsection>
       ) : null}
@@ -199,6 +194,7 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
 }
 
 export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
+  const t = useT();
   const search = useSettingsSearch();
 
   if (!search.hasVisibleAdvancedEntries) {
@@ -208,8 +204,8 @@ export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: Site
   return (
     <SectionAnchor
       id="advancedSettings"
-      label="高级设置"
-      title="高级设置"
+      label={t.settings.subsections.advanced}
+      title={t.settings.subsections.advanced}
       forceOpen={forceOpen}
       deferContent
       estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.advancedSettings}
@@ -230,6 +226,7 @@ export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: Site
 }
 
 function AdvancedDomainSubsection({ anchor, children }: { anchor: FieldAnchor; children: ReactNode }) {
+  const t = useT();
   const search = useSettingsSearch();
 
   if (!search.isAdvancedAnchorVisible(anchor)) {
@@ -237,7 +234,7 @@ function AdvancedDomainSubsection({ anchor, children }: { anchor: FieldAnchor; c
   }
 
   return (
-    <Subsection title={SECTION_LABELS[anchor]} className="mb-6 last:mb-0">
+    <Subsection title={t.settingsFields.sections[anchor].label} className="mb-6 last:mb-0">
       {children}
     </Subsection>
   );

@@ -1,3 +1,4 @@
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
@@ -13,7 +14,10 @@ import {
   WorkbenchSetupAdapter,
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
+import { confirmDialog } from "@mdcz/views/common";
+import { getT, useT } from "@mdcz/views/i18n";
 import { ScrapeStartErrorDialog, UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import {
   runScrapeRequest,
   selectIsScraping,
@@ -51,8 +55,12 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
       path,
       intent: kind === "scan" ? "workbench-scan" : "workbench-output",
     }),
-  scanCandidates: async (scanDir, recursive, excludeDirPaths) => {
+  cancelCandidates: async (scanId) => {
+    await api.scans.cancelCandidates({ scanId });
+  },
+  scanCandidates: async (scanDir, recursive, excludeDirPaths, scanId) => {
     const result = await api.scans.candidates({
+      scanId,
       scanDir,
       recursive,
       excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
@@ -66,10 +74,8 @@ const createWebSetupPort = (): WorkbenchSetupPort => ({
   },
 });
 
-const STOP_SCRAPE_CONFIRM_MESSAGE = "确定要停止刮削吗？";
-const getRetryFailedConfirmMessage = (failedCount: number): string => `确定要批量重试 ${failedCount} 个失败项目吗？`;
-
 function WorkbenchPage() {
+  const t = useT();
   const search = Route.useSearch();
   const queryClient = useQueryClient();
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
@@ -120,6 +126,28 @@ function WorkbenchPage() {
     }
   }, [hydrationState.shouldOpenUncensoredDialog]);
 
+  const handleStartDirectory = async (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => {
+    try {
+      if (workbenchMode === "maintenance") {
+        if (isScraping) throw new Error(t.web.stopScrapeFirst);
+        changeMaintenancePreset(presetId);
+        useMaintenanceStore.getState().setPending(true);
+        await api.maintenance.start({ source, targetDir, presetId });
+        useMaintenanceStore.getState().setSnapshot(await api.maintenance.getActiveSession());
+      } else {
+        activateNewScrapeTask();
+        await runScrapeRequest(async () => {
+          await api.scrape.start({ executionMode: "batch", source, targetDir });
+          requestScrapeLiveRunsRefresh();
+        });
+      }
+      toast.success(t.web.taskSubmitted);
+    } catch (error) {
+      if (workbenchMode === "maintenance") useMaintenanceStore.getState().setPending(false);
+      throw error;
+    }
+  };
+
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
     try {
       activateNewScrapeTask();
@@ -133,7 +161,7 @@ function WorkbenchPage() {
         });
         requestScrapeLiveRunsRefresh();
       });
-      toast.success("已启动选中文件刮削");
+      toast.success(t.web.selectedScrapeStarted);
     } catch (error) {
       useScrapeStore.getState().setError(toErrorMessage(error));
       setStartError(error);
@@ -162,7 +190,7 @@ function WorkbenchPage() {
 
   const requireActiveScrapeTaskId = () => {
     if (!activeScrapeTaskId) {
-      toast.info("当前没有可控制的刮削任务");
+      toast.info(t.web.noControllableScrapeTask);
       return null;
     }
     return activeScrapeTaskId;
@@ -176,9 +204,9 @@ function WorkbenchPage() {
         await api.scrape.pause({ taskId });
         requestScrapeLiveRunsRefresh();
       });
-      toast.info("任务已暂停");
+      toast.info(t.web.taskPaused);
     } catch (error) {
-      toast.error(`暂停失败: ${toErrorMessage(error)}`);
+      toast.error(t.web.pauseFailed(toErrorMessage(error)));
     }
   };
 
@@ -190,60 +218,61 @@ function WorkbenchPage() {
         await api.scrape.resume({ taskId });
         requestScrapeLiveRunsRefresh();
       });
-      toast.success("任务已恢复");
+      toast.success(t.web.taskResumed);
     } catch (error) {
-      toast.error(`恢复失败: ${toErrorMessage(error)}`);
+      toast.error(t.web.resumeFailed(toErrorMessage(error)));
     }
   };
 
   const handleStopScrape = async () => {
     const taskId = requireActiveScrapeTaskId();
     if (!taskId) return;
-    if (!window.confirm(STOP_SCRAPE_CONFIRM_MESSAGE)) return;
+    if (!(await confirmDialog({ title: t.web.stopScrapeConfirm, destructive: true }))) return;
     try {
       await runScrapeRequest(async () => {
         await api.scrape.stop({ taskId });
         requestScrapeLiveRunsRefresh();
       });
-      toast.info("正在停止...");
+      toast.info(t.web.stopping);
     } catch (error) {
-      toast.error(`停止失败: ${toErrorMessage(error)}`);
+      toast.error(t.web.stopFailed(toErrorMessage(error)));
     }
   };
 
   const handleRetryFailed = async () => {
     if (failedCount === 0) {
-      toast.info("当前没有可重试的失败项目");
+      toast.info(t.web.noFailedItemsToRetry);
       return;
     }
-    if (!window.confirm(getRetryFailedConfirmMessage(failedCount))) {
+    if (
+      !(await confirmDialog({
+        title: t.web.retryFailedConfirm(failedCount),
+        confirmLabel: t.workbench.retryFailed,
+      }))
+    ) {
       return;
     }
     try {
-      const result = await ports.scrape.retryFailed();
-      toast.success(result.message);
+      await ports.scrape.retryFailed();
+      toast.success(getT().scrape.launch.retry);
     } catch (error) {
       setStartError(error);
     }
   };
 
   const handleConfirmUncensored = async (selections: UncensoredConfirmSelection[]) => {
-    if (!hydrationState.uncensoredTaskId) {
-      throw new Error("缺少刮削任务 ID");
-    }
     await api.scrape.confirmUncensored({
-      taskId: hydrationState.uncensoredTaskId,
       items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
     });
     clearUncensoredConfirmation();
     requestScrapeLiveRunsRefresh();
     requestPendingUncensoredConfirmationRefresh();
-    toast.success("已提交无码确认重刮任务");
+    toast.success(t.web.updatedUncensoredTypes);
   };
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {refreshError ? <ErrorBanner>{`任务状态刷新失败: ${refreshError}`}</ErrorBanner> : null}
+      {refreshError ? <ErrorBanner>{t.web.taskRefreshFailed(refreshError)}</ErrorBanner> : null}
       <div className="min-h-0 flex-1 overflow-hidden">
         {showSetup ? (
           <WorkbenchSetupAdapter
@@ -251,6 +280,7 @@ function WorkbenchPage() {
             config={configQ.data}
             configLoading={configQ.isLoading}
             port={setupPort}
+            onStartDirectory={handleStartDirectory}
             onStartScrape={handleStartSelectedScrape}
             onStartMaintenance={handleStartSelectedMaintenance}
           />
@@ -279,6 +309,8 @@ function WorkbenchPage() {
 }
 
 export const __workbenchTestHooks = {
-  getRetryFailedConfirmMessage,
-  STOP_SCRAPE_CONFIRM_MESSAGE,
+  getRetryFailedConfirmMessage: (failedCount: number): string => getT().web.retryFailedConfirm(failedCount),
+  get STOP_SCRAPE_CONFIRM_MESSAGE() {
+    return getT().web.stopScrapeConfirm;
+  },
 };

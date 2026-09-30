@@ -52,28 +52,36 @@ describe("scrape store contract", () => {
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
   });
 
-  it("uses manifest item ids for retry and keeps unaffected items in retry snapshots", () => {
+  it("overlays a retry run on the earlier runs of its chain and drops the chain on a fresh start", () => {
     const completed = buildScrapeSnapshot({
       task: { ...buildScrapeSnapshot().task, revision: 80, totalItems: 2, successCount: 1, failedCount: 1 },
       items: [
-        buildScrapeLiveItem({ id: "item-success", status: "success" }),
-        buildScrapeLiveItem({ id: "item-failed", resultId: "result-failed", status: "failed" }),
+        buildScrapeLiveItem({ id: "item-success", relativePath: "a.mp4", status: "success" }),
+        buildScrapeLiveItem({ id: "item-failed", relativePath: "b.mp4", status: "failed" }),
       ],
     });
     useScrapeStore.getState().setSnapshot(completed);
 
     useScrapeStore.getState().setSnapshot(
       buildScrapeSnapshot({
-        task: { ...completed.task, status: "running", completedAt: null, executionGeneration: 1, revision: 20 },
-        progress: { percent: 50, completedItems: 1, totalItems: 2 },
-        items: [completed.items[0], buildScrapeLiveItem({ id: "item-failed", resultId: null, status: "processing" })],
+        task: { ...completed.task, id: "retry-run", previousTaskId: completed.task.id, revision: 1 },
+        items: [buildScrapeLiveItem({ id: "retried-id", relativePath: "b.mp4", status: "processing" })],
       }),
     );
 
     expect(selectScrapeResults(useScrapeStore.getState()).map(({ fileId, status }) => ({ fileId, status }))).toEqual([
       { fileId: "item-success", status: "success" },
-      { fileId: "item-failed", status: "processing" },
+      { fileId: "retried-id", status: "processing" },
     ]);
+
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...completed.task, id: "fresh-run", previousTaskId: null, revision: 1 },
+        items: [buildScrapeLiveItem({ id: "fresh-id", relativePath: "c.mp4", status: "processing" })],
+      }),
+    );
+
+    expect(selectScrapeResults(useScrapeStore.getState()).map(({ fileId }) => fileId)).toEqual(["fresh-id"]);
   });
 
   it("keeps the previous snapshot when a retry request starts or fails", () => {

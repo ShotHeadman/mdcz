@@ -1,6 +1,7 @@
 import { cn, Input } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
 import { type ComponentProps, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useT } from "../i18n";
 
 const SUGGEST_DELAY_MS = 180;
 
@@ -69,9 +70,9 @@ export function PathAutocompleteInput({
   loadSuggestions,
   ...inputProps
 }: PathAutocompleteInputProps) {
+  const t = useT();
   const listId = useId();
   const requestRef = useRef(0);
-  const blurTimerRef = useRef<number | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -79,7 +80,7 @@ export function PathAutocompleteInput({
   const [entries, setEntries] = useState<PathAutocompleteSuggestion[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const canSuggest = Boolean(onChange && !readOnly);
+  const canSuggest = Boolean(onChange && !readOnly && !inputProps.disabled);
 
   const fallbackEntries = useMemo(() => {
     const needle = value.trim().toLocaleLowerCase();
@@ -120,7 +121,7 @@ export function PathAutocompleteInput({
             return;
           }
           setEntries(dedupePathAutocompleteSuggestions(result.entries));
-          setError(result.accessible === false ? (result.error ?? "目录不可访问") : "");
+          setError(result.accessible === false ? (result.error ?? t.path.directoryInaccessible) : "");
           setLoaded(true);
           setActiveIndex(0);
         })
@@ -186,7 +187,15 @@ export function PathAutocompleteInput({
   };
 
   return (
-    <div className={cn("relative min-w-0 flex-1", className)}>
+    <fieldset
+      disabled={inputProps.disabled}
+      className={cn("relative min-w-0 flex-1", className)}
+      onBlur={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return;
+        setOpen(false);
+        onBlur?.();
+      }}
+    >
       <Input
         id={id}
         {...inputProps}
@@ -197,21 +206,12 @@ export function PathAutocompleteInput({
         aria-controls={showPanel ? listId : undefined}
         aria-expanded={showPanel}
         className={inputClassName}
-        onBlur={() => {
-          blurTimerRef.current = window.setTimeout(() => {
-            setOpen(false);
-            onBlur?.();
-          }, 120);
-        }}
         onChange={(event) => {
           onChange?.(event.target.value);
           setActiveIndex(0);
           setOpen(true);
         }}
         onFocus={() => {
-          if (blurTimerRef.current) {
-            window.clearTimeout(blurTimerRef.current);
-          }
           setOpen(true);
         }}
         onKeyDown={handleKeyDown}
@@ -225,12 +225,12 @@ export function PathAutocompleteInput({
           {loading ? (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              正在读取目录
+              {t.path.readingDirectory}
             </div>
           ) : null}
           {!loading && error ? <div className="px-3 py-2 text-xs text-muted-foreground">{error}</div> : null}
           {!loading && !error && visibleEntries.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-muted-foreground">没有可用的子目录</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">{t.path.noSubdirectories}</div>
           ) : null}
           {!loading && !error
             ? visibleEntries.map((entry, index) => (
@@ -259,6 +259,6 @@ export function PathAutocompleteInput({
             : null}
         </div>
       ) : null}
-    </div>
+    </fieldset>
   );
 }

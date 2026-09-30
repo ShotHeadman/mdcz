@@ -1,16 +1,14 @@
 import {
   createPersistenceDatabase,
-  LibraryRepairIssueRepository,
+  isSchemaMigrationFailure,
   LibraryRepository,
   MediaRootRepository,
   type PersistenceDatabase,
-  PublicationJournalRepository,
   runMigrations,
   ScanTaskRepository,
   ScrapeRunRepository,
 } from "@mdcz/persistence";
-import { adaptPublicationJournal, recoverPublications } from "@mdcz/runtime/publication";
-import type { PublicationJournalPort } from "@mdcz/runtime/publication/types";
+import { recoverInterruptedPublications } from "@mdcz/runtime";
 import type Database from "better-sqlite3";
 import { acquireDatabaseLease } from "../databaseFiles";
 
@@ -18,9 +16,7 @@ import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
   library: LibraryRepository;
-  libraryRepairIssues: LibraryRepairIssueRepository;
   mediaRoots: MediaRootRepository;
-  publicationJournal: PublicationJournalPort;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
 }
@@ -71,21 +67,13 @@ export class ServerPersistenceService {
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
-      const libraryRepairIssues = new LibraryRepairIssueRepository(database);
       const mediaRoots = new MediaRootRepository(database);
-      const publicationJournal = adaptPublicationJournal(new PublicationJournalRepository(database));
-      await recoverPublications({
-        journal: publicationJournal,
-        repairIssues: libraryRepairIssues,
-        resolveRoot: async (rootId) => await mediaRoots.get(rootId),
-      });
+      await recoverInterruptedPublications(await mediaRoots.list());
       this.state = {
         database,
         repositories: {
           library: new LibraryRepository(database),
-          libraryRepairIssues,
           mediaRoots,
-          publicationJournal,
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
         },
@@ -95,6 +83,12 @@ export class ServerPersistenceService {
       database?.close();
       this.lease.close();
       this.lease = null;
+      if (isSchemaMigrationFailure(error)) {
+        throw new Error(
+          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept.`,
+          { cause: error },
+        );
+      }
       throw error;
     }
   }

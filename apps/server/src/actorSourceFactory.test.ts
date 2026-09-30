@@ -1,7 +1,5 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeInfoActorSourceProvider } from "@mdcz/runtime/mediaserver/infoSync";
-import type { RuntimePhotoActorSourceProvider } from "@mdcz/runtime/mediaserver/photoSync";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 import { createServerActorSourceProvider, serverActorImageCacheRoot } from "./actorSourceFactory";
@@ -35,7 +33,7 @@ describe("createServerActorSourceProvider", () => {
     expect(serverActorImageCacheRoot(fakeConfig)).toBe(join(fakeConfig.runtimePaths.dataDir, "actor-image-cache"));
   });
 
-  it("satisfies the photo and info sync ports and looks up without throwing", async () => {
+  it("wires server actor sources for lookup", async () => {
     const provider = createServerActorSourceProvider(
       new FakeNetworkClient() as never,
       {
@@ -45,8 +43,6 @@ describe("createServerActorSourceProvider", () => {
         prepareActorProfilesForMovie: async () => undefined,
       } as never,
     );
-    const photoPort: RuntimePhotoActorSourceProvider = provider;
-    const infoPort: RuntimeInfoActorSourceProvider = provider;
     const configuration = configurationSchema.parse({
       ...defaultConfiguration,
       personSync: {
@@ -62,8 +58,6 @@ describe("createServerActorSourceProvider", () => {
 
     const result = await provider.lookup(configuration, { name: "Actor A" });
 
-    expect(photoPort).toBe(provider);
-    expect(infoPort).toBe(provider);
     expect(result.profile.name).toBe("Actor A");
   });
 });

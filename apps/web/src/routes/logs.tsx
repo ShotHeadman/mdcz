@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mdcz/ui";
+import { useT } from "@mdcz/views/i18n";
 import { LogsPanelView } from "@mdcz/views/logs";
 import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
@@ -22,6 +23,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
 export const LogsPage = () => {
+  const t = useT();
   const queryClient = useQueryClient();
   const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
   const activeMaintenanceSessionId = useMaintenanceStore(selectMaintenanceSessionId);
@@ -46,7 +48,7 @@ export const LogsPage = () => {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.logs.all });
       setIsClearDialogOpen(false);
-      toast.success("日志已成功清空");
+      toast.success(t.web.logsCleared);
     },
   });
 
@@ -89,13 +91,13 @@ export const LogsPage = () => {
       <div className="mx-auto flex h-full w-full max-w-[1240px] flex-col px-5 py-4 sm:px-6 md:px-8 lg:px-10 lg:py-5">
         <LogsPanelView
           autoScroll={autoScroll}
-          emptyText={query ? "没有匹配的日志。" : "暂无日志。刮削或维护任务开始后，运行日志会显示在这里。"}
+          emptyText={query ? t.web.logsNoMatch : t.web.logsEmpty}
           error={logsQ.error ? <ErrorBanner>{toErrorMessage(logsQ.error)}</ErrorBanner> : undefined}
           logs={filteredLogs}
           query={query}
           onAutoScrollChange={(nextValue) => {
             setAutoScroll(nextValue);
-            toast.info(nextValue ? "已开启自动滚动" : "已关闭自动滚动");
+            toast.info(nextValue ? t.web.autoScrollEnabled : t.web.autoScrollDisabled);
           }}
           onClearRuntime={() => setIsClearDialogOpen(true)}
           onQueryChange={setQuery}
@@ -103,13 +105,13 @@ export const LogsPage = () => {
         <Dialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
           <DialogContent className="max-w-md gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6 shadow-[0_28px_90px_-44px_rgba(15,23,42,0.45)]">
             <DialogHeader className="space-y-2 text-left">
-              <DialogTitle>清空所有日志</DialogTitle>
-              <DialogDescription>确定要清空所有日志内容吗？</DialogDescription>
+              <DialogTitle>{t.web.clearAllLogsTitle}</DialogTitle>
+              <DialogDescription>{t.web.clearAllLogsDescription}</DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:justify-end">
               <DialogClose asChild>
                 <Button type="button" variant="secondary">
-                  取消
+                  {t.common.cancel}
                 </Button>
               </DialogClose>
               <Button
@@ -118,7 +120,7 @@ export const LogsPage = () => {
                 disabled={clearRuntimeM.isPending}
                 onClick={() => void clearRuntimeM.mutate()}
               >
-                确定清空
+                {t.web.confirmClear}
               </Button>
             </DialogFooter>
           </DialogContent>

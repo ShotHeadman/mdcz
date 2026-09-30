@@ -1,6 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { Button, Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, Form } from "@mdcz/ui";
 import { ConfigFieldLayoutProvider } from "@mdcz/views/config-form";
+import { useT } from "@mdcz/views/i18n";
 import {
   EmbySection,
   flattenConfig,
@@ -35,6 +36,7 @@ const DIALOG_CONTENT_CLASS_NAME =
   "w-[92vw] max-w-3xl gap-0 overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-0 shadow-[0_32px_90px_-40px_rgba(15,23,42,0.45)]";
 
 export function PersonServerSettingsDialog({ open, server, onOpenChange }: PersonServerSettingsDialogProps) {
+  const t = useT();
   const queryClient = useQueryClient();
   const configQ = useCurrentConfig({
     enabled: open,
@@ -108,15 +110,23 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={DIALOG_CONTENT_CLASS_NAME}>
         <DialogHeader className="gap-3 px-7 pt-7 pb-4 text-left">
-          <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">人物同步配置</p>
-          <DialogTitle className="text-2xl font-semibold tracking-tight">{serverName} 连接设置</DialogTitle>
+          <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+            {t.desktop.personSyncConfig}
+          </p>
+          <DialogTitle className="text-2xl font-semibold tracking-tight">
+            {t.desktop.serverConnectionSettings(serverName)}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="max-h-[min(72vh,760px)] overflow-y-auto border-y border-border/45 px-6 py-6">
           {!configQ.data && !configQ.isError ? (
-            <DialogStateMessage title="正在读取当前配置" />
+            <DialogStateMessage title={t.desktop.readingCurrentConfig} />
           ) : configQ.isError ? (
-            <DialogStateMessage title="配置加载失败" description={toErrorMessage(configQ.error)} tone="error" />
+            <DialogStateMessage
+              title={t.desktop.configLoadFailed}
+              description={toErrorMessage(configQ.error)}
+              tone="error"
+            />
           ) : (
             <SettingsServicesProvider services={settingsServices} notifier={settingsNotifier}>
               <Form {...form}>
@@ -134,9 +144,7 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
                             <h3 className="font-numeric text-lg font-semibold tracking-[-0.02em] text-foreground">
                               {serverName}
                             </h3>
-                            <p className="text-sm leading-6 text-muted-foreground">
-                              连接诊断和人物同步会读取这里保存的服务器地址、API Key 与用户 ID。
-                            </p>
+                            <p className="text-sm leading-6 text-muted-foreground">{t.desktop.serverSettingsHelp}</p>
                           </header>
                           <div className="space-y-3">
                             {server === "jellyfin" ? <JellyfinSection /> : <EmbySection />}
@@ -154,7 +162,7 @@ export function PersonServerSettingsDialog({ open, server, onOpenChange }: Perso
         <DialogFooter className="gap-2 px-6 pb-6 pt-5">
           <DialogClose asChild>
             <Button variant="outline" className="rounded-[var(--radius-quiet-capsule)] px-5">
-              关闭
+              {t.common.close}
             </Button>
           </DialogClose>
         </DialogFooter>

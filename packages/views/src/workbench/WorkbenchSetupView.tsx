@@ -1,40 +1,51 @@
-import { getMaintenancePresetMeta, MAINTENANCE_PRESET_OPTIONS } from "@mdcz/shared/maintenancePresets";
+import { maintenancePresetIdSchema } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
-import { Button, Checkbox, cn } from "@mdcz/ui";
-import { AlertCircle, Check, FolderOpen, Loader2, RefreshCw } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import {
+  Button,
+  Checkbox,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  quietFieldSurfaceClass,
+  quietPanelSurfaceClass,
+} from "@mdcz/ui";
+import { AlertCircle, ArrowDown, Check, FolderOpen, FolderOutput, Loader2, Search, X } from "lucide-react";
+import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { useT } from "../i18n";
 import { PathAutocompleteInput, type PathAutocompleteResult } from "../path";
-import { FloatingWorkbenchBar } from "./FloatingWorkbenchBar";
 
 export type WorkbenchSetupMode = "scrape" | "maintenance";
 export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error";
 
 export interface WorkbenchSetupViewProps {
   mode: WorkbenchSetupMode;
+  previewMode?: boolean;
+  onExitPreview?: () => void;
   configLoading?: boolean;
   scanDir: string;
+  scanDirError?: string;
   recursive?: boolean;
   onRecursiveChange?: (recursive: boolean) => void;
   onCommitScanDir?: () => void;
-  extraScanDirs?: string[];
   warnings?: { count: number; paths: string[] };
   targetDir?: string;
   candidates: MediaCandidate[];
   selectedPaths: string[];
   selectedSize: number;
   totalSize: number;
-  extensionCount: number;
   scanStatus: WorkbenchSetupScanStatus;
   scanError?: string;
-  scanning: boolean;
   startPending: boolean;
   supportedExtensions: string[];
   presetId: MaintenancePresetId;
-  runSummary: string;
   primaryDisabled: boolean;
   isServer?: boolean;
-  onSuggestScanDir?: (input: { path: string }) => Promise<PathAutocompleteResult>;
-  onSuggestTargetDir?: (input: { path: string }) => Promise<PathAutocompleteResult>;
+  onSuggestScanDir?: (path: string) => Promise<PathAutocompleteResult>;
+  onSuggestTargetDir?: (path: string) => Promise<PathAutocompleteResult>;
   formatBytes: (value: number, options?: { trimTrailingZeros?: boolean }) => string;
   onBrowseScanDir: () => void;
   onBrowseTargetDir?: () => void;
@@ -45,96 +56,103 @@ export interface WorkbenchSetupViewProps {
   onPresetChange: (presetId: MaintenancePresetId) => void;
   onStart: () => void;
   onToggleCandidate: (path: string) => void;
-  onToggleAll: (selected: boolean) => void;
+  onSelectCandidates: (paths: string[], selected: boolean) => void;
 }
 
-const MEDIA_GRID_CLASS = "grid grid-cols-[auto_minmax(0,1fr)_84px_76px] gap-4";
+const RAIL_CARD_CLASS = cn(quietPanelSurfaceClass, "rounded-quiet-lg");
+const MEDIA_GRID_CLASS = "grid grid-cols-[1rem_minmax(0,1fr)_3rem_4.5rem] gap-3 sm:gap-4";
 const MEDIA_ROW_CLASS =
-  "w-full cursor-pointer items-start px-4 py-3 text-left transition-colors hover:bg-surface-low/70";
+  "w-full cursor-pointer items-start border-t border-border/60 px-5 py-3.5 text-left transition-colors hover:bg-surface-low";
 const MEDIA_ROW_META_CLASS = "pt-0.5 font-numeric text-xs leading-5 text-muted-foreground";
-const SCAN_FEEDBACK_DELAY_MS = 500;
 
-function useDelayedFlag(active: boolean, delayMs: number) {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (!active) {
-      setVisible(false);
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setVisible(true);
-    }, delayMs);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [active, delayMs]);
-
-  return visible;
-}
-
-function SectionLabel({ children, className }: { children: string; className?: string }) {
-  return (
-    <h2
-      className={cn(
-        "mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-muted-foreground",
-        className,
-      )}
-    >
-      <span className="h-2 w-2 rounded-full bg-foreground" />
-      {children}
-    </h2>
-  );
+function getDirBasename(path: string) {
+  if (!path) return "";
+  const normalized = path.replace(/[/\\]+$/, "");
+  const parts = normalized.split(/[/\\]/);
+  return parts[parts.length - 1] || path;
 }
 
 function PathControl({
   label,
+  labelAction,
+  icon,
   value,
   placeholder,
   onBrowse,
   onChange,
   onCommit,
-  supportsBrowse,
   loadSuggestions,
+  error,
+  disabled,
 }: {
   label: string;
+  labelAction?: ReactNode;
+  icon: ReactNode;
   value: string;
   placeholder: string;
-  onBrowse: () => void;
+  onBrowse?: () => void;
   onChange?: (value: string) => void;
   onCommit?: () => void;
-  supportsBrowse?: boolean;
   loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
+  error?: string;
+  disabled: boolean;
 }) {
+  const inputId = useId();
+
   return (
-    <div className="space-y-2">
-      <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
-      <div className="flex min-w-0 items-center gap-2">
+    <div className="min-w-0 space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label htmlFor={inputId} className="text-sm font-semibold tracking-tight text-foreground">
+          {label}
+        </label>
+        {labelAction}
+      </div>
+      <div
+        className={cn(
+          quietFieldSurfaceClass,
+          "flex min-w-0 items-center rounded-quiet pl-4 transition-colors focus-within:border-ring/40 focus-within:ring-[3px] focus-within:ring-ring/15",
+        )}
+      >
+        <span className="shrink-0 text-muted-foreground" aria-hidden="true">
+          {icon}
+        </span>
         <PathAutocompleteInput
+          id={inputId}
           value={value}
           readOnly={!onChange}
+          disabled={disabled}
           placeholder={placeholder}
           loadSuggestions={loadSuggestions}
-          inputClassName="h-auto min-w-0 flex-1 truncate rounded-quiet-sm border-0 bg-surface-low px-4 py-3 font-mono text-xs leading-4 text-foreground/90 shadow-none placeholder:text-foreground/90 focus-visible:border-transparent focus-visible:ring-0"
+          inputClassName="h-14 min-w-0 flex-1 truncate border-0 bg-transparent px-3 font-mono text-sm text-foreground shadow-none placeholder:text-muted-foreground focus-visible:border-transparent focus-visible:ring-0"
           onChange={onChange}
           onBlur={onCommit}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.defaultPrevented && !event.nativeEvent.isComposing) onCommit?.();
           }}
         />
-        {(supportsBrowse ?? true) ? (
-          <Button type="button" className="h-11 rounded-quiet-sm px-4 text-xs font-bold" onClick={onBrowse}>
-            浏览
+        {onBrowse ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            className="mr-1.5 h-10 shrink-0 rounded-quiet bg-surface px-4 text-xs font-semibold"
+            onClick={onBrowse}
+          >
+            {useT().workbench.browse}
           </Button>
         ) : null}
       </div>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
 
 function ScanningStatus({ scopeLabel }: { scopeLabel: string }) {
+  const t = useT();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => {
     const started = Date.now();
@@ -143,8 +161,9 @@ function ScanningStatus({ scopeLabel }: { scopeLabel: string }) {
   }, []);
 
   return (
-    <p role="status" className="mt-2 text-xs text-muted-foreground">
-      正在扫描（{scopeLabel}）· 已等待 {elapsedSeconds} 秒
+    <p role="status" className="mb-4 flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      {t.workbench.scanningStatus(scopeLabel, elapsedSeconds)}
     </p>
   );
 }
@@ -165,46 +184,53 @@ function MediaRow({
   const checkboxId = useId();
 
   return (
-    <div className={cn(MEDIA_GRID_CLASS, MEDIA_ROW_CLASS)}>
-      <Checkbox id={checkboxId} className="mt-0.5" checked={selected} disabled={disabled} onCheckedChange={onToggle} />
-      <label htmlFor={checkboxId} className="contents">
-        <div className="min-w-0 space-y-0.5">
-          <div className="truncate text-sm font-bold leading-5 tracking-tight text-foreground">{candidate.name}</div>
-          {candidate.ref.relativePath.includes("/") ? (
-            <div className="truncate font-mono text-[10px]/4 text-muted-foreground">
-              {candidate.ref.relativePath.slice(0, candidate.ref.relativePath.lastIndexOf("/"))}
-            </div>
-          ) : null}
-        </div>
-        <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension.replace(/^\./u, "")}</div>
-        <div className={MEDIA_ROW_META_CLASS}>{formatBytes(candidate.size, { trimTrailingZeros: true })}</div>
-      </label>
-    </div>
+    <label
+      htmlFor={checkboxId}
+      className={cn(MEDIA_GRID_CLASS, MEDIA_ROW_CLASS, disabled && "cursor-default opacity-60")}
+    >
+      <Checkbox
+        id={checkboxId}
+        aria-label={candidate.name}
+        className="mt-0.5"
+        checked={selected}
+        disabled={disabled}
+        onCheckedChange={onToggle}
+      />
+      <div className="min-w-0 space-y-0.5">
+        <div className="truncate text-sm font-bold leading-5 tracking-tight text-foreground">{candidate.name}</div>
+        {candidate.ref.relativePath.includes("/") ? (
+          <div className="truncate font-mono text-[10px]/4 text-muted-foreground">
+            {candidate.ref.relativePath.slice(0, candidate.ref.relativePath.lastIndexOf("/"))}
+          </div>
+        ) : null}
+      </div>
+      <div className={cn(MEDIA_ROW_META_CLASS, "font-bold uppercase")}>{candidate.extension.replace(/^\./u, "")}</div>
+      <div className={MEDIA_ROW_META_CLASS}>{formatBytes(candidate.size, { trimTrailingZeros: true })}</div>
+    </label>
   );
 }
 
 export function WorkbenchSetupView({
   mode,
+  previewMode = false,
+  onExitPreview,
   configLoading = false,
   scanDir,
+  scanDirError,
   recursive = false,
   onRecursiveChange,
   onCommitScanDir,
-  extraScanDirs = [],
   warnings,
-  targetDir = "",
+  targetDir,
   candidates,
   selectedPaths,
   selectedSize,
   totalSize,
-  extensionCount,
   scanStatus,
   scanError,
-  scanning,
   startPending,
   supportedExtensions,
   presetId,
-  runSummary,
   primaryDisabled,
   isServer = false,
   onSuggestScanDir,
@@ -219,204 +245,412 @@ export function WorkbenchSetupView({
   onPresetChange,
   onStart,
   onToggleCandidate,
-  onToggleAll,
+  onSelectCandidates,
 }: WorkbenchSetupViewProps) {
+  const t = useT();
+  const scanning = scanStatus === "scanning";
   const selectedPathSet = new Set(selectedPaths);
   const recursiveId = useId();
-  const scopeLabel = recursive ? "含子目录" : "仅当前目录";
-  const allSelected = candidates.length > 0 && selectedPaths.length === candidates.length;
-  const someSelected = selectedPaths.length > 0 && selectedPaths.length < candidates.length;
-  const showScanFeedback = useDelayedFlag(scanning, SCAN_FEEDBACK_DELAY_MS);
-  const summary =
-    runSummary ||
-    (candidates.length > 0
-      ? `${candidates.length} 个文件 · ${formatBytes(totalSize, { trimTrailingZeros: true })} · ${extensionCount} 种类型`
-      : "");
+  const scopeLabel = recursive ? t.workbench.scopeRecursive : t.workbench.scopeCurrentOnly;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [confirmingStart, setConfirmingStart] = useState(false);
+  const startsWholeDirectory = mode === "scrape" && !previewMode;
 
-  return (
-    <div className="relative h-full overflow-hidden bg-surface-canvas text-foreground">
-      <div className="h-full overflow-y-auto">
-        <main className="mx-auto w-full max-w-6xl px-6 pb-36 pt-10 md:px-10 lg:px-12">
-          <section className="mb-10">
-            <div
-              className={
-                mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all"
-                  ? "grid gap-6 lg:grid-cols-2 lg:gap-8"
-                  : "grid gap-6"
-              }
+  useEffect(() => {
+    if (!previewMode || !onExitPreview || startPending) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing) {
+        event.preventDefault();
+        onExitPreview();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewMode, onExitPreview, startPending]);
+
+  useEffect(() => {
+    if (!previewMode) setSearchQuery("");
+  }, [previewMode]);
+
+  const filteredCandidates = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return candidates;
+    return candidates.filter(
+      (candidate) =>
+        candidate.name.toLowerCase().includes(query) ||
+        candidate.ref.relativePath.toLowerCase().includes(query) ||
+        candidate.extension.toLowerCase().includes(query),
+    );
+  }, [candidates, searchQuery]);
+  const visibleSelectedCount = filteredCandidates.filter((candidate) => selectedPathSet.has(candidate.path)).length;
+  const allSelected = filteredCandidates.length > 0 && visibleSelectedCount === filteredCandidates.length;
+  const someSelected = visibleSelectedCount > 0 && !allSelected;
+  const actions = (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-5">
+      {previewMode ? (
+        <p className="mr-auto text-xs leading-5 text-muted-foreground">
+          {t.workbench.selectedFilesSummary(
+            selectedPaths.length,
+            formatBytes(selectedSize, { trimTrailingZeros: true }),
+          )}
+        </p>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        disabled={startPending || (!previewMode && (refreshDisabled || scanning))}
+        onClick={previewMode ? onExitPreview : onRefreshScan}
+      >
+        {previewMode ? t.workbench.backToConfig : t.workbench.previewFiles}
+      </Button>
+      <Button
+        type="button"
+        disabled={primaryDisabled}
+        onClick={startsWholeDirectory ? () => setConfirmingStart(true) : onStart}
+      >
+        {startPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {mode === "scrape" ? t.workbench.startScrape : t.workbench.startMaintenance}
+      </Button>
+      <Dialog open={confirmingStart} onOpenChange={setConfirmingStart}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.workbench.startWholeDirectoryTitle}</DialogTitle>
+            <DialogDescription>{t.workbench.startWholeDirectoryDescription(scanDir, scopeLabel)}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmingStart(false)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmingStart(false);
+                onStart();
+              }}
             >
-              <PathControl
-                label="扫描目录"
-                value={scanDir}
-                placeholder={configLoading ? "正在读取配置..." : "请选择需要扫描的媒体目录"}
-                onBrowse={onBrowseScanDir}
-                onChange={onScanDirChange}
-                onCommit={onCommitScanDir}
-                supportsBrowse={!isServer}
-                loadSuggestions={onSuggestScanDir ? (value) => onSuggestScanDir({ path: value }) : undefined}
-              />
-              {mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all" ? (
-                <PathControl
-                  label="输出目录"
-                  value={targetDir}
-                  placeholder={configLoading ? "正在读取配置..." : "请选择输出目录"}
-                  onBrowse={onBrowseTargetDir ?? (() => undefined)}
-                  onChange={onTargetDirChange}
-                  supportsBrowse={!isServer}
-                  loadSuggestions={onSuggestTargetDir ? (value) => onSuggestTargetDir({ path: value }) : undefined}
-                />
-              ) : null}
-            </div>
-            <label htmlFor={recursiveId} className="mt-4 flex items-center gap-2 text-sm">
-              <Checkbox
-                id={recursiveId}
-                checked={recursive}
-                onCheckedChange={(checked) => onRecursiveChange?.(checked === true)}
-              />
-              包含子目录
-            </label>
-            {extraScanDirs.length > 0 ? (
-              <p className="mt-2 break-all text-xs text-muted-foreground">
-                额外扫描目录（{scopeLabel}）：{extraScanDirs.join("、")}
-              </p>
-            ) : null}
-            {scanning ? <ScanningStatus scopeLabel={scopeLabel} /> : null}
-            {!scanning && scanStatus === "success" && warnings && warnings.count > 0 ? (
-              <p role="status" className="mt-2 break-all text-sm text-amber-600">
-                部分路径无法访问，已跳过 {warnings.count} 项：{warnings.paths.join("、")}
-              </p>
-            ) : null}
-          </section>
-
-          {mode === "maintenance" ? (
-            <section className="mb-10">
-              <SectionLabel>维护预设</SectionLabel>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {MAINTENANCE_PRESET_OPTIONS.map((option) => {
-                  const active = option.id === presetId;
+              {t.workbench.startScrape}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+  return (
+    <div
+      className={cn(
+        "relative h-full bg-surface-canvas text-foreground",
+        previewMode ? "overflow-hidden" : "overflow-y-auto",
+      )}
+    >
+      <main
+        className={cn(
+          "mx-auto w-full px-5 pb-6 pt-6 md:px-10 lg:px-12 lg:pt-10",
+          !previewMode && mode === "scrape" ? "max-w-3xl" : "max-w-6xl",
+          previewMode && "flex h-full flex-col",
+        )}
+      >
+        <nav
+          aria-label={t.workbench.stepsNavAriaLabel}
+          className="mb-6 flex shrink-0 flex-wrap justify-end gap-2 text-sm"
+        >
+          <button
+            type="button"
+            disabled={!previewMode || startPending}
+            onClick={onExitPreview}
+            aria-current={!previewMode ? "step" : undefined}
+            className={cn(
+              "rounded-quiet px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              !previewMode
+                ? "font-semibold"
+                : "text-muted-foreground enabled:cursor-pointer enabled:hover:text-foreground",
+            )}
+          >
+            {t.workbench.step01}
+          </button>
+          <span
+            aria-current={previewMode ? "step" : undefined}
+            className={cn("px-2 py-1", previewMode ? "font-semibold" : "text-muted-foreground")}
+          >
+            {t.workbench.step02}
+            <span className="ml-1 text-xs text-muted-foreground">{t.workbench.optional}</span>
+          </span>
+        </nav>
+        {!previewMode ? (
+          <section
+            className={cn(
+              "grid items-start gap-5 lg:gap-8",
+              mode === "maintenance" && "lg:grid-cols-[13rem_minmax(0,1fr)]",
+            )}
+          >
+            {mode === "maintenance" ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                {maintenancePresetIdSchema.options.map((id) => {
+                  const active = id === presetId;
                   return (
                     <button
-                      key={option.id}
+                      key={id}
                       type="button"
+                      aria-pressed={active}
+                      disabled={startPending}
                       className={cn(
-                        "flex min-h-24 flex-col items-start justify-between rounded-quiet-sm bg-surface-floating px-4 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                        active ? "ring-1 ring-foreground/25" : "hover:bg-surface-low",
+                        RAIL_CARD_CLASS,
+                        "flex min-h-24 flex-col items-start justify-between px-4 py-4 text-left transition-all duration-300 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/20",
+                        active ? "border-ring/50 ring-2 ring-ring/10" : "hover:border-ring/40",
                       )}
-                      onClick={() => onPresetChange(option.id)}
+                      onClick={() => onPresetChange(id)}
                     >
                       <div className="flex w-full items-start justify-between gap-3">
-                        <div className="text-sm font-bold tracking-tight">{option.label}</div>
+                        <div className="text-sm font-bold tracking-tight">{t.domain.maintenancePresets[id].label}</div>
                         <span
                           className={cn(
                             "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
-                            active ? "border-foreground bg-foreground text-background" : "border-muted-foreground/30",
+                            active ? "border-primary bg-primary text-primary-foreground" : "border-border",
                           )}
                         >
                           {active ? <Check className="h-3 w-3" /> : null}
                         </span>
                       </div>
                       <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                        {getMaintenancePresetMeta(option.id).description}
+                        {t.domain.maintenancePresets[id].description}
                       </p>
                     </button>
                   );
                 })}
               </div>
-            </section>
-          ) : null}
-
-          <section>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                  disabled={candidates.length === 0 || scanning}
-                  onCheckedChange={() => onToggleAll(!allSelected)}
+            ) : null}
+            <div className={cn(quietPanelSurfaceClass, "relative min-w-0 space-y-6 rounded-quiet-xl p-6 md:p-8")}>
+              <div className="space-y-6 md:space-y-8">
+                <PathControl
+                  label={t.workbench.scanDirLabel}
+                  disabled={startPending}
+                  labelAction={
+                    <label
+                      htmlFor={recursiveId}
+                      className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      <Checkbox
+                        id={recursiveId}
+                        checked={recursive}
+                        disabled={startPending}
+                        onCheckedChange={(checked) => onRecursiveChange?.(checked === true)}
+                      />
+                      {t.workbench.includeSubdirs}
+                    </label>
+                  }
+                  icon={<FolderOpen className="h-5 w-5" />}
+                  value={scanDir}
+                  error={scanDirError}
+                  placeholder={configLoading ? t.workbench.loadingConfig : t.workbench.scanDirPlaceholder}
+                  onBrowse={isServer ? undefined : onBrowseScanDir}
+                  onChange={onScanDirChange}
+                  onCommit={onCommitScanDir}
+                  loadSuggestions={onSuggestScanDir}
                 />
-              </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                {summary ? <span>{summary}</span> : null}
-                {scanDir ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-quiet-sm"
-                    disabled={scanning || refreshDisabled}
-                    onClick={onRefreshScan}
-                  >
-                    <RefreshCw className={cn("h-4 w-4", scanning && "animate-spin")} />
-                    重新扫描
-                  </Button>
+                {targetDir !== undefined ? (
+                  <div>
+                    <div className="mb-4 flex h-7 items-center pl-6" aria-hidden="true">
+                      <span className="h-full border-l border-dashed border-border" />
+                      <ArrowDown className="-ml-2 mt-6 h-4 w-4 rounded-full bg-surface text-muted-foreground" />
+                    </div>
+                    <PathControl
+                      label={t.workbench.outputDirLabel}
+                      disabled={startPending}
+                      icon={<FolderOutput className="h-5 w-5" />}
+                      value={targetDir}
+                      placeholder={configLoading ? t.workbench.loadingConfig : t.workbench.outputDirPlaceholder}
+                      onBrowse={isServer ? undefined : onBrowseTargetDir}
+                      onChange={onTargetDirChange}
+                      loadSuggestions={onSuggestTargetDir}
+                    />
+                  </div>
                 ) : null}
               </div>
+              {actions}
             </div>
-
-            <div className="relative overflow-hidden rounded-quiet bg-surface-floating" aria-busy={scanning}>
-              <div
-                className={cn(
-                  MEDIA_GRID_CLASS,
-                  "px-4 py-3 font-numeric text-[10px]/4 font-bold uppercase tracking-[0.16em] text-muted-foreground",
-                )}
-              >
-                <span />
-                <span>文件</span>
-                <span>类型</span>
-                <span>大小</span>
-              </div>
-
-              {scanning && candidates.length === 0 && !showScanFeedback ? <div className="min-h-64" /> : null}
-
-              {scanning && candidates.length === 0 && showScanFeedback ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                  <div className="text-sm font-medium">正在扫描媒体文件（{scopeLabel}）</div>
-                  <div className="max-w-md break-all font-mono text-xs">{scanDir}</div>
-                </div>
-              ) : null}
-
-              {scanning && candidates.length > 0 && showScanFeedback ? (
-                <div className="pointer-events-none absolute inset-x-4 top-12 z-10 flex justify-center">
-                  <div className="flex items-center gap-2 rounded-quiet-capsule bg-surface-floating/95 px-3 py-2 text-xs font-medium text-muted-foreground shadow-[0_12px_32px_-24px_rgba(0,0,0,0.5)] ring-1 ring-border/45 backdrop-blur">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    正在刷新目录
+          </section>
+        ) : (
+          <section className="grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)] gap-5 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
+            <div className="hidden min-h-0 overflow-y-auto lg:block">
+              <div className={cn(RAIL_CARD_CLASS, "flex flex-col gap-3 p-4")}>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground">
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span>{t.workbench.scanDirLabel}</span>
+                  </div>
+                  <div className="truncate text-xs font-bold text-foreground" title={scanDir}>
+                    {getDirBasename(scanDir)}
+                  </div>
+                  <div className="truncate font-mono text-[10px] text-muted-foreground/75" title={scanDir}>
+                    {scanDir}
                   </div>
                 </div>
-              ) : null}
 
-              {scanStatus === "error" && !scanning ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 text-center">
-                  <AlertCircle className="h-8 w-8 text-destructive" />
-                  <div>
-                    <div className="font-semibold">扫描失败</div>
-                    <div className="mt-2 max-w-xl wrap-break-word text-sm text-muted-foreground">{scanError}</div>
-                  </div>
-                </div>
-              ) : null}
+                {targetDir !== undefined ? (
+                  <>
+                    <div className="flex items-center gap-2 py-0.5">
+                      <div className="h-px flex-1 bg-border/60" />
+                      <ArrowDown className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                      <div className="h-px flex-1 bg-border/60" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground">
+                        <FolderOutput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span>{t.workbench.outputDirLabel}</span>
+                      </div>
+                      <div className="truncate text-xs font-bold text-foreground" title={targetDir}>
+                        {getDirBasename(targetDir)}
+                      </div>
+                      <div className="truncate font-mono text-[10px] text-muted-foreground/75" title={targetDir}>
+                        {targetDir}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
 
-              {!scanning && scanStatus !== "error" && !scanDir ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-                  <FolderOpen className="h-8 w-8" />
-                  <div className="text-sm font-medium">选择扫描目录后，会在这里列出可处理的媒体文件。</div>
-                </div>
-              ) : null}
-
-              {!scanning && scanStatus === "success" && scanDir && candidates.length === 0 ? (
-                <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-                  <FolderOpen className="h-8 w-8" />
-                  <div className="text-sm font-medium">
-                    {recursive ? "未找到支持的视频" : "当前目录未找到视频，可勾选“包含子目录”"}
-                  </div>
-                  <div className="max-w-xl break-all font-mono text-xs">{scanDir}</div>
-                  {supportedExtensions.length > 0 ? (
-                    <div className="text-xs">支持类型: {supportedExtensions.join(", ")}</div>
+                <div className="flex flex-wrap gap-1.5 border-t border-border/60 pt-3">
+                  <span className="inline-flex items-center rounded-quiet bg-surface-low px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {scopeLabel}
+                  </span>
+                  {mode === "maintenance" ? (
+                    <span className="inline-flex items-center rounded-quiet bg-surface-low px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {t.domain.maintenancePresets[presetId].label}
+                    </span>
                   ) : null}
                 </div>
+              </div>
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-col">
+              {scanning ? <ScanningStatus scopeLabel={scopeLabel} /> : null}
+              {scanStatus === "success" && warnings && warnings.count > 0 ? (
+                <details className="mb-4 shrink-0 rounded-quiet border border-border/60 bg-surface-low px-4 py-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    {t.workbench.inaccessiblePathsWarning(warnings.count)}
+                  </summary>
+                  <ul className="mt-2 max-h-24 space-y-1 overflow-y-auto break-all font-mono text-xs text-muted-foreground">
+                    {warnings.paths.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
+                </details>
               ) : null}
+              <div
+                className={cn(
+                  quietPanelSurfaceClass,
+                  "relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-quiet-xl",
+                )}
+                aria-busy={scanning}
+              >
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3.5">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Checkbox
+                      aria-label={t.workbench.selectVisibleFilesAriaLabel}
+                      checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                      disabled={filteredCandidates.length === 0 || scanning || startPending}
+                      onCheckedChange={() =>
+                        onSelectCandidates(
+                          filteredCandidates.map((candidate) => candidate.path),
+                          !allSelected,
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={refreshDisabled || scanning || startPending}
+                      onClick={onRefreshScan}
+                    >
+                      {t.workbench.refreshFiles}
+                    </Button>
+                    <span className="font-numeric text-xs font-semibold text-foreground">
+                      {t.workbench.selectedOfTotalFiles(selectedPaths.length, candidates.length)}
+                    </span>
+                  </div>
 
-              {candidates.length > 0 ? (
-                <div className={cn("max-h-[48vh] overflow-y-auto transition-opacity", scanning && "opacity-55")}>
-                  {candidates.map((candidate) => (
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
+                    <div className="relative w-44 sm:w-56">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="text"
+                        aria-label={t.workbench.searchFilesAriaLabel}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Escape" || !searchQuery || event.nativeEvent.isComposing) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setSearchQuery("");
+                        }}
+                        placeholder={t.workbench.searchFilesPlaceholder}
+                        className={cn(
+                          quietFieldSurfaceClass,
+                          "h-8 w-full rounded-quiet pl-8 pr-7 text-xs text-foreground placeholder:text-muted-foreground transition-colors focus:border-ring/40 focus:outline-none focus:ring-[3px] focus:ring-ring/15",
+                        )}
+                      />
+                      {searchQuery ? (
+                        <button
+                          type="button"
+                          aria-label={t.workbench.clearSearchAriaLabel}
+                          onClick={() => setSearchQuery("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {t.workbench.totalSize(formatBytes(totalSize, { trimTrailingZeros: true }))}
+                    </span>
+                    {searchQuery ? (
+                      <span className="text-xs text-muted-foreground">
+                        {t.workbench.showingItems(filteredCandidates.length)}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div
+                  className={cn(
+                    MEDIA_GRID_CLASS,
+                    "shrink-0 bg-surface-low px-5 py-4 font-numeric text-[10px]/4 font-bold uppercase tracking-[0.16em] text-muted-foreground",
+                  )}
+                >
+                  <span />
+                  <span>{t.workbench.colFile}</span>
+                  <span>{t.workbench.colType}</span>
+                  <span>{t.workbench.colSize}</span>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {scanStatus === "error" ? (
+                    <div className="flex min-h-64 flex-col items-center justify-center gap-4 px-6 text-center">
+                      <AlertCircle className="h-8 w-8 text-destructive" />
+                      <div>
+                        <div className="font-semibold">{t.workbench.scanFailed}</div>
+                        <div className="mt-2 max-w-xl wrap-break-word text-sm text-muted-foreground">{scanError}</div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!scanning && scanStatus !== "error" && !scanDir ? (
+                    <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                      <FolderOpen className="h-8 w-8" />
+                      <div className="text-sm font-medium">{t.workbench.previewHint}</div>
+                    </div>
+                  ) : null}
+
+                  {scanStatus === "success" && scanDir && candidates.length === 0 ? (
+                    <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                      <FolderOpen className="h-8 w-8" />
+                      <div className="text-sm font-medium">
+                        {recursive ? t.workbench.noVideosFoundRecursive : t.workbench.noVideosFoundCurrent}
+                      </div>
+                      <div className="max-w-xl break-all font-mono text-xs">{scanDir}</div>
+                      {supportedExtensions.length > 0 ? (
+                        <div className="text-xs">{t.workbench.supportedTypes(supportedExtensions.join(", "))}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {filteredCandidates.map((candidate) => (
                     <MediaRow
                       key={candidate.path}
                       candidate={candidate}
@@ -426,34 +660,29 @@ export function WorkbenchSetupView({
                       onToggle={() => onToggleCandidate(candidate.path)}
                     />
                   ))}
+
+                  {!scanning && candidates.length > 0 && filteredCandidates.length === 0 ? (
+                    <div className="flex min-h-48 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                      <Search className="h-7 w-7 text-muted-foreground/40" />
+                      <div className="text-sm font-medium">{t.workbench.noFilesMatching(searchQuery)}</div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="rounded-full text-xs"
+                        onClick={() => setSearchQuery("")}
+                      >
+                        {t.workbench.clearSearch}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+                <div className="shrink-0 px-5 pb-5">{actions}</div>
+              </div>
             </div>
           </section>
-        </main>
-      </div>
-
-      {scanDir ? (
-        <FloatingWorkbenchBar contentClassName="mx-auto flex w-fit max-w-[min(92vw,26rem)] items-center justify-between gap-3 px-3 py-2.5 md:max-w-[26rem] md:px-4">
-          <div className="min-w-0 font-numeric text-sm font-extrabold tracking-tight">
-            已选 {selectedPaths.length} / {candidates.length} 个文件
-            {selectedSize > 0 ? (
-              <span className="ml-2 text-xs font-bold text-muted-foreground">
-                {formatBytes(selectedSize, { trimTrailingZeros: true })}
-              </span>
-            ) : null}
-          </div>
-          <Button
-            type="button"
-            disabled={primaryDisabled}
-            className="h-10 shrink-0 rounded-quiet-capsule px-5 text-sm font-bold"
-            onClick={onStart}
-          >
-            {startPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            开始
-          </Button>
-        </FloatingWorkbenchBar>
-      ) : null}
+        )}
+      </main>
     </div>
   );
 }

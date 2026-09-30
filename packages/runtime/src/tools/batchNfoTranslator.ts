@@ -5,7 +5,11 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { BatchTranslateApplyResultItem, BatchTranslateField, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
-import { commitRegisteredPublication, type RegisteredPublicationContext } from "../publication";
+import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { acquireOutputDirectories } from "../publication/outputMutex";
+import { toRootFileRef } from "../publication/outputRefs";
+import type { PublicationOutputPort } from "../publication/types";
+import { WriteOutput } from "../publication/WriteOutput";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,
@@ -17,7 +21,8 @@ import {
   toLlmTextRequest,
   toTarget,
 } from "../scrape";
-import { getNfoWritePaths, NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
+import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
 
@@ -69,7 +74,11 @@ type PendingTranslationResult = {
 };
 
 export interface BatchNfoTranslatorDependencies {
-  publication?: RegisteredPublicationContext;
+  publication?: {
+    roots: readonly { id: string; hostPath: string }[];
+    outputs?: PublicationOutputPort;
+    library?: MovieLibrary;
+  };
   localScanService?: BatchTranslateLocalScanService;
   llmApiClient?: Pick<LlmApiClient, "generateText">;
   nfoGenerator?: NfoGenerator;
@@ -221,8 +230,8 @@ const assertLlmConfiguration = (config: Configuration): void => {
   const apiKey = config.translate.llmApiKey.trim();
   const baseUrl = normalizeLlmBaseUrl(config.translate.llmBaseUrl);
 
-  if (!model) throw new Error("请先配置 LLM 模型名称");
-  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("请先配置 LLM API Key");
+  if (!model) throw new Error("Configure LLM model name first");
+  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("Configure LLM API key first");
 };
 
 const translateChunk = async (
@@ -238,9 +247,10 @@ const translateChunk = async (
     }),
   );
 
-  if (!content) throw new Error("LLM 返回空响应");
+  if (!content) throw new Error("LLM returned an empty response");
   const { translations } = batchTranslationSchema.parse(JSON.parse(content));
-  if (translations.length !== texts.length) throw new Error("LLM 返回的批量翻译数量与输入不一致");
+  if (translations.length !== texts.length)
+    throw new Error("LLM returned a batch translation count that does not match input");
   return translations;
 };
 
@@ -267,7 +277,7 @@ const translatePendingTexts = async (
       chunk.forEach((item, index) => {
         const value = translated[index]?.trim();
         if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
-        else failedReasonByKey.set(item.key, "LLM 返回了空翻译结果");
+        else failedReasonByKey.set(item.key, "LLM returned an empty translation result");
       });
     } catch (error) {
       const message = toErrorMessage(error);
@@ -312,7 +322,7 @@ export const applyBatchNfoTranslations = async (
     throw new Error("Batch NFO translation apply requires an llmApiClient dependency");
   }
   const publication = dependencies.publication;
-  if (!publication) throw new Error("Batch NFO translation requires a publication context");
+  if (!publication) throw new Error("Batch NFO translation requires registered roots");
 
   assertLlmConfiguration(config);
 
@@ -379,7 +389,7 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: false,
         translatedFields: [],
-        error: "缺少可写回的 NFO 或元数据",
+        error: "Missing writable NFO or metadata",
       });
       continue;
     }
@@ -405,7 +415,7 @@ export const applyBatchNfoTranslations = async (
         translatedFields.push(action.field);
       } else {
         const reason = failedReasonByKey.get(action.key);
-        errors.push(`${action.field === "title" ? "标题" : "简介"}翻译失败${reason ? `：${reason}` : ""}`);
+        errors.push(`${action.field === "title" ? "Title" : "Plot"} translation failed${reason ? `: ${reason}` : ""}`);
       }
     }
 
@@ -414,14 +424,14 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: false,
         translatedFields,
-        error: errors.join("；") || "未生成任何可写回的翻译结果",
+        error: errors.join("; ") || "No writable translation results generated",
       });
       continue;
     }
 
     try {
       const detectedNfoNaming = await resolveExistingNfoNaming(entry.nfoPath);
-      const artifacts = new Map<string, string>();
+      const artifactsByPath = new Map<string, string>();
       const savedNfoPath = await writeNfo({
         assets: {
           downloaded: [],
@@ -443,21 +453,49 @@ export const applyBatchNfoTranslations = async (
         nfoPath: entry.nfoPath,
         sourceVideoPath: entry.fileInfo.filePath,
         writeFile: async (path, content) => {
-          artifacts.set(path, content);
+          artifactsByPath.set(path, content);
         },
       });
-      await commitRegisteredPublication(
-        {
-          operationId: `batch-nfo-translation:${entry.nfoPath}`,
-          operationType: "maintenance",
-          artifacts: [...artifacts].map(([targetPath, data]) => ({ targetPath, content: { kind: "text", data } })),
-          obsoletePaths: getNfoWritePaths(entry.nfoPath, detectedNfoNaming).stalePaths.filter(
-            (path) => !artifacts.has(path),
-          ),
-          replaceExistingArtifacts: true,
-        },
-        publication,
+      const registered = publication.outputs
+        ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, async (id) => {
+            const root = publication.roots.find((root) => root.id === id);
+            if (!root) throw new Error(`Publication root not found: ${id}`);
+            return root;
+          })
+        : undefined;
+      const artifacts = [...artifactsByPath]
+        .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
+        .map(([targetPath, data]) => ({ targetPath, data }));
+      const inventory = new DirectoryInventory();
+      const release = await acquireOutputDirectories(
+        artifacts.map((artifact) => artifact.targetPath),
+        (directory) => inventory.canonicalDirectory(directory),
       );
+      try {
+        await new WriteOutput().install(artifacts, {
+          protectedMediaFiles: registered?.mediaPaths,
+          commit: async () => {
+            if (!registered) return;
+            if (!publication.library) throw new Error("Registered NFO write requires library updates");
+            await writePublishedMovie(
+              publication.library,
+              registered.movieId,
+              artifacts.map((artifact) => {
+                const ref = toRootFileRef(artifact.targetPath, publication.roots);
+                return {
+                  kind: "nfo",
+                  uri: ref.relativePath,
+                  rootId: ref.rootId,
+                  relativePath: ref.relativePath,
+                  published: true,
+                };
+              }),
+            );
+          },
+        });
+      } finally {
+        release();
+      }
 
       results.push({
         ...baseResult,

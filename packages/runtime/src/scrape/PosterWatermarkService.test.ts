@@ -5,7 +5,6 @@ import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildBadgeMarkup,
-  buildGeneratedBadgeOverlaySvg,
   inferOutputExtension,
   PosterWatermarkService,
   resolveBadgeOverlayLayout,
@@ -80,15 +79,6 @@ describe("PosterWatermarkService pure rendering helpers", () => {
     expect(constrained.badgeWidth).toBeLessThanOrEqual(20);
     expect(constrained.overlayHeight).toBeLessThanOrEqual(5);
     expect(constrained.badgeHeight).toBeGreaterThan(0);
-  });
-
-  it("builds a standalone generated overlay SVG", () => {
-    const overlay = buildGeneratedBadgeOverlaySvg(subtitleBadge, 120, 60);
-
-    expect(overlay).toMatchObject({ width: 120, height: 60 });
-    expect(overlay.svg).toContain('<svg width="120" height="60" viewBox="0 0 120 60"');
-    expect(overlay.svg).toContain("badge-fill-subtitle");
-    expect(overlay.svg).toContain("中字");
   });
 
   it("places overlays at all poster corners without negative offsets", () => {

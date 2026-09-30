@@ -17,6 +17,7 @@ import {
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
+import { useT } from "../i18n";
 
 export type ChipArrayOption = string | { value: string; label: string };
 
@@ -35,6 +36,7 @@ export function ChipArrayField({
   showBulkActions = false,
   defaultOpen = false,
 }: ChipArrayFieldProps) {
+  const t = useT();
   const [inputValue, setInputValue] = useState("");
   const [open, setOpen] = useState(defaultOpen);
   const values: string[] = Array.isArray(field.value) ? field.value : [];
@@ -108,17 +110,22 @@ export function ChipArrayField({
               >
                 <div className="flex flex-wrap gap-1.5 items-center flex-1 min-w-0">
                   {values.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">{placeholder || "未选择可选字段"}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {placeholder || t.configForm.chipArray.noneSelected}
+                    </span>
                   ) : allOptionsSelected ? (
-                    <span className="text-xs font-medium text-foreground">已选择 {resolvedOptions.length} 个字段</span>
+                    <span className="text-xs font-medium text-foreground">
+                      {t.configForm.chipArray.allSelected(resolvedOptions.length)}
+                    </span>
                   ) : values.length > 3 ? (
                     <span className="text-xs font-medium text-foreground">
-                      已选择 {values.length} 个字段 (
-                      {values
-                        .slice(0, 2)
-                        .map((v) => labelByValue.get(v) ?? v)
-                        .join(", ")}{" "}
-                      等)
+                      {t.configForm.chipArray.someSelected(
+                        values.length,
+                        values
+                          .slice(0, 2)
+                          .map((v) => labelByValue.get(v) ?? v)
+                          .join(", "),
+                      )}
                     </span>
                   ) : (
                     values.map((value: string) => (
@@ -143,11 +150,11 @@ export function ChipArrayField({
           </FormControl>
           <PopoverContent className="w-[320px] p-0" align="end" disablePortal={defaultOpen}>
             <Command>
-              <CommandInput placeholder="搜索字段..." className="h-8 text-xs" />
+              <CommandInput placeholder={t.configForm.chipArray.searchPlaceholder} className="h-8 text-xs" />
               {showBulkActions && hasOptions && (
                 <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs bg-background">
                   <span className="mr-auto text-[11px] text-muted-foreground">
-                    已选 {values.length}/{resolvedOptions.length}
+                    {t.configForm.chipArray.selectedCount(values.length, resolvedOptions.length)}
                   </span>
                   <Button
                     type="button"
@@ -157,7 +164,7 @@ export function ChipArrayField({
                     onClick={() => field.onChange(resolvedOptions.map((option) => option.value))}
                     disabled={allOptionsSelected}
                   >
-                    全选
+                    {t.configForm.selectAll}
                   </Button>
                   <Button
                     type="button"
@@ -167,12 +174,12 @@ export function ChipArrayField({
                     onClick={() => field.onChange([])}
                     disabled={values.length === 0}
                   >
-                    全不选
+                    {t.configForm.selectNone}
                   </Button>
                 </div>
               )}
               <CommandList className="max-h-60 overflow-y-auto">
-                <CommandEmpty className="text-xs py-3">无匹配字段</CommandEmpty>
+                <CommandEmpty className="text-xs py-3">{t.configForm.chipArray.noMatches}</CommandEmpty>
                 <CommandGroup>
                   {resolvedOptions.map((option) => {
                     const isSelected = values.includes(option.value);
@@ -203,7 +210,7 @@ export function ChipArrayField({
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder={placeholder || "输入文本，按 Enter 或逗号添加..."}
+                placeholder={placeholder || t.configForm.chipArray.inputPlaceholder}
                 className="h-8 flex-1 text-sm bg-background/50 focus:bg-background transition-all"
               />
             </FormControl>
@@ -219,7 +226,7 @@ export function ChipArrayField({
               size="sm"
               className="h-8 px-3 text-xs shrink-0"
             >
-              添加
+              {t.common.add}
             </Button>
           </div>
 
@@ -240,7 +247,7 @@ export function ChipArrayField({
               ))}
             </div>
           ) : (
-            <div className="text-[11px] text-muted-foreground/60 italic px-1">暂无配置词汇</div>
+            <div className="text-[11px] text-muted-foreground/60 italic px-1">{t.configForm.chipArray.empty}</div>
           )}
         </div>
       )}

@@ -1,3 +1,4 @@
+import type { DirectoryTaskScope, DiscoveryProgress } from "./directoryTasks";
 import type { RootFileRef } from "./mediaRef";
 import type {
   CrawlerData,
@@ -10,13 +11,22 @@ import type {
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
 
-export type MaintenanceSessionStatus = "queued" | "running" | "paused" | "stopping" | "completed" | "failed";
+export type MaintenanceSessionStatus =
+  | "queued"
+  | "discovering"
+  | "running"
+  | "paused"
+  | "stopping"
+  | "completed"
+  | "failed"
+  | "stopped"
+  | "interrupted";
 export type MaintenanceSessionPhase = "preview" | "apply";
 
 export type MaintenanceSessionRef = RootFileRef;
 
 export interface MaintenanceSessionProgress {
-  totalEntries: number;
+  totalEntries: number | null;
   completedEntries: number;
   successCount: number;
   failedCount: number;
@@ -35,7 +45,16 @@ export interface MaintenanceSessionSnapshot extends MaintenanceSessionProgress {
 
 export type MaintenanceSessionPreviewStatus = "pending" | "processing" | "ready" | "blocked" | "applied" | "failed";
 
+export interface MaintenanceMovieGroup {
+  movieId: string;
+  files: Array<RootFileRef & { fileId: string }>;
+  assets: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
+}
+
 export interface MaintenanceSessionPreview {
+  files?: LocalScanEntry[];
+  movieGroup?: MaintenanceMovieGroup;
+  affectedFiles?: Array<{ fileId: string; currentPath: string; targetPath: string }>;
   id: string;
   sessionId: string;
   rootId: string;
@@ -49,7 +68,6 @@ export interface MaintenanceSessionPreview {
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
   entry?: LocalScanEntry;
-  librarySource?: MaintenanceLibrarySource;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,14 +103,6 @@ export interface MaintenanceSessionEvent {
 export interface MaintenanceApplyItemResult {
   status: "success" | "failed" | "skipped";
   error?: string | null;
-  entry?: LocalScanEntry;
-  crawlerData?: CrawlerData;
-  fieldDiffs?: FieldDiff[];
-  unchangedFieldDiffs?: FieldDiff[];
-  pathDiff?: PathDiff;
-  outputRelativePath?: string;
-  outputSize?: number;
-  outputModifiedAt?: Date | null;
 }
 
 export interface MaintenancePreviewBatch {
@@ -107,18 +117,14 @@ export interface MaintenanceApplyBatch {
   applied: MaintenanceSessionApplyLog[];
 }
 
-export interface MaintenanceLibrarySource {
-  libraryItemId: string;
-  libraryFileId: string;
-  rootId: string;
-  rootRelativePath: string;
-}
-
 export interface MaintenanceSessionDraft {
   fieldSelections: Record<string, Record<string, MaintenanceFieldSelectionSide>>;
 }
 
 export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProgress {
+  directoryScope?: DirectoryTaskScope;
+  discovery?: DiscoveryProgress;
+  manifestFixed?: boolean;
   id: string;
   rootId: string;
   outputRootId: string;
@@ -126,7 +132,6 @@ export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProg
   presetId: MaintenancePresetId;
   phase: MaintenanceSessionPhase;
   status: MaintenanceSessionStatus;
-  generation: number;
   refs: MaintenanceSessionRef[];
   timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
   error: string | null;

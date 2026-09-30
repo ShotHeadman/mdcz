@@ -1,8 +1,4 @@
-import {
-  buildSiteConnectivityHeaders,
-  probeSiteConnectivity,
-  resolveSiteConnectivityTargetUrl,
-} from "@mdcz/runtime/crawler";
+import { probeSiteConnectivity, resolveSiteConnectivityTargetUrl } from "@mdcz/runtime/crawler";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
@@ -15,21 +11,6 @@ describe("siteConnectivity", () => {
     expect(resolveSiteConnectivityTargetUrl(Website.DMM_TV)).toBe("https://video.dmm.co.jp/");
     expect(resolveSiteConnectivityTargetUrl(Website.H0930)).toBe("https://www.h0930.com");
     expect(resolveSiteConnectivityTargetUrl(Website.H4610)).toBe("https://www.h4610.com");
-  });
-
-  it("builds cookie headers from crawler settings and site-specific probe requirements", () => {
-    const configuration = createConfiguration();
-    configuration.network.javdbCookie = "auth=1";
-
-    expect(buildSiteConnectivityHeaders(Website.JAVDB, configuration)).toEqual({
-      cookie: "auth=1",
-    });
-    expect(buildSiteConnectivityHeaders(Website.MGSTAGE, configuration)).toEqual({
-      cookie: "adc=1",
-    });
-    expect(buildSiteConnectivityHeaders(Website.SOKMIL, configuration)).toEqual({
-      cookie: "AGEAUTH=ok",
-    });
   });
 
   it("formats successful probe results with status and latency", async () => {
@@ -47,14 +28,14 @@ describe("siteConnectivity", () => {
 
     expect(result.ok).toBe(true);
     expect(result.status).toBe(204);
-    expect(result.message).toMatch(/^HTTP 204 · \d+ms$/u);
+    expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     expect(networkClient.probe).toHaveBeenCalledWith(
       "https://www.avbase.net",
       expect.objectContaining({ timeout: 10000 }),
     );
   });
 
-  it("returns a readable error message when the probe throws", async () => {
+  it("returns the request error when the probe throws", async () => {
     const configuration = createConfiguration();
     const networkClient = {
       probe: vi.fn().mockRejectedValue(new Error("socket hang up")),
@@ -63,6 +44,6 @@ describe("siteConnectivity", () => {
     const result = await probeSiteConnectivity(Website.JAVBUS, configuration, networkClient);
 
     expect(result.ok).toBe(false);
-    expect(result.message).toBe("请求失败: socket hang up");
+    expect(result.error).toBe("socket hang up");
   });
 });

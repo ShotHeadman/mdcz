@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { type Messages, useT } from "../../i18n";
 
 const TOOL_ICON_BUTTON_CLASS =
   "h-11 w-11 shrink-0 rounded-quiet-sm bg-surface-low text-foreground hover:bg-surface-raised/75 transition-colors";
@@ -53,13 +54,6 @@ const persistBatchTranslateDirectory = (directory: string): void => {
   }
 };
 
-const BATCH_SIZE_PRESETS = [
-  { label: "1 条 (逐项)", value: 1 },
-  { label: "5 条", value: 5 },
-  { label: "10 条", value: 10 },
-  { label: "20 条 (合并)", value: 20 },
-];
-
 type BatchTranslateItemApplyStatus = "idle" | "processing" | "success" | "partial" | "failed";
 
 type BatchNfoTranslatorApplySummary = {
@@ -82,19 +76,8 @@ const toBatchTranslateItemApplyStatus = (result: BatchTranslateApplyResultItem):
   return "failed";
 };
 
-const buildBatchTranslateApplyStatusLabel = (status: BatchTranslateItemApplyStatus): string => {
-  switch (status) {
-    case "processing":
-      return "翻译中";
-    case "success":
-      return "成功";
-    case "partial":
-      return "部分成功";
-    case "failed":
-      return "失败";
-    default:
-      return "待处理";
-  }
+const buildBatchTranslateApplyStatusLabel = (status: BatchTranslateItemApplyStatus, t: Messages): string => {
+  return t.tools.batchTranslateStatus[status];
 };
 
 const buildFailedBatchTranslateResult = (
@@ -121,6 +104,7 @@ export function SingleFilePathScraperDetail({
   onBrowseFile,
   onRun,
 }: SingleFilePathScraperDetailProps) {
+  const t = useT();
   const [filePath, setFilePath] = useState("");
 
   const browseFile = async () => {
@@ -135,7 +119,7 @@ export function SingleFilePathScraperDetail({
           htmlFor="filePath"
           className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
         >
-          文件路径
+          {t.tools.filePath}
         </Label>
         <div className="flex flex-col gap-3 sm:flex-row">
           <Input
@@ -151,7 +135,7 @@ export function SingleFilePathScraperDetail({
             </Button>
           ) : null}
         </div>
-        <p className={TOOL_NOTE_CLASS}>适合针对单个失败样本重试，任务启动后会自动跳转到日志页面。</p>
+        <p className={TOOL_NOTE_CLASS}>{t.tools.singleFileScrapeNote}</p>
       </div>
 
       <Button
@@ -159,7 +143,7 @@ export function SingleFilePathScraperDetail({
         disabled={pending}
         className={cn(TOOL_PRIMARY_BUTTON_CLASS, "w-full sm:w-auto")}
       >
-        {pending ? "正在刮削..." : "开始单文件刮削"}
+        {pending ? t.tools.scraping : t.tools.startSingleFileScrape}
       </Button>
     </div>
   );
@@ -197,6 +181,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
   onBrowseDirectory,
   onScan,
 }: BatchNfoTranslatorWorkspaceDetailProps) {
+  const t = useT();
   const [directory, setDirectory] = useState(readStoredBatchTranslateDirectory);
   const [batchSizeInput, setBatchSizeInput] = useState(String(DEFAULT_BATCH_TRANSLATE_SIZE));
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -294,7 +279,10 @@ export function BatchNfoTranslatorWorkspaceDetail({
     for (let index = 0; index < selectedItems.length; index += normalizedBatchSize) {
       await waitWhileApplyPaused();
       const chunk = selectedItems.slice(index, index + normalizedBatchSize);
-      const chunkLabel = chunk.length === 1 ? chunk[0]?.number : `${chunk[0]?.number ?? "..."} 等 ${chunk.length} 项`;
+      const chunkLabel =
+        chunk.length === 1
+          ? chunk[0]?.number
+          : t.tools.batchTranslateChunkLabel(chunk[0]?.number ?? "...", chunk.length);
       setItemStatusByPath((current) => ({
         ...current,
         ...Object.fromEntries(chunk.map((item) => [item.filePath, "processing"])),
@@ -315,7 +303,9 @@ export function BatchNfoTranslatorWorkspaceDetail({
       const returnedResultByPath = new Map(chunkResults.map((result) => [result.filePath, result]));
       const resolvedChunkResults = chunk.map((item) => ({
         filePath: item.filePath,
-        result: returnedResultByPath.get(item.filePath) ?? buildFailedBatchTranslateResult(item, "未返回翻译结果"),
+        result:
+          returnedResultByPath.get(item.filePath) ??
+          buildFailedBatchTranslateResult(item, t.tools.noTranslationReturned),
       }));
       for (const { result } of resolvedChunkResults) {
         accumulatedResults.push(result);
@@ -357,6 +347,13 @@ export function BatchNfoTranslatorWorkspaceDetail({
     persistBatchTranslateDirectory(selected);
   };
 
+  const batchSizePresets = [
+    { label: t.tools.presetItemSingle, value: 1 },
+    { label: t.tools.presetItems(5), value: 5 },
+    { label: t.tools.presetItems(10), value: 10 },
+    { label: t.tools.presetItemsMerged(20), value: 20 },
+  ];
+
   return (
     <div className="space-y-6">
       <div className={TOOL_SUBSECTION_CLASS}>
@@ -364,7 +361,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
           htmlFor="batch-translate-dir"
           className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
         >
-          目标目录
+          {t.tools.targetDirectory}
         </Label>
         <div className="flex flex-col gap-3 sm:flex-row">
           <Input
@@ -372,7 +369,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
             value={directory}
             onChange={(event) => setDirectory(event.target.value)}
             onBlur={(event) => persistBatchTranslateDirectory(event.target.value)}
-            placeholder="输入已刮削完成的媒体目录"
+            placeholder={t.tools.batchTranslateDirPlaceholder}
             className={cn(TOOL_INPUT_CLASS, "flex-1")}
           />
           {onBrowseDirectory ? (
@@ -383,7 +380,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
               onClick={browseDirectory}
             >
               <FolderOpen className="h-4 w-4" />
-              <span>浏览目录</span>
+              <span>{t.tools.browseDirectory}</span>
             </Button>
           ) : null}
         </div>
@@ -396,17 +393,15 @@ export function BatchNfoTranslatorWorkspaceDetail({
               htmlFor="batch-translate-size"
               className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
             >
-              每批翻译条数
+              {t.tools.batchTranslateBatchSize}
             </Label>
-            <span className="text-xs text-muted-foreground">
-              合并多个条目统一请求大模型以提升效率。本地模型或网络不稳定建议 1~5 条/批。
-            </span>
+            <span className="text-xs text-muted-foreground">{t.tools.batchTranslateBatchSizeHelp}</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 rounded-quiet-capsule bg-surface-floating/80 p-1 border border-black/5 dark:border-white/5">
-              <span className="px-2.5 text-xs font-medium text-muted-foreground">预设:</span>
-              {BATCH_SIZE_PRESETS.map((preset) => (
+              <span className="px-2.5 text-xs font-medium text-muted-foreground">{t.tools.presetPrefix}</span>
+              {batchSizePresets.map((preset) => (
                 <button
                   key={preset.value}
                   type="button"
@@ -427,7 +422,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
 
             <div className="flex items-center gap-2">
               <Label htmlFor="batch-translate-size" className="shrink-0 text-xs font-medium text-muted-foreground">
-                自定义:
+                {t.tools.customPrefix}
               </Label>
               <div className="inline-flex h-10 items-center rounded-quiet-capsule bg-surface-low/90 px-4 border border-black/5 dark:border-white/5 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-ring/30 transition-all">
                 <input
@@ -441,7 +436,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
                   className="w-12 bg-transparent text-center font-mono text-sm font-semibold text-foreground focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <span className="ml-2 flex h-4 shrink-0 select-none items-center border-l border-black/10 pl-2 text-xs font-medium text-muted-foreground leading-none dark:border-white/10">
-                  条 / 批
+                  {t.tools.itemsPerBatch}
                 </span>
               </div>
             </div>
@@ -457,7 +452,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
           className={cn(TOOL_SECONDARY_BUTTON_CLASS, "flex-1")}
         >
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-          <span>{scanning ? "正在扫描..." : "扫描待翻译条目"}</span>
+          <span>{scanning ? t.tools.scanning : t.tools.scanPendingItems}</span>
         </Button>
         <Button
           onClick={() => void handleApply()}
@@ -468,11 +463,11 @@ export function BatchNfoTranslatorWorkspaceDetail({
           <span>
             {applying
               ? applyProgress
-                ? `翻译中 (${applyProgress.completed}/${applyProgress.total})`
-                : "正在翻译..."
+                ? t.tools.translatingProgress(applyProgress.completed, applyProgress.total)
+                : t.tools.translating
               : selectedItems.length === items.length
-                ? "开始批量翻译"
-                : `翻译选中项 (${selectedItems.length})`}
+                ? t.tools.startBatchTranslate
+                : t.tools.translateSelected(selectedItems.length)}
           </span>
         </Button>
         {applying ? (
@@ -483,7 +478,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
             className={cn(TOOL_SECONDARY_BUTTON_CLASS, "sm:w-32")}
           >
             {paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-            <span>{paused ? "继续" : "暂停"}</span>
+            <span>{paused ? t.common.resume : t.common.pause}</span>
           </Button>
         ) : null}
       </div>
@@ -496,8 +491,8 @@ export function BatchNfoTranslatorWorkspaceDetail({
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
               </span>
-              {paused ? "暂停中" : "正在翻译"} {applyProgress.currentLabel ?? "..."} ({applyProgress.completed}/
-              {applyProgress.total})
+              {paused ? t.tools.paused : t.tools.translating} {applyProgress.currentLabel ?? "..."} (
+              {applyProgress.completed}/{applyProgress.total})
             </span>
             <span className="font-mono">{applyProgressPercent}%</span>
           </div>
@@ -508,21 +503,21 @@ export function BatchNfoTranslatorWorkspaceDetail({
       <div className="flex w-full flex-wrap gap-3 md:flex-nowrap">
         <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-surface-low/90 p-3.5 space-y-1">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">待处理条目</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider">{t.tools.pendingItems}</span>
             <FileText className="h-3.5 w-3.5" />
           </div>
           <div className="text-lg font-bold font-mono">{items.length}</div>
         </div>
         <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-surface-low/90 p-3.5 space-y-1">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">已选中</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider">{t.tools.selected}</span>
             <Layers className="h-3.5 w-3.5 text-primary" />
           </div>
           <div className="text-lg font-bold font-mono text-primary">{selectedItems.length}</div>
         </div>
         <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-surface-low/90 p-3.5 space-y-1">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">待处理字段</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider">{t.tools.pendingFields}</span>
             <Languages className="h-3.5 w-3.5" />
           </div>
           <div className="text-lg font-bold font-mono">{pendingFieldCount}</div>
@@ -531,7 +526,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
           <>
             <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 p-3.5 space-y-1">
               <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">成功</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider">{t.common.success}</span>
                 <CheckCircle2 className="h-3.5 w-3.5" />
               </div>
               <div className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
@@ -540,7 +535,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
             </div>
             <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 p-3.5 space-y-1">
               <div className="flex items-center justify-between text-amber-600 dark:text-amber-400">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">部分成功</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider">{t.tools.partialSuccess}</span>
                 <AlertCircle className="h-3.5 w-3.5" />
               </div>
               <div className="text-lg font-bold font-mono text-amber-600 dark:text-amber-400">
@@ -549,7 +544,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
             </div>
             <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 p-3.5 space-y-1">
               <div className="flex items-center justify-between text-red-600 dark:text-red-400">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">失败</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider">{t.common.failed}</span>
                 <XCircle className="h-3.5 w-3.5" />
               </div>
               <div className="text-lg font-bold font-mono text-red-600 dark:text-red-400">
@@ -572,11 +567,17 @@ export function BatchNfoTranslatorWorkspaceDetail({
                     onCheckedChange={toggleAll}
                   />
                 </th>
-                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">番号</th>
-                <th className="px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">标题</th>
-                <th className="w-40 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">待处理字段</th>
-                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">状态</th>
-                <th className="w-72 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">NFO 路径</th>
+                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.movieCode}
+                </th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">{t.tools.title}</th>
+                <th className="w-40 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.pendingFields}
+                </th>
+                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">{t.tools.status}</th>
+                <th className="w-72 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.nfoPath}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5 dark:divide-white/5">
@@ -585,10 +586,8 @@ export function BatchNfoTranslatorWorkspaceDetail({
                   <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Search className="h-8 w-8 opacity-40" />
-                      <p className="text-sm font-medium">暂无待翻译条目</p>
-                      <p className="text-xs text-muted-foreground">
-                        输入媒体目录后点击“扫描待翻译条目”开始寻找 NFO 文件
-                      </p>
+                      <p className="text-sm font-medium">{t.tools.noPendingTranslateItems}</p>
+                      <p className="text-xs text-muted-foreground">{t.tools.noPendingTranslateItemsHelp}</p>
                     </div>
                   </td>
                 </tr>
@@ -621,7 +620,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
                                 variant="outline"
                                 className="rounded-quiet-capsule px-2 py-0.5 text-[11px] bg-surface-low border-black/10 dark:border-white/10"
                               >
-                                {field === "title" ? "标题" : "简介"}
+                                {field === "title" ? t.tools.fieldTitle : t.tools.fieldPlot}
                               </Badge>
                             ))
                           )}
@@ -636,7 +635,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
                               getBatchTranslateStatusBadgeClass(status),
                             )}
                           >
-                            {buildBatchTranslateApplyStatusLabel(status)}
+                            {buildBatchTranslateApplyStatusLabel(status, t)}
                           </Badge>
                           {result?.error ? (
                             <div className="text-[11px] font-medium text-destructive leading-tight max-w-xs break-words">

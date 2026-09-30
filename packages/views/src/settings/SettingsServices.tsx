@@ -1,7 +1,11 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type { LlmApiFormat, LlmOutputFormat, LlmReasoning, LlmServiceType } from "@mdcz/shared/llm";
-import type { NetworkCookieCheckStatus } from "@mdcz/shared/serverDtos";
+import type {
+  NetworkCheckCookiesResponse,
+  SiteConnectivityProbeResponse,
+  TranslateTestLlmResponse,
+} from "@mdcz/shared/serverDtos";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { PathAutocompleteResult } from "../path";
@@ -21,20 +25,11 @@ export interface SettingsPathSuggestion {
   path: string;
 }
 
-export interface SettingsCookieCheckResult {
-  results: Array<{ site: string; valid: boolean; message: string; status: NetworkCookieCheckStatus }>;
-}
-
 export interface SettingsCrawlerSiteInfo {
   site: Website;
   name: string;
   enabled: boolean;
   native: boolean;
-}
-
-export interface SettingsSiteConnectivityResult {
-  ok: boolean;
-  message: string;
 }
 
 export interface SettingsWatermarkDirectoryInfo {
@@ -69,7 +64,7 @@ export interface SettingsServices {
   settingsTarget?: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
   watermarkDirectoryActionLabel?: string;
-  checkCookies: () => Promise<SettingsCookieCheckResult>;
+  checkCookies: () => Promise<NetworkCheckCookiesResponse>;
   ensureWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryInfo>;
   getInFlightSaves: () => number;
   subscribeInFlightSaves?: (listener: () => void) => () => void;
@@ -78,11 +73,11 @@ export interface SettingsServices {
   listCrawlerSites: () => Promise<{ sites: SettingsCrawlerSiteInfo[] }>;
   openWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryOpenResult | undefined>;
   previewNaming: (config?: Partial<Configuration>) => Promise<{ items: NamingPreviewItem[] }>;
-  probeSiteConnectivity: (site: Website) => Promise<SettingsSiteConnectivityResult>;
+  probeSiteConnectivity: (site: Website) => Promise<SiteConnectivityProbeResponse>;
   relaunchApp: () => Promise<void>;
   resetConfig: (path?: string) => Promise<unknown>;
   saveConfig: (config?: Partial<Configuration>) => Promise<unknown>;
-  testLLM: (input: SettingsTranslateTestInput) => Promise<{ success: boolean; message: string }>;
+  testLLM: (input: SettingsTranslateTestInput) => Promise<TranslateTestLlmResponse>;
   updateCurrentConfigCache?: (flatPayload: Record<string, unknown>) => void;
 }
 

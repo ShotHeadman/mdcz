@@ -1,11 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type {
-  ConnectionCheckStatus,
-  EmbyCheckKey,
-  EmbyCheckStep,
-  EmbyConnectionCheckResult,
-  PersonSyncResult,
-} from "@mdcz/shared/ipcTypes";
+import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import type { RuntimeNetworkClient } from "../network";
 import type { RuntimeLogger } from "../shared";
 import {
@@ -26,7 +20,7 @@ import {
   uploadMediaServerPrimaryImage,
 } from "./client";
 import { isRecord, isString, pickAutoResolvedUserId, toStringArray, toStringRecord, toStringValue } from "./common";
-import { createConnectionStepFactory, runMediaServerConnectionCheck } from "./connectionCheck";
+import { runMediaServerConnectionCheck } from "./connectionCheck";
 import {
   getHttpStatus,
   type MediaServerErrorMapping,
@@ -108,18 +102,18 @@ const fetchAutoResolvedEmbyUserId = async (
       createMissingUserContextError: () =>
         new EmbyServiceError(
           "EMBY_USER_CONTEXT_REQUIRED",
-          "当前 Emby 服务器要求用户上下文，请在设置中填写 Emby 用户 ID 后重试",
+          "Current Emby server requires user context; please configure Emby user ID in settings and retry",
         ),
       toServiceError: toEmbyServiceError,
     },
     {
       statusMappings: {
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法读取用户列表" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭据没有读取用户列表的权限" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot read user list" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack permission to read user list" },
       },
       fallback: {
         code: "EMBY_USER_CONTEXT_REQUIRED",
-        message: "当前 Emby 服务器要求用户上下文，请在设置中填写 Emby 用户 ID 后重试",
+        message: "Current Emby server requires user context; please configure Emby user ID in settings and retry",
       },
     },
   );
@@ -181,13 +175,13 @@ export const fetchEmbyPersons = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby 人物读取请求参数无效" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效或已失效" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭据没有人物读取权限" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Invalid parameters for Emby person read request" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid or expired" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person read permissions" },
       },
       fallback: {
         code: "EMBY_UNREACHABLE",
-        message: "读取 Emby 人物列表失败",
+        message: "Failed to read Emby person list",
       },
     },
   );
@@ -222,19 +216,25 @@ export const fetchEmbyPersonDetail = async (
       createMissingUserContextError: () =>
         new EmbyServiceError(
           "EMBY_USER_CONTEXT_REQUIRED",
-          "当前 Emby 服务器要求用户上下文，请先解析并传入 Emby 用户 ID 后重试",
+          "Current Emby server requires user context; please resolve and provide an Emby user ID before retrying",
         ),
       toServiceError: toEmbyServiceError,
     },
     {
       statusMappings: {
-        401: { code: "EMBY_AUTH_FAILED", message: `读取人物详情失败：Emby API Key 无效，无法访问 ${person.Name}` },
-        403: { code: "EMBY_PERMISSION_DENIED", message: `读取人物详情失败：当前 Emby API Key 无权访问 ${person.Name}` },
-        404: { code: "EMBY_NOT_FOUND", message: `Emby 中不存在人物 ${person.Name}` },
+        401: {
+          code: "EMBY_AUTH_FAILED",
+          message: `Failed to read person details: Emby API key is invalid; cannot access ${person.Name}`,
+        },
+        403: {
+          code: "EMBY_PERMISSION_DENIED",
+          message: `Failed to read person details: current Emby API key has no permission to access ${person.Name}`,
+        },
+        404: { code: "EMBY_NOT_FOUND", message: `Person ${person.Name} does not exist in Emby` },
       },
       fallback: {
         code: "EMBY_UNREACHABLE",
-        message: `读取 Emby 人物详情失败：${person.Name}`,
+        message: `Failed to read Emby person details: ${person.Name}`,
       },
     },
   );
@@ -290,13 +290,16 @@ export const fetchEmbyMetadataEditorInfo = async (
     },
     {
       statusMappings: {
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby 凭据无效，无法校验人物写权限" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭据没有人物写入权限" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby 无法获取人物元数据编辑页信息" },
+        401: {
+          code: "EMBY_AUTH_FAILED",
+          message: "Emby credentials are invalid; cannot verify person write permissions",
+        },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person write permissions" },
+        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot retrieve metadata editor info for person" },
       },
       fallback: {
         code: "EMBY_UNREACHABLE",
-        message: "读取 Emby 人物元数据编辑页信息失败",
+        message: "Failed to read Emby metadata editor info for person",
       },
     },
   );
@@ -316,14 +319,14 @@ export const refreshEmbyPerson = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物刷新请求" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby 凭据无效，无法刷新人物" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭据没有人物刷新权限" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby 无法刷新指定人物" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person refresh request" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby credentials are invalid; cannot refresh person" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person refresh permissions" },
+        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot refresh specified person" },
       },
       fallback: {
         code: "EMBY_REFRESH_FAILED",
-        message: "刷新 Emby 人物失败",
+        message: "Failed to refresh Emby person",
       },
     },
   );
@@ -348,14 +351,14 @@ export const updateEmbyPersonInfo = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: `Emby 拒绝更新人物信息：${person.Name}` },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby 凭据无效，无法写入人物信息" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭据没有人物写入权限" },
-        404: { code: "EMBY_NOT_FOUND", message: `Emby 中不存在人物 ${person.Name}` },
+        400: { code: "EMBY_BAD_REQUEST", message: `Emby rejected person update: ${person.Name}` },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby credentials are invalid; cannot write person info" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person write permissions" },
+        404: { code: "EMBY_NOT_FOUND", message: `Person ${person.Name} does not exist in Emby` },
       },
       fallback: {
         code: "EMBY_WRITE_FAILED",
-        message: `写入 Emby 人物信息失败：${person.Name}`,
+        message: `Failed to write Emby person info: ${person.Name}`,
       },
     },
   );
@@ -384,67 +387,35 @@ export const uploadEmbyPrimaryImage = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
-        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
-        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person photo upload request" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot upload person photo" },
+        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby person photo upload requires an administrator API key" },
+        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby does not accept the current photo file type" },
       },
       fallback: {
         code: "EMBY_WRITE_FAILED",
-        message: "上传 Emby 人物头像失败",
+        message: "Failed to upload Emby person photo",
       },
       fallbackStatusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝了人物头像上传请求" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API Key 无效，无法上传人物头像" },
-        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby 人物头像上传需要管理员 API Key" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby 无法找到需要写入头像的人物" },
-        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不接受当前头像文件类型" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person photo upload request" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot upload person photo" },
+        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby person photo upload requires an administrator API key" },
+        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot find the person to upload photo for" },
+        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby does not accept the current photo file type" },
       },
     },
   );
 };
-
-export const createEmbyConnectionExtraSteps = <TStep>(
-  createStep: (key: "adminKey", status: ConnectionCheckStatus, message: string, code?: string) => TStep,
-) => ({
-  afterServerUnreachable: [createStep("adminKey", "skipped", "未执行：服务不可达")],
-  afterAuthFailure: (skippedReason: string) => [createStep("adminKey", "skipped", skippedReason)],
-  afterEmptyLibrary: [
-    createStep(
-      "adminKey",
-      "skipped",
-      "人物头像上传通常需要管理员 API Key。当前 Emby 人物库为空，暂时无法结合实际结果校验。",
-    ),
-  ],
-  afterWriteSuccess: [
-    createStep(
-      "adminKey",
-      "skipped",
-      "人物头像上传通常需要管理员 API Key。诊断不会执行实际写入验证；如果头像同步返回 401 或 403，请改用管理员 API Key。",
-    ),
-  ],
-  afterPeopleFailure: [createStep("adminKey", "skipped", "未执行：前置人物权限校验未完成")],
-});
 
 interface PublicSystemInfo {
   ServerName?: string;
   Version?: string;
 }
 
-const STEP_LABELS: Record<EmbyCheckKey, string> = {
-  server: "服务可达",
-  auth: "凭据有效",
-  peopleRead: "人物读取权限",
-  peopleWrite: "人物写入权限",
-  adminKey: "管理员 API Key 提示",
-};
-
-const createStep = createConnectionStepFactory<"adminKey", EmbyCheckStep>(STEP_LABELS);
-
 export const checkEmbyConnection = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
-): Promise<EmbyConnectionCheckResult> => {
+): Promise<MediaServerConnectionCheckResult> => {
   let resolvedUserId: string | undefined;
   const getResolvedUserId = async (): Promise<string> => {
     if (!resolvedUserId) {
@@ -454,8 +425,7 @@ export const checkEmbyConnection = async (
   };
 
   return await runMediaServerConnectionCheck({
-    serviceName: "Emby",
-    createStep,
+    includeAdminKeyStep: true,
     unreachableCode: "EMBY_UNREACHABLE",
     authFailedCode: "EMBY_AUTH_FAILED",
     fetchPublicServerInfo: async () => {
@@ -482,8 +452,6 @@ export const checkEmbyConnection = async (
     verifyWritePermission: async (personId) => {
       await fetchEmbyMetadataEditorInfo(networkClient, configuration, personId);
     },
-    emptyLibraryWriteMessage: "当前 Emby 人物库为空，暂时无法在不写入数据的前提下校验人物写入权限。",
-    extraSteps: createEmbyConnectionExtraSteps(createStep),
   });
 };
 

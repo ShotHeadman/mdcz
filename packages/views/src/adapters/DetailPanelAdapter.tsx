@@ -6,9 +6,11 @@ import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeSto
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { confirmDialog } from "../common";
 import { type DetailPanelCompareProps, DetailPanelView, toDetailViewItemFromScrapeResult } from "../detail";
 import { buildDetailArtworkCandidates } from "../detail/imageCandidates";
 import type { DetailViewItem } from "../detail/types";
+import { getT, useT } from "../i18n";
 import {
   createEmptyEditableNfoData,
   type EditableNfoData,
@@ -98,12 +100,8 @@ interface DetailPanelProps {
   compare?: DetailPanelCompareProps;
 }
 
-export function DetailPanelAdapter({
-  port,
-  item: explicitItem,
-  emptyMessage = "请选择一个项目以查看详情",
-  compare,
-}: DetailPanelProps) {
+export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, compare }: DetailPanelProps) {
+  const t = useT();
   const results = useScrapeStore((state) => (explicitItem === undefined ? selectScrapeResults(state) : EMPTY_RESULTS));
   const selectedResultId = useUIStore((state) => (explicitItem === undefined ? state.selectedResultId : null));
 
@@ -164,7 +162,7 @@ export function DetailPanelAdapter({
   const openNfoEditor = useCallback(
     async (path: string) => {
       if (!item) {
-        toast.info("请先选择一个项目");
+        toast.info(getT().scrape.selectItemFirst);
         return;
       }
       try {
@@ -177,7 +175,7 @@ export function DetailPanelAdapter({
         setNfoValidationErrors({});
         setNfoOpenRaw(true);
       } catch (error) {
-        toast.error(`加载 NFO 失败: ${toErrorMessage(error)}`);
+        toast.error(getT().scrape.loadNfoFailed(toErrorMessage(error)));
       } finally {
         setNfoLoading(false);
       }
@@ -190,7 +188,7 @@ export function DetailPanelAdapter({
     const validation = validateEditableNfoData(nfoData);
     setNfoValidationErrors(validation.errors);
     if (!validation.valid || !validation.data) {
-      const firstMessage = Object.values(validation.errors)[0] ?? "请检查表单内容";
+      const firstMessage = Object.values(validation.errors)[0] ?? getT().scrape.checkFormContent;
       toast.error(firstMessage);
       return;
     }
@@ -198,24 +196,24 @@ export function DetailPanelAdapter({
     try {
       setNfoSaving(true);
       await port.writeNfo(item, nfoPath, validation.data as CrawlerData);
-      toast.success("NFO 已保存");
+      toast.success(getT().scrape.nfoSaved);
       setNfoInitialSnapshot(serializeEditableNfoData(normalizeEditableNfoData(validation.data)));
       setNfoOpenRaw(false);
     } catch (error) {
-      toast.error(`保存 NFO 失败: ${toErrorMessage(error)}`);
+      toast.error(getT().scrape.saveNfoFailed(toErrorMessage(error)));
     } finally {
       setNfoSaving(false);
     }
   }, [item, nfoData, nfoPath, port]);
 
   const setNfoOpen = useCallback(
-    (open: boolean) => {
+    async (open: boolean) => {
       if (open) {
         setNfoOpenRaw(true);
         return;
       }
       if (nfoSaving) return;
-      if (nfoDirty && !window.confirm("放弃未保存的 NFO 修改？")) return;
+      if (nfoDirty && !(await confirmDialog({ title: getT().scrape.discardNfoChanges, destructive: true }))) return;
       setNfoOpenRaw(false);
       setNfoValidationErrors({});
     },
@@ -224,7 +222,7 @@ export function DetailPanelAdapter({
 
   const handlePlay = useCallback(() => {
     if (!item) {
-      toast.info("请先选择一个项目");
+      toast.info(getT().scrape.selectItemFirst);
       return;
     }
     void port.play?.(item);
@@ -232,7 +230,7 @@ export function DetailPanelAdapter({
 
   const handleOpenFolder = useCallback(() => {
     if (!item) {
-      toast.info("请先选择一个项目");
+      toast.info(getT().scrape.selectItemFirst);
       return;
     }
     void port.openFolder?.(item);
@@ -241,7 +239,7 @@ export function DetailPanelAdapter({
   const handleOpenNfo = useCallback(async () => {
     const path = item?.nfoPath ?? item?.path;
     if (!path) {
-      toast.info("请先选择一个项目");
+      toast.info(getT().scrape.selectItemFirst);
       return;
     }
     await openNfoEditor(path);
@@ -254,13 +252,14 @@ export function DetailPanelAdapter({
   }, [posterCropSession]);
 
   const setPosterEditorOpenSafe = useCallback(
-    (open: boolean) => {
+    async (open: boolean) => {
       if (open) {
         setPosterEditorOpen(true);
         return;
       }
       if (posterCropSaving) return;
-      if (posterCropDirty && !window.confirm("放弃未保存的封面修改？")) return;
+      if (posterCropDirty && !(await confirmDialog({ title: getT().scrape.discardPosterChanges, destructive: true })))
+        return;
       setPosterEditorOpen(false);
     },
     [posterCropDirty, posterCropSaving],
@@ -273,7 +272,7 @@ export function DetailPanelAdapter({
       const result = await port.savePosterCrop(item, posterCrop);
       setPosterOverride(result.posterUrl);
       setPosterEditorOpen(false);
-      toast.success("封面已保存");
+      toast.success(getT().scrape.coverSaved);
       void port
         .preparePosterCrop(item)
         .then((refreshed) => {
@@ -282,7 +281,7 @@ export function DetailPanelAdapter({
         })
         .catch(() => undefined);
     } catch (error) {
-      toast.error(`保存封面失败: ${toErrorMessage(error)}`);
+      toast.error(getT().scrape.saveCoverFailed(toErrorMessage(error)));
     } finally {
       setPosterCropSaving(false);
     }
@@ -311,7 +310,7 @@ export function DetailPanelAdapter({
   return (
     <DetailPanelView
       item={item}
-      emptyMessage={emptyMessage}
+      emptyMessage={emptyMessage ?? t.scrape.emptyMessage}
       compare={compare}
       posterSrc={artwork.posterSrc}
       thumbSrc={artwork.thumbSrc}
@@ -329,6 +328,19 @@ export function DetailPanelAdapter({
       }}
       onPlay={actions.play}
       onOpenFolder={actions.openFolder}
+      onOpenMetadataFolder={
+        item &&
+        port.openMetadataFolder &&
+        item.nfoRef &&
+        item.fileRef &&
+        (item.nfoRef.rootId !== item.fileRef.rootId ||
+          item.nfoRef.relativePath.split("/").slice(0, -1).join("/") !==
+            item.fileRef.relativePath.split("/").slice(0, -1).join("/"))
+          ? () => {
+              void port.openMetadataFolder?.(item);
+            }
+          : undefined
+      }
       onOpenNfo={actions.openNfo}
       onPosterError={artwork.handlePosterError}
       onThumbError={artwork.handleThumbError}

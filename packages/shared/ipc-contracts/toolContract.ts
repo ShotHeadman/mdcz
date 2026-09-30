@@ -6,9 +6,8 @@ import type {
   BatchTranslateApplyInput,
   BatchTranslateApplyResultItem,
   BatchTranslateScanItem,
-  EmbyConnectionCheckResult,
   IpcProcedure,
-  JellyfinConnectionCheckResult,
+  MediaServerConnectionCheckResult,
   PersonSyncResult,
 } from "../ipcTypes";
 
@@ -30,12 +29,12 @@ export type ToolIpcContract = {
       destDir?: string;
       copyFiles?: boolean;
     },
-    { message: string }
+    void
   >;
-  [IpcChannel.Tool_JellyfinServerCheckConnection]: IpcProcedure<void, JellyfinConnectionCheckResult>;
+  [IpcChannel.Tool_JellyfinServerCheckConnection]: IpcProcedure<void, MediaServerConnectionCheckResult>;
   [IpcChannel.Tool_JellyfinActorPhotoSync]: IpcProcedure<{ mode?: "all" | "missing" }, PersonSyncResult>;
   [IpcChannel.Tool_JellyfinActorInfoSync]: IpcProcedure<{ mode?: "all" | "missing" }, PersonSyncResult>;
-  [IpcChannel.Tool_EmbyServerCheckConnection]: IpcProcedure<void, EmbyConnectionCheckResult>;
+  [IpcChannel.Tool_EmbyServerCheckConnection]: IpcProcedure<void, MediaServerConnectionCheckResult>;
   [IpcChannel.Tool_EmbyActorPhotoSync]: IpcProcedure<{ mode?: "all" | "missing" }, PersonSyncResult>;
   [IpcChannel.Tool_EmbyActorInfoSync]: IpcProcedure<{ mode?: "all" | "missing" }, PersonSyncResult>;
   [IpcChannel.Tool_ToggleDevTools]: IpcProcedure<void, { success: true }>;

@@ -4,6 +4,7 @@ import type { CrawlerData, DiscoveredAssets, DownloadedAssets } from "@mdcz/shar
 import { type RuntimeDownloadNetworkClient, runWithNetworkChannel } from "../../network";
 import { type RuntimeLogger, runtimeLoggerService } from "../../shared";
 import type { ImageAlternatives } from "../aggregation";
+import { DirectoryInventory } from "../DirectoryInventory";
 import { throwIfAborted } from "../utils/abort";
 import { FanartAssetDownloader } from "./assets/FanartAssetDownloader";
 import { PrimaryImageAssetDownloader } from "./assets/PrimaryImageAssetDownloader";
@@ -30,6 +31,7 @@ interface DownloadExecutionOptions {
   movieBaseName?: string;
   existingAssetDir?: string;
   existingAssets?: DiscoveredAssets;
+  inventory?: DirectoryInventory;
 }
 
 export class DownloadManager {
@@ -118,6 +120,7 @@ export class DownloadManager {
       outputDir,
       existingAssetDir: options.existingAssetDir ?? outputDir,
       existingAssets: options.existingAssets,
+      inventory: options.inventory ?? new DirectoryInventory(),
       movieBaseName,
       assetFileNames: buildMovieAssetFileNames(movieBaseName, config.naming.assetNamingMode),
       data,

@@ -1,7 +1,8 @@
 import type { AmbiguousUncensoredItemDto } from "@mdcz/shared/serverDtos";
 import type { UncensoredChoice } from "@mdcz/shared/types";
 import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, ScrollArea } from "@mdcz/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useT } from "../i18n";
 
 export type AmbiguousUncensoredItem = AmbiguousUncensoredItemDto;
 
@@ -16,18 +17,22 @@ export interface UncensoredConfirmDialogProps {
   onConfirm: (items: UncensoredConfirmSelection[]) => Promise<void> | void;
 }
 
-const CHOICE_OPTIONS: Array<{ value: UncensoredChoice; label: string }> = [
-  { value: "umr", label: "破解" },
-  { value: "leak", label: "流出" },
-  { value: "uncensored", label: "无码" },
-];
-
 const DEFAULT_CHOICE: UncensoredChoice = "uncensored";
 
 export function UncensoredConfirmDialog({ open, items, onOpenChange, onConfirm }: UncensoredConfirmDialogProps) {
+  const t = useT();
   const [choices, setChoices] = useState<Record<string, UncensoredChoice>>({});
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const choiceOptions = useMemo<Array<{ value: UncensoredChoice; label: string }>>(
+    () => [
+      { value: "umr", label: t.scrape.uncensored.options.umr },
+      { value: "leak", label: t.scrape.uncensored.options.leak },
+      { value: "uncensored", label: t.scrape.uncensored.options.uncensored },
+    ],
+    [t.scrape.uncensored.options],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -64,7 +69,7 @@ export function UncensoredConfirmDialog({ open, items, onOpenChange, onConfirm }
     }));
 
     if (selections.length === 0) {
-      setErrorMessage("没有可提交的条目");
+      setErrorMessage(t.scrape.uncensored.noItemsToSubmit);
       return;
     }
 
@@ -84,12 +89,12 @@ export function UncensoredConfirmDialog({ open, items, onOpenChange, onConfirm }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>确认无码类型</DialogTitle>
+          <DialogTitle>{t.scrape.uncensored.title}</DialogTitle>
         </DialogHeader>
-        <div className="mb-2 text-xs text-muted-foreground">请手动确认以下影片类型</div>
+        <div className="mb-2 text-xs text-muted-foreground">{t.scrape.uncensored.description}</div>
         <div className="mb-2 flex gap-1.5">
-          <span className="text-xs leading-7 text-muted-foreground">批量设为：</span>
-          {CHOICE_OPTIONS.map((opt) => (
+          <span className="text-xs leading-7 text-muted-foreground">{t.scrape.uncensored.batchSetTo}</span>
+          {choiceOptions.map((opt) => (
             <Button
               key={opt.value}
               size="sm"
@@ -111,7 +116,7 @@ export function UncensoredConfirmDialog({ open, items, onOpenChange, onConfirm }
                   {item.title ? <div className="truncate text-xs text-muted-foreground">{item.title}</div> : null}
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  {CHOICE_OPTIONS.map((opt) => (
+                  {choiceOptions.map((opt) => (
                     <Button
                       key={opt.value}
                       size="sm"
@@ -131,10 +136,10 @@ export function UncensoredConfirmDialog({ open, items, onOpenChange, onConfirm }
         {errorMessage ? <div className="text-sm text-destructive">{errorMessage}</div> : null}
         <DialogFooter>
           <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
-            跳过
+            {t.scrape.uncensored.skip}
           </Button>
           <Button type="button" onClick={handleSubmit} disabled={submitting}>
-            确认
+            {t.scrape.uncensored.confirm}
           </Button>
         </DialogFooter>
       </DialogContent>

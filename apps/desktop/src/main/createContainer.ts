@@ -29,14 +29,14 @@ import {
   JellyfinActorPhotoService,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService } from "@mdcz/runtime/scrape";
+import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { AmazonJpImageService } from "@mdcz/runtime/tools";
 
 export interface CreateContainerOptions {
   windowService: WindowService;
   signalService: SignalService;
   networkClient: NetworkClient;
-  prepareScrapeItem?: <T extends { relativePath: string; caseId?: string }>(item: T) => T;
+  prepareScrapeItem?: PrepareScrapeItem;
 }
 
 export const createContainer = ({

@@ -16,7 +16,7 @@ import { SymlinkServiceError } from "@main/services/tools";
 import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import type { EmbyConnectionCheckResult, JellyfinConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import { createIpcError, IpcErrorCode } from "../errors";
 import {
   toolAmazonPosterApplyInputSchema,
@@ -41,13 +41,13 @@ type MediaServerConnectionChecker<TResult> = (
 ) => Promise<TResult>;
 type MediaServerErrorCtor = typeof JellyfinServiceError | typeof EmbyServiceError;
 
-interface MediaServerHandlerOptions<TConnectionResult> {
+interface MediaServerHandlerOptions {
   checkConnectionOperation: string;
   syncInfoOperation: string;
   syncPhotoOperation: string;
   ensureReady: MediaServerConfigurationLoader;
   parseMode: MediaServerModeParser;
-  checkConnection: MediaServerConnectionChecker<TConnectionResult>;
+  checkConnection: MediaServerConnectionChecker<MediaServerConnectionCheckResult>;
   errorType: MediaServerErrorCtor;
   infoService: MediaServerRunner<PersonSyncResult>;
   photoService: MediaServerRunner<PersonSyncResult>;
@@ -132,10 +132,8 @@ export const createToolHandlers = (
 
   const createModeError = () => createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Mode must be 'all' or 'missing'");
 
-  const createMediaServerCheckConnectionHandler = <TConnectionResult>(
-    options: MediaServerHandlerOptions<TConnectionResult>,
-  ) =>
-    t.procedure.action(async (): Promise<TConnectionResult> => {
+  const createMediaServerCheckConnectionHandler = (options: MediaServerHandlerOptions) =>
+    t.procedure.action(async (): Promise<MediaServerConnectionCheckResult> => {
       try {
         const configuration = await options.ensureReady();
         return await options.checkConnection(networkClient, configuration);
@@ -147,7 +145,7 @@ export const createToolHandlers = (
 
   const createMediaServerSyncHandler = (
     operation: string,
-    options: MediaServerHandlerOptions<unknown>,
+    options: MediaServerHandlerOptions,
     service: MediaServerRunner<PersonSyncResult>,
     extra: { includeActorPhotoFolderError?: boolean } = {},
   ) =>
@@ -166,7 +164,7 @@ export const createToolHandlers = (
       }
     });
 
-  const jellyfinHandlers: MediaServerHandlerOptions<JellyfinConnectionCheckResult> = {
+  const jellyfinHandlers: MediaServerHandlerOptions = {
     checkConnectionOperation: "Tool_JellyfinServerCheckConnection",
     syncInfoOperation: "Tool_JellyfinActorInfoSync",
     syncPhotoOperation: "Tool_JellyfinActorPhotoSync",
@@ -178,7 +176,7 @@ export const createToolHandlers = (
     photoService: jellyfinActorPhotoService,
   };
 
-  const embyHandlers: MediaServerHandlerOptions<EmbyConnectionCheckResult> = {
+  const embyHandlers: MediaServerHandlerOptions = {
     checkConnectionOperation: "Tool_EmbyServerCheckConnection",
     syncInfoOperation: "Tool_EmbyActorInfoSync",
     syncPhotoOperation: "Tool_EmbyActorPhotoSync",
@@ -217,7 +215,7 @@ export const createToolHandlers = (
     ),
     [IpcChannel.Tool_CreateSymlink]: t.procedure
       .input(toolCreateSymlinkInputSchema)
-      .action(async ({ input }): Promise<{ message: string }> => {
+      .action(async ({ input }): Promise<void> => {
         try {
           if (symlinkTaskStarting || symlinkTask) {
             throw createIpcError(IpcErrorCode.OPERATION_CANCELLED, "Softlink creation task is already running");
@@ -242,8 +240,6 @@ export const createToolHandlers = (
             .finally(() => {
               symlinkTask = null;
             });
-
-          return { message: "软链接创建任务已启动" };
         } catch (error) {
           if (error instanceof SymlinkServiceError) {
             throw createIpcError(error.code, error.message);

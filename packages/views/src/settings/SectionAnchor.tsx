@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CrossFieldBanner } from "./CrossFieldBanner";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
-import { type FieldEntry, SECTION_LABELS } from "./settingsRegistry";
+import { type FieldEntry, SECTION_ORDER } from "./settingsRegistry";
 import { useOptionalToc } from "./TocContext";
 import { useCrossFieldErrors } from "./useCrossFieldErrors";
 
@@ -21,7 +21,7 @@ interface SectionAnchorProps {
 }
 
 function isKnownAnchor(id: string): id is FieldEntry["anchor"] {
-  return id in SECTION_LABELS;
+  return (SECTION_ORDER as readonly string[]).includes(id);
 }
 
 export function SectionAnchor({

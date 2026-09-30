@@ -1,9 +1,9 @@
 import {
-  createMaintenanceLibraryPort,
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
 } from "@mdcz/runtime/maintenance";
+import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
   MaintenanceApplyInput,
@@ -30,48 +30,89 @@ export class MaintenanceService {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
       roots: {
+        assertRootIntegrity: (ids) => this.mediaRoots.assertRootIntegrity(ids),
         get: async (rootId) => await this.mediaRoots.get(rootId),
         list: async () => await this.mediaRoots.listRoots(),
-        ensurePathRecord: async (input) => await this.mediaRoots.ensurePathRecord(input),
       },
       runtime: this.runtime,
-      library: createMaintenanceLibraryPort({
-        getRepositories: async () => {
+      discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
+        return (
+          await discoverDirectoryFiles({
+            scope,
+            configuration,
+            signal,
+            onProgress,
+            inventory,
+            mediaRoots: this.mediaRoots,
+            platform: "server",
+          })
+        ).refs;
+      },
+      persistence: {
+        get: async () => {
           const { repositories } = await this.persistence.getState();
           return {
             library: repositories.library,
-            mediaRoots: repositories.mediaRoots,
-            publicationJournal: repositories.publicationJournal,
-            libraryRepairIssues: repositories.libraryRepairIssues,
           };
         },
-        resolveRoot: async (rootId) => await this.mediaRoots.get(rootId),
-      }),
+      },
       events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
     });
   }
 
   async start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto> {
+    if ("rerunSessionId" in input) {
+      const handle = await this.coordinator.rerunDirectory(input.rerunSessionId);
+      void handle.completion.catch(() => undefined);
+      return { sessionId: handle.session.id };
+    }
+    const configuration = await this.runtime.getConfiguration();
+    if ("source" in input) {
+      const directoryScope = createDirectoryScope(
+        input.source,
+        input.targetDir ?? input.source.scanDir,
+        configuration,
+        "maintenance",
+      );
+      const scan = await this.mediaRoots.admitDirectory({ hostPath: directoryScope.scanDir });
+      const output =
+        directoryScope.targetDir === directoryScope.scanDir
+          ? { id: scan.root.id, relativeDirectory: scan.relativeDirectory }
+          : await this.mediaRoots.prepareOutputDirectory({ hostPath: directoryScope.targetDir });
+      const handle = await this.coordinator.startPreview({
+        rootId: scan.root.id,
+        presetId: input.presetId,
+        refs: [],
+        outputRootId: output.id,
+        outputRelativeDirectory: output.relativeDirectory,
+        directoryScope,
+        configuration,
+      });
+      void handle.completion.catch(() => undefined);
+      return { sessionId: handle.session.id };
+    }
     const root = await this.mediaRoots.get(input.rootId);
-    const handle = await this.coordinator.startPreview({ ...input, rootId: root.id });
+    const handle = await this.coordinator.startPreview({ ...input, rootId: root.id, configuration });
     void handle.completion.catch(() => undefined);
     return { sessionId: handle.session.id };
   }
 
   async execute(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto> {
     const session = await this.coordinator.getActiveSession();
-    if (!session || session.id !== input.sessionId) throw new Error(`维护会话不存在：${input.sessionId}`);
+    if (!session || session.id !== input.sessionId)
+      throw new Error(`Maintenance session not found: ${input.sessionId}`);
     const previews = session.previews;
     const selectedIds = input.previewIds ? new Set(input.previewIds) : null;
     const selected = selectedIds ? previews.filter((preview) => selectedIds.has(preview.id)) : previews;
-    if (previews.length === 0) throw new Error("没有可应用的维护预览");
-    if (selectedIds && selected.length !== selectedIds.size) throw new Error("部分维护预览不存在或不属于当前任务");
-    if (selected.length === 0) throw new Error("请选择要应用的维护预览");
+    if (previews.length === 0) throw new Error("No maintenance previews to apply");
+    if (selectedIds && selected.length !== selectedIds.size)
+      throw new Error("Some maintenance previews do not exist or do not belong to the current task");
+    if (selected.length === 0) throw new Error("Select the maintenance previews to apply");
     if (
       selected.some((preview) => preview.proposedCrawlerData) &&
       input.confirmationToken !== `maintenance:${input.sessionId}`
     ) {
-      throw new Error("维护应用需要确认令牌");
+      throw new Error("Applying maintenance requires a confirmation token");
     }
     const fieldsByPreview = new Map((input.selections ?? []).map((item) => [item.previewId, item.fieldSelections]));
     const selections: MaintenanceApplySelection[] = selected.map((preview) => ({
@@ -167,7 +208,8 @@ export class MaintenanceService {
       kind: "maintenance",
       rootId: task.rootId,
       rootDisplayName:
-        (await this.mediaRoots.list()).roots.find((root) => root.id === task.rootId)?.displayName ?? "未知媒体目录",
+        (await this.mediaRoots.list()).roots.find((root) => root.id === task.rootId)?.displayName ??
+        "Unknown media directory",
       status: task.status,
       startedAt: task.startedAt?.toISOString() ?? null,
       completedAt: task.completedAt?.toISOString() ?? null,

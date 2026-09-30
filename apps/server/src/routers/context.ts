@@ -7,7 +7,15 @@ export interface RouterContext {
   token?: string;
 }
 
-export const t = initTRPC.context<RouterContext>().create();
+export const t = initTRPC.context<RouterContext>().create({
+  errorFormatter: ({ shape, error }) => ({
+    ...shape,
+    data: {
+      ...shape.data,
+      domainError: error.cause instanceof ServerConfigValidationError ? error.cause.domainError : undefined,
+    },
+  }),
+});
 
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   try {
@@ -37,7 +45,7 @@ export const setupProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!authStatus.setupRequired) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "系统已完成初始化，请直接登录",
+      message: "Setup is already complete; please sign in",
     });
   }
   return next({ ctx });

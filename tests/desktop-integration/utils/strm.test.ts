@@ -50,7 +50,7 @@ describe("strm utils", () => {
     expect(classifyStrmTarget("/library/ABC-123.strm", "../videos/ABC-123.mp4")).toEqual({
       target: "../videos/ABC-123.mp4",
       kind: "relative_path",
-      resolvedPath: resolve("/library", "../videos/ABC-123.mp4"),
+      resolvedPath: "/videos/ABC-123.mp4",
     });
     expect(classifyStrmTarget("/library/ABC-123.strm", "/videos/ABC-123.mp4")).toEqual({
       target: "/videos/ABC-123.mp4",

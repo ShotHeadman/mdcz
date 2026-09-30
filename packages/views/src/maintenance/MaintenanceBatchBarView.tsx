@@ -1,4 +1,4 @@
-import type { MaintenanceItemResult, PathDiff } from "@mdcz/shared/types";
+import type { MaintenanceItemResult, MaintenancePresetId, PathDiff } from "@mdcz/shared/types";
 import {
   Button,
   Dialog,
@@ -11,6 +11,7 @@ import {
 } from "@mdcz/ui";
 import { PauseCircle, Play, StopCircle } from "lucide-react";
 import { useState } from "react";
+import { useT } from "../i18n";
 import { ReturnToWorkbenchSetupButton } from "../workbench/ReturnToWorkbenchSetupButton";
 
 export interface MaintenanceBatchBarPreviewGroup {
@@ -40,16 +41,16 @@ export interface MaintenanceBatchBarViewProps {
   onPreview: () => Promise<void>;
   onReturnToSetup: () => void;
   onStop: () => void;
+  onRerunDirectory?: () => void;
   paused: boolean;
   presetLabel: string;
   previewPending: boolean;
-  progressValue: number;
+  progressValue: number | null;
   readyCount: number;
   recentResults: MaintenanceItemResult[];
   selectedCount: number;
   stopping: boolean;
-  supportsExecution: boolean;
-  usesDiffView: boolean;
+  presetId: MaintenancePresetId;
 }
 
 export function MaintenanceBatchBarView({
@@ -68,6 +69,7 @@ export function MaintenanceBatchBarView({
   onPreview,
   onReturnToSetup,
   onStop,
+  onRerunDirectory,
   paused,
   presetLabel,
   previewPending,
@@ -76,45 +78,53 @@ export function MaintenanceBatchBarView({
   recentResults,
   selectedCount,
   stopping,
-  supportsExecution,
-  usesDiffView,
+  presetId,
 }: MaintenanceBatchBarViewProps) {
+  const t = useT();
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
   const previewActionLabel = usesDiffView
     ? hasPreviewResults
-      ? "刷新对比"
-      : "生成对比"
-    : hasPreviewResults
-      ? "执行整理"
-      : "生成整理预览";
+      ? t.maintenance.refreshDiff
+      : t.maintenance.generateDiff
+    : presetId === "import_local"
+      ? hasPreviewResults
+        ? t.maintenance.executeImport
+        : t.maintenance.generateImportPreview
+      : hasPreviewResults
+        ? t.maintenance.executeOrganize
+        : t.maintenance.generateOrganizePreview;
 
   return (
     <>
       <div className="flex w-fit max-w-full flex-wrap items-center justify-center gap-2">
         {!activeExecution ? (
           <>
+            {onRerunDirectory ? (
+              <Button variant="ghost" onClick={onRerunDirectory}>
+                {t.maintenance.reexecuteMaintenance}
+              </Button>
+            ) : null}
             <ReturnToWorkbenchSetupButton
               disabled={!canReturnToSetup}
-              dialogDescription="返回后会清空当前维护列表、预览结果和执行记录。确定继续吗？"
+              dialogDescription={t.maintenance.returnDescription}
               onConfirm={onReturnToSetup}
             />
-            {supportsExecution && (
-              <Button
-                onClick={async () => {
-                  if (!usesDiffView && hasPreviewResults) {
-                    onExecute();
-                    return;
-                  }
+            <Button
+              onClick={async () => {
+                if (!usesDiffView && hasPreviewResults) {
+                  onExecute();
+                  return;
+                }
 
-                  await onPreview();
-                }}
-                disabled={!canRunPrimaryAction}
-                className="h-9 rounded-lg px-4"
-              >
-                <Play className="mr-2 h-4 w-4" />
-                {previewActionLabel}
-              </Button>
-            )}
+                await onPreview();
+              }}
+              disabled={!canRunPrimaryAction}
+              className="h-9 rounded-lg px-4"
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {previewActionLabel}
+            </Button>
             {usesDiffView && (
               <Button
                 variant="secondary"
@@ -122,17 +132,25 @@ export function MaintenanceBatchBarView({
                 disabled={!canRunReplacement}
                 className="h-9 rounded-lg px-4"
               >
-                数据替换
+                {t.maintenance.dataReplace}
               </Button>
             )}
           </>
         ) : (
           <>
             <div className="flex min-w-44 items-center gap-3 px-1">
-              <Progress value={progressValue} className="h-1.5 w-28 md:w-36" />
-              <span className="w-10 font-numeric text-[11px] font-bold tabular-nums text-foreground">
-                {Math.round(progressValue)}%
-              </span>
+              {progressValue === null ? (
+                <span role="status" className="text-xs">
+                  {t.maintenance.analyzingFiles}
+                </span>
+              ) : (
+                <>
+                  <Progress value={progressValue} className="h-1.5 w-28 md:w-36" />
+                  <span className="w-10 font-numeric text-[11px] font-bold tabular-nums text-foreground">
+                    {Math.round(progressValue)}%
+                  </span>
+                </>
+              )}
             </div>
             <Button
               type="button"
@@ -141,8 +159,8 @@ export function MaintenanceBatchBarView({
               className="rounded-quiet-capsule"
               onClick={onPauseToggle}
               disabled={!canPauseMaintenance || stopping}
-              aria-label={paused ? "恢复维护操作" : "暂停维护操作"}
-              title={paused ? "恢复" : "暂停"}
+              aria-label={paused ? t.maintenance.resumeMaintenance : t.maintenance.pauseMaintenance}
+              title={paused ? t.common.resume : t.common.pause}
             >
               {paused ? <Play className="h-4 w-4" /> : <PauseCircle className="h-4 w-4" />}
             </Button>
@@ -153,8 +171,8 @@ export function MaintenanceBatchBarView({
               className="rounded-quiet-capsule"
               onClick={() => setStopDialogOpen(true)}
               disabled={stopping}
-              aria-label="停止维护操作"
-              title="停止"
+              aria-label={t.maintenance.stopMaintenance}
+              title={t.common.stop}
             >
               <StopCircle className="h-4 w-4" />
             </Button>
@@ -164,11 +182,11 @@ export function MaintenanceBatchBarView({
 
       {!activeExecution && recentResults.length > 0 ? (
         <div className="max-w-xl rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-          <div className="mb-1 font-medium">最近批次结果</div>
+          <div className="mb-1 font-medium">{t.maintenance.recentBatchResults}</div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
-            <span>成功 {recentResults.filter((item) => item.status === "success").length}</span>
-            <span>失败 {recentResults.filter((item) => item.status === "failed").length}</span>
-            <span>跳过 {recentResults.filter((item) => item.status === "skipped").length}</span>
+            <span>{t.maintenance.successCount(recentResults.filter((item) => item.status === "success").length)}</span>
+            <span>{t.maintenance.failedCount(recentResults.filter((item) => item.status === "failed").length)}</span>
+            <span>{t.maintenance.skippedCount(recentResults.filter((item) => item.status === "skipped").length)}</span>
           </div>
           {recentResults.some((item) => item.error) ? (
             <div className="mt-2 max-h-24 space-y-1 overflow-y-auto">
@@ -187,24 +205,22 @@ export function MaintenanceBatchBarView({
       <Dialog open={usesDiffView && executeDialogOpen} onOpenChange={onExecuteDialogOpenChange}>
         <DialogContent className="max-w-xl min-w-0 overflow-hidden sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>确认数据替换</DialogTitle>
-            <DialogDescription>这里会按当前预览结果，对已选条目批量写入元数据、图片和文件调整。</DialogDescription>
+            <DialogTitle>{t.maintenance.confirmReplaceTitle}</DialogTitle>
+            <DialogDescription>{t.maintenance.confirmReplaceDesc}</DialogDescription>
           </DialogHeader>
           {previewPending ? (
             <div className="space-y-3 py-2 text-sm text-muted-foreground">
-              <div>正在分析本次维护将要修改的内容...</div>
+              <div>{t.maintenance.analyzingPendingChanges}</div>
             </div>
           ) : (
             <div className="min-w-0 space-y-4 text-sm">
               <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2">
-                <span className="text-muted-foreground">预设</span>
+                <span className="text-muted-foreground">{t.maintenance.preset}</span>
                 <span className="min-w-0 wrap-break-word">{presetLabel}</span>
-                <span className="text-muted-foreground">选中</span>
-                <span>
-                  {selectedCount} / {entriesCount} 项
-                </span>
-                <span className="text-muted-foreground">可执行</span>
-                <span>{readyCount} 项</span>
+                <span className="text-muted-foreground">{t.maintenance.selected}</span>
+                <span>{t.maintenance.selectedOfTotal(selectedCount, entriesCount)}</span>
+                <span className="text-muted-foreground">{t.maintenance.executable}</span>
+                <span>{t.maintenance.executableCount(readyCount)}</span>
               </div>
 
               <div className="max-h-72 min-w-0 space-y-2 overflow-x-hidden overflow-y-auto rounded-xl border p-3">
@@ -222,20 +238,20 @@ export function MaintenanceBatchBarView({
                             : "shrink-0 whitespace-nowrap text-xs font-medium text-emerald-600"
                         }
                       >
-                        {group.ready ? "可执行" : "阻塞"}
+                        {group.ready ? t.maintenance.executable : t.maintenance.blocked}
                       </div>
                     </div>
 
                     {!group.ready ? (
                       <div className="mt-2 break-all text-xs text-destructive">
-                        {group.blockedError ?? "部分分盘文件无法完成预览"}
+                        {group.blockedError ?? t.maintenance.blockedDefaultReason}
                       </div>
                     ) : (
                       <>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          <span>字段差异 {group.diffCount} 项</span>
-                          {group.hasPathChange && <span>路径将调整</span>}
-                          {!group.hasPathChange && group.diffCount === 0 && <span>无额外变更</span>}
+                          <span>{t.maintenance.diffCount(group.diffCount)}</span>
+                          {group.hasPathChange && <span>{t.maintenance.pathWillChange}</span>}
+                          {!group.hasPathChange && group.diffCount === 0 && <span>{t.maintenance.noExtraChanges}</span>}
                         </div>
                         {group.hasPathChange && (
                           <div className="mt-3 space-y-2">
@@ -244,13 +260,17 @@ export function MaintenanceBatchBarView({
                                 <div className="mb-2 text-[11px] font-medium text-muted-foreground">{fileName}</div>
                                 <div className="grid gap-2 sm:grid-cols-2">
                                   <div className="min-w-0 rounded-md border bg-background/70 p-2">
-                                    <div className="mb-1 text-[11px] font-medium text-muted-foreground">当前路径</div>
+                                    <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                                      {t.maintenance.currentPath}
+                                    </div>
                                     <div className="break-all font-mono text-[11px] leading-relaxed">
                                       {pathDiff.currentVideoPath}
                                     </div>
                                   </div>
                                   <div className="min-w-0 rounded-md border border-primary/20 bg-primary/5 p-2">
-                                    <div className="mb-1 text-[11px] font-medium text-muted-foreground">目标路径</div>
+                                    <div className="mb-1 text-[11px] font-medium text-muted-foreground">
+                                      {t.maintenance.targetPath}
+                                    </div>
                                     <div className="break-all font-mono text-[11px] leading-relaxed">
                                       {pathDiff.targetVideoPath}
                                     </div>
@@ -269,7 +289,7 @@ export function MaintenanceBatchBarView({
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => onExecuteDialogOpenChange(false)}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button
               disabled={previewPending || readyCount === 0}
@@ -278,7 +298,7 @@ export function MaintenanceBatchBarView({
                 onExecute();
               }}
             >
-              {readyCount === 0 ? "无可执行项" : `开始批量执行 ${readyCount} 项`}
+              {readyCount === 0 ? t.maintenance.noExecutableItems : t.maintenance.startBatchExecution(readyCount)}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -287,12 +307,12 @@ export function MaintenanceBatchBarView({
       <Dialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>停止维护操作</DialogTitle>
-            <DialogDescription>确定要停止当前维护流程吗？已完成的项目不受影响。</DialogDescription>
+            <DialogTitle>{t.maintenance.stopMaintenanceTitle}</DialogTitle>
+            <DialogDescription>{t.maintenance.stopMaintenanceDesc}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStopDialogOpen(false)}>
-              取消
+              {t.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -301,7 +321,7 @@ export function MaintenanceBatchBarView({
                 onStop();
               }}
             >
-              确定停止
+              {t.maintenance.confirmStop}
             </Button>
           </DialogFooter>
         </DialogContent>

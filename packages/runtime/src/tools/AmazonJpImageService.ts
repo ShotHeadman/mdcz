@@ -1,5 +1,4 @@
-import { Website } from "@mdcz/shared/enums";
-import type { CrawlerData } from "@mdcz/shared/types";
+import type { AmazonPosterLookupReason } from "@mdcz/shared/ipcTypes";
 import { load } from "cheerio";
 import type { NetworkCookieJar, NetworkSession, RuntimeNetworkClient } from "../network";
 import { InMemoryCookieJar } from "../network/InMemoryCookieJar";
@@ -23,8 +22,7 @@ const AMAZON_HEADERS = {
 
 export interface AmazonJpPosterEnhanceResult {
   poster_url?: string;
-  upgraded: boolean;
-  reason: string;
+  reason: Exclude<AmazonPosterLookupReason, "query_failed">;
 }
 
 interface DetailCandidate {
@@ -70,17 +68,13 @@ export class AmazonJpImageService {
     private readonly logger: Pick<RuntimeLogger, "warn"> = noopRuntimeLogger,
   ) {}
 
-  async enhance(data: CrawlerData, posterSource?: Website): Promise<AmazonJpPosterEnhanceResult> {
-    const currentPoster = data.poster_url?.trim();
-    const skipReason = this.getSkipReason(currentPoster, posterSource);
-    if (skipReason) return { upgraded: false, reason: skipReason };
-
-    const searchTitle = normalizeWhitespace(data.title ?? "");
-    if (!searchTitle) return { upgraded: false, reason: "skip: missing title" };
+  async enhance(title: string): Promise<AmazonJpPosterEnhanceResult> {
+    const searchTitle = normalizeWhitespace(title);
+    if (!searchTitle) return { reason: "missing_title" };
 
     const session = this.networkClient.createSession({ cookieJar: new InMemoryCookieJar() });
     const directDetailPath = normalizeAmazonDetailPath(searchTitle);
-    if (directDetailPath) return this.enhanceFromDirectDetailPath(session, directDetailPath, currentPoster);
+    if (directDetailPath) return this.enhanceFromDirectDetailPath(session, directDetailPath);
 
     let html: string;
     try {
@@ -92,14 +86,14 @@ export class AmazonJpImageService {
       );
     } catch (error) {
       this.logger.warn(`Amazon search failed for "${searchTitle}": ${toErrorMessage(error)}`);
-      return { upgraded: false, reason: "搜索请求失败" };
+      return { reason: "search_failed" };
     }
 
-    if (this.isNoResultPage(html)) return { upgraded: false, reason: "搜索无结果" };
+    if (this.isNoResultPage(html)) return { reason: "no_results" };
     const searchResultCount = this.countSearchResultCards(html);
     const detailCandidates = this.extractDetailCandidates(html, searchTitle);
     if (detailCandidates.length === 0) {
-      return { upgraded: false, reason: searchResultCount > 0 ? "未找到匹配商品" : "搜索无结果" };
+      return { reason: searchResultCount > 0 ? "no_match" : "no_results" };
     }
 
     let hadUnreachableImage = false;
@@ -111,33 +105,24 @@ export class AmazonJpImageService {
         this.logger.warn(`Amazon detail image is not reachable for "${candidate.detailTitle}" (${imageUrl})`);
         continue;
       }
-      return {
-        poster_url: imageUrl,
-        upgraded: imageUrl !== currentPoster,
-        reason: imageUrl === currentPoster ? "已命中相同海报" : "已升级为Amazon商品海报",
-      };
+      return { poster_url: imageUrl, reason: "found" };
     }
 
-    return { upgraded: false, reason: hadUnreachableImage ? "图片链接校验失败" : "Amazon 商品页无法读取" };
+    return { reason: hadUnreachableImage ? "image_unreachable" : "detail_unreadable" };
   }
 
   private async enhanceFromDirectDetailPath(
     session: NetworkSession,
     detailPath: string,
-    currentPoster: string | undefined,
   ): Promise<AmazonJpPosterEnhanceResult> {
     const directImageUrl = await this.fetchDetailPoster(session, detailPath, { useEligibilityGate: true });
     const imageUrl = directImageUrl ?? (await this.fetchPosterViaAsinSearch(session, detailPath));
-    if (!imageUrl) return { upgraded: false, reason: "Amazon 商品页无法读取" };
+    if (!imageUrl) return { reason: "detail_unreadable" };
     if (!(await this.isImageReachable(imageUrl))) {
       this.logger.warn(`Amazon detail image is not reachable for "${detailPath}" (${imageUrl})`);
-      return { upgraded: false, reason: "图片链接校验失败" };
+      return { reason: "image_unreachable" };
     }
-    return {
-      poster_url: imageUrl,
-      upgraded: imageUrl !== currentPoster,
-      reason: imageUrl === currentPoster ? "已命中相同海报" : "已升级为Amazon商品海报",
-    };
+    return { poster_url: imageUrl, reason: "found" };
   }
 
   private async fetchPosterViaAsinSearch(session: NetworkSession, detailPath: string): Promise<string | null> {
@@ -154,14 +139,6 @@ export class AmazonJpImageService {
     }
     const candidate = this.extractAsinCandidate(html, asin);
     return candidate ? this.fetchDetailPoster(session, candidate.detailPath) : null;
-  }
-
-  private getSkipReason(currentPoster: string | undefined, posterSource?: Website): string | null {
-    if (!currentPoster) return "skip: no current poster";
-    if (posterSource === Website.DMM) return "skip: DMM poster source";
-    if (currentPoster.includes("awsimgsrc.dmm.co.jp")) return "skip: AWS DMM poster";
-    if (currentPoster.includes(AMAZON_IMAGE_HOST)) return "skip: already using Amazon poster";
-    return null;
   }
 
   private isNoResultPage(html: string): boolean {

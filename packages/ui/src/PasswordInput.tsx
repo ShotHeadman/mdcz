@@ -6,9 +6,10 @@ import { cn } from "./utils";
 
 interface PasswordInputProps extends React.ComponentProps<typeof Input> {
   ref?: React.Ref<HTMLInputElement>;
+  visibilityLabels: { show: string; hide: string };
 }
 
-export function PasswordInput({ className, ref, ...props }: PasswordInputProps) {
+export function PasswordInput({ className, ref, visibilityLabels, ...props }: PasswordInputProps) {
   const [showPassword, setShowPassword] = React.useState(false);
 
   return (
@@ -27,7 +28,7 @@ export function PasswordInput({ className, ref, ...props }: PasswordInputProps) 
         ) : (
           <Eye className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         )}
-        <span className="sr-only">{showPassword ? "隐藏密码" : "显示密码"}</span>
+        <span className="sr-only">{showPassword ? visibilityLabels.hide : visibilityLabels.show}</span>
       </Button>
     </div>
   );

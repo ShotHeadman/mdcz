@@ -4,12 +4,12 @@ import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form
 import {
   AdvancedSettingsFooterContent,
   AssetDownloadsSection,
-  FileBehaviorTopLevelSection,
   flattenConfig,
   NamingSection,
   NetworkTopLevelSection,
   NfoSection,
   PathsSection,
+  PathsTopLevelSection,
   ProfileCapsule,
   SectionAnchor,
   SettingsEditor,
@@ -36,11 +36,11 @@ const baseSettingsServices = {
   listCrawlerSites: vi.fn(async () => ({ sites: [] })),
   openWatermarkDirectory: vi.fn(async () => undefined),
   previewNaming: vi.fn(async () => ({ items: [] })),
-  probeSiteConnectivity: vi.fn(async () => ({ ok: true, message: "" })),
+  probeSiteConnectivity: vi.fn(async () => ({ ok: true, latencyMs: 0, status: 200 })),
   relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
   saveConfig: vi.fn(async () => undefined),
-  testLLM: vi.fn(async () => ({ success: true, message: "" })),
+  testLLM: vi.fn(async () => ({ status: "ok" as const, sample: "" })),
 } satisfies SettingsServices;
 
 const createSettingsServices = (overrides: Partial<SettingsServices> = {}): SettingsServices => ({
@@ -81,6 +81,14 @@ function SettingsSurfaceHarness() {
   const configuration = useMemo(
     () => ({
       ...defaultConfiguration,
+      behavior: {
+        ...defaultConfiguration.behavior,
+        metadataOnly: true,
+      },
+      paths: {
+        ...defaultConfiguration.paths,
+        metadataPath: "/metadata",
+      },
       download: {
         ...defaultConfiguration.download,
         downloadPoster: true,
@@ -193,20 +201,7 @@ test("ordered site field exposes grouped priority semantics", async () => {
   await expect.element(screen.getByRole("checkbox")).toHaveAttribute("aria-checked", "mixed");
 });
 
-test("ordered site field keeps simple mode enable order stable", async () => {
-  const screen = await render(
-    <FormHarness>
-      <OrderedSiteFieldEditor value={["javdb", "dmm"]} options={["dmm", "javdb", "avbase"]} onChange={noop} />
-    </FormHarness>,
-  );
-
-  await expect.element(screen.getByText("已启用 2/3")).toBeVisible();
-  await expect.element(screen.getByText("avbase", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("javdb", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("dmm", { exact: true })).toBeVisible();
-});
-
-test("profile capsule marks loading busy state without default profile fallback", async () => {
+test("profile capsule marks loading busy state", async () => {
   const screen = await render(
     <ProfileCapsule
       profiles={[]}
@@ -222,7 +217,6 @@ test("profile capsule marks loading busy state without default profile fallback"
   );
 
   expect(screen.container.querySelector('[aria-busy="true"]')).not.toBeNull();
-  expect(screen.container.textContent ?? "").not.toContain("默认配置");
 });
 
 test("section anchors defer content until force-opened", async () => {
@@ -295,7 +289,6 @@ test("paths section surfaces scan exclusion directories with autocomplete inputs
     <FormHarness
       values={{
         paths: {
-          failedOutputFolder: "failed",
           defaultScanExcludeDirs: ["E:/Output", "failed_22"],
         },
       }}
@@ -356,19 +349,20 @@ test("settings sections expose public labels and naming placeholder help", async
       values={{
         behavior: {
           successFileMove: false,
-          failedFileMove: false,
           successFileRename: false,
-          deleteEmptyFolder: false,
-          scrapeSoftlinkPath: false,
-          saveLog: false,
         },
       }}
     >
-      <FileBehaviorTopLevelSection forceOpen />
+      <PathsTopLevelSection forceOpen />
     </FormHarness>,
   );
-  await expect.element(behavior.getByText("文件行为")).toBeVisible();
-  await expect.element(behavior.getByText("成功后移动文件")).toBeVisible();
+  await expect.element(behavior.getByText("媒体库与输出")).toBeVisible();
+  await expect.element(behavior.getByText("移动视频与字幕", { exact: true })).toBeVisible();
+  await expect.element(behavior.getByText("重命名视频与字幕", { exact: true })).toBeVisible();
+  await expect.element(behavior.getByText("仅输出元数据", { exact: true })).toBeVisible();
+  expect(
+    behavior.container.querySelector('[data-field-name="paths.successOutputFolder"] input')?.matches(":disabled"),
+  ).toBe(true);
 
   const naming = await render(
     <FormHarness values={{ naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" } }}>
@@ -388,6 +382,25 @@ test("settings sections expose public labels and naming placeholder help", async
   );
   await expect.element(advancedDownload.getByText("剧照下载并发")).toBeVisible();
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
+});
+
+test("output settings show preview failures", async () => {
+  const screen = await render(
+    <FormHarness
+      values={defaultConfiguration}
+      services={createSettingsServices({
+        isServer: true,
+        previewNaming: vi.fn(async () => {
+          throw new Error("模板结果越出输出根目录");
+        }),
+      })}
+    >
+      <PathsTopLevelSection forceOpen />
+      <NamingSection />
+    </FormHarness>,
+  );
+  await screen.getByRole("switch", { name: "仅输出元数据" }).click();
+  await expect.element(screen.getByText("模板结果越出输出根目录")).toBeVisible();
 });
 
 test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {
@@ -422,29 +435,6 @@ test("NFO settings render the configured enum list only while NFO generation is 
       enabled.getByText("选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。"),
     )
     .toBeVisible();
-});
-
-test("title repair settings expose ordered rules and add validated rows", async () => {
-  const screen = await render(
-    <FormHarness
-      values={{
-        naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" },
-        titleRepair: {
-          enabled: true,
-          rules: [{ source: "催●", replacement: "催眠" }],
-        },
-      }}
-    >
-      <NamingSection />
-    </FormHarness>,
-  );
-
-  await expect.element(screen.getByText("修复遮蔽标题")).toBeVisible();
-  await expect.element(screen.getByLabelText("第 1 条规则的替换原文")).toHaveValue("催●");
-  await screen.getByLabelText("新规则的替换原文").fill("●●");
-  await screen.getByLabelText("新规则的替换结果").fill("秘密");
-  await screen.getByRole("button", { name: "添加规则" }).click();
-  await expect.element(screen.getByLabelText("第 2 条规则的替换原文")).toHaveValue("●●");
 });
 
 test("poster badge controls follow download and badge visibility gates", async () => {
@@ -487,4 +477,32 @@ test("poster badge controls follow download and badge visibility gates", async (
   await expect.element(badgeOn.getByText("覆盖角标图片", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("中字")).toBeVisible();
   await expect.element(badgeOn.getByText("流出")).toBeVisible();
+});
+
+test("metadata-only mode disables media organization and shows lock guidance", async () => {
+  const normal = await render(
+    <FormHarness values={{ behavior: { metadataOnly: false, successFileMove: true, successFileRename: true } }}>
+      <PathsTopLevelSection forceOpen />
+    </FormHarness>,
+  );
+  expect(
+    normal.container.querySelector('[data-field-name="behavior.successFileMove"] button')?.matches(":disabled"),
+  ).toBe(false);
+  expect(
+    normal.container.querySelector('[data-field-name="behavior.successFileRename"] button')?.matches(":disabled"),
+  ).toBe(false);
+  await expect.element(normal.getByText("已开启「仅输出元数据」模式")).not.toBeInTheDocument();
+
+  const metadataOnly = await render(
+    <FormHarness values={{ behavior: { metadataOnly: true, successFileMove: true, successFileRename: true } }}>
+      <PathsTopLevelSection forceOpen />
+    </FormHarness>,
+  );
+  expect(
+    metadataOnly.container.querySelector('[data-field-name="behavior.successFileMove"] button')?.matches(":disabled"),
+  ).toBe(true);
+  expect(
+    metadataOnly.container.querySelector('[data-field-name="behavior.successFileRename"] button')?.matches(":disabled"),
+  ).toBe(true);
+  await expect.element(metadataOnly.getByText("已开启「仅输出元数据」模式")).toBeVisible();
 });

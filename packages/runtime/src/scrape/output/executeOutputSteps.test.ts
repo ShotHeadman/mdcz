@@ -95,8 +95,6 @@ describe("shared output steps", () => {
         return downloadedAssets;
       },
     );
-    const logs: string[] = [];
-
     const result = await downloadCrawlerAssets({
       callbacks: {
         onResolvedSceneImageUrls: callerResolvedScenes,
@@ -107,7 +105,6 @@ describe("shared output steps", () => {
       downloadManager: { downloadAll } as unknown as DownloadManager,
       fileInfo: createFileInfo(),
       outputDir: "/output",
-      onLog: (message) => logs.push(message),
       postProcessAssets,
     });
 
@@ -122,7 +119,6 @@ describe("shared output steps", () => {
       "https://new.example/scene-1.jpg",
       "https://new.example/scene-2.jpg",
     ]);
-    expect(logs).toEqual(["[ABC-123] Downloading resources...", "[ABC-123] Scene images: 1/2"]);
   });
 
   it("writes prepared NFO with injected probe and tag builder", async () => {
@@ -132,8 +128,6 @@ describe("shared output steps", () => {
     const probeVideoMetadata = vi.fn().mockResolvedValue({ durationSeconds: 120 });
     const buildTags: NonNullable<NfoOptions["buildTags"]> = () => ["tag"];
     const writeNfo = vi.fn().mockResolvedValue("/output/ABC-123.nfo");
-    const logs: string[] = [];
-
     const result = await writePreparedNfo({
       assets,
       buildTags,
@@ -143,10 +137,8 @@ describe("shared output steps", () => {
       fileInfo,
       nfoGenerator: { writeNfo } as unknown as NfoGenerator,
       nfoPath: "/output/ABC-123.nfo",
-      onLog: (message) => logs.push(message),
       probeVideoMetadata,
       sourceVideoPath: fileInfo.filePath,
-      startLogLabel: "Generating NFO",
     });
 
     expect(result).toBe("/output/ABC-123.nfo");
@@ -161,6 +153,5 @@ describe("shared output steps", () => {
         videoMeta: { durationSeconds: 120 },
       }),
     );
-    expect(logs).toEqual(["Generating NFO"]);
   });
 });

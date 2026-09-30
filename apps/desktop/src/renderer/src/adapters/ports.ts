@@ -9,7 +9,8 @@ import type {
 } from "@mdcz/views/adapters";
 import { resolveBatchRescrapeOutput } from "@mdcz/views/adapters";
 import { type DetailViewItem, getDetailLocalAssetRef } from "@mdcz/views/detail";
-import { deleteFile, deleteFileAndFolder, readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
+import { getT } from "@mdcz/views/i18n";
+import { readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { getImageSrc, getLocalImagePath, resolveImagePath } from "@/utils/image";
 import { playMediaPath } from "@/utils/playback";
@@ -82,6 +83,10 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
     }
     await ipc.app.showItemInFolder(target);
   },
+  openMetadataFolder: async (item) => {
+    const target = item.nfoRef ?? item.nfoPath;
+    if (target) await ipc.app.showItemInFolder(target);
+  },
   readNfo: async (item: DetailViewItem, path: string) => {
     const nfoTarget = item.nfoRef && path === item.nfoPath ? item.nfoRef : path;
     const response = await readNfo(nfoTarget, getItemFileTarget(item));
@@ -95,14 +100,14 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
   },
   preparePosterCrop: async (item) => {
     const target = getItemFileTarget(item);
-    if (!target) throw new Error("缺少本地视频路径");
+    if (!target) throw new Error(getT().desktop.missingLocalVideoPath);
     const session = await ipc.file.posterCropSession(target);
     const source = await ipc.file.exists(session.sourcePath);
     return { ...session, sourceUrl: source.url ?? "" };
   },
   savePosterCrop: async (item, crop) => {
     const target = getItemFileTarget(item);
-    if (!target) throw new Error("缺少本地视频路径");
+    if (!target) throw new Error(getT().desktop.missingLocalVideoPath);
     const result = await ipc.file.posterCropSave(target, crop);
     const poster = await ipc.file.exists(result.targetPath);
     const posterUrl = poster.url ?? "";
@@ -114,30 +119,23 @@ export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
   rescrapeByUrl: async (targets, manualUrl) => {
     const refs = targets.map((target) => target.ref);
     const first = refs[0];
-    if (!first) throw new Error("请选择要刮削的文件");
-    const response = await ipc.scraper.start(
+    if (!first) throw new Error(getT().desktop.selectFileToScrape);
+    await ipc.scraper.start(
       refs.length === 1
         ? { mode: "single", ref: first, manualUrl }
         : { mode: "selection", refs, ...resolveBatchRescrapeOutput(targets), manualUrl },
     );
-    return { message: response.message };
+  },
+  rerunDirectory: async (runId) => {
+    await ipc.scraper.rerunDirectory(runId);
   },
   retryFailed: async (itemIds) => {
-    const response = await retryScrapeSelection(itemIds);
-    return {
-      message: response.data.message,
-    };
-  },
-  deleteFile: async (targets) => {
-    await deleteFile(targets.map((target) => target.ref));
-  },
-  deleteFileAndFolder: async (target) => {
-    await deleteFileAndFolder(target.ref);
+    await retryScrapeSelection(itemIds);
   },
   openFolder: async (target) => {
     await ipc.app.showItemInFolder(target.ref ?? target.filePath);
   },
-  play: (target) => playMediaPath(target.ref ?? target.filePath, "播放功能仅在桌面客户端可用", "播放失败"),
+  play: (target) => playMediaPath(target.ref ?? target.filePath),
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
@@ -147,10 +145,11 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
   openFolder: async (filePath) => {
     await ipc.app.showItemInFolder(filePath);
   },
-  play: (filePath) => playMediaPath(filePath, "播放功能仅在桌面客户端可用"),
+  play: (filePath) => playMediaPath(filePath),
   openNfo: (path) => {
     window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
   },
+  rerunDirectory: async (sessionId) => await ipc.maintenance.rerunDirectory(sessionId),
   getActiveSession: () => ipc.maintenance.getActiveSession(),
   updateDraft: async (previewId, draft) => {
     await ipc.maintenance.updateDraft({ previewId, ...draft });

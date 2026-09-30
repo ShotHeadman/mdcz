@@ -9,6 +9,273 @@
   },
   "interactions": [
     {
+      "channel": "actor",
+      "sequence": 1,
+      "request": {
+        "method": "GET",
+        "url": "https://raw.githubusercontent.com/gfriends/gfriends/master/Content/7-S1/浅野こころ.jpg?t=1692745441",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://raw.githubusercontent.com/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "https://raw.githubusercontent.com/gfriends/gfriends/master/Content/7-S1/%E6%B5%85%E9%87%8E%E3%81%93%E3%81%93%E3%82%8D.jpg?t=1692745441",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=300"
+          ],
+          [
+            "content-length",
+            "65536"
+          ],
+          [
+            "content-range",
+            "bytes 0-65535/65894"
+          ],
+          [
+            "content-security-policy",
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:08:59 GMT"
+          ],
+          [
+            "etag",
+            "W/\"2702edc95e09738c22c660ced7a8589091ddc56b94e16eeaf5f433ed488aa389\""
+          ],
+          [
+            "expires",
+            "Tue, 29 Sep 2026 07:13:59 GMT"
+          ],
+          [
+            "source-age",
+            "0"
+          ],
+          [
+            "strict-transport-security",
+            "max-age=31536000"
+          ],
+          [
+            "vary",
+            "Authorization,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 varnish"
+          ],
+          [
+            "x-cache",
+            "MISS"
+          ],
+          [
+            "x-cache-hits",
+            "0"
+          ],
+          [
+            "x-content-type-options",
+            "nosniff"
+          ],
+          [
+            "x-fastly-request-id",
+            "df63bea718a8731859b8b20f39a01b07443241ab"
+          ],
+          [
+            "x-frame-options",
+            "deny"
+          ],
+          [
+            "x-github-edge-region",
+            "fra"
+          ],
+          [
+            "x-github-request-id",
+            "CB16:38E8D:7B94CA:8AE7F6:6ABB640B"
+          ],
+          [
+            "x-served-by",
+            "cache-sin-wsss1830036-SIN"
+          ],
+          [
+            "x-timer",
+            "S1790665740.656411,VS0,VE320"
+          ],
+          [
+            "x-xss-protection",
+            "1; mode=block"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "40a08937ea79da04e056089b8d79dfd1cc20e261b1885d31d99c6c5efc541b1b",
+          "byteLength": 65536,
+          "width": 564,
+          "height": 720
+        }
+      }
+    },
+    {
+      "channel": "actor",
+      "sequence": 2,
+      "request": {
+        "method": "GET",
+        "url": "https://raw.githubusercontent.com/gfriends/gfriends/master/Content/7-Moodyz/浅野こころ.jpg?t=1737501250",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://raw.githubusercontent.com/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "https://raw.githubusercontent.com/gfriends/gfriends/master/Content/7-Moodyz/%E6%B5%85%E9%87%8E%E3%81%93%E3%81%93%E3%82%8D.jpg?t=1737501250",
+        "headers": [
+          [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
+            "access-control-allow-origin",
+            "*"
+          ],
+          [
+            "cache-control",
+            "max-age=300"
+          ],
+          [
+            "content-length",
+            "65536"
+          ],
+          [
+            "content-range",
+            "bytes 0-65535/86864"
+          ],
+          [
+            "content-security-policy",
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "cross-origin-resource-policy",
+            "cross-origin"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:09:00 GMT"
+          ],
+          [
+            "etag",
+            "W/\"d61b24f9b981fd40d719dd62cdd5b55f4c6cba0d26910a01054709d17912bcef\""
+          ],
+          [
+            "expires",
+            "Tue, 29 Sep 2026 07:14:00 GMT"
+          ],
+          [
+            "source-age",
+            "0"
+          ],
+          [
+            "strict-transport-security",
+            "max-age=31536000"
+          ],
+          [
+            "vary",
+            "Authorization,Accept-Encoding"
+          ],
+          [
+            "via",
+            "1.1 varnish"
+          ],
+          [
+            "x-cache",
+            "MISS"
+          ],
+          [
+            "x-cache-hits",
+            "0"
+          ],
+          [
+            "x-content-type-options",
+            "nosniff"
+          ],
+          [
+            "x-fastly-request-id",
+            "768868ca941d71b2f1d6af98afedebbb27084897"
+          ],
+          [
+            "x-frame-options",
+            "deny"
+          ],
+          [
+            "x-github-edge-region",
+            "fra"
+          ],
+          [
+            "x-github-request-id",
+            "AC8E:38E8D:7B957F:8AE8B8:6ABB640C"
+          ],
+          [
+            "x-served-by",
+            "cache-sin-wsss1830036-SIN"
+          ],
+          [
+            "x-timer",
+            "S1790665740.191586,VS0,VE347"
+          ],
+          [
+            "x-xss-protection",
+            "1; mode=block"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "922f19762dc6af7d10248d2865aeca751e87b8c6fe8a2e7c4768503b79b8d830",
+          "byteLength": 65536,
+          "width": 600,
+          "height": 783
+        }
+      }
+    },
+    {
+      "channel": "crawler:avbase",
       "sequence": 1,
       "request": {
         "method": "GET",
@@ -36,7 +303,7 @@
           ],
           [
             "cf-ray",
-            "a34cf6863d6d2fbd-SIN"
+            "a429286dabbed5c8-NRT"
           ],
           [
             "content-encoding",
@@ -48,7 +315,7 @@
           ],
           [
             "date",
-            "Wed, 02 Sep 2026 13:46:48 GMT"
+            "Tue, 29 Sep 2026 07:08:40 GMT"
           ],
           [
             "nel",
@@ -56,7 +323,7 @@
           ],
           [
             "report-to",
-            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=%2Fm%2B2bHsCfGR8TRRdugW9gXUGRjhzxmC0xivi9ht2b9tzKNIcJvc3IWKT0uS39AkLTKDQpJ9mvoioPYateHopVVvM7B9BkwnoRnFCVrN5IdFm0o8qwe5iETGe8lKSCln%2FeH1snzwYNttjNxze\"}]}"
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=KPzXeiqg8UtzH2ZUTlwEN4qrAAKngjRswhHvKCH3PNqaqiRLiY7I2Zc7%2FQrxgg%2F2NS3FIny69mUWw0Tu7gM%2BAG69iEOPQov%2BTmPpU1%2FVSQ8kVIV%2FuiSffIKKsldgmaMf\"}]}"
           ],
           [
             "server",
@@ -64,7 +331,7 @@
           ],
           [
             "server-timing",
-            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=9,cfOrigin;dur=174"
+            "cfCacheStatus;desc=\"BYPASS\", cfEdge;dur=8,cfOrigin;dur=220"
           ],
           [
             "vary",
@@ -74,13 +341,13 @@
         "body": {
           "kind": "file",
           "path": "responses/crawler/avbase/001.html",
-          "sha256": "4ed96c4023c5d10be70c14ef826827ee75888575b8c9f0cb53d958f628527e79",
-          "byteLength": 49729
+          "sha256": "57b22fe6036fd7565ec55ef3f72fe6ee3ef3dbd40f4b294c2f2832036ebfd49e",
+          "byteLength": 51063
         }
-      },
-      "channel": "crawler:avbase"
+      }
     },
     {
+      "channel": "crawler:avbase",
       "sequence": 2,
       "request": {
         "method": "GET",
@@ -99,6 +366,10 @@
         "url": "https://www.avbase.net/works/SNOS-301",
         "headers": [
           [
+            "age",
+            "4031"
+          ],
+          [
             "cache-control",
             "public, max-age=0"
           ],
@@ -108,11 +379,11 @@
           ],
           [
             "cf-cache-status",
-            "EXPIRED"
+            "HIT"
           ],
           [
             "cf-ray",
-            "a34cf6922f472fbd-SIN"
+            "a42928700c53d5c8-NRT"
           ],
           [
             "content-encoding",
@@ -124,7 +395,7 @@
           ],
           [
             "date",
-            "Wed, 02 Sep 2026 13:46:50 GMT"
+            "Tue, 29 Sep 2026 07:08:40 GMT"
           ],
           [
             "nel",
@@ -132,7 +403,7 @@
           ],
           [
             "report-to",
-            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=6RkFeumqXve9DKa4fPjBIJAiS5capRsN8J8YGX4yIIYGmzUO1lJSeD5F%2FUdBjDfHEZPPwUvGdzgfjEcC5cQouabpCcrX0I4a0VJkdohv7dDaWxz%2FNm00dI28qZTLZ7CQkbwLUOCxuc%2Bq18K1\"}]}"
+            "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=eaBwN4IDvSA6sw3QjKo3ftVoGRBWD7T5xjbxEXjQeeAU9w8CFcquzc5FTr5YrQv%2FaemHN%2FB0IsUV1ED%2BwPsbUq%2FgMPX4jqaejW4JS06%2FFVN2LPTgf6l3AmCgAcrpsmi0\"}]}"
           ],
           [
             "server",
@@ -140,7 +411,7 @@
           ],
           [
             "server-timing",
-            "cfCacheStatus;desc=\"EXPIRED\", cfEdge;dur=35,cfOrigin;dur=185"
+            "cfCacheStatus;desc=\"HIT\", cfEdge;dur=7,cfOrigin;dur=0"
           ],
           [
             "vary",
@@ -150,13 +421,13 @@
         "body": {
           "kind": "file",
           "path": "responses/crawler/avbase/002.html",
-          "sha256": "56fcce01929a2a417280cf925809e9669a8446d7e9ee7997320000bc42a47c21",
-          "byteLength": 62141
+          "sha256": "4edf2406a4dcfe29d070cf77bfe205ab654d02e7ce53aff6d1e8d6683f8bf9fb",
+          "byteLength": 63198
         }
-      },
-      "channel": "crawler:avbase"
+      }
     },
     {
+      "channel": "crawler:dmm",
       "sequence": 1,
       "request": {
         "method": "GET",
@@ -196,7 +467,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 05:55:29 GMT"
+            "Tue, 29 Sep 2026 07:08:40 GMT"
           ],
           [
             "expires",
@@ -216,11 +487,11 @@
           ],
           [
             "via",
-            "1.1 a0e6840b8e183d8f159cb194a62c98f8.cloudfront.net (CloudFront)"
+            "1.1 a0ab8fad44e7d16e458ba0843ec3ded6.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "A4AVBG25Z_UQdL2QH_VQsZ6om9G9qE-aI3mIUYKL6cK-ofNwGtccIw=="
+            "J1CGGmd-29iRE5euUMtKhUAmK1pEJgttBT550KTtzfFVVic2aU6hUQ=="
           ],
           [
             "x-amz-cf-pop",
@@ -238,13 +509,13 @@
         "body": {
           "kind": "file",
           "path": "responses/crawler/dmm/001.html",
-          "sha256": "3872a88c7305b7929686639bed34845cddac4b4ca7aa98c1b1e09523c874b18e",
-          "byteLength": 64455
+          "sha256": "3b1c317cfd3a4498d98454278d2b2592f749e3c072766576be63d8faed7ede3f",
+          "byteLength": 64146
         }
-      },
-      "channel": "crawler:dmm"
+      }
     },
     {
+      "channel": "crawler:dmm",
       "sequence": 2,
       "request": {
         "method": "POST",
@@ -304,7 +575,7 @@
           ],
           [
             "content-length",
-            "5689"
+            "5691"
           ],
           [
             "content-type",
@@ -312,7 +583,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 05:55:30 GMT"
+            "Tue, 29 Sep 2026 07:08:44 GMT"
           ],
           [
             "vary",
@@ -326,13 +597,13 @@
         "body": {
           "kind": "file",
           "path": "responses/crawler/dmm/002.json",
-          "sha256": "ea0471be64343042dc28c26dc69aba016917f4587890c0babd72683e26cff43e",
-          "byteLength": 5689
+          "sha256": "cd7632634e08f317d365311d016a25124c78f75492e8b871721a88c365642950",
+          "byteLength": 5691
         }
-      },
-      "channel": "crawler:dmm"
+      }
     },
     {
+      "channel": "crawler:dmm_tv",
       "sequence": 1,
       "request": {
         "method": "POST",
@@ -400,7 +671,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 05:55:26 GMT"
+            "Tue, 29 Sep 2026 07:08:43 GMT"
           ],
           [
             "vary",
@@ -417,10 +688,10 @@
           "sha256": "edc391758eb12d697f4fbe2f6b4671df52aeaced6884ba962572eb295062bbaa",
           "byteLength": 49
         }
-      },
-      "channel": "crawler:dmm_tv"
+      }
     },
     {
+      "channel": "crawler:dmm_tv",
       "sequence": 2,
       "request": {
         "method": "POST",
@@ -480,7 +751,7 @@
           ],
           [
             "content-length",
-            "5689"
+            "5691"
           ],
           [
             "content-type",
@@ -488,7 +759,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 05:55:26 GMT"
+            "Tue, 29 Sep 2026 07:08:45 GMT"
           ],
           [
             "vary",
@@ -502,13 +773,13 @@
         "body": {
           "kind": "file",
           "path": "responses/crawler/dmm_tv/002.json",
-          "sha256": "ea0471be64343042dc28c26dc69aba016917f4587890c0babd72683e26cff43e",
-          "byteLength": 5689
+          "sha256": "cd7632634e08f317d365311d016a25124c78f75492e8b871721a88c365642950",
+          "byteLength": 5691
         }
-      },
-      "channel": "crawler:dmm_tv"
+      }
     },
     {
+      "channel": "media",
       "sequence": 1,
       "request": {
         "method": "GET",
@@ -531,8 +802,12 @@
         "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301pl.jpg",
         "headers": [
           [
+            "accept-ranges",
+            "bytes"
+          ],
+          [
             "age",
-            "544235"
+            "211360"
           ],
           [
             "alt-svc",
@@ -552,7 +827,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:45:13 GMT"
+            "Sat, 26 Sep 2026 20:26:23 GMT"
           ],
           [
             "etag",
@@ -568,15 +843,15 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 1defb3408d423777861372b6bdd975e2.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "fkWqhiwilMJwy0yPEG41ke-Q8oRixiDClZasBGg38SB4alary2w38w=="
+            "WFFCP-vAL1wSdNS0KLrgANvxRbuZ7Wpdk5HdJFArLJIpeY-xQzAwaA=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5"
           ],
           [
             "x-cache",
@@ -584,18 +859,20 @@
           ],
           [
             "x-cache-status",
-            "HIT"
+            "MISS"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "5ff38d255d0007d0146ec7531f27ba43902c7a898d4f670988036fc14a457ec7",
-          "byteLength": 65536
+          "byteLength": 65536,
+          "width": 2184,
+          "height": 1468
         }
-      },
-      "channel": "media"
+      }
     },
     {
+      "channel": "media",
       "sequence": 2,
       "request": {
         "method": "GET",
@@ -619,7 +896,7 @@
         "headers": [
           [
             "age",
-            "592014"
+            "505592"
           ],
           [
             "alt-svc",
@@ -639,7 +916,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 05:55:49 GMT"
+            "Tue, 29 Sep 2026 07:09:03 GMT"
           ],
           [
             "etag",
@@ -655,15 +932,15 @@
           ],
           [
             "via",
-            "1.1 e996ef6a9b635520a6bffcbe2aa967ce.cloudfront.net (CloudFront), 1.1 6668c5f9673a1ff5c9056c76b3fbd024.cloudfront.net (CloudFront), 1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 1f8d0a5085017147d516b076367dc02a.cloudfront.net (CloudFront), 1.1 6668c5f9673a1ff5c9056c76b3fbd024.cloudfront.net (CloudFront), 1.1 1defb3408d423777861372b6bdd975e2.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "ABhx7CirRSS5KicM8OPUdQQjDn27UmcP2lEJSzkVtTBlg8NdQbaCYw=="
+            "DNL1iLbINyM-x80Dx4U4bMIz6xMiZUbgSJrUgnXcx9x3Z33O9WtzNw=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P6, NRT12-P4, NRT20-P9"
+            "NRT57-P5, NRT12-P4, NRT57-P5"
           ],
           [
             "x-cache",
@@ -681,12 +958,14 @@
         "body": {
           "kind": "blob",
           "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
-          "byteLength": 2732
+          "byteLength": 2732,
+          "width": 90,
+          "height": 122
         }
-      },
-      "channel": "media"
+      }
     },
     {
+      "channel": "media",
       "sequence": 3,
       "request": {
         "method": "GET",
@@ -710,7 +989,7 @@
         "headers": [
           [
             "age",
-            "37377"
+            "130230"
           ],
           [
             "alt-svc",
@@ -730,7 +1009,7 @@
           ],
           [
             "date",
-            "Wed, 02 Sep 2026 19:32:52 GMT"
+            "Sun, 27 Sep 2026 18:58:33 GMT"
           ],
           [
             "etag",
@@ -746,15 +1025,15 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 1defb3408d423777861372b6bdd975e2.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "rSLYWR9P70Asc6wvq_V5WmDkZ8gEBxzelS54EVabsT-nNnfk80gCVw=="
+            "Njuv2FpCoeCOnY79qRube9ztNkhVXhHoPzRl5KaRictVoDWwnRFuJw=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5"
           ],
           [
             "x-cache",
@@ -768,12 +1047,14 @@
         "body": {
           "kind": "blob",
           "sha256": "81439157a5629db4c39bbafaec435ab087d0522a974be2480a11c49d5ca539d6",
-          "byteLength": 65536
+          "byteLength": 65536,
+          "width": 1032,
+          "height": 1468
         }
-      },
-      "channel": "media"
+      }
     },
     {
+      "channel": "media",
       "sequence": 4,
       "request": {
         "method": "GET",
@@ -797,7 +1078,7 @@
         "headers": [
           [
             "age",
-            "592552"
+            "518406"
           ],
           [
             "alt-svc",
@@ -817,7 +1098,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 05:55:49 GMT"
+            "Tue, 29 Sep 2026 07:09:04 GMT"
           ],
           [
             "etag",
@@ -833,15 +1114,15 @@
           ],
           [
             "via",
-            "1.1 f93e179d1b1a552c89c83ee369ac624a.cloudfront.net (CloudFront), 1.1 8f934fbd2a1fb7488120222d7a818910.cloudfront.net (CloudFront), 1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 903c70611001e9a4015d16e31506e82e.cloudfront.net (CloudFront), 1.1 5b91efe7ee9975ec3440535f3cc6ddfa.cloudfront.net (CloudFront), 1.1 1defb3408d423777861372b6bdd975e2.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "vmLl4FrxDc63RKX_EVjLMvGDC_Y49y6I2-oZfjMkGRai7sXurc5J5A=="
+            "jVwyIWJHwM_USRnxqhi6NJWC7xfcpkg4dK17h-BQQIEXESCjJdSX1g=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P6, NRT12-P4, NRT20-P9"
+            "NRT57-P5, NRT12-P7, NRT57-P5"
           ],
           [
             "x-cache",
@@ -859,13 +1140,177 @@
         "body": {
           "kind": "blob",
           "sha256": "efea457c7fc0fae1eb0ec93f4f719189e38b0679cac47c11b829740d9b5675d8",
-          "byteLength": 2732
+          "byteLength": 2732,
+          "width": 90,
+          "height": 122
         }
-      },
-      "channel": "media"
+      }
     },
     {
+      "channel": "media",
       "sequence": 5,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301pl.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301pl.jpg",
+        "headers": [
+          [
+            "age",
+            "526560"
+          ],
+          [
+            "content-length",
+            "158096"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:09:06 GMT"
+          ],
+          [
+            "last-modified",
+            "Mon, 22 Jun 2026 08:17:12 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 2f49b142e533a08662b63624a8ad1776.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "SUvfaRjKFLnl8uXctIgoj3tXiI3aMbmRtRD3HBg8HAJOe6GYT66qnw=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT57-P5, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "b42d1564e6bddd19ad4482a39db43b1cec383f37ec4c7a6962963585b612d67d",
+          "byteLength": 158096,
+          "width": 800,
+          "height": 538
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 6,
+      "request": {
+        "method": "GET",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301ps.jpg",
+        "headers": [
+          [
+            "range",
+            "bytes=0-65535"
+          ],
+          [
+            "referer",
+            "https://pics.dmm.co.jp/"
+          ]
+        ],
+        "bodyBase64": null
+      },
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301ps.jpg",
+        "headers": [
+          [
+            "age",
+            "91669"
+          ],
+          [
+            "content-length",
+            "12370"
+          ],
+          [
+            "content-type",
+            "image/jpeg"
+          ],
+          [
+            "date",
+            "Tue, 29 Sep 2026 07:09:08 GMT"
+          ],
+          [
+            "last-modified",
+            "Mon, 22 Jun 2026 08:17:12 GMT"
+          ],
+          [
+            "server",
+            "openresty"
+          ],
+          [
+            "via",
+            "1.1 d7ca514ecfb45988506b3b12d3088ac4.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
+          ],
+          [
+            "x-amz-cf-id",
+            "45yi2ahjLhWHY-DDvSNWCSfdhkvAxCZ8xCzvUyN-1un9K7QQgGvqeQ=="
+          ],
+          [
+            "x-amz-cf-pop",
+            "NRT12-P3, NRT20-P1"
+          ],
+          [
+            "x-cache",
+            "Miss from cloudfront"
+          ],
+          [
+            "x-cache-status",
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
+          ]
+        ],
+        "body": {
+          "kind": "blob",
+          "sha256": "e831556500ff2985c1993802eaf362e44cd4096e19b55493af0cdf9b4dead918",
+          "byteLength": 12370,
+          "width": 147,
+          "height": 200
+        }
+      }
+    },
+    {
+      "channel": "media",
+      "sequence": 7,
       "request": {
         "method": "GET",
         "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301pl.jpg",
@@ -888,7 +1333,7 @@
           ],
           [
             "age",
-            "544237"
+            "211374"
           ],
           [
             "alt-svc",
@@ -904,7 +1349,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:45:13 GMT"
+            "Sat, 26 Sep 2026 20:26:23 GMT"
           ],
           [
             "etag",
@@ -920,15 +1365,15 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 1defb3408d423777861372b6bdd975e2.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "cqPU9Tj-PuMqNebGVPOiCJHH77_kXm7NjzWuVVV_ueHSgtKwRxUxsg=="
+            "8hUW5ibhjOsykXehSqLiLRm6XSvilL6St2YmbZ9TB-o6TAwqbvndKg=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5"
           ],
           [
             "x-cache",
@@ -936,19 +1381,21 @@
           ],
           [
             "x-cache-status",
-            "HIT"
+            "MISS"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "410b8828bce2e363b84358d350096904912d7330e50b39c2f721c8b061e50250",
-          "byteLength": 849922
+          "byteLength": 849922,
+          "width": 2184,
+          "height": 1468
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 6,
+      "channel": "media",
+      "sequence": 8,
       "request": {
         "method": "GET",
         "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301ps.jpg",
@@ -971,7 +1418,7 @@
           ],
           [
             "age",
-            "37378"
+            "130248"
           ],
           [
             "alt-svc",
@@ -987,7 +1434,7 @@
           ],
           [
             "date",
-            "Wed, 02 Sep 2026 19:32:52 GMT"
+            "Sun, 27 Sep 2026 18:58:33 GMT"
           ],
           [
             "etag",
@@ -1003,15 +1450,15 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 1defb3408d423777861372b6bdd975e2.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "nSct31ZGwmD9iDbKU1Vt7N4nbEh_wMNE1YypHa8ghhD1wX8LvuvS-A=="
+            "FE635pj6zKC1jfbz-3jvlK0R6Npqv5ApItRGG98cVgwXb3aXJNjX6A=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5"
           ],
           [
             "x-cache",
@@ -1025,20 +1472,22 @@
         "body": {
           "kind": "blob",
           "sha256": "db1f111c2f08621e8444de3927d077c6301d3d06f73df2127b73d0ae78d570d9",
-          "byteLength": 284310
+          "byteLength": 284310,
+          "width": 1032,
+          "height": 1468
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 7,
+      "channel": "media",
+      "sequence": 9,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-1.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-1.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1046,7 +1495,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-1.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-1.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1054,11 +1503,7 @@
           ],
           [
             "age",
-            "35770"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "18439"
           ],
           [
             "content-length",
@@ -1070,7 +1515,7 @@
           ],
           [
             "date",
-            "Wed, 02 Sep 2026 19:59:40 GMT"
+            "Tue, 29 Sep 2026 07:09:24 GMT"
           ],
           [
             "etag",
@@ -1086,42 +1531,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 f8cddc1421a93e632b03ddd64ac4628c.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "qK2pYw12vrgce5CkcVM5ywI1RYQ10cAtiaBeKEGSivYguVqUe4oQ5A=="
+            "mCZ9rIzOlJBvb3TLlrP-8XkvziEDzsFHdaABE7rJxY8H4Ad7iiH9fA=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "c3406a3282e8747e0a4bdfb80fa0bd82933cbe8774832501c5ac892f091e3ece",
-          "byteLength": 77742
+          "byteLength": 77742,
+          "width": 534,
+          "height": 800
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 8,
+      "channel": "media",
+      "sequence": 10,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-2.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-2.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1129,7 +1580,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-2.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-2.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1137,11 +1588,7 @@
           ],
           [
             "age",
-            "544854"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "132379"
           ],
           [
             "content-length",
@@ -1153,7 +1600,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:34:56 GMT"
+            "Tue, 29 Sep 2026 07:09:26 GMT"
           ],
           [
             "etag",
@@ -1169,42 +1616,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 a60d732e1ff728740920906a7e9d8f42.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "P56oITWJudZ_OPCCqQnDxR4V8uFMDi_gm1dDoVWd_WfIvy6FM2Wghg=="
+            "n9VMALbNIxzrVjW_wfj6btfCj0Ng4pKI_ezJIaqd66ZQy3-aWZwX0A=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "427623dfac65211de2e06f9a3b9710885e88bf620050dfedb50888f9f83cb5b1",
-          "byteLength": 84561
+          "byteLength": 84561,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 9,
+      "channel": "media",
+      "sequence": 11,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-3.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-3.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1212,7 +1665,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-3.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-3.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1220,11 +1673,7 @@
           ],
           [
             "age",
-            "32889"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "558315"
           ],
           [
             "content-length",
@@ -1236,7 +1685,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 04:37:52 GMT"
+            "Tue, 29 Sep 2026 07:09:34 GMT"
           ],
           [
             "etag",
@@ -1252,42 +1701,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 728558a42a3a5ffd0cca99a6b7d85f44.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "WO4Cv7t25p63FPd7cP6rD4fwjeIZBvVa6y1BxP5o5v-eh2uVCIY_OA=="
+            "zpZoUKp8r22CtjWS47FAAR63B0qpSa8CeZlMBrZ9wkB9hnppZp00gw=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "73f583e775c2bfc22100d4ba46bce306d2b06ca002e2aa0946e9de825507c5df",
-          "byteLength": 85608
+          "byteLength": 85608,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 10,
+      "channel": "media",
+      "sequence": 12,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-4.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-4.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1295,7 +1750,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-4.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-4.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1303,11 +1758,7 @@
           ],
           [
             "age",
-            "441602"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "83035"
           ],
           [
             "content-length",
@@ -1319,7 +1770,7 @@
           ],
           [
             "date",
-            "Sat, 29 Aug 2026 03:15:49 GMT"
+            "Tue, 29 Sep 2026 07:09:38 GMT"
           ],
           [
             "etag",
@@ -1335,42 +1786,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 40b8aa8f50d130d98be6620e99993b36.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "1KHthA-ztz_yWsTb4dTc31Zx3A4EW-NYoAUfFzASZ_GC-GlaeG5QkQ=="
+            "YSz1JnELJZbNNGrdHWUwL3dBo3SZs0D5CsSBCfStxcXMof0VL2cuQg=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "16bcaa7fb70488aab6ee9ddcb7ad7b862e52767006678baf3c60c7093b86ff94",
-          "byteLength": 79271
+          "byteLength": 79271,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 11,
+      "channel": "media",
+      "sequence": 13,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-5.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-5.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1378,7 +1835,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-5.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-5.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1386,11 +1843,7 @@
           ],
           [
             "age",
-            "256077"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "396366"
           ],
           [
             "content-length",
@@ -1402,7 +1855,7 @@
           ],
           [
             "date",
-            "Mon, 31 Aug 2026 06:47:54 GMT"
+            "Tue, 29 Sep 2026 07:09:39 GMT"
           ],
           [
             "etag",
@@ -1418,42 +1871,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 40b8aa8f50d130d98be6620e99993b36.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "QYWElqeD9eeaA7VxLuTs9omgHfERB27dVoDeCBQNnCcTRCZ5yuwJCA=="
+            "G1n0UuQF3kg_x3YQdpR2ymWer26DLrOjoeYkNdcpM1qdcR4FzUmx6w=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
-            "MISS"
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "be3755b4862a895fd33f67aa50607787a1af0d4cfb3e52df473192fbdf0facf4",
-          "byteLength": 78456
+          "byteLength": 78456,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 12,
+      "channel": "media",
+      "sequence": 14,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-6.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-6.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1461,7 +1920,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-6.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-6.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1469,11 +1928,7 @@
           ],
           [
             "age",
-            "159456"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "74342"
           ],
           [
             "content-length",
@@ -1485,7 +1940,7 @@
           ],
           [
             "date",
-            "Tue, 01 Sep 2026 09:38:16 GMT"
+            "Tue, 29 Sep 2026 07:09:41 GMT"
           ],
           [
             "etag",
@@ -1501,42 +1956,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 27ca13a0583045ee3b2549a7ce75979c.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "IQ6HWaktiJDSsc5o4wA4h7VSRSRtaaS7AT_9R2_2rXhBipxR2b2DxA=="
+            "5BgkGyNetpJHdZ1xckx6eHLgaSY7FCuTuMpkvE7qWuumrMdsaxELZA=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "853ae6527996232499200655e54ff2b2794a41954309c91772745d2f0a824c8c",
-          "byteLength": 69279
+          "byteLength": 69279,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 13,
+      "channel": "media",
+      "sequence": 15,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-7.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-7.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1544,7 +2005,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-7.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-7.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1552,11 +2013,7 @@
           ],
           [
             "age",
-            "596601"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "184103"
           ],
           [
             "content-length",
@@ -1568,7 +2025,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 08:12:31 GMT"
+            "Tue, 29 Sep 2026 07:09:42 GMT"
           ],
           [
             "etag",
@@ -1584,42 +2041,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 40b8aa8f50d130d98be6620e99993b36.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "A-HTItvj0tHLxQKeX9hE6JXlMqvAnESoyiTQMxFH4diAqd4yi21UgA=="
+            "sv7fmgCBkiPyVHCtBMgtVQpDMETgZjkVxeKAwsRBYF1el011ig8yKQ=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "8c05a87e58889c9651cd3085159ccb75787ba50958bc61fc58d74c0fb11e1f60",
-          "byteLength": 76091
+          "byteLength": 76091,
+          "width": 534,
+          "height": 800
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 14,
+      "channel": "media",
+      "sequence": 16,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-8.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-8.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1627,7 +2090,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-8.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-8.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1635,11 +2098,7 @@
           ],
           [
             "age",
-            "179157"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "29074"
           ],
           [
             "content-length",
@@ -1651,7 +2110,7 @@
           ],
           [
             "date",
-            "Tue, 01 Sep 2026 04:09:56 GMT"
+            "Tue, 29 Sep 2026 07:09:44 GMT"
           ],
           [
             "etag",
@@ -1667,42 +2126,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 a60d732e1ff728740920906a7e9d8f42.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "vdDkrttZlRcdFbpRGo-hYty1TedLWjMc0MUURJyvXcyzu4HLr-wnjQ=="
+            "IJDlct7QTl3IopuFa98nK1Lnjbq0BDm9uzKjRhC4oyCMuG_cNKaMjA=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "22427675b10d5ac8f732bafbdfa5fc34a6070826d5de77adea83630ec5bcec71",
-          "byteLength": 68438
+          "byteLength": 68438,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 15,
+      "channel": "media",
+      "sequence": 17,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-9.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-9.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1710,7 +2175,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-9.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-9.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1718,11 +2183,7 @@
           ],
           [
             "age",
-            "42414"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "36295"
           ],
           [
             "content-length",
@@ -1734,7 +2195,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 04:37:54 GMT"
+            "Tue, 29 Sep 2026 07:09:46 GMT"
           ],
           [
             "etag",
@@ -1750,42 +2211,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 a45a2e7e037a58795b84093de0085a8e.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "7vQlG14YqJuqdrnnuIef_UP6pcywygxYOfOV1O_sW7gNG2kS8591TQ=="
+            "zWtJeTw86WNeqzWw49fAYmF8Q19Hqcb8V32qjOWb7Rs0cRxoBwe95g=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "ea6e1060ebe8d83f3e6dd6594e10f4b4770dab71c9a1d6e509fa519e754d5249",
-          "byteLength": 71236
+          "byteLength": 71236,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 16,
+      "channel": "media",
+      "sequence": 18,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-10.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-10.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1793,7 +2260,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-10.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-10.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1801,11 +2268,7 @@
           ],
           [
             "age",
-            "466717"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "367225"
           ],
           [
             "content-length",
@@ -1817,7 +2280,7 @@
           ],
           [
             "date",
-            "Fri, 28 Aug 2026 20:17:16 GMT"
+            "Tue, 29 Sep 2026 07:09:47 GMT"
           ],
           [
             "etag",
@@ -1833,42 +2296,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 ed189a437cfac2413240746357610054.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "JurUphGzxt3vg7fjR7dtm1EP7l3iijN8i7hnDJbq09VcXRxrzG0-oA=="
+            "mCo6d3rfaQVzeMNs9vx23Xdc8TnoWph4rq4VZL0W4jAB37Wa43UqkQ=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT20-P6, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "d7d734b53bf81d7331057203bc9734f01af92e29642c2ee3907f55891c3ef0e4",
-          "byteLength": 77722
+          "byteLength": 77722,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 17,
+      "channel": "media",
+      "sequence": 19,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-11.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-11.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1876,7 +2345,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-11.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-11.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1884,11 +2353,7 @@
           ],
           [
             "age",
-            "555803"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "308714"
           ],
           [
             "content-length",
@@ -1900,7 +2365,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 19:32:30 GMT"
+            "Tue, 29 Sep 2026 07:09:48 GMT"
           ],
           [
             "etag",
@@ -1916,42 +2381,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 1f8d0a5085017147d516b076367dc02a.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "9e2Ij_lLIMUMw-IbwsvZUmg99aDXraWA4ZKxnjgxBbkHDJ7F9tnznQ=="
+            "9UjbdiYqCqb5WhVWDJ7jV-i_XIZwVUykoCtjXtO1078z1SXkjzkD2A=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
-            "MISS"
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "23770d3a010ff6922ba6993bb8fc5b3b6f7435e8c02c0a923cb8765466ea6c88",
-          "byteLength": 73612
+          "byteLength": 73612,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 18,
+      "channel": "media",
+      "sequence": 20,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-12.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-12.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -1959,7 +2430,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-12.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-12.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -1967,11 +2438,7 @@
           ],
           [
             "age",
-            "544858"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "110982"
           ],
           [
             "content-length",
@@ -1983,7 +2450,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:34:56 GMT"
+            "Tue, 29 Sep 2026 07:09:49 GMT"
           ],
           [
             "etag",
@@ -1999,42 +2466,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 40320435ee6c0ba79ad788a52054783c.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "85ZNwRP786LLxnfII7rpcW4JJAfL_PKcGrT0AelxkyXcYaDkyB3aTw=="
+            "HgFQjIvwhdhr4kEg7LUqfNX0FwGNlmLq7IDTUrbYaphyiixVGtCTJA=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT20-P6, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
-            "MISS"
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "cb2b1778eb1585311759c3c131785b46c4650ec53d6765b16819e89c2b0d3683",
-          "byteLength": 101358
+          "byteLength": 101358,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 19,
+      "channel": "media",
+      "sequence": 21,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-13.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-13.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2042,7 +2515,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-13.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-13.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2050,11 +2523,7 @@
           ],
           [
             "age",
-            "177568"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "33688"
           ],
           [
             "content-length",
@@ -2066,7 +2535,7 @@
           ],
           [
             "date",
-            "Tue, 01 Sep 2026 04:36:27 GMT"
+            "Tue, 29 Sep 2026 07:09:51 GMT"
           ],
           [
             "etag",
@@ -2082,42 +2551,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 361902a6d5ab0a02e24e772d6f4d0c14.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "zB9a_7tPiNn1vWt_1DBZv8u6391624VtdJU8OQaRax3XPTG0HCQAig=="
+            "oVK3YongUVjBCT4P8xfA2mw-f_CnZeTfzPUQBg8vzwq4COluALx3ng=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
-            "EXPIRED"
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "e851b65825994b68c80c46dcf008525a3f02a333aeaaf8a9f065899c22eded25",
-          "byteLength": 80301
+          "byteLength": 80301,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 20,
+      "channel": "media",
+      "sequence": 22,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-14.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-14.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2125,7 +2600,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-14.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-14.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2133,11 +2608,7 @@
           ],
           [
             "age",
-            "544859"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "131793"
           ],
           [
             "content-length",
@@ -2149,7 +2620,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:34:56 GMT"
+            "Tue, 29 Sep 2026 07:09:53 GMT"
           ],
           [
             "etag",
@@ -2165,42 +2636,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 5a89fe8269a29b3c265454cd7c180666.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "sI-nGbtY5DLimsc7mmqhWf1woNBL2gh-8Oeldf4bk0lDIPidE98-Yw=="
+            "sJU7Mecmj6UVOjLIb6Cfie3ioDXZwR4sVskPMooj_x7fjH29d6TtMg=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "91552ca111e31023ea1d8b37398921eebeded18b61b1a4d4a353394baea07a4a",
-          "byteLength": 78144
+          "byteLength": 78144,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 21,
+      "channel": "media",
+      "sequence": 23,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-15.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-15.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2208,7 +2685,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-15.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-15.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2216,11 +2693,7 @@
           ],
           [
             "age",
-            "181464"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "185777"
           ],
           [
             "content-length",
@@ -2232,7 +2705,7 @@
           ],
           [
             "date",
-            "Tue, 01 Sep 2026 03:31:31 GMT"
+            "Tue, 29 Sep 2026 07:09:54 GMT"
           ],
           [
             "etag",
@@ -2248,42 +2721,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 318a5c8c970025facf252820695c8b90.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "qW7XOt8E50E17smQuwpj6DgnY3GYrQnTI7s1l8ep8aLNCXAaeoioXw=="
+            "iINaiZiWRrfRFNNVALdbTaZFIK8oFCMGAUmgeF22d5ZOcH9ZSFSCOQ=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
-            "MISS"
+            "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "9d21f65c0d0691b31f0973e6b8edf63b0ad8ea19f90fc960deb91a35cb5a7980",
-          "byteLength": 68248
+          "byteLength": 68248,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 22,
+      "channel": "media",
+      "sequence": 24,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-16.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-16.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2291,7 +2770,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-16.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-16.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2299,11 +2778,7 @@
           ],
           [
             "age",
-            "544858"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "15142"
           ],
           [
             "content-length",
@@ -2315,7 +2790,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:34:57 GMT"
+            "Tue, 29 Sep 2026 07:09:55 GMT"
           ],
           [
             "etag",
@@ -2331,42 +2806,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 361902a6d5ab0a02e24e772d6f4d0c14.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "k_lxmz0OJqpyGR1EJ-QyC1U5117dQ8_MOd-jAwBmuWVX1-5c0uoTgw=="
+            "0dlCAqUpN3uGFjWUvLayZQ5uSDhGaMY_aGFg7JWdSdIBpuui1jJqBA=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "57d9180fa48e8ae5574269de978ee6caddf3267ceb2fafe51d58743a3e3593b2",
-          "byteLength": 79774
+          "byteLength": 79774,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 23,
+      "channel": "media",
+      "sequence": 25,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-17.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-17.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2374,7 +2855,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-17.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-17.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2382,11 +2863,7 @@
           ],
           [
             "age",
-            "447450"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "228135"
           ],
           [
             "content-length",
@@ -2398,7 +2875,7 @@
           ],
           [
             "date",
-            "Sat, 29 Aug 2026 01:38:25 GMT"
+            "Tue, 29 Sep 2026 07:09:57 GMT"
           ],
           [
             "etag",
@@ -2414,42 +2891,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 e9f4931d4872ec54c5c96165246be262.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "14WEqFd9DJP1e6zV799MnI0xUSHXnTlUJGKwTVuepSoF972OnNqXCw=="
+            "soJY9HWwlE6A7ieaYbVWF_2Vd8rQuC7IHHMy-OyaMb2t_UjrxwsOzQ=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "14cef08e139b826f4e6ec7fa06f836059a79c339871e654c90668c34c0f7afc0",
-          "byteLength": 88916
+          "byteLength": 88916,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 24,
+      "channel": "media",
+      "sequence": 26,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-18.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-18.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2457,7 +2940,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-18.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-18.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2465,11 +2948,7 @@
           ],
           [
             "age",
-            "14676"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "50022"
           ],
           [
             "content-length",
@@ -2481,7 +2960,7 @@
           ],
           [
             "date",
-            "Thu, 03 Sep 2026 04:37:58 GMT"
+            "Tue, 29 Sep 2026 07:09:58 GMT"
           ],
           [
             "etag",
@@ -2497,42 +2976,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 361902a6d5ab0a02e24e772d6f4d0c14.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "dWF4Ctt28BqI_geTLsBRO6vBiNLJQSB86dyzcoyfgYRqrs_l5aUcsA=="
+            "zA9Js1Tg_6t1xZP0RcJ02w15ffuwITqFNa6atag-QWZ0L75bBynujQ=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "89cfb24c6284b27dfdce0fc3a2ff9967020ab60a4866cbe189e4da27fc7facad",
-          "byteLength": 101584
+          "byteLength": 101584,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 25,
+      "channel": "media",
+      "sequence": 27,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-19.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-19.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2540,7 +3025,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-19.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-19.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2548,11 +3033,7 @@
           ],
           [
             "age",
-            "447451"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "5106"
           ],
           [
             "content-length",
@@ -2564,7 +3045,7 @@
           ],
           [
             "date",
-            "Sat, 29 Aug 2026 01:38:25 GMT"
+            "Tue, 29 Sep 2026 07:10:00 GMT"
           ],
           [
             "etag",
@@ -2580,42 +3061,48 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 b37dbbe8d3b5fd859db3dda5e93f1dd6.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "kIF2FGjBLB1xrSMphwhQn7g_qdW2tC37Blnq7w4S-95fcXhKSklIqw=="
+            "FAeXZ4OS4dwarsA8lsJv0jaCzGA5DW58oI0JNghhpkFKDTTPLBZJRg=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT57-P5, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "fb2045324348d74aa47296741050e0b25f67e435c50f45ab447be106b8b7263a",
-          "byteLength": 63580
+          "byteLength": 63580,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 26,
+      "channel": "media",
+      "sequence": 28,
       "request": {
         "method": "GET",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-20.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-20.jpg",
         "headers": [
           [
             "referer",
-            "https://awsimgsrc.dmm.co.jp/"
+            "https://pics.dmm.co.jp/"
           ]
         ],
         "bodyBase64": null
@@ -2623,7 +3110,7 @@
       "response": {
         "status": 200,
         "statusText": "OK",
-        "url": "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/snos00301/snos00301jp-20.jpg",
+        "url": "https://pics.dmm.co.jp/digital/video/snos00301/snos00301jp-20.jpg",
         "headers": [
           [
             "accept-ranges",
@@ -2631,11 +3118,7 @@
           ],
           [
             "age",
-            "544860"
-          ],
-          [
-            "alt-svc",
-            "h3=\":443\"; ma=86400"
+            "102710"
           ],
           [
             "content-length",
@@ -2647,7 +3130,7 @@
           ],
           [
             "date",
-            "Thu, 27 Aug 2026 22:34:56 GMT"
+            "Tue, 29 Sep 2026 07:10:01 GMT"
           ],
           [
             "etag",
@@ -2663,35 +3146,41 @@
           ],
           [
             "via",
-            "1.1 197a70266e703819edeb56a5b91db3ce.cloudfront.net (CloudFront)"
+            "1.1 3464e42d6d0da76ba0164e7092b00678.cloudfront.net (CloudFront), 1.1 6149f46c7356f1b6aa240cc7ba3d1060.cloudfront.net (CloudFront)"
           ],
           [
             "x-amz-cf-id",
-            "PYkSxR4VbkdDZ5WUejsUcR2BDqO5btmd-qSlhVO9Nvt43FxltSZxuw=="
+            "JJ-zukHD0HppOj7z3u0FQVnBC9elA1lS6k9aeedLpFeVZpQUiE66ag=="
           ],
           [
             "x-amz-cf-pop",
-            "NRT20-P9"
+            "NRT20-P6, NRT20-P1"
           ],
           [
             "x-cache",
-            "Hit from cloudfront"
+            "Miss from cloudfront"
           ],
           [
             "x-cache-status",
             "HIT"
+          ],
+          [
+            "x-pics-origin",
+            "imgsrc"
           ]
         ],
         "body": {
           "kind": "blob",
           "sha256": "5a301511ab712ec8e533ebfecfd3ce4d63f61a62ae1f579a436d286f72674f83",
-          "byteLength": 86377
+          "byteLength": 86377,
+          "width": 800,
+          "height": 534
         }
-      },
-      "channel": "media"
+      }
     },
     {
-      "sequence": 27,
+      "channel": "media",
+      "sequence": 29,
       "request": {
         "method": "GET",
         "url": "https://cc3001.dmm.co.jp/pv/QX8cHGYK88Ui5np_VCP5Sw2bDLzyzsHCJmdBVIqDe8Z2UhC5diFp8UeYL2XP30/snos00301hhb.mp4",
@@ -2722,8 +3211,7 @@
           "sha256": "65dbd8f1c5eb503ee7b943c51c10654c4b7666b38967cb54c24eb20a4ca5316f",
           "byteLength": 133939942
         }
-      },
-      "channel": "media"
+      }
     }
   ]
 }

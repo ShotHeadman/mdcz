@@ -1,3 +1,5 @@
+import { getT } from "@mdcz/views/i18n";
+
 interface BrowseFilter {
   name: string;
   extensions: string[];
@@ -57,7 +59,7 @@ export const promptForImportFile = (filters: BrowseFilter[]): Promise<{ label: s
 export async function readImportedFile(path: string): Promise<{ content: string; fileName: string }> {
   const entry = importFileStash.get(path);
   if (!entry) {
-    throw new Error("已选择的文件不可用，请重新选择。");
+    throw new Error(getT().web.fileUnavailable);
   }
   return { content: await entry.file.text(), fileName: entry.file.name };
 }

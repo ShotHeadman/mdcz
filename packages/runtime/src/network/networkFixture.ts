@@ -4,8 +4,6 @@ import path from "node:path";
 import { z } from "zod";
 import type { RawNetworkRequest } from "./NetworkClient";
 
-export { fixtureCaseIdFromRelativePath } from "./networkFixtureCase";
-
 export const SHARED_NETWORK_FIXTURE_CASE_ID = "shared";
 
 const headerListSchema = z.array(z.tuple([z.string(), z.string()]));
@@ -23,7 +21,13 @@ const bodySchema = z.discriminatedUnion("kind", [
     sha256: sha256Schema,
     byteLength: z.int().nonnegative(),
   }),
-  z.object({ kind: z.literal("blob"), sha256: sha256Schema, byteLength: z.int().nonnegative() }),
+  z.object({
+    kind: z.literal("blob"),
+    sha256: sha256Schema,
+    byteLength: z.int().nonnegative(),
+    width: z.int().positive().optional(),
+    height: z.int().positive().optional(),
+  }),
 ]);
 const responseSchema = z.object({
   status: z.int().min(100).max(599),

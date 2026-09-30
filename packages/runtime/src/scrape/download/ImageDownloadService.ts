@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { atomicCopyFile } from "@mdcz/media-store";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "../../network";
@@ -84,15 +85,14 @@ export class ImageDownloadService {
     options: { timeoutMs?: number; minBytes?: number; signal?: AbortSignal } = {},
   ): Promise<DownloadValidatedImageResult> {
     throwIfAborted(options.signal);
-    const downloadResult = await this.downloadFile(url, outputPath, options);
-    if (downloadResult.status !== "downloaded") {
-      return downloadResult;
-    }
-
+    const temporaryPath = `${outputPath}.${randomUUID()}.part`;
     try {
+      const downloadResult = await this.downloadFile(url, temporaryPath, options);
+      if (downloadResult.status !== "downloaded") return downloadResult;
       const validation = await validateImage(downloadResult.path, options.minBytes);
       if (validation.valid) {
-        const normalizedPath = await this.normalizeDownloadedImageExtension(downloadResult.path, validation.format);
+        const normalizedPath = this.resolveImageOutputPath(outputPath, validation.format);
+        await atomicCopyFile(downloadResult.path, normalizedPath);
         return {
           status: "downloaded",
           path: normalizedPath,
@@ -104,11 +104,14 @@ export class ImageDownloadService {
 
       this.logger.warn(`Image invalid (${validation.reason ?? "parse_failed"}): ${url}`);
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const message = toErrorMessage(error);
       this.logger.warn(`Image validation failed for ${url}: ${message}`);
+    } finally {
+      await unlink(temporaryPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      });
     }
-
-    await unlink(downloadResult.path).catch(() => undefined);
     return { status: "skipped", reason: "invalid_image" };
   }
 
@@ -210,9 +213,6 @@ export class ImageDownloadService {
       await atomicCopyFile(bestCandidate.path, finalPath);
       await this.removePublishedSource(bestCandidate.path);
       tempPaths.delete(bestCandidate.path);
-      if (finalPath !== outputPath) {
-        await this.removePublishedSource(outputPath);
-      }
       return finalPath;
     } finally {
       for (const tempPath of tempPaths) {
@@ -226,19 +226,6 @@ export class ImageDownloadService {
     return extension ? replaceImageFileExtension(outputPath, extension) : outputPath;
   }
 
-  private async normalizeDownloadedImageExtension(
-    filePath: string,
-    format: ImageFileFormat | undefined,
-  ): Promise<string> {
-    const normalizedPath = this.resolveImageOutputPath(filePath, format);
-    if (normalizedPath === filePath) {
-      return filePath;
-    }
-
-    await atomicCopyFile(filePath, normalizedPath);
-    await this.removePublishedSource(filePath);
-    return normalizedPath;
-  }
   private async removePublishedSource(filePath: string): Promise<void> {
     try {
       await unlink(filePath);

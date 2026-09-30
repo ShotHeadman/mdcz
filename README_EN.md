@@ -120,5 +120,5 @@ This project is licensed under GPLv3. By using this software, you agree to the f
 ---
 
 <p align="center">
-  <a href="https://github.com/ShotHeadman/mdcz/issues">Issues</a> · <a href="https://linux.do">LINUXDO Community</a>
+  <a href="https://github.com/ShotHeadman/mdcz/issues">Issues</a>
 </p>

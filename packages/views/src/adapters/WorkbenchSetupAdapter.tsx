@@ -1,9 +1,9 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import {
   isAbsoluteHostPath,
-  mergeMediaCandidates,
   normalizeComparableHostPath,
   resolveMediaCandidateScanPlan,
   resolveSuccessTargetDir,
@@ -15,6 +15,7 @@ import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { getT } from "../i18n";
 import type { PathAutocompleteResult } from "../path";
 import { WorkbenchSetupView } from "../workbench";
 
@@ -30,7 +31,9 @@ export interface WorkbenchSetupPort {
     scanDir: string,
     recursive: boolean,
     excludeDirPaths?: readonly string[],
+    scanId?: string,
   ): Promise<CandidateScanResult>;
+  cancelCandidates(scanId: string): Promise<void>;
   isServer?: boolean;
   suggestDirectory?: (input: { kind: "scan" | "target"; path: string }) => Promise<ServerPathSuggestResponse>;
 }
@@ -40,6 +43,7 @@ export interface WorkbenchSetupAdapterProps {
   config?: Configuration;
   configLoading?: boolean;
   port: WorkbenchSetupPort;
+  onStartDirectory: (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => Promise<void>;
   onStartScrape: (candidates: MediaCandidate[], targetDir: string) => Promise<void>;
   onStartMaintenance: (
     candidates: MediaCandidate[],
@@ -54,20 +58,20 @@ const toPathAutocompleteResult = (result: ServerPathSuggestResponse): PathAutoco
   entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
 });
 
-// Match the session-scoped setup store: unmounting cannot stop backend filesystem I/O.
-let scanInFlight = false;
-let pendingScan: (() => Promise<void>) | null = null;
-
 export function WorkbenchSetupAdapter({
   mode,
   config,
   configLoading = false,
   port,
+  onStartDirectory,
   onStartScrape,
   onStartMaintenance,
 }: WorkbenchSetupAdapterProps) {
   const {
     scanDir,
+    stopPreview,
+    previewMode,
+    setPreviewMode,
     recursive,
     warnings,
     setRecursive,
@@ -84,10 +88,11 @@ export function WorkbenchSetupAdapter({
     applyScanResult,
     failScan,
     toggleSelectedPath,
-    setAllSelected,
+    setPathsSelected,
   } = useWorkbenchSetupStore();
   const presetId = useMaintenanceStore((state) => state.presetId);
   const [draftDir, setDraftDir] = useState(scanDir);
+  const [directoryError, setDirectoryError] = useState("");
   useEffect(() => setDraftDir(scanDir), [scanDir]);
   const scanPlan = useMemo(
     () => resolveMediaCandidateScanPlan(mode, scanDir, recursive, config),
@@ -95,6 +100,7 @@ export function WorkbenchSetupAdapter({
   );
   const scanReady = Boolean(config && !configLoading && scanDir);
   const [startPending, setStartPending] = useState(false);
+  const startingRef = useRef(false);
   const scanRequestRef = useRef(0);
   const initializedRef = useRef(false);
 
@@ -108,12 +114,7 @@ export function WorkbenchSetupAdapter({
     () => selectedCandidates.reduce((sum, candidate) => sum + candidate.size, 0),
     [selectedCandidates],
   );
-  const extensionCount = useMemo(
-    () => new Set(candidates.map((candidate) => candidate.extension.replace(/^\./u, "").toLowerCase())).size,
-    [candidates],
-  );
-  const scanning = scanStatus === "scanning";
-  const needsTarget = mode === "scrape" || presetId === "organize_files" || presetId === "rebuild_all";
+  const needsTarget = mode === "scrape" || presetId === "local_organize" || presetId === "rebuild_all";
   const draftDirty =
     Boolean(draftDir.trim()) !== Boolean(scanDir.trim()) ||
     normalizeComparableHostPath(draftDir) !== normalizeComparableHostPath(scanDir);
@@ -121,56 +122,54 @@ export function WorkbenchSetupAdapter({
     startPending ||
     !scanReady ||
     draftDirty ||
-    committedPlanKey !== scanPlan.scanKey ||
-    scanStatus !== "success" ||
-    selectedCandidates.length === 0 ||
+    (previewMode &&
+      (committedPlanKey !== scanPlan.scanKey || scanStatus !== "success" || selectedCandidates.length === 0)) ||
     (needsTarget && !targetDir.trim());
-  const runSummary =
-    candidates.length > 0
-      ? `${candidates.length} 个文件 · ${formatBytes(totalSize, { trimTrailingZeros: true })} · ${extensionCount} 种类型 · ${
-          config?.translate?.enableTranslation ? "翻译已开启" : "翻译关闭"
-        }`
-      : "";
   const suggestDirectory = port.suggestDirectory;
 
   const runScan = useCallback(async () => {
     if (!scanReady) return;
     const requestId = ++scanRequestRef.current;
+    await stopPreview();
+    if (requestId !== scanRequestRef.current) return;
+    setPreviewMode(true);
     beginScan();
-    pendingScan = async () => {
+    const id = crypto.randomUUID();
+    const completion = (async () => {
       const isCurrentScan = () => scanRequestRef.current === requestId;
       try {
-        const results: CandidateScanResult[] = [];
-        for (const directory of [scanDir, ...scanPlan.extraScanDirs]) {
-          if (!isCurrentScan()) return;
-          results.push(await port.scanCandidates(directory, recursive, scanPlan.excludeDirPaths));
-        }
+        const result = await port.scanCandidates(scanDir, recursive, scanPlan.excludeDirPaths, id);
         if (!isCurrentScan()) return;
-        applyScanResult(
-          scanPlan.scanKey,
-          mergeMediaCandidates(...results.map((result) => result.candidates)),
-          [...new Set(results.flatMap((result) => result.supportedExtensions))],
-          {
-            count: results.reduce((count, result) => count + (result.warnings?.count ?? 0), 0),
-            paths: results.flatMap((result) => result.warnings?.paths ?? []).slice(0, 5),
-          },
-        );
+        applyScanResult(scanPlan.scanKey, result.candidates, result.supportedExtensions, result.warnings);
       } catch (error) {
         if (isCurrentScan()) failScan(toErrorMessage(error));
+      } finally {
+        if (useWorkbenchSetupStore.getState().activePreview?.id === id)
+          useWorkbenchSetupStore.setState({ activePreview: null });
       }
-    };
-    if (scanInFlight) return;
-    scanInFlight = true;
-    try {
-      while (pendingScan) {
-        const scan = pendingScan;
-        pendingScan = null;
-        await scan();
-      }
-    } finally {
-      scanInFlight = false;
-    }
-  }, [applyScanResult, beginScan, failScan, port, recursive, scanDir, scanPlan, scanReady]);
+    })();
+    useWorkbenchSetupStore.setState({
+      activePreview: {
+        id,
+        stop: async () => {
+          await port.cancelCandidates(id);
+          await completion;
+        },
+      },
+    });
+    await completion;
+  }, [
+    applyScanResult,
+    beginScan,
+    failScan,
+    port,
+    recursive,
+    scanDir,
+    scanPlan,
+    scanReady,
+    setPreviewMode,
+    stopPreview,
+  ]);
 
   useEffect(() => {
     if (!config || initializedRef.current) {
@@ -194,15 +193,13 @@ export function WorkbenchSetupAdapter({
   }, [config, mode, scanDir, setScanDir, setTargetDir, targetDir]);
 
   useEffect(() => {
-    const state = useWorkbenchSetupStore.getState();
-    if (scanReady && !(state.scanStatus === "success" && state.committedPlanKey === scanPlan.scanKey)) {
-      void runScan();
-    }
     return () => {
       scanRequestRef.current += 1;
-      pendingScan = null;
+      void stopPreview().catch((error) => toast.error(getT().workbench.cancelScanFailed(toErrorMessage(error))));
+      if (useWorkbenchSetupStore.getState().scanStatus === "scanning")
+        useWorkbenchSetupStore.setState({ scanStatus: "idle" });
     };
-  }, [runScan, scanReady]);
+  }, [scanPlan.scanKey, draftDir, stopPreview]);
 
   const handleChooseScanDir = async () => {
     try {
@@ -212,6 +209,7 @@ export function WorkbenchSetupAdapter({
       }
       setScanDir(selectedPath);
       setDraftDir(selectedPath);
+      setDirectoryError("");
       if (!targetDir || !isAbsoluteHostPath(targetDir)) {
         setTargetDir(
           mode === "maintenance"
@@ -220,7 +218,7 @@ export function WorkbenchSetupAdapter({
         );
       }
     } catch (error) {
-      toast.error(`选择扫描目录失败: ${toErrorMessage(error)}`);
+      toast.error(getT().workbench.selectScanDirFailed(toErrorMessage(error)));
     }
   };
 
@@ -232,32 +230,83 @@ export function WorkbenchSetupAdapter({
       }
       setTargetDir(selectedPath);
     } catch (error) {
-      toast.error(`选择目标目录失败: ${toErrorMessage(error)}`);
+      toast.error(getT().workbench.selectOutputDirFailed(toErrorMessage(error)));
     }
   };
 
-  const handleStart = async () => {
-    if (primaryDisabled) {
+  const handleStart = useCallback(async () => {
+    if (primaryDisabled || startingRef.current) {
       return;
     }
 
+    startingRef.current = true;
     setStartPending(true);
     try {
-      if (mode === "maintenance") {
+      if (!previewMode) {
+        if (!isAbsoluteHostPath(scanDir)) {
+          setDirectoryError(getT().workbench.enterFullPath);
+          return;
+        }
+        setDirectoryError("");
+        scanRequestRef.current += 1;
+        await stopPreview();
+        try {
+          await onStartDirectory(
+            { kind: "directory", scanDir, recursive },
+            needsTarget ? targetDir : scanDir,
+            presetId,
+          );
+        } catch (error) {
+          setDirectoryError(toErrorMessage(error));
+        }
+      } else if (mode === "maintenance") {
         await onStartMaintenance(selectedCandidates, presetId, needsTarget ? targetDir : undefined);
       } else {
         await onStartScrape(selectedCandidates, targetDir);
       }
     } finally {
+      startingRef.current = false;
       setStartPending(false);
     }
-  };
+  }, [
+    primaryDisabled,
+    previewMode,
+    scanDir,
+    recursive,
+    stopPreview,
+    onStartDirectory,
+    needsTarget,
+    targetDir,
+    presetId,
+    mode,
+    onStartMaintenance,
+    selectedCandidates,
+    onStartScrape,
+  ]);
+
+  useEffect(() => {
+    useWorkbenchSetupStore.setState({ startTask: handleStart });
+    return () => {
+      useWorkbenchSetupStore.setState({ startTask: null });
+    };
+  }, [handleStart]);
 
   return (
     <WorkbenchSetupView
       mode={mode}
+      previewMode={previewMode}
+      onExitPreview={() => {
+        scanRequestRef.current += 1;
+        void stopPreview()
+          .then(() => {
+            setPreviewMode(false);
+            useWorkbenchSetupStore.setState({ scanStatus: "idle" });
+          })
+          .catch((error) => toast.error(toErrorMessage(error)));
+      }}
       configLoading={configLoading}
       scanDir={draftDir}
+      scanDirError={directoryError}
       recursive={recursive}
       onRecursiveChange={setRecursive}
       onCommitScanDir={() => {
@@ -271,31 +320,27 @@ export function WorkbenchSetupAdapter({
           );
         }
       }}
-      extraScanDirs={scanPlan.extraScanDirs}
       warnings={warnings}
       targetDir={needsTarget ? targetDir : undefined}
       candidates={candidates}
       selectedPaths={selectedPaths}
       selectedSize={selectedSize}
       totalSize={totalSize}
-      extensionCount={extensionCount}
       scanStatus={scanStatus}
       scanError={scanError}
-      scanning={scanning}
       startPending={startPending}
       supportedExtensions={supportedExtensions}
       presetId={presetId}
-      runSummary={runSummary}
       primaryDisabled={primaryDisabled}
       isServer={port.isServer}
       onSuggestScanDir={
         suggestDirectory
-          ? async (input) => toPathAutocompleteResult(await suggestDirectory({ kind: "scan", path: input.path }))
+          ? async (path) => toPathAutocompleteResult(await suggestDirectory({ kind: "scan", path }))
           : undefined
       }
       onSuggestTargetDir={
         needsTarget && suggestDirectory
-          ? async (input) => toPathAutocompleteResult(await suggestDirectory({ kind: "target", path: input.path }))
+          ? async (path) => toPathAutocompleteResult(await suggestDirectory({ kind: "target", path }))
           : undefined
       }
       formatBytes={formatBytes}
@@ -303,6 +348,7 @@ export function WorkbenchSetupAdapter({
       onBrowseTargetDir={needsTarget ? handleChooseTargetDir : undefined}
       onScanDirChange={(value) => {
         setDraftDir(value);
+        setDirectoryError("");
       }}
       onTargetDirChange={needsTarget ? setTargetDir : undefined}
       refreshDisabled={!scanReady || draftDirty}
@@ -312,7 +358,7 @@ export function WorkbenchSetupAdapter({
       onPresetChange={changeMaintenancePreset}
       onStart={handleStart}
       onToggleCandidate={toggleSelectedPath}
-      onToggleAll={setAllSelected}
+      onSelectCandidates={setPathsSelected}
     />
   );
 }

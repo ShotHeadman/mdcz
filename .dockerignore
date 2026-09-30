@@ -30,5 +30,4 @@ apps/desktop/src/renderer/src/assets/fonts/*
 !apps/server/.env.example
 **/*.log
 coverage
-playwright-report*
 test-results

@@ -16,22 +16,13 @@ import {
   serializeConfiguration,
 } from "@mdcz/shared/configCodec";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
-import { NamingEngine } from "../scrape/organize/NamingEngine";
+import { FileOrganizer } from "../scrape/FileOrganizer";
 
 export { buildComputedConfiguration, type ComputedConfiguration } from "./computed";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
 export const RUNTIME_DEFAULT_PROFILE_NAME = "default";
 export const RUNTIME_PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
-
-const CONFIG_FIELD_LABELS: Record<string, string> = {
-  "download.downloadSceneImages": "下载剧照",
-  "download.nfoNaming": "NFO 文件命名",
-  "jellyfin.userId": "Jellyfin 用户 ID",
-  "naming.assetNamingMode": "附属文件命名",
-  "naming.fileTemplate": "文件名模板",
-  "naming.folderTemplate": "文件夹模板",
-};
 
 export class RuntimeConfigValidationError extends Error {
   constructor(
@@ -45,10 +36,10 @@ export class RuntimeConfigValidationError extends Error {
 
 export const formatRuntimeConfigValidationError = (fieldErrors: Record<string, string>): string => {
   const details = Object.entries(fieldErrors)
-    .map(([field, message]) => `${CONFIG_FIELD_LABELS[field] ?? field}：${message}`)
-    .join("；");
+    .map(([field, message]) => `${field}: ${message}`)
+    .join("; ");
 
-  return details ? `配置校验失败：${details}` : "配置校验失败";
+  return details ? `Configuration validation failed: ${details}` : "Configuration validation failed";
 };
 
 export const normalizeRuntimeProfileName = (name: string): string => {
@@ -157,7 +148,7 @@ export const mergeRuntimeConfig = <T>(base: T, patch: DeepPartial<T>): T => {
   return merged as T;
 };
 
-const namingPreviewEngine = new NamingEngine();
+const namingPreviewEngine = new FileOrganizer();
 
 export const buildRuntimeNamingPreview = (
   configuration: Configuration,
@@ -166,7 +157,7 @@ export const buildRuntimeNamingPreview = (
   const config = parseRuntimeConfiguration(mergeRuntimeConfig(configuration, patch));
 
   return {
-    items: namingPreviewEngine.buildPreview(config),
+    items: namingPreviewEngine.buildNamingPreview(config),
   };
 };
 

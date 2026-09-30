@@ -1,10 +1,10 @@
 import type { LocalScanEntry, PathDiff } from "@mdcz/shared/types";
-import type { OrganizePlan } from "../scrape";
+import type { ResolvedPublicationLayout } from "../scrape";
 
 /**
  * Compare a scan entry's current paths against a pre-computed organize plan.
  */
-export function diffPaths(entry: LocalScanEntry, plan: OrganizePlan): PathDiff {
+export function diffPaths(entry: LocalScanEntry, plan: ResolvedPublicationLayout): PathDiff {
   const currentVideoPath = entry.fileInfo.filePath;
   const targetVideoPath = plan.targetVideoPath;
   const currentDir = entry.currentDir;

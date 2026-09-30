@@ -5,6 +5,7 @@ export interface MediaRoot {
   id: string;
   displayName: string;
   hostPath: string;
+  realPath: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -13,6 +14,7 @@ export interface CreateMediaRootInput {
   id?: string;
   displayName: string;
   hostPath: string;
+  realPath?: string | null;
   now?: Date;
 }
 
@@ -25,6 +27,7 @@ export const createMediaRoot = (input: CreateMediaRootInput): MediaRoot => {
     id: input.id ?? randomUUID(),
     displayName: input.displayName.trim(),
     hostPath: normalizeHostPath(input.hostPath),
+    realPath: input.realPath ?? null,
     createdAt: now,
     updatedAt: now,
   };

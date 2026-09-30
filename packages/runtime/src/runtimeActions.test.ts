@@ -1,13 +1,9 @@
-import { mkdtemp, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { buildCrawlerOptions } from "./scrape/crawlerOptions";
-import { ensureWatermarkDirectory } from "./scrape/watermarkDirectory";
 import { JAVBUS_REQUEST_HEADERS } from "./shared";
 import type { LlmApiClient } from "./translate";
 import { testLlmConnectivity } from "./translate/llmTest";
@@ -62,41 +58,25 @@ describe("settings parity runtime helpers", () => {
 
     await expect(checkConfiguredSiteCookies(cloneConfig(), { getText })).resolves.toEqual({
       results: [
-        { site: "JavDB", valid: false, message: "未配置 Cookie", status: "not_configured" },
+        { site: "JavDB", valid: false, status: "not_configured" },
         {
           site: "JavBus",
           valid: true,
-          message: "JavBus 影片页面可匿名访问，无需 Cookie",
           status: "ready_without_cookie",
         },
-        { site: "Fantia", valid: false, message: "未配置 Cookie", status: "not_configured" },
+        { site: "Fantia", valid: false, status: "not_configured" },
       ],
     });
     expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", { headers: { ...JAVBUS_REQUEST_HEADERS } });
   });
 
   // HTML→classification coverage lives in javbusPage.test.ts; here we only
-  // verify the classification→status/message mapping.
+  // verify the classification→status mapping.
   it.each([
-    [
-      "age verification",
-      '<title>Age Verification JavBus</title><div id="ageVerify"></div>',
-      "verification_required",
-      "JavBus 影片页面需要完成年龄/地区验证。请在浏览器完成验证后复制 Cookie。",
-    ],
-    [
-      "login wall",
-      '<form><h2>Login</h2><input type="password" /></form>',
-      "login_wall",
-      "JavBus 影片页面返回登录墙，当前 Cookie 无法访问影片内容。",
-    ],
-    [
-      "unrecognized page",
-      "<main>temporarily unavailable</main>",
-      "unexpected_page",
-      "JavBus 影片页面未返回可识别内容，请稍后重试。",
-    ],
-  ] as const)("reports JavBus %s without treating it as a valid Cookie", async (_name, html, status, message) => {
+    ["age verification", '<title>Age Verification JavBus</title><div id="ageVerify"></div>', "verification_required"],
+    ["login wall", '<form><h2>Login</h2><input type="password" /></form>', "login_wall"],
+    ["unrecognized page", "<main>temporarily unavailable</main>", "unexpected_page"],
+  ] as const)("reports JavBus %s without treating it as a valid Cookie", async (_name, html, status) => {
     const config = cloneConfig();
     config.network.javbusCookie = "javbus_session=valid";
     const getText = vi.fn(async () => html);
@@ -104,7 +84,7 @@ describe("settings parity runtime helpers", () => {
     const result = await checkConfiguredSiteCookies(config, { getText });
     const javbus = result.results.find((entry) => entry.site === "JavBus");
 
-    expect(javbus).toMatchObject({ valid: false, status, message });
+    expect(javbus).toEqual({ site: "JavBus", valid: false, status });
     expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", {
       headers: { ...JAVBUS_REQUEST_HEADERS, cookie: "javbus_session=valid" },
     });
@@ -120,22 +100,15 @@ describe("settings parity runtime helpers", () => {
     expect(result.results.find((entry) => entry.site === "JavBus")).toEqual({
       site: "JavBus",
       valid: true,
-      message: "JavBus Cookie 有效",
       status: "ready_with_cookie",
     });
   });
 
   it.each([
-    ["dashboard", '<a href="/mypage/dashboard">My page</a>', true, "ready_with_cookie", "Cookie 有效"],
-    ["login wall", '<form><input type="password" /></form>', false, "invalid_or_expired", "Cookie 无效或已过期"],
-    [
-      "unexpected page",
-      "<main>temporarily unavailable</main>",
-      false,
-      "unexpected_page",
-      "Fantia 页面未返回可识别的登录状态，请稍后重试。",
-    ],
-  ] as const)("classifies Fantia %s instead of treating arbitrary HTML as a valid Cookie", async (_name, html, valid, status, message) => {
+    ["dashboard", '<a href="/mypage/dashboard">My page</a>', true, "ready_with_cookie"],
+    ["login wall", '<form><input type="password" /></form>', false, "invalid_or_expired"],
+    ["unexpected page", "<main>temporarily unavailable</main>", false, "unexpected_page"],
+  ] as const)("classifies Fantia %s instead of treating arbitrary HTML as a valid Cookie", async (_name, html, valid, status) => {
     const config = cloneConfig();
     config.network.fantiaCookie = "fantia_session=valid";
     const getText = vi.fn(async (url: string) =>
@@ -147,7 +120,6 @@ describe("settings parity runtime helpers", () => {
     expect(result.results.find((entry) => entry.site === "Fantia")).toEqual({
       site: "Fantia",
       valid,
-      message,
       status,
     });
   });
@@ -163,7 +135,7 @@ describe("settings parity runtime helpers", () => {
     const javbus = result.results.find((entry) => entry.site === "JavBus");
 
     expect(javbus).toMatchObject({ valid: false, status: "request_failed" });
-    expect(javbus?.message).toContain("[REDACTED]");
+    expect(javbus?.error).toContain("[REDACTED]");
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("secret-token");
     expect(serialized).not.toContain("second-secret");
@@ -182,8 +154,7 @@ describe("settings parity runtime helpers", () => {
     const logger = { error: vi.fn(), info: vi.fn() };
 
     await expect(testLlmConnectivity({ llmModelName: "" }, config, llmApiClient)).resolves.toEqual({
-      success: false,
-      message: "请先填写 LLM 模型名称",
+      status: "missing_model",
     });
     expect(llmApiClient.generateText).not.toHaveBeenCalled();
 
@@ -200,7 +171,7 @@ describe("settings parity runtime helpers", () => {
         llmApiClient,
         logger,
       ),
-    ).resolves.toEqual({ success: true, message: "元数据翻译样本验证通过：某天傍晚" });
+    ).resolves.toEqual({ status: "ok", sample: "某天傍晚" });
     expect(llmApiClient.generateText).toHaveBeenCalledWith(
       expect.objectContaining({
         baseUrl: "https://example.test/v1",
@@ -223,24 +194,15 @@ describe("settings parity runtime helpers", () => {
     ]) {
       vi.mocked(llmApiClient.generateText).mockResolvedValueOnce(content);
       await expect(testLlmConnectivity({ llmModelName: "gpt-test" }, config, llmApiClient, logger)).resolves.toEqual({
-        success: false,
-        message: expect.stringContaining("invalid structured output"),
+        status: "failed",
+        error: expect.stringContaining("invalid structured output"),
       });
     }
 
     vi.mocked(llmApiClient.generateText).mockRejectedValueOnce(new Error("HTTP 400: invalid temperature"));
     await expect(testLlmConnectivity({ llmModelName: "gpt-test" }, config, llmApiClient, logger)).resolves.toEqual({
-      success: false,
-      message: "连接失败: HTTP 400: invalid temperature",
+      status: "failed",
+      error: "HTTP 400: invalid temperature",
     });
-  });
-
-  it("creates the server-side watermark directory under runtime data", async () => {
-    const root = await mkdtemp(join(tmpdir(), "mdcz-watermark-"));
-    const directoryPath = await ensureWatermarkDirectory(root);
-    const stats = await stat(directoryPath);
-
-    expect(stats.isDirectory()).toBe(true);
-    expect(directoryPath).toBe(join(root, "watermark"));
   });
 });

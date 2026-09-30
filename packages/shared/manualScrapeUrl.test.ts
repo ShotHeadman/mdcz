@@ -9,7 +9,7 @@ describe("manual scrape URL routing", () => {
       detailUrl: "https://www.h4610.com/moviepages/ori696/index.html",
     });
     expect(resolveManualScrapeRoute(" ")).toBeUndefined();
-    expect(() => resolveManualScrapeRoute("https://example.com/movie")).toThrow("不支持的站点地址");
+    expect(() => resolveManualScrapeRoute("https://example.com/movie")).toThrow("Unsupported site URL");
     expect(validateManualScrapeUrl("https://www.h4610.com/moviepages/ori696/index.html")).toEqual({
       valid: true,
       route: {

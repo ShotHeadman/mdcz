@@ -2,7 +2,6 @@ import type { RawNetworkResponse } from "./NetworkClient";
 
 export class ReplayResponse implements RawNetworkResponse {
   readonly ok: boolean;
-  readonly body: ReadableStream<Uint8Array> | null;
   private readonly response: Response;
 
   constructor(
@@ -15,7 +14,11 @@ export class ReplayResponse implements RawNetworkResponse {
     this.ok = status >= 200 && status < 300;
     const nullBody = status === 101 || status === 204 || status === 205 || status === 304;
     this.response = new Response(nullBody ? null : Uint8Array.from(bytes).buffer, { status, statusText, headers });
-    this.body = this.response.body;
+  }
+
+  // clone() tees the body and swaps in a fresh stream, so the body must be read at use time.
+  get body(): ReadableStream<Uint8Array> | null {
+    return this.response.body;
   }
 
   async arrayBuffer(): Promise<ArrayBuffer> {

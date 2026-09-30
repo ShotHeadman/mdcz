@@ -1,6 +1,8 @@
+import { MediaDirectoryUnavailableError } from "@mdcz/runtime/library";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   authLoginInputSchema,
+  cancelCandidatesInputSchema,
   configImportInputSchema,
   configPathInputSchema,
   configPreviewInputSchema,
@@ -11,6 +13,7 @@ import {
   fileActionInputSchema,
   libraryAvailabilityInputSchema,
   libraryDetailInputSchema,
+  libraryFileRemoveInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
   logListInputSchema,
@@ -28,6 +31,7 @@ import {
   scanStartInputSchema,
   scanTaskIdInputSchema,
   scrapeConfirmUncensoredInputSchema,
+  scrapeRerunDirectoryInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
   scrapeTaskControlInputSchema,
@@ -170,6 +174,9 @@ export const appRouter = t.router({
     }),
   }),
   library: t.router({
+    removeFile: protectedProcedure
+      .input(libraryFileRemoveInputSchema)
+      .mutation(async ({ ctx, input }) => ctx.services.library.removeFile(input)),
     availability: protectedProcedure
       .input(libraryAvailabilityInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.availability(input)),
@@ -190,7 +197,9 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntry(input.id)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
-      return await ctx.services.scans.start(detail.entry.rootId);
+      const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);
+      if (!file) throw new Error("Movie has no display file");
+      return await ctx.services.scans.start(file.rootId);
     }),
   }),
   overview: t.router({
@@ -231,9 +240,15 @@ export const appRouter = t.router({
     resume: protectedProcedure
       .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.resume(input)),
-    start: protectedProcedure
-      .input(maintenanceStartInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.maintenance.start(input)),
+    start: protectedProcedure.input(maintenanceStartInputSchema).mutation(async ({ ctx, input }) => {
+      try {
+        return await ctx.services.maintenance.start(input);
+      } catch (error) {
+        if (error instanceof MediaDirectoryUnavailableError)
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        throw error;
+      }
+    }),
     stop: protectedProcedure
       .input(maintenanceSessionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.maintenance.stop(input)),
@@ -245,6 +260,10 @@ export const appRouter = t.router({
     })),
   }),
   scans: t.router({
+    cancelCandidates: protectedProcedure.input(cancelCandidatesInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.scans.cancelCandidates(input.scanId);
+      return { ok: true as const };
+    }),
     candidates: protectedProcedure
       .input(scanCandidatesInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scans.candidates(input)),
@@ -263,9 +282,9 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.scans.start(input.rootId)),
   }),
   scrape: t.router({
-    deleteFile: protectedProcedure
+    removeRecord: protectedProcedure
       .input(fileActionInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.scrape.deleteFile(input)),
+      .mutation(async ({ ctx, input }) => await ctx.services.scrape.removeRecord(input)),
     history: protectedProcedure
       .input(scrapeTaskControlInputSchema.optional())
       .query(async ({ ctx, input }) => await ctx.services.scrape.history(input)),
@@ -300,9 +319,12 @@ export const appRouter = t.router({
     retry: scrapeLaunchProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.retry(input)).task.id })),
+    rerunDirectory: scrapeLaunchProcedure
+      .input(scrapeRerunDirectoryInputSchema)
+      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.rerunDirectory(input)).task.id })),
     confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
       try {
-        return { runId: await ctx.services.scrape.confirmUncensored(input) };
+        return await ctx.services.scrape.confirmUncensored(input);
       } catch (error) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -311,9 +333,15 @@ export const appRouter = t.router({
         });
       }
     }),
-    start: scrapeLaunchProcedure
-      .input(scrapeStartInputSchema)
-      .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.start(input)).task.id })),
+    start: scrapeLaunchProcedure.input(scrapeStartInputSchema).mutation(async ({ ctx, input }) => {
+      try {
+        return { runId: (await ctx.services.scrape.start(input)).task.id };
+      } catch (error) {
+        if (error instanceof MediaDirectoryUnavailableError)
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+        throw error;
+      }
+    }),
     stop: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: await ctx.services.scrape.stop(input) })),

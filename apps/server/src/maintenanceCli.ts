@@ -1,8 +1,12 @@
 import { chmod, mkdir, open, realpath, rm, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { moveDatabaseAside } from "@mdcz/persistence";
 import Database from "better-sqlite3";
 import { acquireDatabaseLease } from "./databaseFiles";
 import { resolveServerRuntimePaths } from "./services/configService";
+
+const usage =
+  "Usage: node server.js doctor | database backup <file> | database verify <file> | database restore <file> --confirm | database rebuild <file> --confirm";
 
 export const runMaintenanceCli = async (args: string[]): Promise<void> => {
   const paths = resolveServerRuntimePaths();
@@ -37,14 +41,34 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
   if (
     command !== "database" ||
     !file ||
-    !["backup", "verify", "restore"].includes(action ?? "") ||
-    (action === "restore" ? confirmation !== "--confirm" || args.length !== 4 : args.length !== 3)
+    !["backup", "verify", "restore", "rebuild"].includes(action ?? "") ||
+    (action === "restore" || action === "rebuild"
+      ? confirmation !== "--confirm" || args.length !== 4
+      : args.length !== 3)
   ) {
-    throw new Error(
-      "Usage: node server.js doctor | database backup <file> | database verify <file> | database restore <file> --confirm",
-    );
+    throw new Error(usage);
   }
   const filePath = resolve(file);
+  if (action === "rebuild") {
+    const target = new Database(filePath, { readonly: true, fileMustExist: true });
+    try {
+      if (!target.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'").get()) {
+        throw new Error(`Not an MDCz database: ${filePath}`);
+      }
+    } finally {
+      target.close();
+    }
+    const lease = acquireDatabaseLease(filePath);
+    try {
+      const backupPath = moveDatabaseAside(await realpath(filePath));
+      console.log(
+        `Database moved to ${backupPath}. A new database is created on the next start; configuration and profiles were kept.`,
+      );
+    } finally {
+      lease.close();
+    }
+    return;
+  }
   if (action === "backup") {
     await mkdir(dirname(filePath), { recursive: true, mode: 0o700 });
     const reservation = await open(filePath, "wx", 0o600);
@@ -71,7 +95,7 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
     if (integrity.length !== 1 || integrity[0] !== "ok" || source.prepare("PRAGMA foreign_key_check").all().length) {
       throw new Error(`Backup integrity check failed: ${filePath}`);
     }
-    for (const table of ["__drizzle_migrations", "media_roots", "scan_tasks", "scrape_runs", "publication_journal"]) {
+    for (const table of ["__drizzle_migrations", "media_roots", "scan_tasks", "scrape_runs"]) {
       if (!source.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) {
         throw new Error(`Not an MDCz database: missing ${table}`);
       }

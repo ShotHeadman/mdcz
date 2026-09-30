@@ -1,9 +1,12 @@
 import type { Website } from "@mdcz/shared/enums";
 
 export interface ScrapeItemExecutionContext {
-  itemId: string;
-  relativePath: string;
   caseId?: string;
+  /**
+   * One scrape of a movie. Its prepare and publish phases run separately but must pass the same object,
+   * because a recording and a replay cursor cover the whole scrape.
+   */
+  execution: object;
 }
 
 export interface CrawlerExecutionSource {
@@ -23,7 +26,6 @@ export interface NetworkExecutionHooks {
   runWithCrawlerSource<T>(website: Website, run: () => Promise<T>): Promise<T>;
   runWithChannel<T>(channel: string, run: () => Promise<T>): Promise<T>;
   runWithSharedData<T>(run: () => Promise<T>): Promise<T>;
-  getScrapeItem(): ScrapeItemExecutionContext | undefined;
   getCrawlerSource(): CrawlerExecutionSource | undefined;
   getNetworkRequest(): NetworkRequestExecutionContext | undefined;
 }
@@ -34,7 +36,6 @@ const directExecutionHooks: NetworkExecutionHooks = {
   runWithCrawlerSource: async (_website, run) => await run(),
   runWithChannel: async (_channel, run) => await run(),
   runWithSharedData: async (run) => await run(),
-  getScrapeItem: () => undefined,
   getCrawlerSource: () => undefined,
   getNetworkRequest: () => undefined,
 };
@@ -58,9 +59,6 @@ export const runWithNetworkChannel = async <T>(channel: string, run: () => Promi
 
 export const runWithSharedNetworkData = async <T>(run: () => Promise<T>): Promise<T> =>
   await executionHooks.runWithSharedData(run);
-
-export const getScrapeItemExecutionContext = (): ScrapeItemExecutionContext | undefined =>
-  executionHooks.getScrapeItem();
 
 export const getCrawlerExecutionSource = (): CrawlerExecutionSource | undefined => executionHooks.getCrawlerSource();
 

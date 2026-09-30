@@ -2,6 +2,7 @@ import type { Configuration } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
+import { registeredMediaLocations } from "@mdcz/runtime";
 import { type ConfiguredMediaRootService, resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
@@ -33,7 +34,16 @@ export class BatchTranslateToolService {
     } = {},
     mediaRoots?: ConfiguredMediaRootService,
   ) {
-    this.localScanService = dependencies.localScanService ?? new LocalScanService();
+    this.localScanService =
+      dependencies.localScanService ??
+      new LocalScanService(async (paths) => {
+        const state = await this.persistence.getState();
+        return registeredMediaLocations(
+          state.repositories.library,
+          (id) => state.repositories.mediaRoots.get(id),
+          paths,
+        );
+      });
     this.llmApiClient = dependencies.llmApiClient ?? new LlmApiClient(networkClient);
     this.nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
     this.writeNfo = dependencies.writeNfo ?? writePreparedNfo;
@@ -67,8 +77,8 @@ export class BatchTranslateToolService {
         nfoGenerator: this.nfoGenerator,
         writeNfo: this.writeNfo,
         publication: {
-          journal: state.repositories.publicationJournal,
-          repairIssues: state.repositories.libraryRepairIssues,
+          outputs: state.repositories.library,
+          library: state.repositories.library,
           roots: await this.mediaRoots.listRoots(),
         },
       },

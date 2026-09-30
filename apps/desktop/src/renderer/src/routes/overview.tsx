@@ -1,3 +1,4 @@
+import { useT } from "@mdcz/views/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import { OverviewHeroStartCard } from "@/components/overview/OverviewHeroStartCard";
 import { OverviewMaintenanceCard } from "@/components/overview/OverviewMaintenanceCard";
@@ -8,6 +9,7 @@ export const Route = createFileRoute("/overview")({
 });
 
 function Overview() {
+  const t = useT();
   return (
     <div className="h-full overflow-y-auto bg-surface-canvas text-foreground">
       <main className="mx-auto grid w-full max-w-[1600px] grid-cols-12 gap-8 px-6 py-8 md:px-10 lg:px-12 lg:py-12">
@@ -17,7 +19,7 @@ function Overview() {
         </section>
 
         <section className="col-span-12 mt-8">
-          <h2 className="mb-8 text-2xl font-bold tracking-tight">最近入库</h2>
+          <h2 className="mb-8 text-2xl font-bold tracking-tight">{t.desktop.recentAcquisitions}</h2>
           <RecentAcquisitionsGrid />
         </section>
       </main>

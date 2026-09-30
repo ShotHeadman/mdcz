@@ -1,573 +1,204 @@
-import { dirname, resolve } from "node:path";
-import { type Configuration, configManager } from "@main/services/config";
+import { basename, dirname, join } from "node:path";
+import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { OutputLibraryScanner } from "@main/services/library";
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
-import { didPromiseTimeout } from "@main/utils/async";
-import { type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
-import type { ScrapeRunManifest } from "@mdcz/persistence";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { type ConfiguredMediaRootService, mediaPathOwnership } from "@mdcz/runtime/library";
-import { buildMovieTags } from "@mdcz/runtime/maintenance";
+import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { commitScrapeTerminalResult, type ScrapeFileTransitions } from "@mdcz/runtime/publication";
-import type { ScrapeExecutionMode } from "@mdcz/runtime/scrape";
-import {
-  type ActorImageService,
-  AggregationService,
-  applyScrapeNetworkPolicy,
-  buildScrapePublicationKey,
-  createScrapeExecutionPolicy,
-  DownloadManager,
-  type FileScrapeResult,
-  NfoGenerator,
-  type PreparedFileScrape,
-  TranslateService,
-  validatePreparedScrapeFiles,
-} from "@mdcz/runtime/scrape";
-import {
-  resolveScrapeAttempts,
-  resolveScrapeRetry,
-  ScrapeCoordinator,
-  type ScrapeHostExecution,
-  type ScrapeHostPort,
-  type ScrapeRunItem,
-  type ScrapeRunItemInitialState,
-  type ScrapeRunSnapshot,
-  type ScrapeWorkflowReporter,
-  toFinalizedScrapeRunSnapshot,
-  toScrapeResultFromOutcome,
-  toScrapeRunSnapshotDto,
-} from "@mdcz/runtime/tasks";
+import { type ActorImageService, type PrepareScrapeItem, ScrapeRunner } from "@mdcz/runtime/scrape";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
-import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
-import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { ScrapeConfirmUncensoredInput, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
-import type { ScrapeResult, UncensoredConfirmResponse } from "@mdcz/shared/types";
-import { confirmUncensoredRunItems } from "./confirmUncensored";
-import { createFileScraper, fileOrganizer } from "./FileScraper";
-import type { ManualScrapeOptions } from "./manualScrape";
+import type { UncensoredConfirmResponse } from "@mdcz/shared/types";
+import { app } from "electron";
+import { applyDesktopPosterTagBadges } from "./output";
 import { resolveSingleFilePaths } from "./pathResolver";
 import { ScraperServiceError } from "./ScraperServiceError";
 import { translationMappingStore } from "./translationMappingStore";
 
 export interface StartScrapeResult {
   taskId: string;
-  totalFiles: number;
+  totalFiles: number | null;
   snapshot: ScrapeRunSnapshotDto;
-}
-const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
-
-interface DesktopScrapeStart {
-  refs: RootFileRef[];
-  mode: ScrapeExecutionMode;
-  configuration: Configuration;
-  outputRootId: string;
-  outputRelativeDirectory?: string;
-  manualUrl?: string;
 }
 
 export class ScraperService {
   private readonly logger = loggerService.getLogger("ScraperService");
-  private readonly actorImageService: ActorImageService;
-  private readonly actorSourceProvider: ActorSourceProvider | undefined;
-  private readonly sharedNetworkClient: NetworkClient;
-  private readonly aggregationService: AggregationService;
-  private readonly imageHostCooldownStore: PersistentCooldownStore;
   private readonly mediaRoots: ConfiguredMediaRootService;
-  private readonly host: ScrapeHostPort<DesktopScrapeStart, ScrapeRunManifest, ManualScrapeOptions, PreparedFileScrape>;
-  private workflow: ScrapeCoordinator<
-    DesktopScrapeStart,
-    ScrapeRunManifest,
-    ManualScrapeOptions,
-    PreparedFileScrape
-  > | null = null;
-  private terminalSnapshot: ScrapeRunSnapshotDto | null = null;
-  private closed = false;
+  private runnerInstance: ScrapeRunner | null = null;
+  private runnerInitPromise: Promise<ScrapeRunner> | null = null;
 
   constructor(
     private readonly signalService: SignalService,
-    networkClient: NetworkClient,
-    crawlerProvider: CrawlerProvider,
-    actorImageService: ActorImageService,
-    actorSourceProvider: ActorSourceProvider | undefined,
-    imageHostCooldownStore: PersistentCooldownStore,
+    private readonly sharedNetworkClient: NetworkClient,
+    private readonly crawlerProvider: CrawlerProvider,
+    private readonly actorImageService: ActorImageService,
+    private readonly actorSourceProvider: ActorSourceProvider | undefined,
+    private readonly imageHostCooldownStore: PersistentCooldownStore,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
-    private readonly prepareScrapeItem: <T extends { relativePath: string; caseId?: string }>(item: T) => T = (item) =>
-      item,
+    private readonly prepareScrapeItem?: PrepareScrapeItem,
   ) {
-    this.actorImageService = actorImageService;
-    this.actorSourceProvider = actorSourceProvider;
-    this.sharedNetworkClient = networkClient;
-    this.aggregationService = new AggregationService(crawlerProvider, { logger: this.logger });
-    this.imageHostCooldownStore = imageHostCooldownStore;
     this.mediaRoots = mediaRoots ?? createDesktopMediaRootService(this.persistenceService);
-    this.host = {
-      create: async (input) => await this.createRun(input),
-      runId: (run) => run.id,
-      createExecution: async (run, reporter) => await this.createExecution(run, reporter),
-      onInvalidate: (runs) => {
-        const live = runs[0];
-        this.signalService.publishTaskSnapshot({
-          resource: "scrape",
-          snapshot: live ? this.toSnapshotDto(live.run, live.snapshot, live.startedAt) : this.terminalSnapshot,
-        });
-      },
-      onTerminal: async (run, snapshot) => this.handleTerminalRun(run, snapshot),
-      onError: async (runId, error) => {
-        this.logger.error(`Scrape execution failed for ${runId}`, error);
-      },
-    };
   }
 
-  getSnapshot(taskId?: string): ScrapeRunSnapshotDto | null {
-    const live = this.workflow?.liveRuns()[0];
-    if (live) return this.toSnapshotDto(live.run, live.snapshot, live.startedAt);
-    return taskId && this.terminalSnapshot?.task.id === taskId ? this.terminalSnapshot : null;
+  private async runner(): Promise<ScrapeRunner> {
+    if (this.runnerInstance) return this.runnerInstance;
+    this.runnerInitPromise ??= (async () => {
+      const state = await this.persistenceService.initialize();
+      this.runnerInstance = new ScrapeRunner({
+        persistence: {
+          scrapeRuns: state.repositories.scrapeRuns,
+          library: state.repositories.library,
+          mediaRoots: this.mediaRoots,
+        },
+        getConfiguration: async () => await configManager.getValidated(),
+        networkClient: this.sharedNetworkClient,
+        crawlerProvider: this.crawlerProvider,
+        imageHostCooldownStore: this.imageHostCooldownStore,
+        actorImageService: this.actorImageService,
+        actorSourceProvider: this.actorSourceProvider,
+        mappingStore: translationMappingStore,
+        platform: "desktop",
+        logger: this.logger,
+        mediaInfoWasmPath: app.isPackaged ? join(process.resourcesPath, "MediaInfoModule.wasm") : undefined,
+        postProcessAssets: async ({
+          assets,
+          configuration,
+          crawlerData,
+          fileInfo,
+          localState,
+          signal,
+          signalService,
+        }) =>
+          await applyDesktopPosterTagBadges({
+            assets,
+            config: configuration,
+            crawlerData,
+            fileInfo,
+            localState,
+            logger: this.logger,
+            signal,
+            signalService,
+          }),
+        prepareScrapeItem: this.prepareScrapeItem,
+        onInvalidate: (runs) => {
+          const live = runs[0];
+          this.signalService.publishTaskSnapshot({
+            resource: "scrape",
+            snapshot: live ? live.snapshot : null,
+          });
+        },
+        onTerminal: async (_run, snapshot) => {
+          this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot });
+          this.outputLibraryScanner.invalidate();
+          this.signalService.invalidate("scrape", "overview");
+        },
+        onError: async (runId, error) => {
+          this.logger.error(`Scrape execution failed for ${runId}`, error);
+        },
+      });
+      return this.runnerInstance;
+    })().finally(() => {
+      this.runnerInitPromise = null;
+    });
+    return await this.runnerInitPromise;
+  }
+
+  async getSnapshot(taskId?: string): Promise<ScrapeRunSnapshotDto | null> {
+    return await (await this.runner()).getSnapshot(taskId);
   }
 
   async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<UncensoredConfirmResponse> {
-    const configuration = await configManager.getValidated();
-    if (!configuration.download.generateNfo) {
-      throw new ScraperServiceError("INVALID_ARGUMENT", "已关闭 NFO 生成功能，无法确认无码类型");
+    try {
+      return await (await this.runner()).confirmUncensored(input);
+    } finally {
+      const snapshot = await (await this.runner()).getSnapshot();
+      if (snapshot) this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot });
+      this.outputLibraryScanner.invalidate();
+      this.signalService.invalidate("scrape", "overview");
     }
-    const state = await this.persistenceService.getState();
-    const manifest = await state.repositories.scrapeRuns.get(input.taskId);
-    const response = await confirmUncensoredRunItems({ manifest, items: input.items, configuration, state });
-    this.terminalSnapshot = await this.rebuildTerminalSnapshot(input.taskId);
-    this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot: this.terminalSnapshot });
-    this.outputLibraryScanner.invalidate();
-    return response;
   }
 
   async start(input: ScraperStartInput): Promise<StartScrapeResult> {
-    const configuration = await configManager.getValidated();
-    const refs = input.mode === "single" ? [input.ref] : input.refs;
-    if (refs.length === 0) throw new ScraperServiceError("NO_FILES", "No files selected");
-    return await this.begin({
-      refs,
-      manualUrl: input.manualUrl,
-      mode: input.mode === "single" ? "single" : "batch",
-      configuration,
-      outputRootId: input.mode === "single" ? input.ref.rootId : input.outputRootId,
-      outputRelativeDirectory: input.mode === "single" ? "" : input.outputRelativeDirectory,
-    });
+    try {
+      const runner = await this.runner();
+      const result = await runner.start(input);
+      this.signalService.invalidate("scrape", "overview");
+      return result;
+    } catch (error) {
+      if (error instanceof Error && error.message === "No files selected") {
+        throw new ScraperServiceError("NO_FILES", error.message);
+      }
+      throw error;
+    }
   }
 
   async startFromNativePath(nativePath: string): Promise<StartScrapeResult> {
     const files = await resolveSingleFilePaths([nativePath]);
     const filePath = files[0];
     if (!filePath) throw new ScraperServiceError("NO_FILES", "No files selected");
-    const root = await this.mediaRoots.ensurePathRecord({ hostPath: dirname(filePath) });
+    const admitted = await this.mediaRoots.admitDirectory({ hostPath: dirname(filePath) });
     return await this.start({
       mode: "single",
-      ref: { rootId: root.id, relativePath: toRootRelativePath(root, filePath) },
+      ref: {
+        rootId: admitted.root.id,
+        relativePath: [admitted.relativeDirectory, basename(filePath)].filter(Boolean).join("/"),
+      },
     });
   }
 
   async stop(): Promise<{ pendingCount: number }> {
-    const live = this.workflow?.liveRuns()[0];
-    if (!live) return { pendingCount: 0 };
-    const pendingCount = live.snapshot.items.filter(
-      (item) => !["success", "failed", "skipped"].includes(item.status),
-    ).length;
+    const runner = await this.runner();
+    const result = await runner.stop();
     this.signalService.invalidate("scrape", "overview");
-    await this.workflow?.stop(live.run.id);
-    return { pendingCount };
+    return { pendingCount: result.pendingCount };
   }
 
   async waitForIdle(): Promise<void> {
-    await this.workflow?.waitForIdle();
+    await (await this.runner()).waitForIdle();
   }
 
   async shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
-    const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
-    this.logger.info("Shutting down scraper service");
-    this.closed = true;
-    if (this.workflow && (await didPromiseTimeout(this.workflow.abortForShutdown(), timeoutMs))) {
-      this.logger.warn(`Timed out waiting ${timeoutMs}ms for scraper service shutdown`);
-    }
-    await this.imageHostCooldownStore.flush();
+    await (await this.runner()).shutdown(options);
   }
 
   async pause(): Promise<void> {
-    const live = this.workflow?.liveRuns()[0];
-    if (live) await this.workflow?.pause(live.run.id);
+    await (await this.runner()).pause();
   }
 
   async resume(): Promise<void> {
-    const live = this.workflow?.liveRuns()[0];
-    if (live?.snapshot.status === "paused") await this.workflow?.resume(live.run.id);
+    await (await this.runner()).resume();
   }
 
   async retry(runId: string, itemIds?: readonly string[]): Promise<StartScrapeResult> {
-    if (!runId.trim()) throw new ScraperServiceError("NO_FILES", "No scrape run selected for retry");
-    const configuration = await configManager.getValidated();
-    this.clearImageHostCooldownsForRetry();
-    this.configureRuntimeSettings(configuration);
-    const snapshot = await (await this.coordinator()).retry(runId, itemIds);
-    const initialSnapshot = this.getSnapshot(snapshot.runId);
-    if (!initialSnapshot) throw new Error(`Scrape task disappeared after retry: ${snapshot.runId}`);
-    this.signalService.invalidate("scrape", "overview");
-    return {
-      taskId: snapshot.runId,
-      snapshot: initialSnapshot,
-      totalFiles: snapshot.items.filter((item) => item.status === "pending" || item.status === "processing").length,
-    };
-  }
-
-  private async begin(input: DesktopScrapeStart): Promise<StartScrapeResult> {
-    this.configureRuntimeSettings(input.configuration);
-    const snapshot = await (await this.coordinator()).start(input);
-    const initialSnapshot = this.getSnapshot(snapshot.runId);
-    if (!initialSnapshot) throw new Error(`Scrape task disappeared after start: ${snapshot.runId}`);
-    this.signalService.invalidate("scrape", "overview");
-    return { taskId: snapshot.runId, totalFiles: snapshot.items.length, snapshot: initialSnapshot };
-  }
-
-  private async coordinator(): Promise<
-    ScrapeCoordinator<DesktopScrapeStart, ScrapeRunManifest, ManualScrapeOptions, PreparedFileScrape>
-  > {
-    if (this.closed) throw new Error("Scrape queue is closing");
-    if (this.workflow) return this.workflow;
-    const state = await this.persistenceService.initialize();
-    this.workflow = new ScrapeCoordinator(state.repositories.scrapeRuns, this.host);
-    return this.workflow;
-  }
-
-  private createFileScraperDependencies(
-    recordProgress: (value: number, current: number, total: number) => void,
-    getConfiguration?: () => Promise<Configuration>,
-  ) {
-    return {
-      aggregationService: this.aggregationService,
-      translateService: new TranslateService(this.sharedNetworkClient, {
-        logger: loggerService.getLogger("TranslateService"),
-        mappingStore: translationMappingStore,
-      }),
-      nfoGenerator: new NfoGenerator(),
-      buildTags: buildMovieTags,
-      downloadManager: new DownloadManager(this.sharedNetworkClient, {
-        imageHostCooldownStore: this.imageHostCooldownStore,
-        logger: loggerService.getLogger("DownloadManager"),
-      }),
-      fileOrganizer,
-      signalService: {
-        setProgress: (value: number, current: number, total: number) => {
-          recordProgress(value, current, total);
-        },
-        showFailedInfo: () => this.signalService.invalidate("scrape"),
-        showLogText: this.signalService.showLogText.bind(this.signalService),
-        showScrapeInfo: () => this.signalService.invalidate("scrape"),
-        showScrapeResult: () => this.signalService.invalidate("scrape"),
-      },
-      actorImageService: this.actorImageService,
-      actorSourceProvider: this.actorSourceProvider,
-      getConfiguration,
-    };
-  }
-
-  private configureRuntimeSettings(configuration: Configuration): void {
-    applyScrapeNetworkPolicy(this.sharedNetworkClient, configuration);
-  }
-
-  private async createRun(input: DesktopScrapeStart): Promise<ScrapeRunManifest> {
-    const rootId = input.refs[0]?.rootId;
-    if (!rootId) throw new ScraperServiceError("NO_FILES", "No files selected");
-    const state = await this.persistenceService.getState();
-    return await state.repositories.scrapeRuns.create({
-      rootId,
-      outputRootId: input.outputRootId,
-      outputRelativeDirectory: input.outputRelativeDirectory || null,
-      executionMode: input.mode,
-      items: input.refs.map((ref, ordinal) => ({
-        ordinal,
-        rootId: ref.rootId,
-        relativePath: ref.relativePath,
-        manualUrl: input.manualUrl ?? null,
-      })),
-    });
-  }
-
-  private async createExecution(
-    manifest: ScrapeRunManifest,
-    reporter: ScrapeWorkflowReporter,
-  ): Promise<ScrapeHostExecution<ManualScrapeOptions, PreparedFileScrape>> {
-    const configuration = await configManager.getValidated();
-    this.configureRuntimeSettings(configuration);
-    const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
-    const state = await this.persistenceService.getState();
-    const roots = new Map<string, MediaRoot>();
-    for (const item of manifest.items) {
-      if (!roots.has(item.rootId)) roots.set(item.rootId, await state.repositories.mediaRoots.get(item.rootId));
+    try {
+      const result = await (await this.runner()).retry(runId, itemIds);
+      this.signalService.invalidate("scrape", "overview");
+      return result;
+    } catch (error) {
+      if (error instanceof Error && error.message === "No scrape run selected") {
+        throw new ScraperServiceError("NO_FILES", error.message);
+      }
+      throw error;
     }
-    if (!manifest.requestedOutputRootId) throw new Error(`Scrape run has no output root: ${manifest.id}`);
-    const outputRoot = await state.repositories.mediaRoots.get(manifest.requestedOutputRootId);
-    roots.set(outputRoot.id, outputRoot);
-    const metadataPath = manifest.executionMode === "batch" ? configuration.paths.metadataPath.trim() : "";
-    if (metadataPath) {
-      const metadataRoot = await this.mediaRoots.ensurePathRecord({ hostPath: metadataPath });
-      roots.set(metadataRoot.id, metadataRoot);
+  }
+
+  async rerunDirectory(runId: string): Promise<StartScrapeResult> {
+    try {
+      const result = await (await this.runner()).rerunDirectory(runId);
+      this.signalService.invalidate("scrape", "overview");
+      return result;
+    } catch (error) {
+      if (error instanceof Error && error.message === "No scrape run selected") {
+        throw new ScraperServiceError("NO_FILES", error.message);
+      }
+      throw error;
     }
-    const runConfiguration: Configuration = {
-      ...configuration,
-      paths: {
-        ...configuration.paths,
-        mediaPath: outputRoot.hostPath,
-        successOutputFolder: manifest.requestedOutputRelativeDirectory ?? "",
-      },
-    };
-    const { openAttemptByItemId, latestOutcomeByItemId } = resolveScrapeAttempts(manifest);
-    const initialItems: ScrapeRunItemInitialState<ManualScrapeOptions>[] = manifest.items.map((item) => {
-      const outcome = latestOutcomeByItemId.get(item.id);
-      if (openAttemptByItemId.has(item.id) || !outcome) return { id: item.id, status: "pending", error: null };
-      return {
-        id: item.id,
-        status: outcome.outcome,
-        error: outcome.error,
-        result: toScrapeResultFromOutcome(item, outcome),
-      };
-    });
-    const items: ScrapeRunItem<ManualScrapeOptions>[] = await Promise.all(
-      manifest.items.map(async (item) => {
-        const root = roots.get(item.rootId);
-        if (!root) throw new Error(`Scrape root disappeared before session creation: ${item.rootId}`);
-        const retrying = openAttemptByItemId.has(item.id);
-        const execution = await resolveScrapeRetry({
-          item,
-          retrying,
-          latestOutcome: latestOutcomeByItemId.get(item.id),
-          outputRoot: outputRoot,
-          outputRelativeDirectory: manifest.requestedOutputRelativeDirectory ?? "",
-          failedOutputFolder: configuration.paths.failedOutputFolder,
-          resolveRoot: async (id) => {
-            const resolved = roots.get(id) ?? (await state.repositories.mediaRoots.get(id));
-            roots.set(id, resolved);
-            return resolved;
-          },
-        });
-        return this.prepareScrapeItem({
-          id: item.id,
-          rootId: item.rootId,
-          relativePath: item.relativePath,
-          ...execution,
-          manualScrape: resolveManualScrapeRoute(item.manualUrl),
-        });
-      }),
-    );
-    const itemIndexById = new Map(items.map((item, index) => [item.id, index + 1]));
-    const fileScraper = createFileScraper(
-      this.createFileScraperDependencies(
-        (value, current) => {
-          const item = items[current - 1];
-          if (item) reporter.progress(item.id, value);
-        },
-        async () => runConfiguration,
-      ),
-      { mode: manifest.executionMode, scrapeSessionId: manifest.id },
-    );
-    return {
-      items,
-      initialItems,
-      executionGeneration: manifest.executionGeneration,
-      concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
-      admitItem: async (item: ScrapeRunItem<ManualScrapeOptions>) => {
-        const existing = openAttemptByItemId.get(item.id);
-        if (existing) return existing;
-        const attempt = state.repositories.scrapeRuns.admitAttempt(item.id);
-        openAttemptByItemId.set(item.id, attempt.id);
-        return attempt.id;
-      },
-      prepareItem: async (item: ScrapeRunItem<ManualScrapeOptions>, signal: AbortSignal, attemptId: string) => {
-        await policy.restGate?.waitBeforeStart(signal);
-        const progress = { fileIndex: itemIndexById.get(item.id) ?? 1, totalFiles: items.length };
-        const result = await fileScraper.prepareFile(item.sourcePath, progress, signal, {
-          ...(item.manualScrape ? { manualScrape: item.manualScrape } : {}),
-          source: item.executionSource ?? { rootId: item.rootId, relativePath: item.relativePath },
-          roots: [...roots.values()],
-          operationId: `${manifest.id}:${attemptId}`,
-          outputDirectory: item.manualScrape
-            ? resolve(runConfiguration.paths.mediaPath, runConfiguration.paths.successOutputFolder)
-            : undefined,
-          outputTemplateRoot: item.outputTemplateRoot,
-        });
-        if (result.status === "prepared") return result;
-        return {
-          status: result.status,
-          result: { ...result, fileId: item.id, rootId: item.rootId, relativePath: item.relativePath },
-        };
-      },
-      validatePrepared: async (
-        prepared: readonly { item: ScrapeRunItem<ManualScrapeOptions>; prepared: PreparedFileScrape }[],
-        failedItems: readonly ScrapeRunItem<ManualScrapeOptions>[],
-      ) =>
-        await validatePreparedScrapeFiles([
-          ...prepared.map(({ item, prepared }) => ({
-            itemId: item.id,
-            sourcePath: prepared.sourcePath,
-            outputPlan: prepared.outputPlan,
-          })),
-          ...(runConfiguration.behavior.failedFileMove
-            ? failedItems.map((item) => ({
-                itemId: item.id,
-                sourcePath: item.sourcePath,
-                outputPlan: {
-                  targetVideoPath: fileOrganizer.resolveFailedVideoPath(
-                    item.sourcePath,
-                    outputRoot.hostPath,
-                    runConfiguration,
-                  ),
-                },
-              }))
-            : []),
-        ]),
-      acquireItem: (item: ScrapeRunItem<ManualScrapeOptions>) =>
-        mediaPathOwnership.acquire(
-          item.executionSource?.rootId ?? item.rootId,
-          item.executionSource?.relativePath ?? item.relativePath,
-          item.id,
-        ),
-      getPublicationKey: (_item: ScrapeRunItem<ManualScrapeOptions>, prepared: PreparedFileScrape) =>
-        buildScrapePublicationKey(prepared.outputPlan),
-      executePreparedItem: async (
-        item: ScrapeRunItem<ManualScrapeOptions>,
-        prepared: PreparedFileScrape,
-        signal: AbortSignal,
-      ) => {
-        const progress = { fileIndex: itemIndexById.get(item.id) ?? 1, totalFiles: items.length };
-        const result = await fileScraper.executePreparedFile(prepared, progress, signal);
-        return { ...result, fileId: item.id, rootId: item.rootId, relativePath: item.relativePath };
-      },
-      commitPreparationItem: async (
-        _item: ScrapeRunItem<ManualScrapeOptions>,
-        result: ScrapeResult,
-        attemptId: string,
-      ) => {
-        if (result.status !== "failed" && result.status !== "skipped") {
-          throw new Error("Preparation can only commit failed or skipped results");
-        }
-        const outcome =
-          result.status === "failed"
-            ? state.repositories.scrapeRuns.commitOutcome({
-                outcome: "failed",
-                attemptId,
-                error: result.error?.trim() || "刮削预检失败",
-              })
-            : state.repositories.scrapeRuns.commitOutcome({
-                outcome: "skipped",
-                attemptId,
-                error: result.error ?? null,
-              });
-        return { ...result, resultId: outcome.id };
-      },
-      commitItem: async (item: ScrapeRunItem<ManualScrapeOptions>, result: ScrapeResult, attemptId: string) => {
-        const sourceRoot = roots.get(item.executionSource?.rootId ?? item.rootId);
-        if (!sourceRoot) throw new Error(`Scrape root disappeared before item commit: ${item.rootId}`);
-        return await this.commitItem(
-          item,
-          result,
-          attemptId,
-          fileOrganizer.createScrapeFileTransitions({
-            configuration: runConfiguration,
-            failureRootPath: outputRoot.hostPath,
-            sourcePath: item.sourcePath,
-            sourceRootPath: sourceRoot.hostPath,
-          }),
-        );
-      },
-    };
-  }
-
-  private async commitItem(
-    item: ScrapeRunItem,
-    result: ScrapeResult,
-    attemptId: string,
-    fileTransitions: ScrapeFileTransitions,
-  ): Promise<ScrapeResult> {
-    const state = await this.persistenceService.getState();
-    const plan = (result as FileScrapeResult).publicationPlan;
-    return await commitScrapeTerminalResult({
-      result,
-      attemptId,
-      itemPath: item.relativePath,
-      success:
-        result.status === "success" && plan
-          ? {
-              plan,
-              crawlerData: result.crawlerData,
-              identity: result.crawlerData?.number || result.fileName,
-              nfo: result.nfo ?? null,
-              size: plan.videos?.[0]?.size ?? 0,
-              modifiedAt: null,
-              uncensoredAmbiguous: result.uncensoredAmbiguous === true,
-            }
-          : undefined,
-      scrapeRuns: state.repositories.scrapeRuns,
-      resolveRoot: async (rootId) => await state.repositories.mediaRoots.get(rootId),
-      acquireAll: (refs) => mediaPathOwnership.acquireAll(refs, item.id),
-      journal: state.repositories.publicationJournal,
-      repairIssues: state.repositories.libraryRepairIssues,
-      fileTransitions,
-    });
-  }
-
-  private handleTerminalRun(manifest: ScrapeRunManifest, snapshot: ScrapeRunSnapshot<ManualScrapeOptions>): void {
-    this.terminalSnapshot = this.toSnapshotDto(manifest, snapshot, manifest.startedAt);
-    this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot: this.terminalSnapshot });
-    this.logger.info(`Scrape run finished: ${snapshot.runId}`);
-    this.outputLibraryScanner.invalidate();
-    this.aggregationService.clearCache();
-    this.signalService.invalidate("scrape", "overview");
-  }
-
-  private async rebuildTerminalSnapshot(runId: string): Promise<ScrapeRunSnapshotDto> {
-    const state = await this.persistenceService.getState();
-    const manifest = await state.repositories.scrapeRuns.get(runId);
-    const summary = state.repositories.scrapeRuns.summary(manifest);
-    if (!summary) throw new Error(`Scrape run is not finished: ${runId}`);
-    const outcomes = await Promise.all(
-      state.repositories.scrapeRuns.latestOutcomes(manifest).map(async (outcome) => ({
-        ...outcome,
-        assets: (await state.repositories.library.getEntryBySourceOutcomeId(outcome.id))?.assets ?? [],
-      })),
-    );
-    return this.toSnapshotDto(
-      manifest,
-      toFinalizedScrapeRunSnapshot({
-        id: manifest.id,
-        executionGeneration: manifest.executionGeneration,
-        revision: manifest.revision,
-        items: manifest.items,
-        outcomes,
-        disposition: summary.disposition,
-        error: summary.error,
-      }),
-      summary.startedAt,
-    );
-  }
-
-  private toSnapshotDto(
-    manifest: ScrapeRunManifest,
-    snapshot: ScrapeRunSnapshot,
-    startedAt: Date | null,
-  ): ScrapeRunSnapshotDto {
-    return toScrapeRunSnapshotDto({
-      manifest,
-      snapshot,
-      startedAt,
-      rootDisplayName: manifest.rootId,
-      completedAt: manifest.completedAt,
-    });
-  }
-
-  private clearImageHostCooldownsForRetry(): void {
-    this.imageHostCooldownStore.clear();
-    this.logger.info("Cleared image host cooldowns for user-initiated retry");
   }
 }

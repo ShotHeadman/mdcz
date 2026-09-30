@@ -1,9 +1,10 @@
-import { toErrorMessage } from "@mdcz/shared/error";
+import { getT } from "@mdcz/views/i18n";
 import {
   mergeConfigWithFlatPayload,
   type SettingsCrawlerSiteInfo,
   type SettingsNotifier,
   type SettingsServices,
+  toConfigErrorMessage,
 } from "@mdcz/views/settings";
 import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import type { QueryClient } from "@tanstack/react-query";
@@ -43,11 +44,11 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     const result = await api.app.ensureWatermarkDirectory();
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(result.path);
-      return { copied: true, message: "已复制服务器角标图片目录路径。", path: result.path, unsupported: true };
+      return { copied: true, message: getT().web.copiedWatermarkDir, path: result.path, unsupported: true };
     }
     return {
       copied: false,
-      message: "浏览器无法打开服务器文件夹，请复制上方服务器路径。",
+      message: getT().web.browserCannotOpenFolder,
       path: result.path,
       unsupported: true,
     };
@@ -68,7 +69,9 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
   isServer: true,
   settingsTarget: "server",
   subscribeInFlightSaves: useSettingsSavingStore.subscribe,
-  watermarkDirectoryActionLabel: "复制服务器路径",
+  get watermarkDirectoryActionLabel() {
+    return getT().web.copyServerPath;
+  },
   testLLM: async (input) => await api.translate.testLlm(input),
   updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
     queryClient.setQueryData(CURRENT_CONFIG_QUERY_KEY, (previous) => {
@@ -93,14 +96,14 @@ export const invalidateConfigQueries = (queryClient: QueryClient): void => {
 export const ensureProfileActionReady = (actionLabel: string): boolean => {
   const inFlight = useSettingsSavingStore.getState().inFlight;
   if (inFlight > 0) {
-    toast.warning(`有配置正在自动保存，请稍候再${actionLabel}`);
+    toast.warning(getT().web.savingWaitMessage(actionLabel));
     return false;
   }
   return true;
 };
 
 export const handleProfileActionError = (label: string, error: unknown): void => {
-  toast.error(`${label}: ${toErrorMessage(error)}`);
+  toast.error(`${label}: ${toConfigErrorMessage(error)}`);
 };
 
 export function suggestImportProfileName(fileName: string, existingProfiles: string[]): string {

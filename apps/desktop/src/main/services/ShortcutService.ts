@@ -8,8 +8,6 @@ import type { BrowserWindow, Event, Input } from "electron";
 const DEFAULT_SHORTCUTS = {
   startOrStopScrape: "S",
   retryScrape: "R",
-  deleteFile: "D",
-  deleteFileAndFolder: "Shift+D",
   openFolder: "F",
   editNfo: "E",
   playVideo: "P",
@@ -18,8 +16,6 @@ const DEFAULT_SHORTCUTS = {
 const RENDERER_SHORTCUT_BINDINGS = [
   { key: "startOrStopScrape", action: "start-or-stop-scrape" },
   { key: "retryScrape", action: "retry-scrape" },
-  { key: "deleteFile", action: "delete-file" },
-  { key: "deleteFileAndFolder", action: "delete-file-and-folder" },
   { key: "openFolder", action: "open-folder" },
   { key: "editNfo", action: "edit-nfo" },
   { key: "playVideo", action: "play-video" },

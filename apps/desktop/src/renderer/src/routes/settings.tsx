@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { useT } from "@mdcz/views/i18n";
 import {
   mergeConfigWithFlatPayload,
   SettingsEditor,
@@ -7,6 +8,7 @@ import {
   SettingsProfileDialogs,
   type SettingsServices,
   SettingsServicesProvider,
+  toConfigErrorMessage,
 } from "@mdcz/views/settings";
 import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -27,6 +29,7 @@ const PROFILE_IMPORT_FILTERS: Array<{ name: string; extensions: string[] }> = [
 type ImportMode = "new" | "overwrite";
 
 function SettingsComponent() {
+  const t = useT();
   const queryClient = useQueryClient();
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -119,7 +122,7 @@ function SettingsComponent() {
   const ensureProfileActionReady = (actionLabel: string) => {
     const inFlight = useSettingsSavingStore.getState().inFlight;
     if (inFlight > 0) {
-      toast.warning(`有配置正在自动保存，请稍候再${actionLabel}`);
+      toast.warning(t.desktop.savingWaitMessage(actionLabel));
       return false;
     }
     return true;
@@ -151,23 +154,23 @@ function SettingsComponent() {
   }, [activeProfile, importDialogOpen, importMode, overwriteProfileName, profiles]);
 
   const handleOpenResetDialog = () => {
-    if (!ensureProfileActionReady("恢复默认设置")) {
+    if (!ensureProfileActionReady(t.desktop.actionResetDefault)) {
       return;
     }
     setResetDialogOpen(true);
   };
 
   const handleReset = async () => {
-    if (!ensureProfileActionReady("恢复默认设置")) {
+    if (!ensureProfileActionReady(t.desktop.actionResetDefault)) {
       return;
     }
     try {
       await ipc.config.reset();
       invalidateConfigQueries();
-      toast.success(`已恢复档案 "${activeProfile ?? "default"}" 的默认设置`);
+      toast.success(t.desktop.profileResetSuccess(activeProfile ?? "default"));
       setResetDialogOpen(false);
     } catch (error) {
-      toast.error(`重置失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.resetFailed(toConfigErrorMessage(error)));
     }
   };
 
@@ -177,11 +180,11 @@ function SettingsComponent() {
     try {
       await ipc.config.createProfile(name);
       invalidateConfigQueries();
-      toast.success(`配置档案 "${name}" 已创建`);
+      toast.success(t.desktop.profileCreated(name));
       setNewProfileName("");
       setNewProfileDialogOpen(false);
     } catch (error) {
-      toast.error(`创建失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.createFailed(toErrorMessage(error)));
     }
   };
 
@@ -189,15 +192,15 @@ function SettingsComponent() {
     if (!name || name === activeProfile) {
       return;
     }
-    if (!ensureProfileActionReady("切换档案")) {
+    if (!ensureProfileActionReady(t.desktop.actionSwitchProfile)) {
       return;
     }
     try {
       await ipc.config.switchProfile(name);
       invalidateConfigQueries();
-      toast.success(`已切换到配置档案 "${name}"`);
+      toast.success(t.desktop.profileSwitched(name));
     } catch (error) {
-      toast.error(`切换失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.switchFailed(toConfigErrorMessage(error)));
     }
   };
 
@@ -206,11 +209,11 @@ function SettingsComponent() {
     try {
       await ipc.config.deleteProfile(deleteProfileName);
       invalidateConfigQueries();
-      toast.success("配置档案已删除");
+      toast.success(t.desktop.profileDeleted);
       setDeleteProfileDialogOpen(false);
       setDeleteProfileName("");
     } catch (error) {
-      toast.error(`删除失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.deleteFailed(toErrorMessage(error)));
     }
   };
 
@@ -218,7 +221,7 @@ function SettingsComponent() {
     if (!activeProfile) {
       return;
     }
-    if (!ensureProfileActionReady("导出配置档案")) {
+    if (!ensureProfileActionReady(t.desktop.actionExportProfile)) {
       return;
     }
 
@@ -227,9 +230,9 @@ function SettingsComponent() {
       if (result.canceled) {
         return;
       }
-      toast.success(`配置档案 "${result.profileName}" 已导出`);
+      toast.success(t.desktop.profileExported(result.profileName));
     } catch (error) {
-      toast.error(`导出失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.exportFailed(toConfigErrorMessage(error)));
     }
   };
 
@@ -249,7 +252,7 @@ function SettingsComponent() {
       setImportFilePath(filePath);
       setImportProfileName(suggestImportProfileName(filePath, profiles));
     } catch (error) {
-      toast.error(`选择文件失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.fileSelectFailed(toErrorMessage(error)));
     }
   };
 
@@ -257,7 +260,7 @@ function SettingsComponent() {
     if (!importFilePath || !importTargetName) {
       return;
     }
-    if (!ensureProfileActionReady("导入配置档案")) {
+    if (!ensureProfileActionReady(t.desktop.actionImportProfile)) {
       return;
     }
 
@@ -265,12 +268,14 @@ function SettingsComponent() {
       const result = await ipc.config.importProfile(importFilePath, importTargetName, importMode === "overwrite");
       invalidateConfigQueries();
       toast.success(
-        result.overwritten ? `配置档案 "${result.profileName}" 已覆盖导入` : `配置档案 "${result.profileName}" 已导入`,
+        result.overwritten
+          ? t.desktop.profileOverwritten(result.profileName)
+          : t.desktop.profileImported(result.profileName),
       );
       setImportDialogOpen(false);
       resetImportState();
     } catch (error) {
-      toast.error(`导入失败: ${toErrorMessage(error)}`);
+      toast.error(t.desktop.importFailed(toConfigErrorMessage(error)));
     }
   };
 

@@ -2,6 +2,7 @@ import type { MovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import type { ImageAlternatives } from "../../aggregation";
+import type { DirectoryInventory } from "../../DirectoryInventory";
 import type { ImageDownloadService } from "../ImageDownloadService";
 import type { SceneImageDownloader } from "../SceneImageDownloader";
 
@@ -28,6 +29,7 @@ export interface DownloadExecutionPlan {
   outputDir: string;
   existingAssetDir: string;
   existingAssets?: DiscoveredAssets;
+  inventory: DirectoryInventory;
   movieBaseName: string;
   assetFileNames: MovieAssetFileNames;
   data: CrawlerData;

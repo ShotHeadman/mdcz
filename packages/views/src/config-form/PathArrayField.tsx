@@ -2,6 +2,7 @@ import { Button } from "@mdcz/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ControllerRenderProps, FieldValues } from "react-hook-form";
+import { useT } from "../i18n";
 import { ServerPathField } from "./ServerPathField";
 
 interface PathArrayFieldProps {
@@ -17,6 +18,7 @@ const toPathValues = (value: unknown): string[] => {
 };
 
 export function PathArrayField({ field }: PathArrayFieldProps) {
+  const t = useT();
   const values = toPathValues(field.value);
   const nextIdRef = useRef(0);
   const [rowIds, setRowIds] = useState<string[]>(() => values.map(() => `path-${nextIdRef.current++}`));
@@ -67,7 +69,7 @@ export function PathArrayField({ field }: PathArrayFieldProps) {
               <ServerPathField
                 field={itemField}
                 isDirectory
-                placeholder={index === 0 ? "绝对路径或扫描目录下的子目录" : undefined}
+                placeholder={index === 0 ? t.configForm.pathArray.firstPlaceholder : undefined}
               />
             </div>
             <Button
@@ -75,7 +77,7 @@ export function PathArrayField({ field }: PathArrayFieldProps) {
               variant="ghost"
               size="icon"
               className="mt-0 h-8 w-8 shrink-0"
-              aria-label="移除目录"
+              aria-label={t.configForm.pathArray.remove}
               onClick={() => removeValue(index)}
             >
               <Trash2 className="h-4 w-4" />
@@ -86,7 +88,7 @@ export function PathArrayField({ field }: PathArrayFieldProps) {
       <div className="flex justify-end">
         <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={addValue}>
           <Plus className="h-3.5 w-3.5" />
-          添加目录
+          {t.configForm.pathArray.add}
         </Button>
       </div>
     </div>

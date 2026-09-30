@@ -1,6 +1,7 @@
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { getT } from "@mdcz/views/i18n";
 import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
@@ -59,11 +60,13 @@ describe("web detail action port", () => {
       }),
     );
 
-    expect(html).not.toContain("文件路径");
+    const t = getT().detail;
+    expect(html).not.toContain(t.filePath);
     expect(html).not.toContain("ABC-001.mp4");
-    expect(html).not.toContain("播放");
-    expect(html).not.toContain("打开文件夹");
-    expect(html).toContain("编辑 NFO");
+    expect(html).not.toContain(t.play);
+    expect(html).not.toContain(t.openSourceFolder);
+    expect(html).not.toContain(t.openMetadataFolder);
+    expect(html).toContain(t.editNfo);
   });
 
   it("resolves root-relative image candidates through authenticated library assets", async () => {
@@ -155,6 +158,7 @@ describe("web detail action port", () => {
     setAdminToken("token-1");
     const initialCrop = { x: 0.4, y: 0, width: 0.3, height: 0.9 };
     vi.spyOn(api.scrape, "posterCropSession").mockResolvedValue({
+      rootId: "metadata-root",
       sourceRelativePath: "JAV_output/ABC-001/thumb.png",
       targetRelativePath: "JAV_output/ABC-001/poster.png",
       width: 900,
@@ -162,6 +166,7 @@ describe("web detail action port", () => {
       initialCrop,
     });
     const save = vi.spyOn(api.scrape, "posterCropSave").mockResolvedValue({
+      rootId: "metadata-root",
       sourceRelativePath: "JAV_output/ABC-001/thumb.png",
       targetRelativePath: "JAV_output/ABC-001/poster.png",
       width: 900,
@@ -181,7 +186,7 @@ describe("web detail action port", () => {
     const result = await port.savePosterCrop(item, initialCrop);
 
     expect(session.sourceUrl).toBe(
-      "http://127.0.0.1:3838/api/library/assets/root-1/JAV_output/ABC-001/thumb.png?token=token-1",
+      "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
     expect(save).toHaveBeenCalledWith({ id: "result-1", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
@@ -207,8 +212,8 @@ describe("web scrape action port", () => {
     });
     expect(retry).not.toHaveBeenCalled();
   });
-  it("calls safe server delete for root-relative targets", async () => {
-    const deleteFile = vi.spyOn(api.scrape, "deleteFile").mockResolvedValue({
+  it("removes records through the explicit record API", async () => {
+    const removeRecord = vi.spyOn(api.scrape, "removeRecord").mockResolvedValue({
       ok: true,
       rootId: "root-1",
       relativePath: "ABC-001.mp4",
@@ -219,14 +224,14 @@ describe("web scrape action port", () => {
       { filePath: "ABC-001-CD2.mp4", ref: { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" } },
     ];
 
-    await port.deleteFile(safeTargets);
+    await port.removeRecord?.(safeTargets);
 
-    expect(deleteFile).toHaveBeenNthCalledWith(1, { rootId: "root-1", relativePath: "ABC-001.mp4" });
-    expect(deleteFile).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
+    expect(removeRecord).toHaveBeenNthCalledWith(1, { rootId: "root-1", relativePath: "ABC-001.mp4" });
+    expect(removeRecord).toHaveBeenNthCalledWith(2, { rootId: "root-1", relativePath: "ABC-001-CD2.mp4" });
   });
 
-  it("retries the scrape store run id and has no run after reset", async () => {
-    const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "retry-1" });
+  it("retries the current run and rescans directories through separate APIs", async () => {
+    const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "session-run" });
     useScrapeStore.getState().setSnapshot(
       buildFailedScrapeSnapshot({
         task: { ...buildFailedScrapeSnapshot().task, id: "session-run" },
@@ -234,13 +239,17 @@ describe("web scrape action port", () => {
     );
     const port = createWebScrapeActionPort();
 
-    await expect(port.retryFailed()).resolves.toEqual({
-      message: "重试任务已启动：retry-1",
-    });
+    await port.retryFailed();
     expect(retry).toHaveBeenCalledWith({ taskId: "session-run" });
+    await port.retryFailed(["failed-item"]);
+    expect(retry).toHaveBeenLastCalledWith({ taskId: "session-run", itemIds: ["failed-item"] });
+    const rerunDirectory = vi.spyOn(api.scrape, "rerunDirectory").mockResolvedValue({ runId: "new-run" });
+    await port.rerunDirectory("directory-run");
+    expect(rerunDirectory).toHaveBeenCalledWith({ taskId: "directory-run" });
+    expect(retry).toHaveBeenCalledTimes(2);
 
     useScrapeStore.getState().reset();
-    await expect(port.retryFailed()).rejects.toThrow("没有可重试的刮削任务");
+    await expect(port.retryFailed()).rejects.toThrow(getT().web.noScrapeTaskToRetry);
   });
 });
 
@@ -254,6 +263,7 @@ const createEntry = (): LocalScanEntry => ({
     number: "ABC-001",
     isSubtitled: false,
   },
+  nfoPaths: [],
   assets: { sceneImages: [], actorPhotos: [] },
   currentDir: "/media",
 });
@@ -265,10 +275,9 @@ describe("web maintenance action port", () => {
       rootId: "root-1",
       outputRootId: "root-1",
       outputRelativeDirectory: "",
-      presetId: "refresh_data",
+      presetId: "refresh_metadata",
       phase: "preview",
       status: "running",
-      generation: 1,
       refs: [{ rootId: "root-1", relativePath: "ABC-001.mp4" }],
       timestamps: {
         createdAt: new Date("2026-05-12T00:00:00.000Z"),
@@ -289,7 +298,7 @@ describe("web maintenance action port", () => {
     vi.spyOn(api.maintenance, "getActiveSession").mockResolvedValue(session);
     const pause = vi.spyOn(api.maintenance, "pause").mockResolvedValue({ sessionId: session.id });
 
-    await createWebMaintenanceActionPort().preview([createEntry().ref], "refresh_data");
+    await createWebMaintenanceActionPort().preview([createEntry().ref], "refresh_metadata");
     await createWebMaintenanceActionPort().pause();
 
     expect(selectMaintenanceSessionId(useMaintenanceStore.getState())).toBe("maintenance-task-1");

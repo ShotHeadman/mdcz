@@ -1,0 +1,51 @@
+import type { Messages } from "../en";
+
+export const domain: Messages["domain"] = {
+  maintenancePresets: {
+    import_local: { label: "本地导入", description: "读取现有 NFO 与图片并登记到媒体库，不修改任何文件" },
+    refresh_metadata: { label: "原地更新", description: "联网刷新元数据，对比NFO差异" },
+    local_organize: { label: "本地整理", description: "按规则重新组织文件目录结构" },
+    rebuild_all: { label: "全量重整", description: "重新获取数据并按现有设置修改目录结构" },
+  },
+  posterBadgeTypes: {
+    subtitle: "中字",
+    censored: "有码",
+    umr: "破解",
+    leak: "流出",
+    uncensored: "无码",
+    fullHd: "1080P",
+    fourK: "4K",
+    eightK: "8K",
+  },
+  posterBadgePositions: {
+    topLeft: "左上",
+    topRight: "右上",
+    bottomLeft: "左下",
+    bottomRight: "右下",
+  },
+  manualScrapeUrlInvalid: {
+    invalid_url: "请输入有效的网址",
+    unsupported_site: "不支持的站点地址",
+    unsupported_path: "请输入站点首页或详情地址",
+  },
+  maintenanceDiffFields: {
+    title: "标题",
+    title_zh: "中文标题",
+    plot: "简介",
+    plot_zh: "中文简介",
+    studio: "制片",
+    director: "导演",
+    publisher: "发行商",
+    series: "系列",
+    release_date: "发行日期",
+    rating: "评分",
+    durationSeconds: "时长",
+    content_type: "内容类型",
+    trailer_url: "预告片",
+    thumb_url: "封面图",
+    poster_url: "海报",
+    actors: "演员",
+    genres: "标签",
+    scene_images: "剧照",
+  },
+};
