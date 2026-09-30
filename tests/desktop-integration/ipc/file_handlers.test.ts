@@ -37,6 +37,7 @@ vi.mock("electron", () => {
     isReady: () => false,
     isPackaged: true,
     getPath: () => join(tmpdir(), "mdcz-vitest-file-handlers"),
+    setPath: vi.fn(),
     commandLine: {
       appendSwitch: vi.fn(),
     },

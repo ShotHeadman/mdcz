@@ -100,7 +100,7 @@ const describeTree = async (root: string, directory = root): Promise<string[]> =
       lines.push(
         content.includes(0)
           ? `${name} <${content.byteLength} bytes>`
-          : `${name} ${JSON.stringify(content.toString("utf8").replaceAll(root, "<root>"))}`,
+          : `${name} ${JSON.stringify(content.toString("utf8").replaceAll(root, "<root>").replaceAll("\\", "/"))}`,
       );
     }
   }
