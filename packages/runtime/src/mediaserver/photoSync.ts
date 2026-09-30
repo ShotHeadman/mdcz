@@ -62,6 +62,7 @@ export const runMediaServerPhotoSync = async <TPerson>(
 ): Promise<PersonSyncResult> => {
   const persons = await options.fetchPersons();
   if (persons.length === 0) {
+    options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
     return createEmptyPersonSyncResult();
   }
 

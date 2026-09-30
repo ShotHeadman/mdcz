@@ -44,7 +44,9 @@ export const tools: Messages["tools"] = {
   },
   symlinkStarted: "软链接任务已启动",
   personSyncSummary: (result) =>
-    `成功 ${result.processedCount} 条，失败 ${result.failedCount} 条，跳过 ${result.skippedCount} 条`,
+    result.processedCount + result.failedCount + result.skippedCount === 0
+      ? "媒体服务器未返回可同步的演员"
+      : `成功 ${result.processedCount} 条，失败 ${result.failedCount} 条，跳过 ${result.skippedCount} 条`,
 
   diagnosticHeadline: {
     blocking: "存在阻塞项",

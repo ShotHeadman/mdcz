@@ -617,6 +617,7 @@ describe("Emby actor services", () => {
     const result = await service.run(createEmbyConfig(), "all");
 
     expect(result).toEqual({ processedCount: 0, failedCount: 0, skippedCount: 0 });
+    expect(signalService.showLogText).toHaveBeenCalledWith("Emby returned no actors to sync", "warn");
     expect(actorSourceProvider.lookup).not.toHaveBeenCalled();
     expect(networkClient.postText).not.toHaveBeenCalled();
     expect(

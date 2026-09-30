@@ -50,7 +50,9 @@ export const tools = {
   } as Record<AmazonPosterLookupReason, string>,
   symlinkStarted: "Symlink creation task started",
   personSyncSummary: (result: PersonSyncResult) =>
-    `${result.processedCount} succeeded, ${result.failedCount} failed, ${result.skippedCount} skipped`,
+    result.processedCount + result.failedCount + result.skippedCount === 0
+      ? "The media server returned no actors to sync"
+      : `${result.processedCount} succeeded, ${result.failedCount} failed, ${result.skippedCount} skipped`,
 
   diagnosticHeadline: {
     blocking: "Issues detected",
