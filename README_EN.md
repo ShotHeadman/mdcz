@@ -47,22 +47,26 @@ Designed to work seamlessly alongside Emby, Jellyfin, and local media libraries,
 
 ---
 
-## Platform Support
-
-| Platform | Type | Requirements |
-|---|---|---|
-| Windows | Desktop App (.exe) | Windows 10 or later |
-| macOS | Desktop App (.dmg) | Apple Silicon / Intel |
-| Linux | Desktop App (.AppImage) | Major Linux distributions |
-| NAS / Server | Docker / WebUI | Docker Engine / Node.js >= 24 |
-
----
-
-## Quick Start
+## Download & Install
 
 ### Desktop Application
 
-Download the pre-built installer for your operating system from the [Releases](https://github.com/ShotHeadman/mdcz/releases) page.
+Download the file for your system from [Releases](https://github.com/ShotHeadman/mdcz/releases):
+
+| File | For | Auto-update | Data directory |
+|---|---|---|---|
+| `MDCz-<version>-win-x64-setup.exe` | Windows 10 or later, **recommended** | Downloads in-app, installs on restart | `%APPDATA%\mdcz` |
+| `MDCz-<version>-win-x64-portable.zip` | Windows portable, runs after unzipping | Notifies only, replace manually | `data\` next to the executable |
+| `MDCz-<version>-mac-arm64.dmg` | macOS Apple Silicon (no Intel build) | Notifies only, replace manually | `~/Library/Application Support/mdcz` |
+| `MDCz-<version>-linux-x86_64.AppImage` | Linux x64 | Downloads in-app, installs on restart | `~/.config/mdcz` |
+
+The portable build keeps its config, database, and logs in `data\`. To upgrade, keep that folder and replace everything else.
+
+> [!NOTE]
+> The apps are not code-signed, so the OS blocks the first launch:
+> - **Windows** shows "Windows protected your PC": click "More info" → "Run anyway".
+> - **macOS** says the app "is damaged and can't be opened": move MDCz to Applications, then run `xattr -cr /Applications/MDCz.app` in Terminal.
+> - **Linux**: run `chmod +x MDCz-*.AppImage` before launching.
 
 ### Docker (Recommended for NAS / Server)
 
@@ -71,13 +75,13 @@ We recommend deploying with the maintained [compose.yaml](compose.yaml). See the
 - **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure your version and media path, and run `docker compose up -d`.
 - **First Visit**: Open `http://<server-ip>:3838` in your browser (defaults to `127.0.0.1`; set `MDCZ_BIND_IP` in `.env` for LAN access). There is no default password; set the administrator password directly in the WebUI on first visit, then add your media directory under `/media` in settings.
 
+### WebUI Bundle (without Docker)
+
+`mdcz-<version>.tar.gz` on the Releases page runs on any machine with Node.js >= 24; see the README inside the bundle for install and startup.
+
 ### Local Development
 
-```bash
-pnpm install
-pnpm dev:webui      # Start WebUI mode
-pnpm dev:desktop    # Start Desktop mode
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain setup and development commands.
 
 
 ---
