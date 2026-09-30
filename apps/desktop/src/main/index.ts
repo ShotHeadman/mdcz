@@ -111,6 +111,13 @@ const cleanupResources = async (): Promise<void> => {
       logger.error(`Failed to finalize network resources: ${message}`);
       process.exitCode = 1;
     }
+    try {
+      serviceContainer?.updateService.installDownloadedUpdate();
+    } catch (error) {
+      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      logger.error(`Failed to start update installer: ${message}`);
+      process.exitCode = 1;
+    }
 
     disposeLoggerListener?.();
     disposeLoggerListener = null;

@@ -6,7 +6,7 @@ import { resolveManualDownloadUrl } from "@main/updateDelivery";
 import { toErrorMessage } from "@main/utils/common";
 import type { AppUpdateStatus } from "@mdcz/shared/ipcTypes";
 import { app, type Session, session } from "electron";
-import electronUpdater, { type AppUpdater } from "electron-updater";
+import electronUpdater, { type BaseUpdater } from "electron-updater";
 
 const LATEST_RELEASE_API_URL = "https://api.github.com/repos/ShotHeadman/mdcz/releases/latest";
 // electron-updater downloads through this fixed partition; checking through it too keeps both on one proxy route.
@@ -18,7 +18,8 @@ const isNewerVersion = (latest: string, current: string): boolean =>
 export class UpdateService {
   private readonly logger = loggerService.getLogger("UpdateService");
   private status: AppUpdateStatus = { phase: "idle" };
-  private updater: AppUpdater | null = null;
+  private updater: BaseUpdater | null = null;
+  private restartAfterInstall = false;
 
   constructor(private readonly signalService: SignalService) {}
 
@@ -93,7 +94,18 @@ export class UpdateService {
     if (this.status.phase !== "downloaded") {
       throw new Error("No downloaded update to install");
     }
-    this.getUpdater().quitAndInstall(true, true);
+    this.restartAfterInstall = true;
+    app.quit();
+  }
+
+  /** Runs at the end of shutdown: after tasks and the database are closed, before the logger stops. */
+  installDownloadedUpdate(): void {
+    if (this.status.phase !== "downloaded") {
+      return;
+    }
+    // The relaunched AppImage can start before this process exits and would otherwise lose the lock and quit.
+    app.releaseSingleInstanceLock();
+    this.getUpdater().install(true, this.restartAfterInstall);
   }
 
   /** Uses the configured proxy when set, otherwise the OS proxy settings. */
@@ -104,13 +116,16 @@ export class UpdateService {
     return updaterSession;
   }
 
-  private getUpdater(): AppUpdater {
+  private getUpdater(): BaseUpdater {
     if (this.updater) {
       return this.updater;
     }
 
-    const updater = electronUpdater.autoUpdater;
+    // In-app installs only run on NSIS and AppImage builds; macOS always takes the manual download path.
+    const updater = electronUpdater.autoUpdater as BaseUpdater;
     updater.autoDownload = false;
+    // Its own quit hook fires after cleanup has closed the logger; installDownloadedUpdate() runs inside cleanup instead.
+    updater.autoInstallOnAppQuit = false;
     updater.logger = this.logger;
     updater.on("download-progress", ({ percent }) => {
       if (this.status.phase === "downloading") {
