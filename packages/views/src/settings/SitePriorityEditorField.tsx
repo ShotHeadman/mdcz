@@ -1,3 +1,4 @@
+import { isMirrorableSite, mirrorUrlSchema, resolveSiteUrl } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import {
   DEFAULT_R18_METADATA_LANGUAGE,
@@ -97,6 +98,15 @@ export function SitePriorityEditorField({ options }: SitePriorityEditorFieldProp
   const search = useOptionalSettingsSearch();
   const value = (useWatch({ control: form.control, name }) as string[] | undefined) ?? [];
   const r18Language = normalizeR18Language(useWatch({ control: form.control, name: R18_LANGUAGE_FIELD_NAME }));
+  const [javdbUrl = "", javbusUrl = ""] =
+    (useWatch({ control: form.control, name: ["network.javdbUrl", "network.javbusUrl"] }) as
+      | [string | undefined, string | undefined]
+      | undefined) ?? [];
+  // A draft being typed may not be a valid URL yet.
+  const siteUrls = {
+    javdbUrl: mirrorUrlSchema.safeParse(javdbUrl).data ?? "",
+    javbusUrl: mirrorUrlSchema.safeParse(javbusUrl).data ?? "",
+  };
   const fieldFormState = useFormState({ control: form.control, name });
   const normalizedValue = useMemo(() => normalizeEnabledSites(value), [value]);
   const availableOptions = useMemo(
@@ -259,7 +269,15 @@ export function SitePriorityEditorField({ options }: SitePriorityEditorFieldProp
                   <div className="divide-y overflow-hidden rounded-[var(--radius-quiet-lg)] border border-border/60 bg-surface">
                     {connectivitySites.map((site) => (
                       <div key={site} className="flex items-center gap-3 px-3 py-2.5 text-sm">
-                        <span className="mr-auto font-mono text-xs text-foreground/85">{site}</span>
+                        <span className="mr-auto font-mono text-xs text-foreground/85">
+                          {site}
+                          {isMirrorableSite(site) && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {new URL(resolveSiteUrl(siteUrls, site)).host}
+                            </span>
+                          )}
+                        </span>
                         <SiteConnectivityPill site={site} />
                       </div>
                     ))}

@@ -136,6 +136,16 @@ const fields: Record<FieldKey, FieldText> = {
   "network.useProxy": { label: "Use proxy" },
   "network.timeout": { label: "Timeout (s)" },
   "network.retryCount": { label: "Retry count" },
+  "network.javdbUrl": {
+    label: "JavDB URL",
+    description: "Leave empty to use https://javdb.com. Enter a mirror address if the official site is blocked.",
+    aliases: ["mirror", "domain", "javdb", "url"],
+  },
+  "network.javbusUrl": {
+    label: "JavBus URL",
+    description: "Leave empty to use https://www.javbus.com. Enter a mirror address if the official site is blocked.",
+    aliases: ["mirror", "domain", "javbus", "url"],
+  },
   "network.javdbCookie": { label: "JavDB Cookie", aliases: ["cookie", "javdb", "credentials"] },
   "network.javbusCookie": { label: "JavBus Cookie", aliases: ["cookie", "javbus", "credentials"] },
   "network.fantiaCookie": { label: "Fantia Cookie", aliases: ["cookie", "fantia", "credentials"] },

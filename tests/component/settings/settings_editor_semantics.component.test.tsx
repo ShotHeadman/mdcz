@@ -22,6 +22,7 @@ import {
 import { type ComponentProps, type ReactNode, useMemo } from "react";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";
 import { expect, test, vi } from "vitest";
+import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 const noop = vi.fn();
@@ -158,6 +159,21 @@ test("settings editor renders every visible registry field", async () => {
     ).filter((key): key is string => Boolean(key));
 
     expect(new Set(renderedFields)).toEqual(new Set(expectedFields));
+
+    for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
+      ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
+      ["http://localhost:8082", "http://localhost:8081", "localhost:8082", "localhost:8081"],
+    ]) {
+      await screen.getByPlaceholder("https://javdb.com", { exact: true }).fill(javdbUrl);
+      await screen.getByPlaceholder("https://www.javbus.com", { exact: true }).fill(javbusUrl);
+      const siteField = screen.container.querySelector('[data-field-name="scrape.sites"]');
+      if (!siteField) throw new Error("Site priority field is missing");
+      await page.elementLocator(siteField).getByRole("button", { name: "编辑", exact: true }).click();
+      const dialog = screen.getByRole("dialog");
+      await expect.element(dialog.getByText(`javdb · ${javdbHost}`, { exact: true })).toBeVisible();
+      await expect.element(dialog.getByText(`javbus · ${javbusHost}`, { exact: true })).toBeVisible();
+      await dialog.getByRole("button", { name: "完成", exact: true }).click();
+    }
   } finally {
     vi.stubGlobal("IntersectionObserver", nativeIntersectionObserver);
   }

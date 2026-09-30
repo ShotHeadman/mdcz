@@ -1,4 +1,4 @@
-import type { Configuration } from "@mdcz/shared/config";
+import { type Configuration, isMirrorableSite, type MirrorableSite, resolveSiteUrl } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { SiteConnectivityProbeResponse } from "@mdcz/shared/serverDtos";
 import { buildCrawlerOptions } from "../scrape/crawlerOptions";
@@ -18,7 +18,7 @@ interface SiteConnectivityNetworkClient {
   }>;
 }
 
-const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {
+const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Exclude<Website, MirrorableSite>, string> = {
   [Website.DAHLIA]: "https://dahlia-av.jp",
   [Website.DMM]: "https://www.dmm.co.jp/",
   [Website.DMM_TV]: "https://video.dmm.co.jp/",
@@ -30,8 +30,6 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Website, string> = {
   [Website.H4610]: "https://www.h4610.com",
   [Website.PPVDATABANK]: "https://ppvdatabank.com",
   [Website.JAV321]: "https://www.jav321.com",
-  [Website.JAVBUS]: "https://www.javbus.com",
-  [Website.JAVDB]: "https://javdb.com",
   [Website.KINGDOM]: "https://kingdom.vc",
   [Website.KM_PRODUCE]: "https://www.km-produce.com",
   [Website.MGSTAGE]: "https://www.mgstage.com",
@@ -51,7 +49,8 @@ const appendCookie = (headers: Record<string, string>, cookie: string | undefine
   headers.cookie = headers.cookie ? `${headers.cookie}; ${normalized}` : normalized;
 };
 
-export const resolveSiteConnectivityTargetUrl = (site: Website): string => DEFAULT_SITE_CONNECTIVITY_URLS[site];
+export const resolveSiteConnectivityTargetUrl = (site: Website, configuration: Configuration): string =>
+  isMirrorableSite(site) ? resolveSiteUrl(configuration.network, site) : DEFAULT_SITE_CONNECTIVITY_URLS[site];
 
 export const buildSiteConnectivityHeaders = (site: Website, configuration: Configuration): Record<string, string> => {
   const headers: Record<string, string> = {};
@@ -74,7 +73,7 @@ export const probeSiteConnectivity = async (
   configuration: Configuration,
   networkClient: SiteConnectivityNetworkClient,
 ): Promise<SiteConnectivityProbeResponse> => {
-  const url = resolveSiteConnectivityTargetUrl(site);
+  const url = resolveSiteConnectivityTargetUrl(site, configuration);
   const headers = buildSiteConnectivityHeaders(site, configuration);
   const timeout = Math.max(1, Math.trunc(configuration.network.timeout * 1000));
   const startedAt = Date.now();

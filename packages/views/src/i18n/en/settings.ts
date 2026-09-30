@@ -287,11 +287,11 @@ export const settings = {
   },
   subsections: {
     scrapeSites: "Scrape sites",
-    scrapeSitesDescription: "Enabled sites, priority and custom URLs",
+    scrapeSitesDescription: "Enabled sites and priority",
     scrapePacing: "Scrape pacing",
     filenameFiltering: "File name filtering",
     proxyAndRequests: "Proxy and requests",
-    siteCredentials: "Site credentials",
+    siteAccess: "Site access",
     assetDownloads: "Asset downloads",
     interface: "Interface",
     shortcuts: "Shortcuts",

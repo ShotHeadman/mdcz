@@ -14,7 +14,7 @@ import {
   FilenameFilteringSection,
   NamingSection,
   NetworkConnectionSection,
-  NetworkCookiesSection,
+  NetworkSiteAccessSection,
   NfoSection,
   PathsSection,
   ScrapePacingSection,
@@ -103,8 +103,8 @@ export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: bool
       <Subsection title={t.settings.subsections.proxyAndRequests} className="mb-6 last:mb-0">
         <NetworkConnectionSection />
       </Subsection>
-      <Subsection title={t.settings.subsections.siteCredentials} className="mb-6 last:mb-0">
-        <NetworkCookiesSection />
+      <Subsection title={t.settings.subsections.siteAccess} className="mb-6 last:mb-0">
+        <NetworkSiteAccessSection />
       </Subsection>
     </SectionAnchor>
   );

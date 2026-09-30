@@ -1,6 +1,7 @@
-import type { Configuration } from "@mdcz/shared/config";
+import { type Configuration, resolveSiteUrl } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
 import type { NetworkCookieCheckStatus } from "@mdcz/shared/serverDtos";
-import { classifyJavbusPage, JAVBUS_HOME_URL, JAVBUS_REQUEST_HEADERS, toErrorMessage } from "../shared";
+import { classifyJavbusPage, JAVBUS_PAGE_HEADERS, toErrorMessage } from "../shared";
 
 interface CookieCheckNetworkClient {
   getText(url: string, init?: { headers?: Record<string, string> }): Promise<string>;
@@ -38,13 +39,14 @@ const requestFailed = (site: string, error: unknown, cookie: string): CookieChec
 });
 
 const checkJavdbCookie = async (
+  siteUrl: string,
   cookie: string,
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
   if (!cookie) return cookieCheckResult("JavDB", "not_configured");
 
   try {
-    const html = await networkClient.getText("https://javdb.com/users/profile", {
+    const html = await networkClient.getText(`${siteUrl}/users/profile`, {
       headers: { cookie },
     });
     const valid = !html.includes('href="/login"') && !html.includes("sign_in");
@@ -55,13 +57,14 @@ const checkJavdbCookie = async (
 };
 
 const checkJavbusCookie = async (
+  siteUrl: string,
   cookie: string,
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
   try {
-    const html = await networkClient.getText(JAVBUS_HOME_URL, {
+    const html = await networkClient.getText(`${siteUrl}/`, {
       headers: {
-        ...JAVBUS_REQUEST_HEADERS,
+        ...JAVBUS_PAGE_HEADERS,
         ...(cookie ? { cookie } : {}),
       },
     });
@@ -104,8 +107,16 @@ export const checkConfiguredSiteCookies = async (
   networkClient: CookieCheckNetworkClient,
 ): Promise<{ results: CookieCheckResult[] }> => {
   const [javdb, javbus, fantia] = await Promise.all([
-    checkJavdbCookie(configuration.network.javdbCookie.trim(), networkClient),
-    checkJavbusCookie(configuration.network.javbusCookie.trim(), networkClient),
+    checkJavdbCookie(
+      resolveSiteUrl(configuration.network, Website.JAVDB),
+      configuration.network.javdbCookie.trim(),
+      networkClient,
+    ),
+    checkJavbusCookie(
+      resolveSiteUrl(configuration.network, Website.JAVBUS),
+      configuration.network.javbusCookie.trim(),
+      networkClient,
+    ),
     checkFantiaCookie(configuration.network.fantiaCookie.trim(), networkClient),
   ]);
 

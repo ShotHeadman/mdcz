@@ -1,12 +1,13 @@
 import type { SiteRequestConfig } from "@mdcz/runtime/network";
 import {
   classifyJavbusPage,
-  JAVBUS_BASE_URL,
-  JAVBUS_REQUEST_HEADERS,
+  JAVBUS_OFFICIAL_REQUEST_HEADERS,
+  JAVBUS_PAGE_HEADERS,
   javbusBlockedPageMessage,
   normalizeCode,
   normalizeText,
 } from "@mdcz/runtime/shared";
+import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
@@ -20,7 +21,7 @@ const JAVBUS_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
   {
     id: "crawler:javbus",
     matches: (url) => url.hostname === "javbus.com" || url.hostname.endsWith(".javbus.com"),
-    headers: JAVBUS_REQUEST_HEADERS,
+    headers: JAVBUS_OFFICIAL_REQUEST_HEADERS,
   },
 ];
 
@@ -47,26 +48,18 @@ const normalizeSearchResultPath = (href: string): string => {
   return normalizeCode(href.split(/[?#]/u)[0] ?? href);
 };
 
-const buildJavbusFallbackDetailUrl = (number: string): string => {
-  return `${JAVBUS_BASE_URL}/${encodeURIComponent(number.toUpperCase())}`;
-};
-
-const pickJavbusSearchResult = (candidateHrefs: string[], expectedNumber: string): JavbusSearchResult => {
+const pickJavbusSearchResult = (
+  searchUrl: string,
+  candidateHrefs: string[],
+  expectedNumber: string,
+): JavbusSearchResult => {
   const expected = normalizeCode(expectedNumber);
+  const fallbackDetailUrl = new URL(`/${encodeURIComponent(expectedNumber.toUpperCase())}`, searchUrl).href;
+  const href = candidateHrefs.find((candidate) => normalizeSearchResultPath(candidate).endsWith(`/${expected}`));
 
-  for (const href of candidateHrefs) {
-    if (normalizeSearchResultPath(href).endsWith(`/${expected}`)) {
-      return {
-        detailUrl: toAbsoluteUrl(JAVBUS_BASE_URL, href) ?? buildJavbusFallbackDetailUrl(expectedNumber),
-        matched: true,
-      };
-    }
-  }
-
-  return {
-    detailUrl: buildJavbusFallbackDetailUrl(expectedNumber),
-    matched: false,
-  };
+  return href
+    ? { detailUrl: new URL(href, searchUrl).href, matched: true }
+    : { detailUrl: fallbackDetailUrl, matched: false };
 };
 
 export class JavbusCrawler extends BaseCrawler {
@@ -76,13 +69,17 @@ export class JavbusCrawler extends BaseCrawler {
     return Website.JAVBUS;
   }
 
+  protected override buildHeaders(context: Context): Record<string, string> {
+    return { ...JAVBUS_PAGE_HEADERS, ...super.buildHeaders(context) };
+  }
+
   protected async generateSearchUrl(context: Context): Promise<string | null> {
     const number = normalizeText(context.number);
     if (!number) {
       return null;
     }
 
-    return `${JAVBUS_BASE_URL}/search/${encodeURIComponent(number)}`;
+    return `${context.options.baseUrl ?? OFFICIAL_SITE_URLS[Website.JAVBUS]}/search/${encodeURIComponent(number)}`;
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
@@ -96,7 +93,7 @@ export class JavbusCrawler extends BaseCrawler {
       .map((element: CheerioInput) => $(element).attr("href"))
       .filter((href: string | undefined): href is string => typeof href === "string" && href.length > 0);
 
-    const result = pickJavbusSearchResult(candidates, context.number);
+    const result = pickJavbusSearchResult(searchUrl, candidates, context.number);
     if (!result.matched) {
       this.logger.debug(
         `No javbus search match for ${context.number} via ${searchUrl}, fallback to ${result.detailUrl}`,
@@ -106,7 +103,7 @@ export class JavbusCrawler extends BaseCrawler {
     return result.detailUrl;
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const titleRaw = extractText($, "h3");
     if (!titleRaw) {
       return null;
@@ -127,7 +124,7 @@ export class JavbusCrawler extends BaseCrawler {
       .filter((name: string) => name.length > 0);
 
     const thumbUrl = $("a.bigImage").first().attr("href") ?? undefined;
-    const thumbUrlAbsolute = toAbsoluteUrl(JAVBUS_BASE_URL, thumbUrl);
+    const thumbUrlAbsolute = toAbsoluteUrl(detailUrl, thumbUrl);
     const posterUrl = buildPosterUrl(thumbUrlAbsolute);
 
     const studio = $("a[href*='/studio/']").first().text().trim() || undefined;
@@ -140,7 +137,7 @@ export class JavbusCrawler extends BaseCrawler {
       .toArray()
       .map((element: CheerioInput) => $(element).attr("href"))
       .filter((href: string | undefined): href is string => typeof href === "string" && href.length > 0)
-      .map((href: string) => toAbsoluteUrl(JAVBUS_BASE_URL, href))
+      .map((href: string) => toAbsoluteUrl(detailUrl, href))
       .filter((href): href is string => Boolean(href));
 
     const title = titleRaw.replace(number, "").trim();

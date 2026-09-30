@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { buildCrawlerOptions } from "./scrape/crawlerOptions";
-import { JAVBUS_REQUEST_HEADERS } from "./shared";
+import { JAVBUS_PAGE_HEADERS } from "./shared";
 import type { LlmApiClient } from "./translate";
 import { testLlmConnectivity } from "./translate/llmTest";
 
@@ -67,7 +67,7 @@ describe("settings parity runtime helpers", () => {
         { site: "Fantia", valid: false, status: "not_configured" },
       ],
     });
-    expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", { headers: { ...JAVBUS_REQUEST_HEADERS } });
+    expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", { headers: { ...JAVBUS_PAGE_HEADERS } });
   });
 
   // HTML→classification coverage lives in javbusPage.test.ts; here we only
@@ -86,13 +86,14 @@ describe("settings parity runtime helpers", () => {
 
     expect(javbus).toEqual({ site: "JavBus", valid: false, status });
     expect(getText).toHaveBeenCalledWith("https://www.javbus.com/", {
-      headers: { ...JAVBUS_REQUEST_HEADERS, cookie: "javbus_session=valid" },
+      headers: { ...JAVBUS_PAGE_HEADERS, cookie: "javbus_session=valid" },
     });
   });
 
-  it("reports a configured JavBus Cookie only after film content is available", async () => {
+  it("reports a configured JavBus Cookie only after film content is available on the configured mirror", async () => {
     const config = cloneConfig();
     config.network.javbusCookie = "javbus_session=valid";
+    config.network.javbusUrl = "https://javbus-mirror.example/";
     const getText = vi.fn(async () => '<a class="movie-box" href="/ABP-123"></a>');
 
     const result = await checkConfiguredSiteCookies(config, { getText });
@@ -101,6 +102,9 @@ describe("settings parity runtime helpers", () => {
       site: "JavBus",
       valid: true,
       status: "ready_with_cookie",
+    });
+    expect(getText).toHaveBeenCalledWith("https://javbus-mirror.example/", {
+      headers: { ...JAVBUS_PAGE_HEADERS, cookie: "javbus_session=valid" },
     });
   });
 

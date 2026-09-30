@@ -1,3 +1,4 @@
+import { isMirrorableSite, OFFICIAL_SITE_HOSTS, resolveSiteUrl, type SiteUrlConfiguration } from "./config";
 import { Website } from "./enums";
 
 export type ManualScrapeUrlMode = "site" | "detail";
@@ -11,10 +12,11 @@ const INVALID_REASON_MESSAGES: Record<ManualScrapeUrlInvalidReason, string> = {
 };
 
 export const resolveManualScrapeRoute = (
-  url?: string | null,
+  url: string | null | undefined,
+  network: SiteUrlConfiguration,
 ): Pick<ManualScrapeUrlRoute, "site" | "detailUrl"> | undefined => {
   if (!url?.trim()) return undefined;
-  const validation = validateManualScrapeUrl(url);
+  const validation = validateManualScrapeUrl(url, network);
   if (!validation.valid) throw new Error(INVALID_REASON_MESSAGES[validation.reason]);
   return { site: validation.route.site, detailUrl: validation.route.detailUrl };
 };
@@ -104,12 +106,12 @@ const SITE_RULES: readonly ManualScrapeSiteRule[] = [
   },
   {
     site: Website.JAVBUS,
-    hosts: ["www.javbus.com", "javbus.com"],
+    hosts: OFFICIAL_SITE_HOSTS[Website.JAVBUS],
     isDetailUrl: (url) => pathMatches(url, /^\/(?!search\/?$|genre\/?$|star\/?$)[A-Z0-9_-]+\/?$/iu),
   },
   {
     site: Website.JAVDB,
-    hosts: ["javdb.com", "www.javdb.com"],
+    hosts: OFFICIAL_SITE_HOSTS[Website.JAVDB],
     isDetailUrl: (url) => pathMatches(url, /^\/v\/[^/]+\/?$/iu),
   },
   {
@@ -182,14 +184,17 @@ const normalizeManualUrl = (url: URL): string => {
   return url.toString();
 };
 
-export const validateManualScrapeUrl = (input: string): ManualScrapeUrlValidation => {
+export const validateManualScrapeUrl = (input: string, network: SiteUrlConfiguration): ManualScrapeUrlValidation => {
   const url = parseInputUrl(input);
   if (!url) {
     return { valid: false, reason: "invalid_url" };
   }
 
   const host = url.hostname.toLowerCase();
-  const rule = SITE_RULES.find((candidate) => candidate.hosts.includes(host));
+  const rule =
+    SITE_RULES.find(
+      (candidate) => isMirrorableSite(candidate.site) && resolveSiteUrl(network, candidate.site) === url.origin,
+    ) ?? SITE_RULES.find((candidate) => candidate.hosts.includes(host));
   if (!rule) {
     return { valid: false, reason: "unsupported_site" };
   }

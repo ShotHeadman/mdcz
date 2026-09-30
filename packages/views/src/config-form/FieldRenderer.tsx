@@ -251,9 +251,19 @@ export function SecretField({ name, description }: { name: FieldKey; description
 
 // ── URL ──
 
-export function UrlField({ name, description }: { name: FieldKey; description?: string }) {
+export function UrlField({
+  name,
+  description,
+  placeholder = "https://...",
+  labelAddon,
+}: {
+  name: FieldKey;
+  description?: string;
+  placeholder?: string;
+  labelAddon?: ReactNode;
+}) {
   return (
-    <BaseField name={name} description={description} commitMode="debounce">
+    <BaseField name={name} description={description} labelAddon={labelAddon} commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field}>
           {(control) => (
@@ -263,7 +273,7 @@ export function UrlField({ name, description }: { name: FieldKey; description?: 
                 name={control.name}
                 ref={control.ref}
                 value={control.value}
-                placeholder="https://..."
+                placeholder={placeholder}
                 onFocus={control.handleFocus}
                 onChange={(event) => control.handleChangeValue(event.target.value)}
                 onBlur={control.handleBlur}

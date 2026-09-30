@@ -1,6 +1,6 @@
 import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
-import { type Configuration, NFO_FIELD_OPTIONS } from "@mdcz/shared/config";
-import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
+import { type Configuration, NFO_FIELD_OPTIONS, OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
+import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
 import {
   POSTER_TAG_BADGE_ASPECT_HEIGHT,
   POSTER_TAG_BADGE_ASPECT_WIDTH,
@@ -48,6 +48,7 @@ import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
 import { useSettingsInFlightSaves, useSettingsNotifier, useSettingsServices } from "./SettingsServices";
+import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_KEYS, getNestedValue, isRecord, unflattenConfig } from "./settingsRegistry";
 
@@ -255,10 +256,20 @@ export function NetworkConnectionSection() {
   );
 }
 
-export function NetworkCookiesSection() {
+export function NetworkSiteAccessSection() {
   return (
     <>
+      <UrlField
+        name="network.javdbUrl"
+        placeholder={OFFICIAL_SITE_URLS[Website.JAVDB]}
+        labelAddon={<SiteConnectivityPill site={Website.JAVDB} />}
+      />
       <CookieFieldWrapper name="network.javdbCookie" />
+      <UrlField
+        name="network.javbusUrl"
+        placeholder={OFFICIAL_SITE_URLS[Website.JAVBUS]}
+        labelAddon={<SiteConnectivityPill site={Website.JAVBUS} />}
+      />
       <CookieFieldWrapper name="network.javbusCookie" />
       <CookieFieldWrapper name="network.fantiaCookie" />
     </>

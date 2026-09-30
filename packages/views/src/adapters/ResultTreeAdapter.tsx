@@ -1,3 +1,4 @@
+import type { SiteUrlConfiguration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import {
   buildScrapeResultGroupActionContext,
@@ -183,7 +184,13 @@ function buildMenuContent(
   );
 }
 
-export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
+export function ResultTreeAdapter({
+  port,
+  siteUrls,
+}: {
+  port: ScrapeActionPort;
+  siteUrls: SiteUrlConfiguration | undefined;
+}) {
   const t = useT();
   const results = useScrapeStore(selectScrapeResults);
   const scrapeStatus = useScrapeStore(selectScrapeStatus);
@@ -232,6 +239,7 @@ export function ResultTreeAdapter({ port }: { port: ScrapeActionPort }) {
         { label: t.scrape.metrics.failed, value: String(failedCount), tone: "negative" },
       ]}
       manualUrlTarget={manualUrlTarget}
+      siteUrls={siteUrls}
       scrapeStatus={scrapeStatus}
       onManualUrlDialogOpenChange={(open) => {
         if (!open) {

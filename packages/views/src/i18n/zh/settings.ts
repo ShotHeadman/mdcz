@@ -259,11 +259,11 @@ export const settings: Messages["settings"] = {
   },
   subsections: {
     scrapeSites: "刮削站点",
-    scrapeSitesDescription: "启用网站、优先级与自定义地址",
+    scrapeSitesDescription: "启用网站与优先级",
     scrapePacing: "刮削节奏",
     filenameFiltering: "文件名过滤",
     proxyAndRequests: "代理与请求",
-    siteCredentials: "站点凭证",
+    siteAccess: "站点访问",
     assetDownloads: "资源下载",
     interface: "界面",
     shortcuts: "快捷键",

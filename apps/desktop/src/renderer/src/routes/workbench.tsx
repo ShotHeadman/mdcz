@@ -230,6 +230,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
             <>
               <ScrapeWorkbenchAdapter
                 ports={workbenchPorts}
+                siteUrls={configQ.data?.network}
                 onPauseScrape={handlePauseScrape}
                 onResumeScrape={handleResumeScrape}
                 onStopScrape={handleStopScrape}

@@ -715,7 +715,7 @@ export class ScrapeRunner {
     const rawRefs = normalized.mode === "single" ? [normalized.ref] : normalized.refs;
     const canonicalRefs = await this.deps.persistence.mediaRoots.canonicalizeFileRefs(rawRefs);
     const inventory = new DirectoryInventory();
-    const manualScrape = resolveManualScrapeRoute(normalized.manualUrl);
+    const manualScrape = resolveManualScrapeRoute(normalized.manualUrl, configuration.network);
     const groups = await admitScrapeGroups({
       refs: canonicalRefs.map((ref) => ({ ...ref, manualScrape })),
       resolveRoot: (id) => this.deps.persistence.mediaRoots.get(id),
@@ -813,7 +813,7 @@ export class ScrapeRunner {
       refs: itemsToRetry.map((item) => ({
         rootId: item.rootId,
         relativePath: item.relativePath,
-        manualScrape: resolveManualScrapeRoute(item.manualUrl),
+        manualScrape: resolveManualScrapeRoute(item.manualUrl, configuration.network),
         uncensoredChoice: item.uncensoredChoice ?? undefined,
       })),
       resolveRoot: (id) => this.deps.persistence.mediaRoots.get(id),

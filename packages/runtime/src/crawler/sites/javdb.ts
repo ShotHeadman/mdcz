@@ -1,5 +1,5 @@
-import type { SiteRequestConfig } from "@mdcz/runtime/network";
 import { normalizeCode, normalizeText } from "@mdcz/runtime/shared";
+import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
@@ -8,17 +8,6 @@ import { extractAttr, extractText, parseDate } from "../base/parser";
 import type { Context } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { extractParentLinksByLabelSelector, extractParentTextByLabelSelector, toAbsoluteUrl } from "./helpers";
-
-const JAVDB_BASE_URL = "https://javdb.com";
-const JAVDB_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
-  {
-    id: "crawler:javdb",
-    matches: (url) => url.hostname === "javdb.com" || url.hostname === "www.javdb.com",
-    headers: {
-      referer: `${JAVDB_BASE_URL}/`,
-    },
-  },
-];
 
 type CheerioInput = Parameters<CheerioAPI>[0];
 
@@ -41,24 +30,22 @@ type JavdbSearchResult = {
 };
 
 const pickJavdbSearchResultUrl = (
-  baseUrl: string,
+  pageUrl: string,
   results: JavdbSearchResult[],
   expectedNumber: string,
 ): string | null => {
   const expectedTitle = expectedNumber.toUpperCase();
   const exact = results.find((item) => item.title.toUpperCase().includes(expectedTitle));
   if (exact) {
-    return toAbsoluteUrl(baseUrl, exact.href) ?? null;
+    return toAbsoluteUrl(pageUrl, exact.href) ?? null;
   }
 
   const normalizedExpected = normalizeCode(expectedNumber);
   const fuzzy = results.find((item) => normalizeCode(item.title + item.meta).includes(normalizedExpected));
-  return fuzzy ? (toAbsoluteUrl(baseUrl, fuzzy.href) ?? null) : null;
+  return fuzzy ? (toAbsoluteUrl(pageUrl, fuzzy.href) ?? null) : null;
 };
 
 export class JavdbCrawler extends BaseCrawler {
-  static readonly siteRequestConfigs = JAVDB_SITE_REQUEST_CONFIGS;
-
   site(): Website {
     return Website.JAVDB;
   }
@@ -75,7 +62,7 @@ export class JavdbCrawler extends BaseCrawler {
       number = number.replace(oldDate[1], `20${oldDate[1]}`);
     }
 
-    return `${JAVDB_BASE_URL}/search?q=${encodeURIComponent(number)}&locale=zh`;
+    return `${context.options.baseUrl ?? OFFICIAL_SITE_URLS[Website.JAVDB]}/search?q=${encodeURIComponent(number)}&locale=zh`;
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
@@ -103,10 +90,10 @@ export class JavdbCrawler extends BaseCrawler {
       return null;
     }
 
-    return pickJavdbSearchResultUrl(JAVDB_BASE_URL, results, context.number);
+    return pickJavdbSearchResultUrl(searchUrl, results, context.number);
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const title = extractText($, "h2.title.is-4 strong.current-title");
     if (!title) {
       return null;
@@ -130,17 +117,17 @@ export class JavdbCrawler extends BaseCrawler {
     const release = parseDate(extractParentTextByLabelSelector($, "strong", ["日期:", "Released Date:"])) ?? undefined;
 
     const thumbUrl = extractAttr($, "img.video-cover", "src");
-    const thumbUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, thumbUrl);
+    const thumbUrlAbsolute = toAbsoluteUrl(detailUrl, thumbUrl);
     const posterUrl = thumbUrlAbsolute?.replace("/covers/", "/thumbs/");
 
     const trailerUrl = extractAttr($, "video#preview-video source", "src") ?? undefined;
-    const trailerUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, trailerUrl);
+    const trailerUrlAbsolute = toAbsoluteUrl(detailUrl, trailerUrl);
 
     const sceneImageUrls = $("div.tile-images.preview-images a.tile-item")
       .toArray()
       .map((element: CheerioInput) => $(element).attr("href"))
       .filter((href: string | undefined): href is string => typeof href === "string" && href.length > 0)
-      .map((href: string) => toAbsoluteUrl(JAVDB_BASE_URL, href))
+      .map((href: string) => toAbsoluteUrl(detailUrl, href))
       .filter((href): href is string => Boolean(href));
 
     const ratingText = extractParentTextByLabelSelector($, "strong", ["評分:", "Rating:"]);

@@ -74,6 +74,16 @@ export const settingsFields: Messages["settingsFields"] = {
     "network.useProxy": { label: "启用代理" },
     "network.timeout": { label: "超时时间(秒)" },
     "network.retryCount": { label: "重试次数" },
+    "network.javdbUrl": {
+      label: "JavDB 地址",
+      description: "留空使用官网 https://javdb.com；官网无法访问时可填写防屏蔽镜像地址。",
+      aliases: ["镜像", "防屏蔽", "网址", "域名"],
+    },
+    "network.javbusUrl": {
+      label: "JavBus 地址",
+      description: "留空使用官网 https://www.javbus.com；官网无法访问时可填写防屏蔽镜像地址。",
+      aliases: ["镜像", "防屏蔽", "网址", "域名"],
+    },
     "network.javdbCookie": { label: "JavDB Cookie", aliases: ["凭证"] },
     "network.javbusCookie": { label: "JavBus Cookie", aliases: ["凭证"] },
     "network.fantiaCookie": { label: "Fantia Cookie", aliases: ["凭证"] },

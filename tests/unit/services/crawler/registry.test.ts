@@ -49,6 +49,6 @@ describe("crawler registry", () => {
     const requestConfigIds = listRegisteredCrawlerRequestConfigs().map((config) => config.id);
 
     expect(requestConfigIds).toContain("crawler:javbus");
-    expect(requestConfigIds).toContain("crawler:javdb");
+    expect(requestConfigIds).toContain("crawler:fantia");
   });
 });

@@ -179,9 +179,35 @@ describe("JavdbCrawler", () => {
           expect(data.result.data.genres).toEqual(["Tag A", "Tag B"]);
         },
       },
+      {
+        number: "MIRR-001",
+        baseUrl: "https://javdb571.com",
+        searchUrl: "https://javdb571.com/search?q=MIRR-001&locale=zh",
+        detailUrl: "https://javdb571.com/v/mirror1",
+        searchHtml: `
+          <html><body>
+            <a class="box" href="/v/mirror1">
+              <div class="video-title"><strong>MIRR-001</strong></div>
+            </a>
+          </body></html>
+        `,
+        detailHtml: `
+          <html><body>
+            <h2 class="title is-4"><strong class="current-title">Mirror Title</strong></h2>
+            <img class="video-cover" src="/covers/mirror.jpg" />
+          </body></html>
+        `,
+        cookies: undefined,
+        assert: (data: ReturnType<JavdbCrawler["crawl"]> extends Promise<infer T> ? T : never) => {
+          if (!data.result.success) {
+            throw new Error("expected success");
+          }
+          expect(data.result.data.thumb_url).toBe("https://javdb571.com/covers/mirror.jpg");
+        },
+      },
     ];
 
-    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, cookies, assert } of cases) {
+    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, cookies, baseUrl, assert } of cases) {
       const fixtures = new Map<string, string>([
         [searchUrl, searchHtml],
         [detailUrl, detailHtml],
@@ -191,11 +217,7 @@ describe("JavdbCrawler", () => {
       const response = await crawler.crawl({
         number,
         site: Website.JAVDB,
-        options: cookies
-          ? {
-              cookies,
-            }
-          : undefined,
+        options: { cookies, baseUrl },
       });
 
       expect(response.result.success).toBe(true);

@@ -92,7 +92,9 @@ export class ToolsService {
       case "crawler-tester": {
         const config = await this.config.get();
         const result = await new AggregationService(this.crawlerProvider, { config }).aggregate(input.number, {
-          manualScrape: resolveManualScrapeRoute(input.manualUrl) ?? (input.site ? { site: input.site } : undefined),
+          manualScrape:
+            resolveManualScrapeRoute(input.manualUrl, config.network) ??
+            (input.site ? { site: input.site } : undefined),
         });
         return { toolId: input.toolId, ok: true, data: result };
       }
