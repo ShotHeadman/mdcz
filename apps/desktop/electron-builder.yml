@@ -70,7 +70,6 @@ mac:
   target:
     - target: dmg
       arch:
-        - x64
         - arm64
   files:
     - "!**/node_modules/@img/sharp-{win32,linux,linuxmusl}-*/**"
