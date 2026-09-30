@@ -35,6 +35,9 @@ jobs:
 
   version:
     needs: checks
+    # Serialized and run against the latest main, so back-to-back merges bump on top of
+    # each other's release commit instead of racing to push the same tag.
+    concurrency: release
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
@@ -44,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           fetch-depth: 0
 
       - uses: jdx/mise-action@v4
@@ -138,9 +142,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
 
-      - uses: jdx/mise-action@v4
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Build
         run: pnpm ${{ matrix.script }}

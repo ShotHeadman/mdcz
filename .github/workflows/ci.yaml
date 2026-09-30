@@ -1,32 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - ".github/workflows/ci.yaml"
-      - ".github/actions/setup/action.yml"
-      - "tests/**"
-      - "package.json"
-      - "pnpm-workspace.yaml"
-      - "pnpm-lock.yaml"
-      - "mise.toml"
-      - "biome.json"
-      - "vitest.config.ts"
-      - "tsconfig*.json"
-      - "docker/**"
-      - "scripts/**"
-      - ".dockerignore"
-      - "compose.yaml"
   pull_request:
     branches: [main]
   workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   docker:
