@@ -42,6 +42,7 @@ export enum IpcChannel {
   Event_Log = "event:log",
   Event_Invalidate = "event:invalidate",
   Event_Shortcut = "event:shortcut",
+  Event_UpdateStatus = "event:update-status",
 
   App_Info = "app:info",
   App_OpenExternal = "app:open-external",
@@ -51,6 +52,10 @@ export enum IpcChannel {
   App_OpenWatermarkDirectory = "app:open-watermark-directory",
   App_Relaunch = "app:relaunch",
   App_SyncTitleBarTheme = "app:sync-titlebar-theme",
+  App_GetUpdateStatus = "app:get-update-status",
+  App_CheckForUpdate = "app:check-for-update",
+  App_DownloadUpdate = "app:download-update",
+  App_InstallUpdate = "app:install-update",
 
   Overview_GetRecentAcquisitions = "overview:get-recent-acquisitions",
   Overview_RemoveRecentAcquisition = "overview:remove-recent-acquisition",

@@ -41,6 +41,10 @@ export const createAppHandlers = (
   | typeof IpcChannel.App_OpenWatermarkDirectory
   | typeof IpcChannel.App_Relaunch
   | typeof IpcChannel.App_SyncTitleBarTheme
+  | typeof IpcChannel.App_GetUpdateStatus
+  | typeof IpcChannel.App_CheckForUpdate
+  | typeof IpcChannel.App_DownloadUpdate
+  | typeof IpcChannel.App_InstallUpdate
 > => ({
   [IpcChannel.App_Info]: t.procedure.action(async () => ({
     version: app.getVersion(),
@@ -95,6 +99,16 @@ export const createAppHandlers = (
   }),
   [IpcChannel.App_SyncTitleBarTheme]: t.procedure.input(appSyncTitleBarThemeInputSchema).action(async ({ input }) => {
     context.windowService.syncTitleBarOverlay(input.isDark);
+    return { success: true as const };
+  }),
+  [IpcChannel.App_GetUpdateStatus]: t.procedure.action(async () => context.updateService.getStatus()),
+  [IpcChannel.App_CheckForUpdate]: t.procedure.action(async () => await context.updateService.check()),
+  [IpcChannel.App_DownloadUpdate]: t.procedure.action(async () => {
+    await context.updateService.download();
+    return { success: true as const };
+  }),
+  [IpcChannel.App_InstallUpdate]: t.procedure.action(async () => {
+    context.updateService.install();
     return { success: true as const };
   }),
 });

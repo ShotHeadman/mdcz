@@ -93,6 +93,17 @@ export const desktop: Messages["desktop"] = {
   saveFailed: (error: string) => `保存失败: ${error}`,
   enableDebug: "开启调试",
 
+  updateCheckNow: "立即检查",
+  updateChecking: "正在检查更新…",
+  updateLatest: "已是最新版本",
+  updateAvailable: (version: string) => `发现新版本 MDCz v${version}`,
+  updateDownload: "下载更新",
+  updateOpenDownload: "前往 GitHub 下载",
+  updateDownloading: (version: string, percent: number) => `正在下载 v${version}… ${percent}%`,
+  updateDownloaded: (version: string) => `v${version} 已下载，重启或退出 MDCz 时自动安装`,
+  updateInstall: "立即重启",
+  updateFailed: (error: string) => `更新失败: ${error}`,
+
   removedFromLibrary: "已从媒体库移除",
 
   logsEmpty: "暂无日志。刮削或维护任务开始后，运行日志会显示在这里。",

@@ -1,4 +1,5 @@
 import { IpcChannel } from "./IpcChannel";
+import type { AppUpdateStatus } from "./ipcTypes";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type { ScrapeRunSnapshotDto } from "./serverDtos";
 
@@ -33,6 +34,7 @@ export type EventPayloadByChannel = {
   [IpcChannel.Event_Log]: LogPayload;
   [IpcChannel.Event_Invalidate]: InvalidatePayload;
   [IpcChannel.Event_Shortcut]: ShortcutPayload;
+  [IpcChannel.Event_UpdateStatus]: AppUpdateStatus;
 };
 
 export type EventChannel = keyof EventPayloadByChannel;
@@ -42,6 +44,7 @@ export const IPC_EVENT_CHANNELS = [
   IpcChannel.Event_Log,
   IpcChannel.Event_Invalidate,
   IpcChannel.Event_Shortcut,
+  IpcChannel.Event_UpdateStatus,
 ] as const satisfies readonly EventChannel[];
 
 const EVENT_CHANNEL_SET = new Set<string>(IPC_EVENT_CHANNELS);

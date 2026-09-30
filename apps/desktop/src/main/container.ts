@@ -4,6 +4,7 @@ import type { SignalService } from "@main/services/SignalService";
 import type { ScraperService } from "@main/services/scraper";
 import type { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import type { AmazonPosterToolService, BatchTranslateToolService, SymlinkService } from "@main/services/tools";
+import type { UpdateService } from "@main/services/UpdateService";
 import type { WindowService } from "@main/services/WindowService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
@@ -46,5 +47,6 @@ export interface ServiceContainer {
   symlinkService: SymlinkService;
   amazonPosterToolService: AmazonPosterToolService;
   batchTranslateToolService: BatchTranslateToolService;
+  updateService: UpdateService;
   shutdown(): Promise<void>;
 }

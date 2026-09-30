@@ -1,6 +1,7 @@
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
 import { Badge, Button, quietHeroRadiusClass, quietPanelRadiusClass, Switch } from "@mdcz/ui";
 import { Bug, ExternalLink, Github, Server, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import AppLogo from "../assets/logo.png";
 import { useT } from "../i18n";
 
@@ -13,6 +14,7 @@ export interface AboutViewProps {
   debugActionLabel?: string;
   logoSrc?: string;
   updateCheckDisabled?: boolean;
+  updateStatus?: ReactNode;
   onDebug?: () => void;
   onOpenExternal: (url: string) => void;
   onUpdateCheckChange?: (checked: boolean) => void;
@@ -50,6 +52,7 @@ export const AboutView = ({
   debugActionLabel,
   logoSrc,
   updateCheckDisabled = false,
+  updateStatus,
   onDebug,
   onOpenExternal,
   onUpdateCheckChange,
@@ -125,17 +128,18 @@ export const AboutView = ({
 
           {showUpdateCheck && (
             <section
-              className={`flex items-center justify-between border border-border/30 bg-surface-low/30 p-5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
+              className={`flex flex-col gap-4 border border-border/30 bg-surface-low/30 p-5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
             >
-              <div className="space-y-0.5 px-1">
-                <h2 className="text-sm font-semibold">{t.about.autoCheckUpdates}</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="px-1 text-sm font-semibold">{t.about.autoCheckUpdates}</h2>
+                <Switch
+                  aria-label={t.about.autoCheckUpdates}
+                  checked={Boolean(updateCheck)}
+                  disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
+                  onCheckedChange={(checked) => onUpdateCheckChange?.(checked)}
+                />
               </div>
-              <Switch
-                aria-label={t.about.autoCheckUpdates}
-                checked={Boolean(updateCheck)}
-                disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
-                onCheckedChange={(checked) => onUpdateCheckChange?.(checked)}
-              />
+              {updateStatus}
             </section>
           )}
 

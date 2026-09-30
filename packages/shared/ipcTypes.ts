@@ -23,6 +23,14 @@ export type AppInfo = {
   isPackaged: boolean;
 };
 
+/** `manualDownloadUrl` is null when the running build can download and install the update itself. */
+export type AppUpdateStatus =
+  | { phase: "idle" | "checking" | "latest" }
+  | { phase: "available"; version: string; releaseUrl: string; manualDownloadUrl: string | null }
+  | { phase: "downloading"; version: string; percent: number }
+  | { phase: "downloaded"; version: string }
+  | { phase: "error"; message: string };
+
 export type WatermarkDirectoryInfo = {
   path: string;
 };

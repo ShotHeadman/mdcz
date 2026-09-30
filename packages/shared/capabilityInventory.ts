@@ -259,10 +259,14 @@ export const CROSS_HOST_CAPABILITIES = [
 ] as const satisfies readonly CrossHostCapability[];
 
 export const DESKTOP_ONLY_CHANNELS = [
+  { channel: IpcChannel.App_CheckForUpdate, reason: "Desktop self-update against GitHub releases." },
+  { channel: IpcChannel.App_DownloadUpdate, reason: "Desktop self-update against GitHub releases." },
+  { channel: IpcChannel.App_GetUpdateStatus, reason: "Desktop self-update against GitHub releases." },
   {
     channel: IpcChannel.App_Info,
     reason: "Desktop process identity; server equivalent is system.about with a different product surface.",
   },
+  { channel: IpcChannel.App_InstallUpdate, reason: "Desktop self-update against GitHub releases." },
   { channel: IpcChannel.App_OpenExternal, reason: "Electron shell: open a URL in the OS browser." },
   { channel: IpcChannel.App_OpenWatermarkDirectory, reason: "Electron shell: reveal a local directory." },
   { channel: IpcChannel.App_PlayMedia, reason: "Electron shell: play a local media path." },
@@ -278,6 +282,7 @@ export const DESKTOP_ONLY_CHANNELS = [
   { channel: IpcChannel.Event_Log, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.Event_Shortcut, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.Event_TaskSnapshot, reason: "Unidirectional desktop event push; no server procedure." },
+  { channel: IpcChannel.Event_UpdateStatus, reason: "Unidirectional desktop event push; no server procedure." },
   { channel: IpcChannel.File_Browse, reason: "Native file dialog; no server procedure." },
   { channel: IpcChannel.File_CancelMediaCandidates, reason: "Cancel an explicit filesystem preview." },
   { channel: IpcChannel.File_Exists, reason: "Local filesystem probe." },

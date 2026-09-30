@@ -1,9 +1,16 @@
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { app } from "electron";
 
 export const DESKTOP_APP_NAME = "mdcz";
 
 let identityApplied = false;
+
+// NSIS installs place an uninstaller beside the executable; the portable zip ships without one.
+export const isWindowsPortable = (): boolean =>
+  process.platform === "win32" &&
+  app.isPackaged &&
+  !existsSync(join(dirname(app.getPath("exe")), "Uninstall MDCz.exe"));
 
 export const applyDesktopAppIdentity = (): void => {
   if (identityApplied) {
@@ -11,6 +18,9 @@ export const applyDesktopAppIdentity = (): void => {
   }
 
   (app as { setName?: (name: string) => void }).setName?.(DESKTOP_APP_NAME);
+  if (isWindowsPortable()) {
+    app.setPath("userData", join(dirname(app.getPath("exe")), "data"));
+  }
   identityApplied = true;
 };
 

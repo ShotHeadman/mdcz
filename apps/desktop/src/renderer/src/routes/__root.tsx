@@ -3,12 +3,14 @@ import CrashFallback from "../components/CrashFallback";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import Layout from "../components/Layout";
 import { ShortcutHandler } from "../components/ShortcutHandler";
+import { UpdateNotifier } from "../components/UpdateNotifier";
 
 const RootComponent = () => {
   return (
     <ErrorBoundary fallbackRender={({ error, reset }) => <CrashFallback error={error} onRetry={reset} />}>
       <Layout>
         <ShortcutHandler />
+        <UpdateNotifier />
         <Outlet />
       </Layout>
     </ErrorBoundary>
