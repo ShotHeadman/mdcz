@@ -10,7 +10,6 @@ import { resolveRootFile } from "@mdcz/media-store";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   createMediaWalkFilters,
-  excludeGeneratedStrmPaths,
   getNfoReadCandidates,
   nfoGenerator,
   PosterCropService,
@@ -120,9 +119,8 @@ export const createFileHandlers = (
               },
             );
 
-            const media = excludeGeneratedStrmPaths(candidates, (candidate) => candidate.path);
-            media.sort((a, b) => a.ref.relativePath.localeCompare(b.ref.relativePath, "zh-CN"));
-            return { candidates: media, warnings, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
+            candidates.sort((a, b) => a.ref.relativePath.localeCompare(b.ref.relativePath, "zh-CN"));
+            return { candidates, warnings, supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS] };
           } catch (error) {
             throw asSerializableIpcError(error);
           }

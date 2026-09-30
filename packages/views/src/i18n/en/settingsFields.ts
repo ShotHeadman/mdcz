@@ -127,6 +127,11 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "Files and folders (with everything inside) whose names contain these words are excluded from automatic scans; matching is case-insensitive. Add with Enter, comma or space.",
   },
+  "scrape.minVideoSizeMb": {
+    label: "Minimum video size (MB)",
+    description:
+      "Videos smaller than this size are excluded from scraping candidates. 0 means no limit; STRM files are unaffected.",
+  },
   "scrape.threadNumber": { label: "Concurrent threads" },
   "scrape.javdbDelaySeconds": { label: "JavDB request delay (s)" },
   "scrape.restAfterCount": { label: "Pause after consecutive scrapes (items)" },

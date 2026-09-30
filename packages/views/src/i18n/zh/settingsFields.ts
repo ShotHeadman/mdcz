@@ -65,6 +65,10 @@ export const settingsFields: Messages["settingsFields"] = {
       description:
         "自动扫描时排除名称包含这些文字的文件和文件夹（含其下所有内容）；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。",
     },
+    "scrape.minVideoSizeMb": {
+      label: "最小视频大小 (MB)",
+      description: "小于该大小的视频不进入刮削候选，0 表示不限制；STRM 文件不受影响。",
+    },
     "scrape.threadNumber": { label: "并发线程数" },
     "scrape.javdbDelaySeconds": { label: "JavDB 请求延迟(秒)" },
     "scrape.restAfterCount": { label: "连续刮削后休息(条数)" },

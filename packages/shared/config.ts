@@ -82,6 +82,7 @@ const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
   filenameIgnoreTokens: z.array(z.string()).default([]),
   filenameBlacklistTokens: z.array(z.string()).default([]),
+  minVideoSizeMb: z.number().int().min(0).max(10240).default(0),
   r18MetadataLanguage: z.enum(R18_METADATA_LANGUAGE_OPTIONS).default(DEFAULT_R18_METADATA_LANGUAGE),
   threadNumber: z.number().int().min(1).max(128).default(2),
   javdbDelaySeconds: z.number().int().min(0).max(120).default(10),

@@ -261,7 +261,7 @@ export const settings: Messages["settings"] = {
     scrapeSites: "刮削站点",
     scrapeSitesDescription: "启用网站与优先级",
     scrapePacing: "刮削节奏",
-    filenameFiltering: "文件名过滤",
+    filenameFiltering: "文件过滤",
     proxyAndRequests: "代理与请求",
     siteAccess: "站点访问",
     assetDownloads: "资源下载",

@@ -162,20 +162,24 @@ describe("createFileHandlers", () => {
     expect(shallow.candidates.map((candidate) => candidate.path)).toEqual([rootVideo]);
     expect(shallow.warnings.count).toBe(0);
   });
-  it("excludes blacklisted basenames using case-insensitive literal token matching", async () => {
+  it("filters candidates by blacklist and size while keeping only standalone STRM files", async () => {
     const root = await createTempDir();
     const keptVideo = join(root, "ABC-123.mp4");
     const nearMatchVideo = join(root, "Ads-2024-GHI-789.mp4");
     const blacklistedVideo = join(root, "DEF-456-AdS+[2024].mkv");
+    const smallVideo = join(root, "JKL-012.mp4");
+    const smallStrm = join(root, "JKL-012.StRm");
 
-    await writeFile(keptVideo, "keep");
-    await writeFile(nearMatchVideo, "near");
-    await writeFile(blacklistedVideo, "blocked");
+    for (const file of [keptVideo, nearMatchVideo, blacklistedVideo]) await writeFile(file, Buffer.alloc(1024 * 1024));
+    await writeFile(smallVideo, "garbage-video");
+    await writeFile(smallStrm, "https://x/y/z");
+    await writeFile(join(root, "MNO-345.strm"), "https://x/y/z");
     vi.mocked(configManager.getValidated).mockResolvedValue({
       ...defaultConfiguration,
       scrape: {
         ...defaultConfiguration.scrape,
         filenameBlacklistTokens: ["ads+[2024]", "   "],
+        minVideoSizeMb: 1,
       },
     });
 
@@ -184,7 +188,14 @@ describe("createFileHandlers", () => {
       actionArgs({ recursive: true, dirPath: root }),
     );
 
-    expect(result.candidates.map((candidate) => candidate.name)).toEqual(["ABC-123.mp4", "Ads-2024-GHI-789.mp4"]);
+    expect(result.candidates.map((candidate) => candidate.name)).toEqual([
+      "ABC-123.mp4",
+      "Ads-2024-GHI-789.mp4",
+      "MNO-345.strm",
+    ]);
+    expect(result.warnings.count).toBe(0);
+    expect(await readFile(smallVideo, "utf8")).toBe("garbage-video");
+    expect(await readFile(smallStrm, "utf8")).toBe("https://x/y/z");
   });
 
   it("skips media files inside an excluded output directory nested under the scan root", async () => {

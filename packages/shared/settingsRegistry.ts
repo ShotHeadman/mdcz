@@ -59,6 +59,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "scrape.r18MetadataLanguage", anchor: "scrape", visibility: "hidden" },
   { key: "scrape.filenameIgnoreTokens", anchor: "scrape" },
   { key: "scrape.filenameBlacklistTokens", anchor: "scrape" },
+  { key: "scrape.minVideoSizeMb", anchor: "scrape" },
   { key: "scrape.threadNumber", anchor: "scrape" },
   { key: "scrape.javdbDelaySeconds", anchor: "scrape" },
   { key: "scrape.restAfterCount", anchor: "scrape" },

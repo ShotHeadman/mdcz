@@ -77,6 +77,7 @@ export interface RootFileWalkEntry {
 
 export interface FileWalkOptions {
   filterFile?: (absolutePath: string) => boolean | Promise<boolean>;
+  filterStats?: (absolutePath: string, stats: Stats) => boolean;
   filterDirectory?: (absolutePath: string) => boolean;
   excludeDirectoryPaths?: readonly string[];
   excludeFileSymlinks?: boolean;
@@ -211,7 +212,7 @@ export const walkFiles = async (
       signal?.throwIfAborted();
       if (entry.isFile() && !accepted) continue;
       if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-      if (entry.isFile() && !options.onFile) {
+      if (entry.isFile() && !options.onFile && !options.filterStats) {
         candidates += 1;
         files.push(entryAbsolutePath);
         continue;
@@ -231,6 +232,7 @@ export const walkFiles = async (
             return;
           }
           if (stats.isFile() && accepted && !(entry.isSymbolicLink() && options.excludeFileSymlinks)) {
+            if (options.filterStats?.(entryAbsolutePath, stats) === false) return;
             candidates += 1;
             if (options.onFile) options.onFile(entryAbsolutePath, stats);
             else files.push(entryAbsolutePath);

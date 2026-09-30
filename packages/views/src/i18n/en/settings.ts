@@ -289,7 +289,7 @@ export const settings = {
     scrapeSites: "Scrape sites",
     scrapeSitesDescription: "Enabled sites and priority",
     scrapePacing: "Scrape pacing",
-    filenameFiltering: "File name filtering",
+    filenameFiltering: "File filtering",
     proxyAndRequests: "Proxy and requests",
     siteAccess: "Site access",
     assetDownloads: "Asset downloads",

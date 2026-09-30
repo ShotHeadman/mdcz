@@ -38,8 +38,9 @@ export const createMediaWalkFilters = (
   configuration: Configuration,
   extensions = DEFAULT_VIDEO_EXTENSIONS,
   inventory = new DirectoryInventory(),
-): Required<Pick<FileWalkOptions, "onDirectory" | "filterFile" | "filterDirectory">> => {
+): Required<Pick<FileWalkOptions, "onDirectory" | "filterFile" | "filterDirectory" | "filterStats">> => {
   const blacklist = configuration.scrape.filenameBlacklistTokens;
+  const minVideoBytes = configuration.scrape.minVideoSizeMb * 1024 * 1024;
   return {
     onDirectory: (directory, canonical, entries) => inventory.observeDirectory(directory, canonical, entries),
     filterFile: async (filePath) =>
@@ -49,6 +50,7 @@ export const createMediaWalkFilters = (
       (extname(filePath).toLowerCase() !== ".strm" ||
         (await inventory.mediaEntries(dirname(filePath))).some((entry) => entry.name === basename(filePath))),
     filterDirectory: (directoryPath) => !hasLiteralFilenameToken(basename(directoryPath), blacklist),
+    filterStats: (filePath, stats) => extname(filePath).toLowerCase() === ".strm" || stats.size >= minVideoBytes,
   };
 };
 

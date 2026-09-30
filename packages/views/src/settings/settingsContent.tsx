@@ -240,6 +240,7 @@ export function FilenameFilteringSection() {
     <>
       <ChipArrayFieldWrapper name="scrape.filenameIgnoreTokens" />
       <ChipArrayFieldWrapper name="scrape.filenameBlacklistTokens" />
+      <NumberField name="scrape.minVideoSizeMb" min={0} max={10240} />
     </>
   );
 }

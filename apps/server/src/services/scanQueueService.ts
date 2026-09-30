@@ -155,16 +155,13 @@ export class ScanQueueService {
       (input.supportedExtensions ?? []).map((extension) => `.${extension.replace(/^\./u, "").toLowerCase()}`),
     );
     const warnings = { count: 0, paths: [] as string[] };
-    const files = excludeGeneratedStrmPaths(
-      await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, signal, {
-        warnings,
-        excludeDirectoryPaths: excludeDirPaths,
-        excludeFileSymlinks: true,
-        deduplicateDirectories: true,
-        ...createMediaWalkFilters(configuration, supported.size ? supported : undefined),
-      }),
-      (file) => file.absolutePath,
-    );
+    const files = await listRootFiles(root, toRootRelativePath(root, hostPath), input.recursive, signal, {
+      warnings,
+      excludeDirectoryPaths: excludeDirPaths,
+      excludeFileSymlinks: true,
+      deduplicateDirectories: true,
+      ...createMediaWalkFilters(configuration, supported.size ? supported : undefined),
+    });
     return {
       warnings,
       candidates: files.map((file) => {
