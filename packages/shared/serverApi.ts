@@ -76,8 +76,8 @@ import type {
   ToolCatalogResponse,
   ToolExecuteInput,
   ToolExecuteResponse,
-  TranslateTestLlmInputDto,
-  TranslateTestLlmResponse,
+  TranslateTestInputDto,
+  TranslateTestResponse,
 } from "./serverDtos";
 import type { NamingPreviewItem } from "./types";
 
@@ -102,7 +102,7 @@ export interface ServerApiContract {
     checkCookies(): Promise<NetworkCheckCookiesResponse>;
   };
   translate: {
-    testLlm(input: TranslateTestLlmInputDto): Promise<TranslateTestLlmResponse>;
+    test(input: TranslateTestInputDto): Promise<TranslateTestResponse>;
   };
   serverPaths: {
     suggest(input: ServerPathSuggestInput): Promise<ServerPathSuggestResponse>;

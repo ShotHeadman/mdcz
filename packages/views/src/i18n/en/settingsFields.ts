@@ -41,6 +41,26 @@ const sections: Record<FieldAnchor, SectionText> = {
 };
 
 const fields: Record<FieldKey, FieldText> = {
+  "watch.enabled": {
+    label: "Automatically scrape new media",
+    description:
+      "Server only. Watch the media directory; files already present at startup or after changing watch settings become the baseline and require manual scraping.",
+  },
+  "watch.intervalMinutes": {
+    label: "Scan interval (minutes)",
+    description: "New files are submitted after their size and modification time remain unchanged across two scans.",
+  },
+  "translate.deeplApiKey": {
+    label: "DeepL API key / endpoint token",
+    description: "Required for official DeepL; custom endpoints may require an access token.",
+  },
+  "translate.deeplApiUrl": {
+    label: "DeepL translation endpoint",
+    description:
+      "Leave empty to select the official Free or Pro endpoint from the API key. For self-hosted DeepLX, enter the full /v2/translate URL; a key is optional when the endpoint allows it.",
+  },
+  "translate.baiduAppId": { label: "Baidu translation app ID" },
+  "translate.baiduSecretKey": { label: "Baidu translation secret key" },
   "paths.mediaPath": { label: "Media directory", aliases: ["media", "library"] },
   "paths.defaultScanExcludeDirs": {
     label: "Excluded directories",

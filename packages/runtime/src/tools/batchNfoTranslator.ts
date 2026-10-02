@@ -172,15 +172,9 @@ const buildFieldAction = (
   const current = normalizeText(currentValue) || source;
   if (!current) return undefined;
 
-  const currentLanguage = detectLanguage(current);
-  if (currentLanguage === target) return undefined;
-
-  if (currentLanguage === "zh_cn" || currentLanguage === "zh_tw") {
-    return {
-      field,
-      mode: "convert",
-      value: ensureTargetChinese(current, target),
-    };
+  if (detectLanguage(current) === "zh") {
+    const value = ensureTargetChinese(current, target);
+    return value === current ? undefined : { field, mode: "convert", value };
   }
 
   return {

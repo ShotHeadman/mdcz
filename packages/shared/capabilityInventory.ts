@@ -255,7 +255,7 @@ export const CROSS_HOST_CAPABILITIES = [
     status: "blocked",
     reason: SCRAPE_EXECUTION_REASON,
   },
-  { desktop: IpcChannel.Translate_TestLlm, server: "translate.testLlm", status: "aligned" },
+  { desktop: IpcChannel.Translate_Test, server: "translate.test", status: "aligned" },
 ] as const satisfies readonly CrossHostCapability[];
 
 export const DESKTOP_ONLY_CHANNELS = [

@@ -32,6 +32,8 @@ export enum ProxyType {
 export enum TranslateEngine {
   OPENAI = "openai",
   GOOGLE = "google",
+  DEEPL = "deepl",
+  BAIDU = "baidu",
 }
 
 export enum UiLanguage {

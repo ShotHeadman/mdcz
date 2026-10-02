@@ -73,11 +73,11 @@ const createFakeRuntimeActions = (): RuntimeActionService =>
         },
       ],
     }),
-    testLlm: async (input: { llmModelName?: string }) =>
+    testTranslation: async (input: { llmModelName?: string }) =>
       input.llmModelName ? { status: "ok" as const, sample: input.llmModelName } : { status: "missing_model" as const },
   }) satisfies Pick<
     RuntimeActionService,
-    "ensureWatermarkDirectory" | "listCrawlerSites" | "probeSiteConnectivity" | "checkCookies" | "testLlm"
+    "ensureWatermarkDirectory" | "listCrawlerSites" | "probeSiteConnectivity" | "checkCookies" | "testTranslation"
   > as unknown as RuntimeActionService;
 
 const startWebhookServer = async (): Promise<{
@@ -481,7 +481,7 @@ describe("buildServer composition integration", () => {
     });
     const llmResponse = await fastify.inject({
       method: "POST",
-      url: "/trpc/translate.testLlm",
+      url: "/trpc/translate.test",
       headers: { authorization: `Bearer ${token}` },
       payload: { llmModelName: "gpt-test" },
     });

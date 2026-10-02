@@ -211,10 +211,17 @@ export function useCrawlerSiteOptions(flatDefaults: Record<string, unknown>): st
 // ── Section renderers ──
 
 export function PathsSection() {
+  const services = useSettingsServices();
   return (
     <>
       <PathFieldWrapper name="paths.mediaPath" isDirectory />
       <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" />
+      {services.isServer && (
+        <>
+          <BoolField name="watch.enabled" />
+          <NumberField name="watch.intervalMinutes" min={1} max={1440} />
+        </>
+      )}
       <MediaOrganizeSection />
       <MetadataExportSection />
       <PathFieldWrapper name="paths.actorPhotoFolder" isDirectory />
@@ -684,10 +691,16 @@ export function TranslateSection() {
   const search = useOptionalSettingsSearch();
   const engine = useWatch({ control: form.control, name: "translate.engine" });
   const serviceType = useWatch({ control: form.control, name: "translate.llmServiceType" });
-  const isLLM = engine !== "google";
+  const isLLM = engine === "openai";
 
-  const handleTestLlm = async () => {
+  const handleTestTranslation = async () => {
     const input = {
+      engine,
+      targetLanguage: form.getValues("translate.targetLanguage"),
+      deeplApiKey: String(form.getValues("translate.deeplApiKey") ?? ""),
+      deeplApiUrl: String(form.getValues("translate.deeplApiUrl") ?? ""),
+      baiduAppId: String(form.getValues("translate.baiduAppId") ?? ""),
+      baiduSecretKey: String(form.getValues("translate.baiduSecretKey") ?? ""),
       llmModelName: String(form.getValues("translate.llmModelName") ?? ""),
       llmApiKey: String(form.getValues("translate.llmApiKey") ?? ""),
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
@@ -698,12 +711,14 @@ export function TranslateSection() {
       llmReasoning: form.getValues("translate.llmReasoning") ?? "default",
       llmOutputFormat: form.getValues("translate.llmOutputFormat") ?? "none",
       llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 120),
+      llmMaxRetries: Number(form.getValues("translate.llmMaxRetries") ?? 3),
+      llmMaxRequestsPerSecond: Number(form.getValues("translate.llmMaxRequestsPerSecond") ?? 1),
     };
 
     setTesting(true);
     try {
-      const result = await services.testLLM(input);
-      const text = t.settings.llmTest;
+      const result = await services.testTranslation(input);
+      const text = t.settings.translationTest;
       if (result.status === "ok") notifier.success(text.ok(result.sample ?? ""));
       else if (result.status === "failed") notifier.error(`${text.failed}: ${result.error}`);
       else notifier.error(text[result.status]);
@@ -719,24 +734,22 @@ export function TranslateSection() {
       <BaseField name="translate.enableTranslation">
         {(field) => (
           <div className="flex items-center gap-2">
-            {isLLM && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleTestLlm}
-                disabled={testing}
-              >
-                {testing ? (
-                  <>
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" /> {t.settings.verifying}
-                  </>
-                ) : (
-                  t.settings.verifyTranslation
-                )}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleTestTranslation}
+              disabled={testing}
+            >
+              {testing ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" /> {t.settings.verifying}
+                </>
+              ) : (
+                t.settings.verifyTranslation
+              )}
+            </Button>
             <FormControl>
               <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} />
             </FormControl>
@@ -744,6 +757,18 @@ export function TranslateSection() {
         )}
       </BaseField>
       <EnumField name="translate.engine" options={toEnumOptions(t.settings.options.translateEngine)} />
+      {shouldMountConditionalSettings(engine === "deepl", search) && (
+        <>
+          <SecretField name="translate.deeplApiKey" />
+          <UrlField name="translate.deeplApiUrl" />
+        </>
+      )}
+      {shouldMountConditionalSettings(engine === "baidu", search) && (
+        <>
+          <TextField name="translate.baiduAppId" />
+          <SecretField name="translate.baiduSecretKey" />
+        </>
+      )}
       {shouldMountConditionalSettings(isLLM, search) && (
         <>
           <TextField name="translate.llmModelName" />

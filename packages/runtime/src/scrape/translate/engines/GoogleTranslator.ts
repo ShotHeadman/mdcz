@@ -1,12 +1,7 @@
 import { z } from "zod";
-import { isUnrecoverableNetworkError, type RuntimeNetworkClient } from "../../../network";
-import { toErrorMessage } from "../../../shared";
-import { isAbortError, throwIfAborted } from "../../utils/abort";
-import type { LanguageTarget } from "../types";
-
-interface TranslationLogger {
-  warn(message: string): void;
-}
+import type { RuntimeNetworkClient } from "../../../network";
+import { throwIfAborted } from "../../utils/abort";
+import type { LanguageTarget, MachineTranslator } from "../types";
 
 const googleTranslateResponseSchema = z.array(z.unknown());
 
@@ -38,10 +33,9 @@ const extractGoogleTranslatedText = (payload: unknown): string | null => {
 };
 
 export class GoogleTranslator {
-  constructor(
-    private readonly networkClient: RuntimeNetworkClient,
-    private readonly logger: TranslationLogger,
-  ) {}
+  readonly translate: MachineTranslator = (texts, target, _config, signal) =>
+    Promise.all(texts.map((text) => this.translateText(text, target, signal)));
+  constructor(private readonly networkClient: RuntimeNetworkClient) {}
 
   async translateText(text: string, target: LanguageTarget, signal?: AbortSignal): Promise<string | null> {
     if (!text.trim()) {
@@ -58,15 +52,7 @@ export class GoogleTranslator {
     url.searchParams.set("dt", "t");
     url.searchParams.set("q", text);
 
-    try {
-      const payload = await this.networkClient.getJson<unknown>(url.toString(), { signal });
-      return extractGoogleTranslatedText(payload);
-    } catch (error) {
-      if (isAbortError(error) || isUnrecoverableNetworkError(error)) {
-        throw error;
-      }
-      this.logger.warn(`Google translation failed: ${toErrorMessage(error)}`);
-      return null;
-    }
+    const payload = await this.networkClient.getJson<unknown>(url.toString(), { signal });
+    return extractGoogleTranslatedText(payload);
   }
 }

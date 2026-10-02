@@ -1,12 +1,14 @@
 import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
-import { Website } from "@mdcz/shared/enums";
+import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
+import { FetchNetworkClient } from "./network";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { buildCrawlerOptions } from "./scrape/crawlerOptions";
+import { TranslateService } from "./scrape/TranslateService";
 import { JAVBUS_PAGE_HEADERS } from "./shared";
 import type { LlmApiClient } from "./translate";
-import { testLlmConnectivity } from "./translate/llmTest";
+import { testTranslation } from "./translate/translateTest";
 
 const cloneConfig = (): Configuration => structuredClone(defaultConfiguration);
 
@@ -149,22 +151,27 @@ describe("settings parity runtime helpers", () => {
     "none",
     "json_object",
     "json_schema",
-  ] as const)("validates the metadata translation contract with %s output", async (outputFormat) => {
+  ] as const)("validates the selected translation engine with %s output", async (outputFormat) => {
     const config = cloneConfig();
     config.translate.llmOutputFormat = outputFormat;
+    config.translate.llmApiKey = "test-key";
+    const networkClient = new FetchNetworkClient();
     const llmApiClient = {
-      generateText: vi.fn().mockResolvedValue(JSON.stringify({ title: "某天傍晚", plot: null, genres: ["日常"] })),
+      generateText: vi
+        .fn()
+        .mockResolvedValue(JSON.stringify({ title: "某天傍晚", plot: "某天傍晚的故事。", genres: ["剧情"] })),
     } as unknown as LlmApiClient;
-    const logger = { error: vi.fn(), info: vi.fn() };
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const options = { llmApiClient, logger };
 
-    await expect(testLlmConnectivity({ llmModelName: "" }, config, llmApiClient)).resolves.toEqual({
+    await expect(testTranslation({ llmModelName: "" }, config, networkClient, options)).resolves.toEqual({
       status: "missing_model",
     });
     expect(llmApiClient.generateText).not.toHaveBeenCalled();
 
     config.translate.llmBaseUrl = "https://example.test/v1";
     await expect(
-      testLlmConnectivity(
+      testTranslation(
         {
           llmModelName: "gpt-test",
           llmPrompt: "{lang}:{content}",
@@ -172,15 +179,15 @@ describe("settings parity runtime helpers", () => {
           llmReasoning: "high",
         },
         config,
-        llmApiClient,
-        logger,
+        networkClient,
+        options,
       ),
     ).resolves.toEqual({ status: "ok", sample: "某天傍晚" });
     expect(llmApiClient.generateText).toHaveBeenCalledWith(
       expect.objectContaining({
         baseUrl: "https://example.test/v1",
         model: "gpt-test",
-        prompt: expect.stringContaining('"title":"ある日の暮方の事である。"'),
+        prompt: expect.stringContaining("ある日の暮方の事である。"),
         reasoning: "high",
         temperature: 1.5,
         timeout: 120_000,
@@ -190,23 +197,62 @@ describe("settings parity runtime helpers", () => {
       }),
       undefined,
     );
-    expect(logger.info).toHaveBeenCalledWith("Test LLM connectivity: Success");
+    expect(logger.info).toHaveBeenCalledWith("Translation verification succeeded: engine=openai");
     for (const content of [
-      "普通译文",
-      JSON.stringify({ translation: "普通译文" }),
+      "",
+      "ある日の暮方の事である。",
+      JSON.stringify({ translation: "某天傍晚" }),
       JSON.stringify({ title: "译文", plot: null, genres: [] }),
     ]) {
       vi.mocked(llmApiClient.generateText).mockResolvedValueOnce(content);
-      await expect(testLlmConnectivity({ llmModelName: "gpt-test" }, config, llmApiClient, logger)).resolves.toEqual({
+      await expect(testTranslation({ llmModelName: "gpt-test" }, config, networkClient, options)).resolves.toEqual({
         status: "failed",
         error: expect.stringContaining("invalid structured output"),
       });
     }
 
     vi.mocked(llmApiClient.generateText).mockRejectedValueOnce(new Error("HTTP 400: invalid temperature"));
-    await expect(testLlmConnectivity({ llmModelName: "gpt-test" }, config, llmApiClient, logger)).resolves.toEqual({
+    await expect(testTranslation({ llmModelName: "gpt-test" }, config, networkClient, options)).resolves.toEqual({
       status: "failed",
       error: "HTTP 400: invalid temperature",
     });
+  });
+  it.each([
+    TranslateEngine.GOOGLE,
+    TranslateEngine.DEEPL,
+    TranslateEngine.BAIDU,
+  ] as const)("verifies %s using submitted settings and guards credentials", async (engine) => {
+    const config = cloneConfig();
+    const original = structuredClone(config);
+    const network = new FetchNetworkClient();
+    const translateMetadata = vi.spyOn(TranslateService.prototype, "translateMetadata").mockResolvedValue({
+      title: "某天傍晚",
+      plot: "某天傍晚的故事。",
+      genres: ["劇情"],
+    });
+    if (engine !== TranslateEngine.GOOGLE) {
+      await expect(testTranslation({ engine }, config, network)).resolves.toEqual({ status: "missing_credentials" });
+      expect(translateMetadata).not.toHaveBeenCalled();
+    }
+    const credentials = {
+      [TranslateEngine.GOOGLE]: {},
+      [TranslateEngine.DEEPL]: { deeplApiKey: "edited:fx" },
+      [TranslateEngine.BAIDU]: { baiduAppId: "edited-app", baiduSecretKey: "edited-secret" },
+    }[engine];
+    await expect(
+      testTranslation({ engine, targetLanguage: UiLanguage.ZH_TW, ...credentials }, config, network),
+    ).resolves.toEqual({ status: "ok", sample: "某天傍晚" });
+    expect(translateMetadata).toHaveBeenCalledWith(
+      { title: "ある日の暮方", plot: "ある日の暮方の事である。", genres: ["ドラマ"] },
+      "zh_tw",
+      { ...config, translate: { ...config.translate, engine, targetLanguage: UiLanguage.ZH_TW, ...credentials } },
+    );
+    translateMetadata.mockRejectedValueOnce(new Error("HTTP 503: unavailable"));
+    await expect(testTranslation({ engine, ...credentials }, config, network)).resolves.toEqual({
+      status: "failed",
+      error: "HTTP 503: unavailable",
+    });
+    expect(config).toEqual(original);
+    translateMetadata.mockRestore();
   });
 });

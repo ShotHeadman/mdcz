@@ -1,10 +1,10 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
-import type { LlmApiFormat, LlmOutputFormat, LlmReasoning, LlmServiceType } from "@mdcz/shared/llm";
 import type {
   NetworkCheckCookiesResponse,
   SiteConnectivityProbeResponse,
-  TranslateTestLlmResponse,
+  TranslateTestInputDto,
+  TranslateTestResponse,
 } from "@mdcz/shared/serverDtos";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
@@ -44,18 +44,7 @@ export interface SettingsWatermarkDirectoryOpenResult {
   unsupported?: boolean;
 }
 
-export interface SettingsTranslateTestInput {
-  llmModelName: string;
-  llmApiKey: string;
-  llmBaseUrl: string;
-  llmApiFormat: LlmApiFormat;
-  llmServiceType: LlmServiceType;
-  llmPrompt: string;
-  llmTemperature?: number | null;
-  llmReasoning: LlmReasoning;
-  llmOutputFormat: LlmOutputFormat;
-  llmTimeout: number;
-}
+export type SettingsTranslateTestInput = TranslateTestInputDto;
 
 export interface SettingsServices {
   browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
@@ -77,7 +66,7 @@ export interface SettingsServices {
   relaunchApp: () => Promise<void>;
   resetConfig: (path?: string) => Promise<unknown>;
   saveConfig: (config?: Partial<Configuration>) => Promise<unknown>;
-  testLLM: (input: SettingsTranslateTestInput) => Promise<TranslateTestLlmResponse>;
+  testTranslation: (input: SettingsTranslateTestInput) => Promise<TranslateTestResponse>;
   updateCurrentConfigCache?: (flatPayload: Record<string, unknown>) => void;
 }
 

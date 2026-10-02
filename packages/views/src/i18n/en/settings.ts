@@ -4,10 +4,10 @@ import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { NamingPreviewSampleId } from "@mdcz/shared/types";
 
 export const settings = {
-  llmTest: {
+  translationTest: {
     ok: (sample: string) => `Metadata translation sample verified: ${sample}`,
     missing_model: "Please configure the LLM model name first",
-    missing_api_key: "Please enter the LLM API key (required for the default OpenAI endpoint)",
+    missing_credentials: "Please enter the credentials required by this translation engine",
     failed: "Connection failed",
   },
   siteConnectivity: {
@@ -22,7 +22,12 @@ export const settings = {
     noActor: "No actors",
   } as Record<NamingPreviewSampleId, string>,
   options: {
-    translateEngine: { openai: "LLM translation", google: "Google Translate (free)" },
+    translateEngine: {
+      openai: "LLM translation",
+      google: "Google Translate (free)",
+      deepl: "DeepL / DeepLX",
+      baidu: "Baidu Translate",
+    },
     llmReasoning: { default: "Server default", disabled: "Off", low: "Low", medium: "Medium", high: "High" },
     llmReasoningDeepseek: {
       default: "Server default",

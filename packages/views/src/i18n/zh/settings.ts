@@ -2,10 +2,10 @@ import type { ConfigIssueCode } from "@mdcz/shared/config";
 import type { Messages } from "../en";
 
 export const settings: Messages["settings"] = {
-  llmTest: {
+  translationTest: {
     ok: (sample) => `元数据翻译样例验证通过：${sample}`,
     missing_model: "请先填写 LLM 模型名称",
-    missing_api_key: "请填写 LLM API Key（默认 OpenAI 端点必填）",
+    missing_credentials: "请填写当前翻译引擎所需的凭据",
     failed: "连接失败",
   },
   siteConnectivity: {
@@ -19,7 +19,7 @@ export const settings: Messages["settings"] = {
     noActor: "演员为空",
   },
   options: {
-    translateEngine: { openai: "LLM 翻译", google: "Google 翻译（免费）" },
+    translateEngine: { openai: "LLM 翻译", google: "Google 翻译（免费）", deepl: "DeepL / DeepLX", baidu: "百度翻译" },
     llmReasoning: { default: "服务端默认", disabled: "关闭", low: "低", medium: "中", high: "高" },
     llmReasoningDeepseek: {
       default: "服务端默认",

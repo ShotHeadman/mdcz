@@ -6,7 +6,7 @@ import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { InvalidatePayload, LogPayload, ShortcutPayload, TaskSnapshotPayload } from "@mdcz/shared/ipcEvents";
-import type { AppUpdateStatus, BatchTranslateApplyInput, TranslateTestLlmInput } from "@mdcz/shared/ipcTypes";
+import type { AppUpdateStatus, BatchTranslateApplyInput, TranslateTestInput } from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
@@ -110,7 +110,7 @@ export const ipc = {
     checkCookies: () => client[IpcChannel.Network_CheckCookies](undefined),
   },
   translate: {
-    testLlm: (input: TranslateTestLlmInput) => client[IpcChannel.Translate_TestLlm](input),
+    testTranslation: (input: TranslateTestInput) => client[IpcChannel.Translate_Test](input),
   },
   file: {
     cancelMediaCandidates: (scanId: string) => client[IpcChannel.File_CancelMediaCandidates]({ scanId }),

@@ -1,4 +1,4 @@
-import type { LlmApiFormat, LlmOutputFormat, LlmReasoning, LlmServiceType } from "./llm";
+import type { TranslateTestInputDto } from "./serverDtos";
 
 export type IpcActionContext = {
   // biome-ignore lint/suspicious/noExplicitAny: keep shared IPC contracts structurally compatible with tipc without importing desktop/Electron types.
@@ -35,18 +35,7 @@ export type WatermarkDirectoryInfo = {
   path: string;
 };
 
-export type TranslateTestLlmInput = {
-  llmModelName?: string;
-  llmApiKey?: string;
-  llmBaseUrl?: string;
-  llmApiFormat?: LlmApiFormat;
-  llmServiceType?: LlmServiceType;
-  llmPrompt?: string;
-  llmTemperature?: number | null;
-  llmReasoning?: LlmReasoning;
-  llmOutputFormat?: LlmOutputFormat;
-  llmTimeout?: number;
-};
+export type TranslateTestInput = TranslateTestInputDto;
 
 export type ConnectionCheckStatus = "ok" | "error" | "skipped";
 export type ConnectionServerInfo = {

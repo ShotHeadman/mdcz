@@ -1,11 +1,5 @@
 import { directorySourceSchema } from "@mdcz/shared/directoryTasks";
 import { Website } from "@mdcz/shared/enums";
-import {
-  LLM_API_FORMAT_OPTIONS,
-  LLM_OUTPUT_FORMAT_OPTIONS,
-  LLM_REASONING_OPTIONS,
-  LLM_SERVICE_TYPE_OPTIONS,
-} from "@mdcz/shared/llm";
 import { localFileTargetSchema, rootFileRefSchema, wireRelativeDirectorySchema } from "@mdcz/shared/mediaRef";
 import { normalizedCropRegionSchema } from "@mdcz/shared/posterCrop";
 import {
@@ -67,19 +61,6 @@ export const crawlerTestInputSchema = z.object({
   number: optionalString,
 });
 export const crawlerProbeSiteInputSchema = z.object({ site: z.nativeEnum(Website).optional() });
-
-export const translateTestLlmInputSchema = z.object({
-  llmModelName: optionalString,
-  llmApiKey: optionalString,
-  llmBaseUrl: optionalString,
-  llmApiFormat: z.enum(LLM_API_FORMAT_OPTIONS).optional(),
-  llmServiceType: z.enum(LLM_SERVICE_TYPE_OPTIONS).optional(),
-  llmPrompt: optionalString,
-  llmTemperature: z.number().min(0).max(2).nullable().optional(),
-  llmReasoning: z.enum(LLM_REASONING_OPTIONS).optional(),
-  llmOutputFormat: z.enum(LLM_OUTPUT_FORMAT_OPTIONS).optional(),
-  llmTimeout: z.number().optional(),
-});
 
 export const fileListMediaCandidatesInputSchema = z.object({
   scanId: z.string().min(1).optional(),

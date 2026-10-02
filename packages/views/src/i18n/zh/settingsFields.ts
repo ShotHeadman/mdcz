@@ -12,6 +12,25 @@ export const settingsFields: Messages["settingsFields"] = {
     system: { label: "界面与快捷键", aliases: ["系统", "界面", "快捷键"] },
   },
   fields: {
+    "watch.enabled": {
+      label: "自动刮削新增媒体",
+      description: "仅服务端。监控媒体目录；启动时或修改监控设置后已存在的文件作为基线，需要手动刮削。",
+    },
+    "watch.intervalMinutes": {
+      label: "扫描间隔（分钟）",
+      description: "新增文件的大小和修改时间连续两轮不变后才会提交刮削。",
+    },
+    "translate.deeplApiKey": {
+      label: "DeepL API Key / 端点令牌",
+      description: "官方 DeepL 必填；自定义端点按服务配置填写访问令牌。",
+    },
+    "translate.deeplApiUrl": {
+      label: "DeepL 翻译端点",
+      description:
+        "留空时根据 API Key 选择官方 Free 或 Pro 地址。自建 DeepLX 请填写完整的 /v2/translate 地址；端点允许时可不填 Key。",
+    },
+    "translate.baiduAppId": { label: "百度翻译 App ID" },
+    "translate.baiduSecretKey": { label: "百度翻译密钥" },
     "paths.mediaPath": { label: "媒体目录", aliases: ["媒体库"] },
     "paths.defaultScanExcludeDirs": {
       label: "排除目录",

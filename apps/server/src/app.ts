@@ -24,6 +24,7 @@ import { AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
 import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
+import { FolderWatchService } from "./services/folderWatchService";
 import { LibraryService } from "./services/libraryService";
 import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
@@ -154,6 +155,16 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     auth: options.services?.auth ?? new AuthService(config.runtimePaths),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
     config,
+    folderWatch:
+      options.services?.folderWatch ??
+      new FolderWatchService(
+        config,
+        mediaRoots,
+        scrape,
+        maintenance,
+        persistence,
+        runtimeLogs.getLogger("FolderWatch"),
+      ),
     library,
     maintenance,
     mediaRoots,
@@ -184,6 +195,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     await services.config.load();
     await services.scans.recoverInterrupted();
     await services.auth.status();
+    await services.folderWatch.start();
   });
 
   fastify.addHook("preClose", async () => {
@@ -194,11 +206,10 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.addHook("onClose", async () => {
     if (closed) return;
     closed = true;
-    const results = await Promise.allSettled([
-      services.scans.close(),
-      services.scrape.close(),
-      services.maintenance.close(),
-    ]);
+    const results = await Promise.allSettled([services.folderWatch.close()]);
+    results.push(
+      ...(await Promise.allSettled([services.scans.close(), services.scrape.close(), services.maintenance.close()])),
+    );
     results.push(...(await Promise.allSettled([crawlerProvider.shutdown(), imageHostCooldownStore.flush()])));
     results.push(...(await Promise.allSettled([services.persistence.close()])));
     const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));

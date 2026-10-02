@@ -117,6 +117,10 @@ const translationTargetSchema = z
 const translateSchema = z.object({
   enableTranslation: z.boolean().default(false),
   engine: z.enum(TranslateEngine).default(TranslateEngine.OPENAI),
+  deeplApiKey: z.string().default(""),
+  deeplApiUrl: z.url().or(z.literal("")).default(""),
+  baiduAppId: z.string().default(""),
+  baiduSecretKey: z.string().default(""),
   llmModelName: z.string().default("gpt-5.2"),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
@@ -443,6 +447,12 @@ export const configurationSchema = z
     shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
     ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),
+    watch: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z.number().int().min(1).max(1440).default(5),
+      })
+      .default(() => ({ enabled: false, intervalMinutes: 5 })),
     behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
     titleRepair: titleRepairSchema.default(() => titleRepairSchema.parse({})),
     aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),

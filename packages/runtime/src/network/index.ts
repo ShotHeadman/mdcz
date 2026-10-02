@@ -28,6 +28,7 @@ export interface RuntimeProbeResult {
 }
 
 export interface RuntimeNetworkClient {
+  setDomainLimit?(domain: string, requestsPerSecond: number, concurrency?: number): void;
   getText(url: string, init?: RuntimeRequestInit): Promise<string>;
   getContent?(url: string, init?: RuntimeRequestInit): Promise<Uint8Array>;
   getJson<T>(url: string, init?: RuntimeRequestInit): Promise<T>;

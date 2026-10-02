@@ -41,7 +41,7 @@ const baseSettingsServices = {
   relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
   saveConfig: vi.fn(async () => undefined),
-  testLLM: vi.fn(async () => ({ status: "ok" as const, sample: "" })),
+  testTranslation: vi.fn(async () => ({ status: "ok" as const, sample: "" })),
 } satisfies SettingsServices;
 
 const createSettingsServices = (overrides: Partial<SettingsServices> = {}): SettingsServices => ({
@@ -78,10 +78,17 @@ function FormHarness({
   );
 }
 
-function SettingsSurfaceHarness() {
+function SettingsSurfaceHarness({
+  engine = "openai",
+  isServer = false,
+}: {
+  engine?: "openai" | "deepl" | "baidu";
+  isServer?: boolean;
+}) {
   const configuration = useMemo(
     () => ({
       ...defaultConfiguration,
+      translate: { ...defaultConfiguration.translate, engine },
       behavior: {
         ...defaultConfiguration.behavior,
         metadataOnly: true,
@@ -101,11 +108,11 @@ function SettingsSurfaceHarness() {
         enabled: true,
       },
     }),
-    [],
+    [engine],
   );
 
   return (
-    <SettingsServicesProvider notifier={settingsNotifier} services={baseSettingsServices}>
+    <SettingsServicesProvider notifier={settingsNotifier} services={{ ...baseSettingsServices, isServer }}>
       <SettingsEditor
         data={configuration}
         defaultConfig={configuration}
@@ -151,14 +158,12 @@ test("settings editor renders every visible registry field", async () => {
     const expectedFields = SETTINGS_FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map(
       (entry) => entry.key,
     );
-    await expect.poll(() => screen.container.querySelectorAll("[data-field-name]").length).toBe(expectedFields.length);
-
-    const renderedFields = Array.from(
-      screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),
-      (element) => element.dataset.fieldName,
-    ).filter((key): key is string => Boolean(key));
-
-    expect(new Set(renderedFields)).toEqual(new Set(expectedFields));
+    const renderedFields = new Set(
+      Array.from(
+        screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),
+        (element) => element.dataset.fieldName,
+      ).filter((key): key is string => Boolean(key)),
+    );
 
     for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
       ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
@@ -174,6 +179,16 @@ test("settings editor renders every visible registry field", async () => {
       await expect.element(dialog.getByText(`javbus · ${javbusHost}`, { exact: true })).toBeVisible();
       await dialog.getByRole("button", { name: "完成", exact: true }).click();
     }
+    await screen.unmount();
+    for (const engine of ["deepl", "baidu"] as const) {
+      const variant = await render(<SettingsSurfaceHarness engine={engine} isServer />);
+      await variant.getByRole("button", { name: "显示高级设置" }).click();
+      for (const element of variant.container.querySelectorAll<HTMLElement>("[data-field-name]")) {
+        if (element.dataset.fieldName) renderedFields.add(element.dataset.fieldName);
+      }
+      await variant.unmount();
+    }
+    expect(renderedFields).toEqual(new Set(expectedFields));
   } finally {
     vi.stubGlobal("IntersectionObserver", nativeIntersectionObserver);
   }
@@ -300,9 +315,13 @@ test("server path fields keep autocomplete suggestions without browse buttons", 
   expect(screen.container.querySelector("datalist")).toBeNull();
 });
 
-test("paths section surfaces scan exclusion directories with autocomplete inputs", async () => {
+test.each([
+  false,
+  true,
+])("paths section surfaces exclusions and server-only monitoring (server=%s)", async (isServer) => {
   const screen = await render(
     <FormHarness
+      services={createSettingsServices({ isServer })}
       values={{
         paths: {
           defaultScanExcludeDirs: ["E:/Output", "failed_22"],
@@ -320,6 +339,34 @@ test("paths section surfaces scan exclusion directories with autocomplete inputs
   expect(pathInputs.some((input) => input.value === "E:/Output")).toBe(true);
   expect(pathInputs.some((input) => input.value === "failed_22")).toBe(true);
   expect(pathInputs.length).toBeGreaterThanOrEqual(2);
+  expect(screen.container.querySelector('[data-field-name="watch.enabled"]') !== null).toBe(isServer);
+  expect(screen.container.querySelector('[data-field-name="watch.intervalMinutes"] input') !== null).toBe(isServer);
+});
+
+test.each(["deepl", "baidu"] as const)("translation verification sends edited %s credentials", async (engine) => {
+  const testTranslation = vi.fn(async () => ({ status: "ok" as const, sample: "测试译文" }));
+  const screen = await render(
+    <FormHarness
+      values={{ ...defaultConfiguration, translate: { ...defaultConfiguration.translate, engine } }}
+      services={createSettingsServices({ testTranslation })}
+    >
+      <TranslateTopLevelSection forceOpen />
+    </FormHarness>,
+  );
+  const credentials =
+    engine === "deepl"
+      ? { deeplApiKey: "edited-key", deeplApiUrl: "http://localhost:1188/v2/translate" }
+      : { baiduAppId: "edited-app", baiduSecretKey: "edited-secret" };
+  for (const [key, value] of Object.entries(credentials)) {
+    const input = screen.container.querySelector(`[data-field-name="translate.${key}"] input`);
+    if (!input) throw new Error(`Missing credential field ${key}`);
+    await page.elementLocator(input).fill(value);
+  }
+  expect(screen.container.querySelector('[data-field-name="translate.llmModelName"]')).toBeNull();
+  await screen.getByRole("button", { name: "验证元数据翻译" }).click();
+  expect(testTranslation).toHaveBeenCalledWith(
+    expect.objectContaining({ engine, targetLanguage: "zh-CN", ...credentials }),
+  );
 });
 
 test("settings sections expose public labels and naming placeholder help", async () => {
@@ -359,6 +406,7 @@ test("settings sections expose public labels and naming placeholder help", async
   );
   await expect.element(translate.getByText("翻译服务")).toBeVisible();
   await expect.element(translate.getByText("翻译引擎")).toBeVisible();
+  await expect.element(translate.getByRole("button", { name: "验证元数据翻译" })).toBeVisible();
 
   const behavior = await render(
     <FormHarness

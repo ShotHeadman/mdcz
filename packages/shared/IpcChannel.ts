@@ -29,7 +29,7 @@ export enum IpcChannel {
 
   Network_CheckCookies = "network:check-cookies",
 
-  Translate_TestLlm = "translate:test-llm",
+  Translate_Test = "translate:test",
   File_CancelMediaCandidates = "file:cancel-media-candidates",
   File_ListMediaCandidates = "file:list-media-candidates",
   File_Exists = "file:exists",
