@@ -43,7 +43,6 @@ const waitForAbort = async (signal: AbortSignal, gate: Promise<void>): Promise<v
 };
 
 const createStore = (run: Run): ScrapeRunStore<Run> => ({
-  rerunDirectory: vi.fn(async () => run),
   finalize: vi.fn(async () => run),
   interruptUnfinished: vi.fn(),
 });
@@ -55,6 +54,7 @@ const createHost = (
 ): ScrapeHostPort<string, Run, ScrapeRunItem, undefined> => ({
   create: vi.fn(async () => run),
   retry: vi.fn(async () => run),
+  rerunDirectory: vi.fn(async () => run),
   runId: (entry) => entry.id,
   describe: (entry) => ({ totalItems: entry.items.length }),
   createExecution: async (entry) => ({

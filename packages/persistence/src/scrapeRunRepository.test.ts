@@ -62,12 +62,10 @@ describe("ScrapeRunRepository", () => {
       outputRootId: "requested-output",
       executionMode: "batch",
       directoryScopeJson: JSON.stringify(scope),
-      configurationJson: '{"scrape":"captured"}',
       items: [],
     });
     expect(run).toMatchObject({
       directoryScopeJson: JSON.stringify(scope),
-      configurationJson: '{"scrape":"captured"}',
       manifestFixedAt: null,
       items: [],
     });
@@ -110,7 +108,6 @@ describe("ScrapeRunRepository", () => {
     expect(rerun).toMatchObject({
       previousRunId: run.id,
       directoryScopeJson: JSON.stringify(scope),
-      configurationJson: '{"scrape":"captured"}',
       manifestFixedAt: null,
       items: [],
     });

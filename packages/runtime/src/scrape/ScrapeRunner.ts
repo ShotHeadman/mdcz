@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { LibraryRepository, ScrapeRunManifest, ScrapeRunRecord, ScrapeRunRepository } from "@mdcz/persistence";
-import { type Configuration, configurationSchema } from "@mdcz/shared/config";
+import type { Configuration } from "@mdcz/shared/config";
 import {
   type DirectorySource,
   type DirectoryTaskScope,
@@ -135,6 +135,9 @@ type ScrapeRunnerStartContext = {
 };
 
 type ScrapeRunContext = {
+  // Frozen for one run so a batch never mixes behaviours; retries and reruns start new runs from current settings.
+  // Connection settings (proxy, timeout, retries) stay live because NetworkClient reads them per request.
+  configuration: Configuration;
   inventory?: DirectoryInventory;
   groups?: MovieGroup[];
   rootGuard?: ReturnType<ConfiguredMediaRootService["rootIntegrityGuard"]>;
@@ -248,6 +251,12 @@ export class ScrapeRunner {
     this.host = {
       create: (input) => this.createRun(input),
       retry: (runId, itemIds) => this.createRetryRun(runId, itemIds),
+      rerunDirectory: async (runId) => {
+        const configuration = structuredClone(await this.deps.getConfiguration());
+        const run = await this.deps.persistence.scrapeRuns.rerunDirectory(runId);
+        this.runContexts.set(run.id, { configuration });
+        return run;
+      },
       runId: (run) => run.id,
       describe: (run) => ({ totalItems: run.manifestFixedAt ? run.items.length : null }),
       discover: (run, signal, onProgress) => this.discoverRun(run, signal, onProgress),
@@ -276,8 +285,6 @@ export class ScrapeRunner {
   async start(input: ScrapeRunnerStartInput): Promise<StartScrapeResult> {
     if (this.closed) throw new Error("Scrape queue is closing");
     const configuration = structuredClone(await this.deps.getConfiguration());
-    applyScrapeNetworkPolicy(this.deps.networkClient, configuration);
-
     const normalized = await this.normalizeStartInput(input, configuration);
     const snapshot = await (await this.coordinator()).start({ normalized, configuration });
     return await this.accepted(snapshot.runId, "start", snapshot.progress.totalItems);
@@ -701,15 +708,16 @@ export class ScrapeRunner {
     const { normalized, configuration } = input;
 
     if (normalized.mode === "directory") {
-      return await this.deps.persistence.scrapeRuns.create({
+      const run = await this.deps.persistence.scrapeRuns.create({
         rootId: normalized.rootId,
         outputRootId: normalized.outputRootId,
         outputRelativeDirectory: normalized.outputRelativeDirectory || null,
         executionMode: "batch",
-        configurationJson: JSON.stringify(configuration),
         directoryScopeJson: JSON.stringify(normalized.scope),
         items: [],
       });
+      this.runContexts.set(run.id, { configuration });
+      return run;
     }
 
     const rawRefs = normalized.mode === "single" ? [normalized.ref] : normalized.refs;
@@ -737,7 +745,6 @@ export class ScrapeRunner {
       outputRootId,
       outputRelativeDirectory,
       executionMode: normalized.mode,
-      configurationJson: JSON.stringify(configuration),
       items: members.map((member, ordinal) => ({
         id: member.fileId,
         ordinal,
@@ -747,7 +754,7 @@ export class ScrapeRunner {
       })),
     });
 
-    this.runContexts.set(manifest.id, { inventory, groups });
+    this.runContexts.set(manifest.id, { configuration, inventory, groups });
     return manifest;
   }
 
@@ -774,7 +781,7 @@ export class ScrapeRunner {
         itemsById.set(item.id, item);
       }
     }
-    const configuration = JSON.parse(run.configurationJson ?? "{}");
+    const configuration = structuredClone(await this.deps.getConfiguration());
     const seedKeys = new Set<string>();
     if (itemIds) {
       for (const itemId of itemIds) {
@@ -801,7 +808,7 @@ export class ScrapeRunner {
       directories.set(item.id, filesystemPathKey(await inventory.canonicalDirectory(directory)));
     }
     const retryIds = new Set(
-      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape?.filenameIgnoreTokens, (item) => {
+      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape.filenameIgnoreTokens, (item) => {
         const directory = directories.get(item.id);
         if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
         return directory;
@@ -828,7 +835,6 @@ export class ScrapeRunner {
       outputRootId: run.requestedOutputRootId,
       outputRelativeDirectory: run.requestedOutputRelativeDirectory,
       executionMode: run.executionMode,
-      configurationJson: run.configurationJson ?? undefined,
       items: members.map((member, ordinal) => {
         const original = itemsToRetry.find(
           (item) => item.rootId === member.source.rootId && item.relativePath === member.source.relativePath,
@@ -843,7 +849,7 @@ export class ScrapeRunner {
         };
       }),
     });
-    this.runContexts.set(manifest.id, { inventory, groups });
+    this.runContexts.set(manifest.id, { configuration, inventory, groups });
     return manifest;
   }
 
@@ -852,16 +858,16 @@ export class ScrapeRunner {
     signal: AbortSignal,
     onProgress: (progress: DiscoveryProgress) => void,
   ): Promise<ScrapeRunManifest> {
-    if (!run.directoryScopeJson || !run.configurationJson) {
-      throw new Error("Directory run is missing its scope or configuration");
-    }
+    if (!run.directoryScopeJson) throw new Error("Directory run is missing its scope");
+    const context = this.runContexts.get(run.id);
+    if (!context) throw new Error(`Scrape run is not prepared: ${run.id}`);
 
     const repository = this.deps.persistence;
     const checkRoots = repository.mediaRoots.rootIntegrityGuard();
-    this.runContexts.set(run.id, { rootGuard: checkRoots });
+    context.rootGuard = checkRoots;
     const found = await discoverDirectoryFiles({
       scope: directoryTaskScopeSchema.parse(JSON.parse(run.directoryScopeJson)),
-      configuration: configurationSchema.parse(JSON.parse(run.configurationJson)),
+      configuration: context.configuration,
       mediaRoots: repository.mediaRoots,
       checkRoots,
       signal,
@@ -873,7 +879,7 @@ export class ScrapeRunner {
       refs: found.refs,
       resolveRoot: (id) => repository.mediaRoots.get(id),
       inventory: found.inventory,
-      configuration: configurationSchema.parse(JSON.parse(run.configurationJson)),
+      configuration: context.configuration,
       expandParts: false,
     });
     const manifest = await repository.scrapeRuns.fixManifest({
@@ -888,8 +894,6 @@ export class ScrapeRunner {
           ordinal,
         })),
     });
-    const context = this.runContexts.get(run.id);
-    if (!context) throw new Error(`Scrape run is not prepared: ${run.id}`);
     context.groups = groups;
     context.inventory = found.inventory;
     return manifest;
@@ -908,7 +912,7 @@ export class ScrapeRunner {
     this.runContexts.delete(manifest.id);
     await checkRoots([...new Set([...manifest.items.map((item) => item.rootId), ...outputRootIds])]);
 
-    const configuration = configurationSchema.parse(JSON.parse(manifest.configurationJson ?? "null"));
+    const { configuration } = context;
     applyScrapeNetworkPolicy(this.deps.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
 

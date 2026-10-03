@@ -68,7 +68,6 @@ export const scrapeRuns = sqliteTable(
     outputRelativeDirectory: text("output_relative_directory"),
     executionMode: text("execution_mode").$type<"single" | "batch">().notNull(),
     directoryScopeJson: text("directory_scope_json"),
-    configurationJson: text("configuration_json"),
     manifestJson: text("manifest_json"),
     manifestFixedAt: integer("manifest_fixed_at", { mode: "timestamp_ms" }),
     discoveryJson: text("discovery_json"),

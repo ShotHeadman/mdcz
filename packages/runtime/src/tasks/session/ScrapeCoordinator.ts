@@ -12,7 +12,6 @@ import {
 export type ScrapeWorkflowDisposition = "completed" | "failed" | "stopped" | "interrupted";
 
 export interface ScrapeRunStore<TRun> {
-  rerunDirectory(runId: string): Promise<TRun>;
   finalize(input: {
     discoveryJson?: string;
     runId: string;
@@ -35,6 +34,7 @@ export interface ScrapeWorkflowReporter {
 export interface ScrapeHostPort<TStart, TRun, TItem extends ScrapeRunItem = ScrapeRunItem, TPrepared = unknown> {
   create(input: TStart): Promise<TRun>;
   retry?(runId: string, itemIds?: readonly string[]): Promise<TRun>;
+  rerunDirectory(runId: string): Promise<TRun>;
   runId(run: TRun): string;
   describe(run: TRun): { totalItems: number | null };
   discover?(run: TRun, signal: AbortSignal, onProgress: (progress: DiscoveryProgress) => void): Promise<TRun>;
@@ -86,7 +86,7 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
   async rerunDirectory(runId: string): Promise<ScrapeRunSnapshot<TItem>> {
     this.assertOpen();
     if (this.entries.has(runId)) throw new Error(`Scrape run is already live: ${runId}`);
-    return await this.register(this.store.rerunDirectory(runId));
+    return await this.register(this.host.rerunDirectory(runId));
   }
 
   liveRuns(): Array<{ run: TRun; snapshot: ScrapeRunSnapshot<TItem>; startedAt: Date | null }> {

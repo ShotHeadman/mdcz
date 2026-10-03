@@ -19,7 +19,6 @@ const manifest: ScrapeRunRecord = {
   requestedOutputRelativeDirectory: null,
   executionMode: "single",
   directoryScopeJson: null,
-  configurationJson: JSON.stringify(defaultConfiguration),
   manifestFixedAt: new Date(),
   discoveryJson: null,
   totalItems: 1,
