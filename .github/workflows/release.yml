@@ -35,6 +35,11 @@ jobs:
 
   version:
     needs: checks
+    # Serialized and run against the latest main, so back-to-back merges bump on top of
+    # each other's release commit instead of racing to push the same tag. Only the commit
+    # that passed `checks` may be released; a run whose commit is no longer the tip skips,
+    # because the newer push's run checks and releases a superset of it.
+    concurrency: release
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
@@ -44,6 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           fetch-depth: 0
 
       - uses: jdx/mise-action@v4
@@ -52,7 +58,10 @@ jobs:
         id: check
         run: |
           LAST_MSG=$(git log -1 --pretty=%s)
-          if [[ "$LAST_MSG" == chore\(release\):* ]]; then
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            echo "::notice::main moved past checked commit $GITHUB_SHA; its newer run releases it"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$LAST_MSG" == chore\(release\):* ]]; then
             echo "skipped=true" >> "$GITHUB_OUTPUT"
           else
             echo "skipped=false" >> "$GITHUB_OUTPUT"
@@ -111,11 +120,17 @@ jobs:
           - os: ubuntu-latest
             script: build:linux
             artifact: desktop-linux
-            glob: "release/*/*.AppImage"
+            glob: |
+              release/*/*.AppImage
+              release/*/latest-linux.yml
           - os: windows-latest
             script: build:win
             artifact: desktop-windows
-            glob: "release/*/*.exe"
+            glob: |
+              release/*/*-setup.exe
+              release/*/*-setup.exe.blockmap
+              release/*/*-portable.zip
+              release/*/latest.yml
           - os: macos-latest
             script: build:mac
             artifact: desktop-macos
@@ -132,9 +147,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.tag }}
 
-      - uses: jdx/mise-action@v4
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Build
         run: pnpm ${{ matrix.script }}

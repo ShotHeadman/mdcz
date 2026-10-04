@@ -2,16 +2,13 @@
 
 ## 环境准备
 
-- [Node.js](https://nodejs.org/) 22+
-- [pnpm](https://pnpm.io/) 10+
-
-## 安装与启动
+工具链版本固定在 [mise.toml](mise.toml) 中。安装 [mise](https://mise.jdx.dev/) 后在仓库根目录执行：
 
 ```bash
-git clone https://github.com/ShotHeadman/mdcz.git
-cd mdcz
+mise install
 pnpm install
-pnpm dev:webui
+pnpm dev:webui      # WebUI 模式（server + web）
+pnpm dev:desktop    # 桌面端模式
 ```
 
 ## 测试
@@ -44,28 +41,23 @@ pnpm typecheck
 ## 代码结构
 
 ```
-apps/desktop/src/
-├── main/                # Electron 主进程
-│   ├── ipc/             # IPC 通信路由
-│   ├── services/        # 业务逻辑
-│   │   ├── crawler/     # 各网站爬虫
-│   │   ├── scraper/     # 刮削服务
-│   │   ├── config/      # 配置管理
-│   │   ├── emby/        # Emby 集成
-│   │   └── network/     # HTTP 客户端
-│   └── utils/           # 工具函数
-├── preload/             # Electron preload 脚本
-├── renderer/src/        # React 前端
-│   ├── routes/          # 页面组件
-│   ├── components/      # 可复用 UI 组件
-│   ├── store/           # Zustand 状态管理
-│   └── client/          # IPC 客户端
-└── types/               # Desktop-only TypeScript 类型
-
+apps/
+├── desktop/      # Electron 桌面端：main 主进程、preload、renderer 界面
+├── server/       # WebUI / Docker 后端：HTTP 与 tRPC 路由、任务队列
+└── web/          # WebUI 前端
 packages/
-├── shared/              # 跨进程共享代码
-├── client/              # 客户端 DTO/contract 类型
-├── storage/             # 挂载文件系统与媒体根路径
-├── persistence/         # Drizzle/SQLite 持久化
-└── core/                # 后续抽离的领域工作流逻辑
+├── runtime/      # 刮削、爬虫、媒体库整理、媒体服务器同步、翻译等核心业务
+├── views/        # 桌面端与 WebUI 共用的页面、状态与 i18n
+├── ui/           # 基础 UI 组件
+├── shared/       # 跨进程共享的类型、配置 schema 与 IPC 契约
+├── persistence/  # Drizzle/SQLite 持久化与迁移
+└── media-store/  # 媒体根目录与文件系统访问
 ```
+
+## 发版
+
+1. 在 `feat/<版本>` 分支开发，完成后向 `main` 提 PR，CI 通过后合并。
+2. 合并后 `release.yml` 会按 Conventional Commits 递增版本号、推送 tag、构建全部平台并创建 **草稿** Release。
+3. 补充 Release 说明后手动发布。
+
+如果构建在 tag 推送之后失败，请在原来那次 run 上点「Re-run failed jobs」。手动触发 `workflow_dispatch` 会因最新 commit 已是 `chore(release)` 而跳过全部任务。

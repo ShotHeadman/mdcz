@@ -107,6 +107,7 @@ export function isFieldVisible(entry: FieldEntry, state: SettingsFilterState): b
   if (state.target === "server" && (entry.key.startsWith("shortcuts.") || entry.key.startsWith("ui."))) {
     return false;
   }
+  if (state.target === "desktop" && entry.key.startsWith("watch.")) return false;
 
   if (entry.visibility === "advanced" && !showAdvanced) {
     return false;

@@ -41,6 +41,36 @@ const sections: Record<FieldAnchor, SectionText> = {
 };
 
 const fields: Record<FieldKey, FieldText> = {
+  "watch.enabled": {
+    label: "Automatically scrape new media",
+    description:
+      "Server only. Watch the media directory; files already present at startup or after changing watch settings become the baseline and require manual scraping.",
+  },
+  "watch.intervalMinutes": {
+    label: "Scan interval (minutes)",
+    description: "New files are submitted after their size and modification time remain unchanged across two scans.",
+  },
+  "translate.deeplApiKey": {
+    label: "DeepL API key",
+    description: "Free keys ending in :fx use the Free API; other keys use the Pro API.",
+  },
+  "translate.baiduService": {
+    label: "Baidu translation service",
+    description:
+      "Enable the service on the Baidu Translate Open Platform first. General text translation uses the secret key; LLM text translation uses an API key.",
+  },
+  "translate.baiduAppId": {
+    label: "Baidu translation APPID",
+    description: "Shown on the Developer Information page of the Baidu Translate Open Platform.",
+  },
+  "translate.baiduSecretKey": {
+    label: "Baidu translation secret key",
+    description: "Shown on the Developer Information page.",
+  },
+  "translate.baiduApiKey": {
+    label: "Baidu translation API key",
+    description: "Create it under API Key Management in the console.",
+  },
   "paths.mediaPath": { label: "Media directory", aliases: ["media", "library"] },
   "paths.defaultScanExcludeDirs": {
     label: "Excluded directories",
@@ -127,6 +157,11 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "Files and folders (with everything inside) whose names contain these words are excluded from automatic scans; matching is case-insensitive. Add with Enter, comma or space.",
   },
+  "scrape.minVideoSizeMb": {
+    label: "Minimum video size (MB)",
+    description:
+      "Videos smaller than this size are excluded from scraping candidates. 0 means no limit; STRM files are unaffected.",
+  },
   "scrape.threadNumber": { label: "Concurrent threads" },
   "scrape.javdbDelaySeconds": { label: "JavDB request delay (s)" },
   "scrape.restAfterCount": { label: "Pause after consecutive scrapes (items)" },
@@ -136,6 +171,16 @@ const fields: Record<FieldKey, FieldText> = {
   "network.useProxy": { label: "Use proxy" },
   "network.timeout": { label: "Timeout (s)" },
   "network.retryCount": { label: "Retry count" },
+  "network.javdbUrl": {
+    label: "JavDB URL",
+    description: "Leave empty to use https://javdb.com. Enter a mirror address if the official site is blocked.",
+    aliases: ["mirror", "domain", "javdb", "url"],
+  },
+  "network.javbusUrl": {
+    label: "JavBus URL",
+    description: "Leave empty to use https://www.javbus.com. Enter a mirror address if the official site is blocked.",
+    aliases: ["mirror", "domain", "javbus", "url"],
+  },
   "network.javdbCookie": { label: "JavDB Cookie", aliases: ["cookie", "javdb", "credentials"] },
   "network.javbusCookie": { label: "JavBus Cookie", aliases: ["cookie", "javbus", "credentials"] },
   "network.fantiaCookie": { label: "Fantia Cookie", aliases: ["cookie", "fantia", "credentials"] },

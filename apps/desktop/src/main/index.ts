@@ -9,9 +9,7 @@ import { loggerService } from "@main/services/LoggerService";
 import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
 import { TrayService } from "@main/services/TrayService";
-import { UpdateService } from "@main/services/UpdateService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
-import { shouldRunStartupUpdateCheck } from "@main/updateCheckPolicy";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { app, BrowserWindow } from "electron";
 
@@ -25,7 +23,6 @@ const sharedNetworkClient = createAppNetworkClient({
   getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
   getRetryCount: () => configManager.getComputed().networkRetryCount,
 });
-const updateService = new UpdateService(sharedNetworkClient);
 let windowService: WindowService | null = null;
 let serviceContainer: ServiceContainer | null = null;
 const trayService = new TrayService();
@@ -114,6 +111,13 @@ const cleanupResources = async (): Promise<void> => {
       logger.error(`Failed to finalize network resources: ${message}`);
       process.exitCode = 1;
     }
+    try {
+      serviceContainer?.updateService.installDownloadedUpdate();
+    } catch (error) {
+      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      logger.error(`Failed to start update installer: ${message}`);
+      process.exitCode = 1;
+    }
 
     disposeLoggerListener?.();
     disposeLoggerListener = null;
@@ -162,11 +166,9 @@ if (!app.requestSingleInstanceLock()) {
           windowService.applyUiConfig(configuration.ui);
         });
 
-        // Check for updates on startup (after a short delay to avoid blocking)
-        if (shouldRunStartupUpdateCheck({ enabled: initialConfig.behavior.updateCheck, isPackaged: app.isPackaged })) {
-          setTimeout(() => {
-            void updateService.checkAndNotify(signalService);
-          }, 5000);
+        if (initialConfig.behavior.updateCheck && app.isPackaged) {
+          const { updateService } = await ensureServiceContainer();
+          setTimeout(() => void updateService.check(), 5000);
         }
       }
 

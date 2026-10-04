@@ -1,8 +1,14 @@
-export const JAVBUS_BASE_URL = "https://www.javbus.com";
-export const JAVBUS_HOME_URL = `${JAVBUS_BASE_URL}/`;
-export const JAVBUS_REQUEST_HEADERS = {
-  referer: JAVBUS_HOME_URL,
+import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
+
+export const JAVBUS_PAGE_HEADERS = {
   "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,ja;q=0.6",
+} as const;
+
+// Official image hosts such as pics.javbus.com reject requests without the main site referer.
+export const JAVBUS_OFFICIAL_REQUEST_HEADERS = {
+  ...JAVBUS_PAGE_HEADERS,
+  referer: `${OFFICIAL_SITE_URLS[Website.JAVBUS]}/`,
 } as const;
 
 export type JavbusPageClassification = "content" | "verification_required" | "login_wall" | "unknown";

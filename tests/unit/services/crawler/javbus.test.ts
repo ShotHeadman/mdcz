@@ -87,9 +87,32 @@ describe("JavbusCrawler", () => {
           expect(data.result.data.title).toBe("Title With Underscore URL");
         },
       },
+      {
+        number: "MIRR-002",
+        baseUrl: "https://javbus-mirror.example",
+        searchUrl: "https://javbus-mirror.example/search/MIRR-002",
+        detailUrl: "https://javbus-mirror.example/MIRR-002",
+        searchHtml: `
+          <html><body>
+            <a class="movie-box" href="/MIRR-002"></a>
+          </body></html>
+        `,
+        detailHtml: `
+          <html><body>
+            <h3>MIRR-002 Mirror Title</h3>
+            <a class="bigImage" href="/pics/cover/mirror_b.jpg">cover</a>
+          </body></html>
+        `,
+        assert: (data: Awaited<ReturnType<JavbusCrawler["crawl"]>>) => {
+          if (!data.result.success) {
+            throw new Error("expected success");
+          }
+          expect(data.result.data.thumb_url).toBe("https://javbus-mirror.example/pics/cover/mirror_b.jpg");
+        },
+      },
     ];
 
-    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, assert } of cases) {
+    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, baseUrl, assert } of cases) {
       const fixtures = new Map<string, string>([
         [searchUrl, searchHtml],
         [detailUrl, detailHtml],
@@ -99,6 +122,7 @@ describe("JavbusCrawler", () => {
       const response = await crawler.crawl({
         number,
         site: Website.JAVBUS,
+        options: { baseUrl },
       });
 
       expect(response.result.success).toBe(true);

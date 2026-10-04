@@ -1,4 +1,4 @@
-import type { LlmApiFormat, LlmOutputFormat, LlmReasoning, LlmServiceType } from "./llm";
+import type { TranslateTestInputDto } from "./serverDtos";
 
 export type IpcActionContext = {
   // biome-ignore lint/suspicious/noExplicitAny: keep shared IPC contracts structurally compatible with tipc without importing desktop/Electron types.
@@ -23,22 +23,19 @@ export type AppInfo = {
   isPackaged: boolean;
 };
 
+/** `manualDownloadUrl` is null when the running build can download and install the update itself. */
+export type AppUpdateStatus =
+  | { phase: "idle" | "checking" | "latest" }
+  | { phase: "available"; version: string; releaseUrl: string; manualDownloadUrl: string | null }
+  | { phase: "downloading"; version: string; percent: number }
+  | { phase: "downloaded"; version: string }
+  | { phase: "error"; message: string };
+
 export type WatermarkDirectoryInfo = {
   path: string;
 };
 
-export type TranslateTestLlmInput = {
-  llmModelName?: string;
-  llmApiKey?: string;
-  llmBaseUrl?: string;
-  llmApiFormat?: LlmApiFormat;
-  llmServiceType?: LlmServiceType;
-  llmPrompt?: string;
-  llmTemperature?: number | null;
-  llmReasoning?: LlmReasoning;
-  llmOutputFormat?: LlmOutputFormat;
-  llmTimeout?: number;
-};
+export type TranslateTestInput = TranslateTestInputDto;
 
 export type ConnectionCheckStatus = "ok" | "error" | "skipped";
 export type ConnectionServerInfo = {

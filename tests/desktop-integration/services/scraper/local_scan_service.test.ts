@@ -166,7 +166,8 @@ describe("LocalScanService", () => {
     const linkedMetadata = join(root, "metadata.xml");
     await writeFile(linkedMetadata, xml);
 
-    for (const linked of [false, true]) {
+    // Creating file symlinks on Windows requires elevation or Developer Mode.
+    for (const linked of process.platform === "win32" ? [false] : [false, true]) {
       const movieDir = join(root, linked ? "linked" : "regular");
       await mkdir(movieDir);
       const partPaths = [1, 2].map((part) => join(movieDir, `FC2-123456-cd${part}.mp4`));

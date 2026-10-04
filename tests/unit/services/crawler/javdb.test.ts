@@ -9,7 +9,7 @@ describe("JavdbCrawler", () => {
     const cases = [
       {
         number: "SSIS-243",
-        searchUrl: "https://javdb.com/search?q=SSIS-243&locale=zh",
+        searchUrl: "https://javdb.com/search?q=SSIS-243",
         detailUrl: "https://javdb.com/v/abcd1",
         searchHtml: `
           <html><body>
@@ -36,8 +36,7 @@ describe("JavdbCrawler", () => {
             <div class="panel-block">
               <strong>演員:</strong>
               <span class="value">
-                <a>Actor1</a><strong class="symbol female">♀</strong>
-                <a>Actor2</a><strong class="symbol female">♀</strong>
+                <a class="actor-female" href="/actors/1">Actor1</a>, <a class="actor-female" href="/actors/2">Actor2</a>
               </span>
             </div>
             <img class="video-cover" src="/covers/cover1.jpg" />
@@ -74,7 +73,7 @@ describe("JavdbCrawler", () => {
       },
       {
         number: "ABF-075",
-        searchUrl: "https://javdb.com/search?q=ABF-075&locale=zh",
+        searchUrl: "https://javdb.com/search?q=ABF-075",
         detailUrl: "https://javdb.com/v/ner5DV",
         searchHtml: `
           <html><body>
@@ -93,9 +92,7 @@ describe("JavdbCrawler", () => {
             <div class="panel-block">
               <strong>演員:</strong>
               <span class="value">
-                <a href="/actors/a">吉村卓</a><strong class="symbol male">♂</strong>&nbsp;
-                <a href="/actors/b">貞松大輔</a><strong class="symbol male">♂</strong>&nbsp;
-                <a href="/actors/c">瀧本雫葉</a><strong class="symbol female">♀</strong>&nbsp;
+                <a class="actor-female" href="/actors/c">瀧本雫葉</a>, <a href="/actors/a">吉村卓</a>, <a href="/actors/b">貞松大輔</a>
               </span>
             </div>
           </body></html>
@@ -110,7 +107,7 @@ describe("JavdbCrawler", () => {
       },
       {
         number: "ABW-123",
-        searchUrl: "https://javdb.com/search?q=ABW-123&locale=zh",
+        searchUrl: "https://javdb.com/search?q=ABW-123",
         detailUrl: "https://javdb.com/v/fuzzy1",
         searchHtml: `
           <html><body>
@@ -139,7 +136,7 @@ describe("JavdbCrawler", () => {
       },
       {
         number: "MIDE-999",
-        searchUrl: "https://javdb.com/search?q=MIDE-999&locale=zh",
+        searchUrl: "https://javdb.com/search?q=MIDE-999",
         detailUrl: "https://javdb.com/v/fallback1",
         searchHtml: `
           <html><body>
@@ -179,26 +176,53 @@ describe("JavdbCrawler", () => {
           expect(data.result.data.genres).toEqual(["Tag A", "Tag B"]);
         },
       },
+      {
+        number: "MIRR-001",
+        baseUrl: "https://javdb571.com",
+        searchUrl: "https://javdb571.com/search?q=MIRR-001",
+        detailUrl: "https://javdb571.com/v/mirror1",
+        searchHtml: `
+          <html><body>
+            <a class="box" href="/v/mirror1">
+              <div class="video-title"><strong>MIRR-001</strong></div>
+            </a>
+          </body></html>
+        `,
+        detailHtml: `
+          <html><body>
+            <h2 class="title is-4"><strong class="current-title">Mirror Title</strong></h2>
+            <img class="video-cover" src="/covers/mirror.jpg" />
+          </body></html>
+        `,
+        cookies: undefined,
+        assert: (data: ReturnType<JavdbCrawler["crawl"]> extends Promise<infer T> ? T : never) => {
+          if (!data.result.success) {
+            throw new Error("expected success");
+          }
+          expect(data.result.data.thumb_url).toBe("https://javdb571.com/covers/mirror.jpg");
+        },
+      },
     ];
 
-    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, cookies, assert } of cases) {
+    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, cookies, baseUrl, assert } of cases) {
       const fixtures = new Map<string, string>([
         [searchUrl, searchHtml],
         [detailUrl, detailHtml],
       ]);
-      const crawler = new JavdbCrawler(withGateway(new FixtureNetworkClient(fixtures)));
+      const networkClient = new FixtureNetworkClient(fixtures);
+      const crawler = new JavdbCrawler(withGateway(networkClient));
 
       const response = await crawler.crawl({
         number,
         site: Website.JAVDB,
-        options: cookies
-          ? {
-              cookies,
-            }
-          : undefined,
+        options: { cookies, baseUrl },
       });
 
       expect(response.result.success).toBe(true);
+      expect(networkClient.requests.map(({ headers }) => headers.get("accept-language"))).toEqual([
+        "zh-TW,zh;q=0.9",
+        "zh-TW,zh;q=0.9",
+      ]);
       assert(response as Awaited<ReturnType<JavdbCrawler["crawl"]>>);
     }
   });

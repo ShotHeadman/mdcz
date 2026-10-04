@@ -25,26 +25,20 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
   const hasMountedRef = useRef(false);
   const requestVersionRef = useRef(0);
 
-  const [proxyType, proxy, useProxy, javdbCookie, javbusCookie, fantiaCookie] =
-    (useWatch({
-      control: form.control,
-      name: [
-        "network.proxyType",
-        "network.proxy",
-        "network.useProxy",
-        "network.javdbCookie",
-        "network.javbusCookie",
-        "network.fantiaCookie",
-      ],
-    }) as [
-      string | undefined,
-      string | undefined,
-      boolean | undefined,
-      string | undefined,
-      string | undefined,
-      string | undefined,
-    ]) ?? [];
-  const probeDependencyKey = [proxyType, proxy, useProxy, javdbCookie, javbusCookie, fantiaCookie].join("::");
+  const probeDependencies = useWatch({
+    control: form.control,
+    name: [
+      "network.proxyType",
+      "network.proxy",
+      "network.useProxy",
+      "network.javdbUrl",
+      "network.javbusUrl",
+      "network.javdbCookie",
+      "network.javbusCookie",
+      "network.fantiaCookie",
+    ],
+  }) as unknown[] | undefined;
+  const probeDependencyKey = (probeDependencies ?? []).join("::");
 
   useEffect(() => {
     void probeDependencyKey;
@@ -72,8 +66,9 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
       const text = getT().settings.siteConnectivity;
       setState({
         kind: result.ok ? "success" : "error",
-        message:
-          result.status === undefined
+        message: result.redirectedHost
+          ? text.redirected(result.redirectedHost)
+          : result.status === undefined
             ? `${text.requestFailed}: ${result.error}`
             : text.httpResult(result.ok, result.status, Math.max(0, Math.trunc(result.latencyMs))),
       });

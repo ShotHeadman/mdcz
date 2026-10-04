@@ -5,6 +5,7 @@ import type { CrawlerData } from "@mdcz/shared/types";
 import type { FetchGateway } from "../FetchGateway";
 
 export interface CrawlerOptions {
+  baseUrl?: string;
   timeoutMs?: number;
   cookies?: string;
   referer?: string;

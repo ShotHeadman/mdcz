@@ -1,3 +1,4 @@
+import type { SiteUrlConfiguration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { TaskStatus } from "@mdcz/shared/serverDtos";
 import {
@@ -20,6 +21,7 @@ import { resetScrapeWorkbenchToSetup } from "./workbenchSession";
 
 export interface ScrapeWorkbenchAdapterProps {
   ports: Pick<SharedWorkbenchPorts, "detail" | "scrape">;
+  siteUrls: SiteUrlConfiguration | undefined;
   onPauseScrape: () => void;
   onResumeScrape: () => void;
   onStopScrape: () => void;
@@ -29,6 +31,7 @@ export interface ScrapeWorkbenchAdapterProps {
 
 export function ScrapeWorkbenchAdapter({
   ports,
+  siteUrls,
   onPauseScrape,
   onResumeScrape,
   onStopScrape,
@@ -67,7 +70,7 @@ export function ScrapeWorkbenchAdapter({
 
   return (
     <ScrapeWorkbenchFrame
-      list={<ResultTreeAdapter port={ports.scrape} />}
+      list={<ResultTreeAdapter port={ports.scrape} siteUrls={siteUrls} />}
       detail={
         resultsCount === 0 && snapshot ? (
           <WorkbenchTaskStatePanel

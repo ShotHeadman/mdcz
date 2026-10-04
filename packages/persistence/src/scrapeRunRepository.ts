@@ -28,7 +28,6 @@ export interface ScrapeRunRecord {
   requestedOutputRelativeDirectory: string | null;
   executionMode: ScrapeExecutionMode;
   directoryScopeJson: string | null;
-  configurationJson: string | null;
   manifestFixedAt: Date | null;
   discoveryJson: string | null;
   totalItems: number;
@@ -72,7 +71,6 @@ export interface CreateScrapeRunInput {
   outputRelativeDirectory?: string | null;
   executionMode: ScrapeExecutionMode;
   directoryScopeJson?: string;
-  configurationJson?: string;
   createdAt?: Date;
   items: Array<{
     id?: string;
@@ -104,11 +102,8 @@ export class ScrapeRunRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
   async create(input: CreateScrapeRunInput): Promise<ScrapeRunRecord> {
-    if (
-      input.directoryScopeJson &&
-      (input.items.length > 0 || input.executionMode !== "batch" || !input.configurationJson)
-    ) {
-      throw new Error("Directory runs require a configuration and an unfixed batch manifest");
+    if (input.directoryScopeJson && (input.items.length > 0 || input.executionMode !== "batch")) {
+      throw new Error("Directory runs require an unfixed batch manifest");
     }
     const id = input.id ?? randomUUID();
     const createdAt = input.createdAt ?? new Date();
@@ -131,7 +126,6 @@ export class ScrapeRunRepository {
         outputRelativeDirectory: input.outputRelativeDirectory || null,
         executionMode: input.executionMode,
         directoryScopeJson: input.directoryScopeJson ?? null,
-        configurationJson: input.configurationJson ?? null,
         manifestJson: manifestItems.length > 0 ? JSON.stringify(manifestItems) : null,
         totalItems: manifestItems.length,
         manifestFixedAt: input.directoryScopeJson ? null : createdAt,
@@ -156,7 +150,6 @@ export class ScrapeRunRepository {
       requestedOutputRelativeDirectory: run.outputRelativeDirectory,
       executionMode: run.executionMode,
       directoryScopeJson: run.directoryScopeJson,
-      configurationJson: run.configurationJson,
       manifestFixedAt: run.manifestFixedAt,
       discoveryJson: run.discoveryJson,
       totalItems: run.totalItems,
@@ -300,7 +293,7 @@ export class ScrapeRunRepository {
 
   async rerunDirectory(runId: string): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
-    if (!run.disposition || !run.directoryScopeJson || !run.configurationJson) {
+    if (!run.disposition || !run.directoryScopeJson) {
       throw new Error(`Directory run cannot be rerun: ${runId}`);
     }
     return await this.create({
@@ -310,7 +303,6 @@ export class ScrapeRunRepository {
       outputRelativeDirectory: run.requestedOutputRelativeDirectory,
       executionMode: "batch",
       directoryScopeJson: run.directoryScopeJson,
-      configurationJson: run.configurationJson,
       items: [],
     });
   }

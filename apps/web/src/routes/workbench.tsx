@@ -287,6 +287,7 @@ function WorkbenchPage() {
         ) : workbenchMode === "scrape" ? (
           <ScrapeWorkbenchAdapter
             ports={ports}
+            siteUrls={configQ.data?.network}
             failedCount={failedCount}
             onPauseScrape={() => void handlePauseScrape()}
             onResumeScrape={() => void handleResumeScrape()}

@@ -82,7 +82,7 @@ function SettingsComponent() {
         saveConfig: ipc.config.save,
         settingsTarget: "desktop",
         subscribeInFlightSaves: useSettingsSavingStore.subscribe,
-        testLLM: ipc.translate.testLlm,
+        testTranslation: ipc.translate.testTranslation,
         updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
           queryClient.setQueryData(CURRENT_CONFIG_QUERY_KEY, (previous) => {
             if (typeof previous !== "object" || previous === null || Array.isArray(previous)) {

@@ -72,7 +72,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
   get watermarkDirectoryActionLabel() {
     return getT().web.copyServerPath;
   },
-  testLLM: async (input) => await api.translate.testLlm(input),
+  testTranslation: async (input) => await api.translate.test(input),
   updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
     queryClient.setQueryData(CURRENT_CONFIG_QUERY_KEY, (previous) => {
       if (typeof previous !== "object" || previous === null || Array.isArray(previous)) {

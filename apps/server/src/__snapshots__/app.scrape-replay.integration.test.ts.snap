@@ -220,69 +220,6 @@ exports[`scrapes recorded movies end to end: 'chinese subtitle marker' 1`] = `
 }
 `;
 
-exports[`scrapes recorded movies end to end: 'copy without moving source' 1`] = `
-{
-  "aggregations": [
-    "SNOS-301",
-  ],
-  "library": [
-    {
-      "actors": [
-        "浅野こころ",
-      ],
-      "files": [
-        "SNOS-301.mp4",
-      ],
-      "number": "SNOS-301",
-      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-    },
-  ],
-  "nfos": {
-    "source/SNOS-301.nfo": {
-      "actors": [
-        "浅野こころ",
-      ],
-      "num": [
-        "SNOS-301",
-      ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
-      "premiered": [
-        "2026-07-24",
-      ],
-      "runtime": [
-        "140",
-      ],
-      "studio": [
-        "エスワン ナンバーワンスタイル",
-      ],
-      "tag": [],
-      "title": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
-    },
-  },
-  "results": [
-    [
-      "SNOS-301.mp4: success",
-    ],
-  ],
-  "tree": [
-    "source/SNOS-301.mp4 "video"",
-    "source/SNOS-301.nfo",
-    "source/extrafanart/fanart1.jpg 534x800",
-    "source/extrafanart/fanart2.jpg 800x534",
-    "source/extrafanart/fanart3.jpg 800x534",
-    "source/fanart.jpg 2184x1468",
-    "source/movie.nfo",
-    "source/poster.jpg 1032x1468",
-    "source/thumb.jpg 2184x1468",
-    "source/trailer.mp4 <2087 bytes>",
-  ],
-}
-`;
-
 exports[`scrapes recorded movies end to end: 'fc2 extra moves with its movie' 1`] = `
 {
   "aggregations": [
@@ -356,6 +293,70 @@ exports[`scrapes recorded movies end to end: 'mixed split disc and standalone fi
   "tree": [
     "source/SNOS-301-CD2.mp4 "cd2"",
     "source/SNOS-301.mp4 "standalone"",
+  ],
+}
+`;
+
+exports[`scrapes recorded movies end to end: 'rerun with current settings' 1`] = `
+{
+  "aggregations": [
+    "SNOS-301",
+  ],
+  "library": [
+    {
+      "actors": [
+        "浅野こころ",
+      ],
+      "files": [
+        "SNOS-301.mp4",
+      ],
+      "number": "SNOS-301",
+      "title": "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+    },
+  ],
+  "nfos": {
+    "source/SNOS-301.nfo": {
+      "actors": [
+        "浅野こころ",
+      ],
+      "num": [
+        "SNOS-301",
+      ],
+      "originaltitle": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+      "premiered": [
+        "2026-07-24",
+      ],
+      "runtime": [
+        "140",
+      ],
+      "studio": [
+        "エスワン ナンバーワンスタイル",
+      ],
+      "tag": [],
+      "title": [
+        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
+      ],
+    },
+  },
+  "results": [
+    [],
+    [
+      "SNOS-301.mp4: success",
+    ],
+  ],
+  "tree": [
+    "source/SNOS-301.mp4 "video"",
+    "source/SNOS-301.nfo",
+    "source/extrafanart/fanart1.jpg 534x800",
+    "source/extrafanart/fanart2.jpg 800x534",
+    "source/extrafanart/fanart3.jpg 800x534",
+    "source/fanart.jpg 2184x1468",
+    "source/movie.nfo",
+    "source/poster.jpg 1032x1468",
+    "source/thumb.jpg 2184x1468",
+    "source/trailer.mp4 <2087 bytes>",
   ],
 }
 `;

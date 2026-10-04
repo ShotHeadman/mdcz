@@ -1,8 +1,6 @@
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-type FileUtilsModule = typeof import("@mdcz/runtime/scrape/utils/filesystem");
-
 type MockDirentKind = "directory" | "file" | "symlink";
 
 const createDirent = (name: string, kind: MockDirentKind) => ({
@@ -18,54 +16,59 @@ const createNodeError = (code: string): NodeJS.ErrnoException => {
   return error;
 };
 
-const importFileUtilsWithReaddir = async (
-  modulePath: string,
-  readdir: (dirPath: string) => Promise<unknown[]>,
-): Promise<FileUtilsModule> => {
-  vi.resetModules();
-  vi.doMock("node:fs/promises", async () => {
-    const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
-    return {
-      ...actual,
-      realpath: vi.fn(async (dirPath: string) => dirPath),
-      readdir: vi.fn(readdir),
-    };
-  });
-
-  return (await import(modulePath)) as FileUtilsModule;
-};
-
 describe("recursive file walking", () => {
   afterEach(() => {
+    vi.doUnmock("node:fs");
     vi.doUnmock("node:fs/promises");
     vi.resetModules();
     vi.restoreAllMocks();
   });
 
-  it("skips missing children but rejects I/O failures and inaccessible roots", async () => {
+  it("resolves unsupported native paths, skips missing children and rejects other I/O failures", async () => {
+    vi.resetModules();
     const root = join("library");
     const missingAssetDir = join(root, "extrafanart");
     const videoPath = join(root, "ABC-123.mp4");
     let code = "ENOENT";
     let failRoot = false;
-    const fileUtils = await importFileUtilsWithReaddir("@mdcz/runtime/scrape/utils/filesystem", async (dirPath) => {
-      if (failRoot) throw createNodeError(code);
-      if (dirPath === root) {
-        return [createDirent("ABC-123.mp4", "file"), createDirent("extrafanart", "directory")];
-      }
-
-      if (dirPath === missingAssetDir) {
-        throw createNodeError(code);
-      }
-
-      return [];
-    });
+    let nativeError: NodeJS.ErrnoException | undefined = createNodeError("UNKNOWN");
+    let callbackError: NodeJS.ErrnoException | null = null;
+    const realpathCallback = vi.fn(
+      (dirPath: string, callback: (error: NodeJS.ErrnoException | null, path: string) => void) => {
+        callback(callbackError, resolve(dirPath));
+      },
+    );
+    vi.doMock("node:fs", async () => ({
+      ...(await vi.importActual<typeof import("node:fs")>("node:fs")),
+      realpath: realpathCallback,
+    }));
+    vi.doMock("node:fs/promises", async () => ({
+      ...(await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")),
+      realpath: async (dirPath: string) => {
+        if (dirPath === root && nativeError) throw nativeError;
+        return resolve(dirPath);
+      },
+      readdir: async (dirPath: string) => {
+        if (failRoot || dirPath === missingAssetDir) throw createNodeError(code);
+        if (dirPath === root) return [createDirent("ABC-123.mp4", "file"), createDirent("extrafanart", "directory")];
+        return [];
+      },
+    }));
+    const fileUtils = await import("@mdcz/runtime/scrape/utils/filesystem");
 
     const warnings = { count: 0, paths: [] as string[] };
     await expect(fileUtils.listVideoFiles(root, true, undefined, undefined, [], { warnings })).resolves.toEqual([
       videoPath,
     ]);
     expect(warnings).toEqual({ count: 1, paths: [missingAssetDir] });
+    expect(realpathCallback).toHaveBeenCalledExactlyOnceWith(root, expect.any(Function));
+    nativeError = createNodeError("EIO");
+    await expect(fileUtils.listVideoFiles(root, true)).rejects.toBe(nativeError);
+    expect(realpathCallback).toHaveBeenCalledTimes(1);
+    nativeError = createNodeError("UNKNOWN");
+    callbackError = createNodeError("EACCES");
+    await expect(fileUtils.listVideoFiles(root, true)).rejects.toBe(callbackError);
+    nativeError = undefined;
     code = "EIO";
     await expect(fileUtils.listVideoFiles(root, true)).rejects.toMatchObject({ code });
     code = "ENOENT";

@@ -25,6 +25,8 @@ interface ReplayScenario {
   config?: ConfigPatch;
   /** Overwrites these files, then scrapes the organized output again as a library refresh does. */
   rescrape?: Record<string, string>;
+  /** Applied after the first run, which is then rerun and must pick these settings up. */
+  rerunConfig?: ConfigPatch;
   status?: "completed" | "failed";
 }
 
@@ -60,9 +62,10 @@ const scenarios: ReplayScenario[] = [
     },
   },
   {
-    name: "copy without moving source",
+    name: "rerun with current settings",
     files: { "source/SNOS-301.mp4": "video" },
-    config: { behavior: { successFileMove: false, successFileRename: false } },
+    config: { scrape: { minVideoSizeMb: 1 } },
+    rerunConfig: { scrape: { minVideoSizeMb: 0 }, behavior: { successFileMove: false, successFileRename: false } },
   },
   {
     name: "fc2 extra moves with its movie",
@@ -100,7 +103,7 @@ const describeTree = async (root: string, directory = root): Promise<string[]> =
       lines.push(
         content.includes(0)
           ? `${name} <${content.byteLength} bytes>`
-          : `${name} ${JSON.stringify(content.toString("utf8").replaceAll(root, "<root>"))}`,
+          : `${name} ${JSON.stringify(content.toString("utf8").replaceAll(root, "<root>").replaceAll("\\", "/"))}`,
       );
     }
   }
@@ -117,7 +120,7 @@ const describeNfo = (xml: string) => ({
   actors: [...xml.matchAll(/<actor>\s*<name>([^<]*)<\/name>/gu)].map((match) => match[1]),
 });
 
-const runScenario = async ({ files, config, rescrape, status = "completed" }: ReplayScenario) => {
+const runScenario = async ({ files, config, rescrape, rerunConfig, status = "completed" }: ReplayScenario) => {
   const root = await createTempRoot("scrape-replay");
   for (const [path, content] of Object.entries(files)) {
     await mkdir(dirname(join(root, path)), { recursive: true });
@@ -138,28 +141,44 @@ const runScenario = async ({ files, config, rescrape, status = "completed" }: Re
     scrape: { sites: [Website.DMM, Website.DMM_TV, Website.AVBASE, Website.FC2] },
     translate: { enableTranslation: false },
     aggregation: { behavior: { maxSceneImages: 3 } },
-    ...config,
   });
+  if (config) await services.config.update(config);
   const token = await loginAsAdmin(fastify);
   const targetDir = join(root, "output");
-  const scrapeDirectory = async (scanDir: string) => {
+  const scrape = async (procedure: "start" | "rerunDirectory", payload: object) => {
     const response = await fastify.inject({
       method: "POST",
-      url: "/trpc/scrape.start",
+      url: `/trpc/scrape.${procedure}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { executionMode: "batch", source: { kind: "directory", scanDir, recursive: true }, targetDir },
+      payload,
     });
     expect(response.statusCode, response.body).toBe(200);
-    const taskId = response.json().result.data.runId;
+    const taskId: string = response.json().result.data.runId;
     await waitForScrapeRunStatus(fastify, token, taskId, status);
     const snapshot = await services.scrape.snapshot({ taskId });
-    return snapshot.items.map((item) => `${item.relativePath}: ${item.status}${item.error ? ` (${item.error})` : ""}`);
+    return {
+      taskId,
+      items: snapshot.items.map(
+        (item) => `${item.relativePath}: ${item.status}${item.error ? ` (${item.error})` : ""}`,
+      ),
+    };
   };
+  const scrapeDirectory = async (scanDir: string) =>
+    await scrape("start", {
+      executionMode: "batch",
+      source: { kind: "directory", scanDir, recursive: true },
+      targetDir,
+    });
 
-  const results = [await scrapeDirectory(join(root, "source"))];
+  const first = await scrapeDirectory(join(root, "source"));
+  const results = [first.items];
   if (rescrape) {
     for (const [path, content] of Object.entries(rescrape)) await writeFile(join(root, path), content);
-    results.push(await scrapeDirectory(targetDir));
+    results.push((await scrapeDirectory(targetDir)).items);
+  }
+  if (rerunConfig) {
+    await services.config.update(rerunConfig);
+    results.push((await scrape("rerunDirectory", { taskId: first.taskId })).items);
   }
 
   expect(replay.missingInteractions).toEqual([]);

@@ -1,7 +1,7 @@
 import type { Dirent, Stats } from "node:fs";
 import fs from "node:fs/promises";
 import { basename, dirname, join, parse } from "node:path";
-import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import { canonicalPath, filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { type ParsedNfoSnapshot, parseNfoSnapshot } from "../maintenance/nfoSnapshot";
 import { isPrimaryVideoFile } from "./media/generatedSidecarVideos";
@@ -25,8 +25,7 @@ export class DirectoryInventory {
     const key = filesystemPathKey(path);
     let pending = this.directoryPaths.get(key);
     if (!pending) {
-      pending = fs
-        .realpath(path)
+      pending = canonicalPath(path)
         .then((canonical) => {
           this.directoryPaths.set(filesystemPathKey(canonical), Promise.resolve(canonical));
           return canonical;

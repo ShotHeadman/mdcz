@@ -12,6 +12,25 @@ export const settingsFields: Messages["settingsFields"] = {
     system: { label: "界面与快捷键", aliases: ["系统", "界面", "快捷键"] },
   },
   fields: {
+    "watch.enabled": {
+      label: "自动刮削新增媒体",
+      description: "仅服务端。监控媒体目录；启动时或修改监控设置后已存在的文件作为基线，需要手动刮削。",
+    },
+    "watch.intervalMinutes": {
+      label: "扫描间隔（分钟）",
+      description: "新增文件的大小和修改时间连续两轮不变后才会提交刮削。",
+    },
+    "translate.deeplApiKey": {
+      label: "DeepL API Key",
+      description: "以 :fx 结尾的 Free Key 使用 Free 接口，其余使用 Pro 接口。",
+    },
+    "translate.baiduService": {
+      label: "百度翻译服务",
+      description: "需在百度翻译开放平台开通对应服务；通用文本翻译使用密钥，大模型文本翻译使用 API Key。",
+    },
+    "translate.baiduAppId": { label: "百度翻译 APPID", description: "在百度翻译开放平台「开发者信息」页面查看。" },
+    "translate.baiduSecretKey": { label: "百度翻译密钥", description: "在「开发者信息」页面查看。" },
+    "translate.baiduApiKey": { label: "百度翻译 API Key", description: "在管理控制台「API Key 管理」页面创建。" },
     "paths.mediaPath": { label: "媒体目录", aliases: ["媒体库"] },
     "paths.defaultScanExcludeDirs": {
       label: "排除目录",
@@ -65,6 +84,10 @@ export const settingsFields: Messages["settingsFields"] = {
       description:
         "自动扫描时排除名称包含这些文字的文件和文件夹（含其下所有内容）；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。",
     },
+    "scrape.minVideoSizeMb": {
+      label: "最小视频大小 (MB)",
+      description: "小于该大小的视频不进入刮削候选，0 表示不限制；STRM 文件不受影响。",
+    },
     "scrape.threadNumber": { label: "并发线程数" },
     "scrape.javdbDelaySeconds": { label: "JavDB 请求延迟(秒)" },
     "scrape.restAfterCount": { label: "连续刮削后休息(条数)" },
@@ -74,6 +97,16 @@ export const settingsFields: Messages["settingsFields"] = {
     "network.useProxy": { label: "启用代理" },
     "network.timeout": { label: "超时时间(秒)" },
     "network.retryCount": { label: "重试次数" },
+    "network.javdbUrl": {
+      label: "JavDB 地址",
+      description: "留空使用官网 https://javdb.com；官网无法访问时可填写防屏蔽镜像地址。",
+      aliases: ["镜像", "防屏蔽", "网址", "域名"],
+    },
+    "network.javbusUrl": {
+      label: "JavBus 地址",
+      description: "留空使用官网 https://www.javbus.com；官网无法访问时可填写防屏蔽镜像地址。",
+      aliases: ["镜像", "防屏蔽", "网址", "域名"],
+    },
     "network.javdbCookie": { label: "JavDB Cookie", aliases: ["凭证"] },
     "network.javbusCookie": { label: "JavBus Cookie", aliases: ["凭证"] },
     "network.fantiaCookie": { label: "Fantia Cookie", aliases: ["凭证"] },

@@ -1,4 +1,4 @@
-import type { Configuration } from "@mdcz/shared/config";
+import { type Configuration, isMirrorableSite, resolveSiteUrl } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerOptions } from "../crawler/base/types";
 
@@ -12,6 +12,10 @@ export const buildCrawlerOptions = ({ site, configuration, signal }: BuildCrawle
   const options: CrawlerOptions = {
     timeoutMs: Math.max(1, Math.trunc(configuration.network.timeout * 1000)),
   };
+
+  if (isMirrorableSite(site)) {
+    options.baseUrl = resolveSiteUrl(configuration.network, site);
+  }
 
   const javdbCookie = configuration.network.javdbCookie.trim();
   if (site === Website.JAVDB && javdbCookie) {

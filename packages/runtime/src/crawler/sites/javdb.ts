@@ -1,5 +1,5 @@
-import type { SiteRequestConfig } from "@mdcz/runtime/network";
-import { normalizeCode, normalizeText } from "@mdcz/runtime/shared";
+import { normalizeCode, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
+import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
@@ -9,30 +9,7 @@ import type { Context } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { extractParentLinksByLabelSelector, extractParentTextByLabelSelector, toAbsoluteUrl } from "./helpers";
 
-const JAVDB_BASE_URL = "https://javdb.com";
-const JAVDB_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
-  {
-    id: "crawler:javdb",
-    matches: (url) => url.hostname === "javdb.com" || url.hostname === "www.javdb.com",
-    headers: {
-      referer: `${JAVDB_BASE_URL}/`,
-    },
-  },
-];
-
 type CheerioInput = Parameters<CheerioAPI>[0];
-
-const findActorLinksBySymbol = ($: CheerioAPI, symbolClass: "female" | "male"): string[] => {
-  const selectors = [`strong.${symbolClass}`, `strong.symbol.${symbolClass}`];
-  const links = selectors.flatMap((selector) =>
-    $(selector)
-      .toArray()
-      .map((element: CheerioInput) => $(element).prevAll("a").first().text().trim())
-      .filter((name: string) => name.length > 0),
-  );
-
-  return Array.from(new Set(links));
-};
 
 type JavdbSearchResult = {
   href: string;
@@ -41,26 +18,29 @@ type JavdbSearchResult = {
 };
 
 const pickJavdbSearchResultUrl = (
-  baseUrl: string,
+  pageUrl: string,
   results: JavdbSearchResult[],
   expectedNumber: string,
 ): string | null => {
   const expectedTitle = expectedNumber.toUpperCase();
   const exact = results.find((item) => item.title.toUpperCase().includes(expectedTitle));
   if (exact) {
-    return toAbsoluteUrl(baseUrl, exact.href) ?? null;
+    return toAbsoluteUrl(pageUrl, exact.href) ?? null;
   }
 
   const normalizedExpected = normalizeCode(expectedNumber);
   const fuzzy = results.find((item) => normalizeCode(item.title + item.meta).includes(normalizedExpected));
-  return fuzzy ? (toAbsoluteUrl(baseUrl, fuzzy.href) ?? null) : null;
+  return fuzzy ? (toAbsoluteUrl(pageUrl, fuzzy.href) ?? null) : null;
 };
 
 export class JavdbCrawler extends BaseCrawler {
-  static readonly siteRequestConfigs = JAVDB_SITE_REQUEST_CONFIGS;
-
   site(): Website {
     return Website.JAVDB;
+  }
+
+  // JavDB localizes pages by Accept-Language; the label parser and genre mapping expect its Chinese pages.
+  protected override buildHeaders(context: Context): Record<string, string> {
+    return { "accept-language": "zh-TW,zh;q=0.9", ...super.buildHeaders(context) };
   }
 
   protected async generateSearchUrl(context: Context): Promise<string | null> {
@@ -75,7 +55,7 @@ export class JavdbCrawler extends BaseCrawler {
       number = number.replace(oldDate[1], `20${oldDate[1]}`);
     }
 
-    return `${JAVDB_BASE_URL}/search?q=${encodeURIComponent(number)}&locale=zh`;
+    return `${context.options.baseUrl ?? OFFICIAL_SITE_URLS[Website.JAVDB]}/search?q=${encodeURIComponent(number)}`;
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
@@ -103,10 +83,10 @@ export class JavdbCrawler extends BaseCrawler {
       return null;
     }
 
-    return pickJavdbSearchResultUrl(JAVDB_BASE_URL, results, context.number);
+    return pickJavdbSearchResultUrl(searchUrl, results, context.number);
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const title = extractText($, "h2.title.is-4 strong.current-title");
     if (!title) {
       return null;
@@ -115,35 +95,37 @@ export class JavdbCrawler extends BaseCrawler {
     const number =
       extractAttr($, "a.button.is-white.copy-to-clipboard", "data-clipboard-text")?.trim() || context.number;
 
-    const actorsPrimary = findActorLinksBySymbol($, "female");
-    const actorsFallback = findActorLinksBySymbol($, "male");
-    const actorsUnmarked = extractParentLinksByLabelSelector($, "strong", ["演員:", "Actors:", "演员:"]);
-    const actors =
-      actorsPrimary.length > 0 ? actorsPrimary : actorsFallback.length > 0 ? actorsFallback : actorsUnmarked;
+    // JavDB marks only actresses; unmarked links in the actor row are male performers.
+    const actresses = uniqueStrings(
+      $("a.actor-female")
+        .toArray()
+        .map((element: CheerioInput) => normalizeText($(element).text())),
+    );
+    const actors = actresses.length > 0 ? actresses : extractParentLinksByLabelSelector($, "strong", ["演員:"]);
 
-    const genres = extractParentLinksByLabelSelector($, "strong", ["類別:", "Tags:", "类别:"]);
+    const genres = extractParentLinksByLabelSelector($, "strong", ["類別:"]);
 
-    const studio = extractParentTextByLabelSelector($, "strong", ["片商:", "Maker:"]);
-    const publisher = extractParentTextByLabelSelector($, "strong", ["發行:", "Publisher:"]);
-    const series = extractParentTextByLabelSelector($, "strong", ["系列:", "Series:"]);
-    const director = extractParentTextByLabelSelector($, "strong", ["導演:", "Director:"]);
-    const release = parseDate(extractParentTextByLabelSelector($, "strong", ["日期:", "Released Date:"])) ?? undefined;
+    const studio = extractParentTextByLabelSelector($, "strong", ["片商:"]);
+    const publisher = extractParentTextByLabelSelector($, "strong", ["發行:"]);
+    const series = extractParentTextByLabelSelector($, "strong", ["系列:"]);
+    const director = extractParentTextByLabelSelector($, "strong", ["導演:"]);
+    const release = parseDate(extractParentTextByLabelSelector($, "strong", ["日期:"])) ?? undefined;
 
     const thumbUrl = extractAttr($, "img.video-cover", "src");
-    const thumbUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, thumbUrl);
+    const thumbUrlAbsolute = toAbsoluteUrl(detailUrl, thumbUrl);
     const posterUrl = thumbUrlAbsolute?.replace("/covers/", "/thumbs/");
 
     const trailerUrl = extractAttr($, "video#preview-video source", "src") ?? undefined;
-    const trailerUrlAbsolute = toAbsoluteUrl(JAVDB_BASE_URL, trailerUrl);
+    const trailerUrlAbsolute = toAbsoluteUrl(detailUrl, trailerUrl);
 
     const sceneImageUrls = $("div.tile-images.preview-images a.tile-item")
       .toArray()
       .map((element: CheerioInput) => $(element).attr("href"))
       .filter((href: string | undefined): href is string => typeof href === "string" && href.length > 0)
-      .map((href: string) => toAbsoluteUrl(JAVDB_BASE_URL, href))
+      .map((href: string) => toAbsoluteUrl(detailUrl, href))
       .filter((href): href is string => Boolean(href));
 
-    const ratingText = extractParentTextByLabelSelector($, "strong", ["評分:", "Rating:"]);
+    const ratingText = extractParentTextByLabelSelector($, "strong", ["評分:"]);
     let ratingValue: number | undefined;
     if (ratingText) {
       const match = ratingText.match(/([\d.]+)/u);

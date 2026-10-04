@@ -38,7 +38,7 @@ import {
   serverPathSuggestInputSchema,
   setupCompleteInputSchema,
   toolExecuteInputSchema,
-  translateTestLlmInputSchema,
+  translateTestInputSchema,
 } from "@mdcz/shared/serverDtos";
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
@@ -85,9 +85,9 @@ export const appRouter = t.router({
     checkCookies: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.runtimeActions.checkCookies()),
   }),
   translate: t.router({
-    testLlm: protectedProcedure
-      .input(translateTestLlmInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.runtimeActions.testLlm(input)),
+    test: protectedProcedure
+      .input(translateTestInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.runtimeActions.testTranslation(input)),
   }),
   config: t.router({
     defaults: protectedProcedure.query(({ ctx }) => ctx.services.config.defaults()),

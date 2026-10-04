@@ -1,6 +1,5 @@
-import { realpath } from "node:fs/promises";
 import { basename, dirname, extname, join, parse, relative } from "node:path";
-import { type FileWalkOptions, isPathInside, resolveRootFile, walkFiles } from "@mdcz/media-store";
+import { canonicalPath, type FileWalkOptions, isPathInside, resolveRootFile, walkFiles } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
 import { hasLiteralFilenameToken } from "@mdcz/shared/filenameTokens";
@@ -38,14 +37,20 @@ export const createDirectoryScope = (
 export const createMediaWalkFilters = (
   configuration: Configuration,
   extensions = DEFAULT_VIDEO_EXTENSIONS,
-): Required<Pick<FileWalkOptions, "filterFile" | "filterDirectory">> => {
+  inventory = new DirectoryInventory(),
+): Required<Pick<FileWalkOptions, "onDirectory" | "filterFile" | "filterDirectory" | "filterStats">> => {
   const blacklist = configuration.scrape.filenameBlacklistTokens;
+  const minVideoBytes = configuration.scrape.minVideoSizeMb * 1024 * 1024;
   return {
-    filterFile: (filePath) =>
+    onDirectory: (directory, canonical, entries) => inventory.observeDirectory(directory, canonical, entries),
+    filterFile: async (filePath) =>
       extensions.has(extname(filePath).toLowerCase()) &&
       isPrimaryVideoFile(filePath) &&
-      !hasLiteralFilenameToken(basename(filePath), blacklist),
+      !hasLiteralFilenameToken(basename(filePath), blacklist) &&
+      (extname(filePath).toLowerCase() !== ".strm" ||
+        (await inventory.mediaEntries(dirname(filePath))).some((entry) => entry.name === basename(filePath))),
     filterDirectory: (directoryPath) => !hasLiteralFilenameToken(basename(directoryPath), blacklist),
+    filterStats: (filePath, stats) => extname(filePath).toLowerCase() === ".strm" || stats.size >= minVideoBytes,
   };
 };
 
@@ -100,15 +105,16 @@ export const discoverDirectoryFiles = async (input: {
   await checkRoots([root.id]);
   const output = await input.mediaRoots.prepareOutputDirectory({ hostPath: scope.targetDir });
   await checkRoots([output.id]);
-  const scanPath = await realpath(scope.scanDir);
+  const scanPath = await canonicalPath(scope.scanDir);
   const namespaceScanPath =
     root.realPath && isPathInside(root.realPath, scanPath)
       ? join(root.hostPath, relative(root.realPath, scanPath))
       : scope.scanDir;
-  const mediaFilters = createMediaWalkFilters(input.configuration);
+  const mediaFilters = createMediaWalkFilters(input.configuration, undefined, inventory);
   await walkFiles(namespaceScanPath, scope.recursive, signal, {
+    ...mediaFilters,
     onDirectory: (directory, canonical, entries) => {
-      inventory.observeDirectory(directory, canonical, entries);
+      mediaFilters.onDirectory(directory, canonical, entries);
       canonicalDirectories.set(directory, canonical);
     },
     onFile: (file, facts) => {
@@ -121,11 +127,6 @@ export const discoverDirectoryFiles = async (input: {
       inventory.observeFileError(file, error);
       found.push(file);
     },
-    filterDirectory: mediaFilters.filterDirectory,
-    filterFile: async (file) =>
-      (await mediaFilters.filterFile(file)) &&
-      (extname(file).toLowerCase() !== ".strm" ||
-        (await inventory.mediaEntries(dirname(file))).some((entry) => entry.name === basename(file))),
     excludeDirectoryPaths: scope.excludeDirPaths,
     deduplicateDirectories: true,
     excludeFileSymlinks: input.platform === "server",

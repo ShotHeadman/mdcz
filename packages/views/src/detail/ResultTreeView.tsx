@@ -1,3 +1,4 @@
+import { defaultConfiguration, type SiteUrlConfiguration } from "@mdcz/shared/config";
 import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import {
@@ -26,6 +27,7 @@ export interface ResultTreeViewProps {
   filter: MediaBrowserFilter;
   stats: Array<{ label: string; value: string; tone?: "default" | "positive" | "negative" }>;
   manualUrlTarget: ResultTreeManualUrlTarget | null;
+  siteUrls: SiteUrlConfiguration | undefined;
   scrapeStatus: "idle" | "running" | "stopping" | "paused";
   onFilterChange: (filter: MediaBrowserFilter) => void;
   onManualUrlDialogOpenChange: (open: boolean) => void;
@@ -38,6 +40,7 @@ export function ResultTreeView({
   filter,
   stats,
   manualUrlTarget,
+  siteUrls,
   scrapeStatus,
   onFilterChange,
   onManualUrlDialogOpenChange,
@@ -63,6 +66,7 @@ export function ResultTreeView({
       />
       <ManualUrlRescrapeDialog
         target={manualUrlTarget}
+        siteUrls={siteUrls}
         scrapeStatus={scrapeStatus}
         onOpenChange={onManualUrlDialogOpenChange}
         onSubmit={onManualUrlSubmit}
@@ -73,11 +77,13 @@ export function ResultTreeView({
 
 function ManualUrlRescrapeDialog({
   target,
+  siteUrls = defaultConfiguration.network,
   scrapeStatus,
   onOpenChange,
   onSubmit,
 }: {
   target: ResultTreeManualUrlTarget | null;
+  siteUrls: SiteUrlConfiguration | undefined;
   scrapeStatus: "idle" | "running" | "stopping" | "paused";
   onOpenChange: (open: boolean) => void;
   onSubmit: (target: ResultTreeManualUrlTarget, manualUrl: string) => Promise<void>;
@@ -86,7 +92,7 @@ function ManualUrlRescrapeDialog({
   const [url, setUrl] = useState("");
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const validation = useMemo(() => validateManualScrapeUrl(url), [url]);
+  const validation = useMemo(() => validateManualScrapeUrl(url, siteUrls), [url, siteUrls]);
   const errorText = touched && !validation.valid ? t.domain.manualScrapeUrlInvalid[validation.reason] : undefined;
 
   useEffect(() => {

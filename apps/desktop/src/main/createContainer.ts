@@ -10,6 +10,7 @@ import type { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper";
 import { MaintenanceService } from "@main/services/scraper/maintenance/MaintenanceService";
 import { AmazonPosterToolService, BatchTranslateToolService, SymlinkService } from "@main/services/tools";
+import { UpdateService } from "@main/services/UpdateService";
 import type { WindowService } from "@main/services/WindowService";
 import {
   ActorSourceProvider,
@@ -179,6 +180,7 @@ export const createContainer = ({
       mediaRoots,
     ),
     batchTranslateToolService: new BatchTranslateToolService(networkClient, persistenceService, {}, mediaRoots),
+    updateService: new UpdateService(signalService),
     shutdown: async () => {
       let firstError: unknown;
       for (const shutdown of [

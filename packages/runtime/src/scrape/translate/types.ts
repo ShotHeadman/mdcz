@@ -1,7 +1,15 @@
+import type { Configuration } from "@mdcz/shared/config";
 import type { TranslationTarget } from "@mdcz/shared/enums";
 
 export type LanguageTarget = "zh_cn" | "zh_tw";
 export type ActorMappingLanguageTarget = LanguageTarget | "jp";
+
+export type MachineTranslator = (
+  texts: string[],
+  target: LanguageTarget,
+  config: Configuration,
+  signal?: AbortSignal,
+) => Promise<Array<string | null>>;
 
 export interface TranslationMappingStore {
   findMappedActorName(value: string, language?: ActorMappingLanguageTarget): Promise<string | null>;

@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { EventChannel, EventPayloadByChannel, TaskSnapshotPayload } from "@mdcz/shared/ipcEvents";
+import type { AppUpdateStatus } from "@mdcz/shared/ipcTypes";
 import type { BrowserWindow } from "electron";
 import { type LoggerEventPayload, loggerService } from "./LoggerService";
 
@@ -37,6 +38,10 @@ export class SignalService extends EventEmitter {
 
   publishTaskSnapshot(payload: TaskSnapshotPayload): void {
     this.send(IpcChannel.Event_TaskSnapshot, payload);
+  }
+
+  publishUpdateStatus(payload: AppUpdateStatus): void {
+    this.send(IpcChannel.Event_UpdateStatus, payload);
   }
 
   private send<TChannel extends EventChannel>(channel: TChannel, payload: EventPayloadByChannel[TChannel]): void {

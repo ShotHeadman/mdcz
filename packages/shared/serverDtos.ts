@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { Configuration, DeepPartial } from "./config";
+import { BAIDU_SERVICE_OPTIONS, type Configuration, type DeepPartial } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
-import { Website } from "./enums";
+import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import {
   LLM_API_FORMAT_OPTIONS,
   LLM_OUTPUT_FORMAT_OPTIONS,
@@ -941,6 +941,8 @@ export const siteConnectivityProbeResponseSchema = z.object({
   latencyMs: z.number(),
   status: z.number().optional(),
   resolvedUrl: z.string().optional(),
+  /** Host a configured mirror redirected to instead of serving the site itself. */
+  redirectedHost: z.string().optional(),
   /** Raw request error when the probe could not get an HTTP response. */
   error: z.string().optional(),
 });
@@ -973,7 +975,14 @@ export const networkCheckCookiesResponseSchema = z.object({
 
 export type NetworkCheckCookiesResponse = z.infer<typeof networkCheckCookiesResponseSchema>;
 
-export const translateTestLlmInputSchema = z.object({
+export const translateTestInputSchema = z.object({
+  engine: z.enum(TranslateEngine).optional(),
+  targetLanguage: z.enum(TRANSLATION_TARGET_OPTIONS).optional(),
+  deeplApiKey: z.string().optional(),
+  baiduService: z.enum(BAIDU_SERVICE_OPTIONS).optional(),
+  baiduAppId: z.string().optional(),
+  baiduSecretKey: z.string().optional(),
+  baiduApiKey: z.string().optional(),
   llmModelName: z.string().optional(),
   llmApiKey: z.string().optional(),
   llmBaseUrl: z.string().optional(),
@@ -984,18 +993,19 @@ export const translateTestLlmInputSchema = z.object({
   llmReasoning: z.enum(LLM_REASONING_OPTIONS).optional(),
   llmOutputFormat: z.enum(LLM_OUTPUT_FORMAT_OPTIONS).optional(),
   llmTimeout: z.number().optional(),
+  llmMaxRetries: z.number().int().min(1).max(20).optional(),
+  llmMaxRequestsPerSecond: z.number().int().min(1).max(100).optional(),
 });
 
-export type TranslateTestLlmInputDto = z.infer<typeof translateTestLlmInputSchema>;
+export type TranslateTestInputDto = z.infer<typeof translateTestInputSchema>;
 
-export const translateTestLlmResponseSchema = z.object({
-  status: z.enum(["ok", "missing_model", "missing_api_key", "failed"]),
-  /** Translated sample title when status is "ok". */
+export const translateTestResponseSchema = z.object({
+  status: z.enum(["ok", "missing_model", "missing_credentials", "failed"]),
   sample: z.string().optional(),
   error: z.string().optional(),
 });
 
-export type TranslateTestLlmResponse = z.infer<typeof translateTestLlmResponseSchema>;
+export type TranslateTestResponse = z.infer<typeof translateTestResponseSchema>;
 
 export const authLoginInputSchema = z.object({
   password: z.string(),

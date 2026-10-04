@@ -1,19 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Dirent, Stats } from "node:fs";
-import {
-  copyFile,
-  stat as fsStat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { copyFile, stat as fsStat, mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { canonicalPath } from "./entryIdentity";
 import { toStorageError } from "./errors";
 import { isPathInside, type MediaRoot } from "./mediaRoot";
 import { normalizeRootRelativePath, type RootRelativePath, resolveRootRelativePath } from "./rootRelativePath";
@@ -87,6 +77,7 @@ export interface RootFileWalkEntry {
 
 export interface FileWalkOptions {
   filterFile?: (absolutePath: string) => boolean | Promise<boolean>;
+  filterStats?: (absolutePath: string, stats: Stats) => boolean;
   filterDirectory?: (absolutePath: string) => boolean;
   excludeDirectoryPaths?: readonly string[];
   excludeFileSymlinks?: boolean;
@@ -159,7 +150,7 @@ export const walkFiles = async (
     signal?.throwIfAborted();
     let pending = keys.get(target);
     if (!pending) {
-      pending = measure("realpath", target, () => realpath(target));
+      pending = measure("realpath", target, () => canonicalPath(target));
       keys.set(target, pending);
     }
     return pending;
@@ -221,7 +212,7 @@ export const walkFiles = async (
       signal?.throwIfAborted();
       if (entry.isFile() && !accepted) continue;
       if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-      if (entry.isFile() && !options.onFile) {
+      if (entry.isFile() && !options.onFile && !options.filterStats) {
         candidates += 1;
         files.push(entryAbsolutePath);
         continue;
@@ -241,6 +232,7 @@ export const walkFiles = async (
             return;
           }
           if (stats.isFile() && accepted && !(entry.isSymbolicLink() && options.excludeFileSymlinks)) {
+            if (options.filterStats?.(entryAbsolutePath, stats) === false) return;
             candidates += 1;
             if (options.onFile) options.onFile(entryAbsolutePath, stats);
             else files.push(entryAbsolutePath);

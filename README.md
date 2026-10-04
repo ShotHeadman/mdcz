@@ -47,22 +47,26 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 
 ---
 
-## 平台支持
-
-| 平台 | 形式 | 运行要求 |
-|---|---|---|
-| Windows | 桌面客户端 (.exe) | Windows 10 及以上 |
-| macOS | 桌面客户端 (.dmg) | Apple Silicon / Intel |
-| Linux | 桌面客户端 (.AppImage) | 主流 Linux 发行版 |
-| NAS / 服务器 | Docker / WebUI | Docker 引擎 / Node.js >= 24 |
-
----
-
-## 快速开始
+## 下载与安装
 
 ### 桌面客户端
 
-前往 [Releases](https://github.com/ShotHeadman/mdcz/releases) 页面下载对应系统的安装包直接运行。
+前往 [Releases](https://github.com/ShotHeadman/mdcz/releases) 下载对应文件：
+
+| 文件 | 适用于 | 自动更新 | 数据目录 |
+|---|---|---|---|
+| `MDCz-<版本>-win-x64-setup.exe` | Windows 10 及以上，**推荐** | 应用内下载，重启后安装 | `%APPDATA%\mdcz` |
+| `MDCz-<版本>-win-x64-portable.zip` | Windows 便携版，解压即用 | 提示新版本，需手动下载替换 | 程序目录下的 `data\` |
+| `MDCz-<版本>-mac-arm64.dmg` | macOS Apple Silicon（不提供 Intel 版） | 提示新版本，需手动下载替换 | `~/Library/Application Support/mdcz` |
+| `MDCz-<版本>-linux-x86_64.AppImage` | Linux x64 | 应用内下载，重启后安装 | `~/.config/mdcz` |
+
+便携版的配置、数据库和日志都在 `data\` 里，升级时保留这个文件夹，替换其余文件即可。
+
+> [!NOTE]
+> 应用没有代码签名，首次运行时系统会拦截：
+> - **Windows** 提示「Windows 已保护你的电脑」：点「更多信息」→「仍要运行」。
+> - **macOS** 提示「已损坏，无法打开」：把 MDCz 拖进「应用程序」后，在终端执行 `xattr -cr /Applications/MDCz.app`。
+> - **Linux**：先执行 `chmod +x MDCz-*.AppImage` 再运行。
 
 ### Docker 部署（推荐 NAS / 服务器）
 
@@ -71,13 +75,13 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 - **快速上手**：将配置模板复制为 `.env`，填写真实版本号与媒体路径后，执行 `docker compose up -d` 即可启动。
 - **首次访问**：浏览器打开 `http://<服务器IP>:3838`（默认绑定 `127.0.0.1`，NAS 局域网访问请在 `.env` 中调整绑定 IP）。系统无默认密码，首次访问直接按提示设置管理员密码，随后即可在设置中添加媒体库。
 
+### WebUI 压缩包（不使用 Docker）
+
+Releases 中的 `mdcz-<版本>.tar.gz` 可直接在装有 Node.js >= 24 的机器上运行，安装和启动方式见包内 README。
+
 ### 源码运行
 
-```bash
-pnpm install
-pnpm dev:webui      # 启动 WebUI 模式
-pnpm dev:desktop    # 启动桌面端模式
-```
+环境准备与开发命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 
 ---

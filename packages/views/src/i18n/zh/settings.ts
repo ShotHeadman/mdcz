@@ -2,15 +2,16 @@ import type { ConfigIssueCode } from "@mdcz/shared/config";
 import type { Messages } from "../en";
 
 export const settings: Messages["settings"] = {
-  llmTest: {
+  translationTest: {
     ok: (sample) => `元数据翻译样例验证通过：${sample}`,
     missing_model: "请先填写 LLM 模型名称",
-    missing_api_key: "请填写 LLM API Key（默认 OpenAI 端点必填）",
+    missing_credentials: "请填写当前翻译引擎所需的凭据",
     failed: "连接失败",
   },
   siteConnectivity: {
     httpResult: (ok, status, latencyMs) => `${ok ? "" : "连接异常 · "}HTTP ${status} · ${latencyMs}ms`,
     requestFailed: "请求失败",
+    redirected: (host) => `已跳转到 ${host}，不是可用的镜像`,
   },
   namingPreviewSamples: {
     standard: "普通",
@@ -19,7 +20,8 @@ export const settings: Messages["settings"] = {
     noActor: "演员为空",
   },
   options: {
-    translateEngine: { openai: "LLM 翻译", google: "Google 翻译（免费）" },
+    translateEngine: { openai: "LLM 翻译", google: "Google 翻译（免费）", deepl: "DeepL", baidu: "百度翻译" },
+    baiduService: { general: "通用文本翻译", llm: "大模型文本翻译" },
     llmReasoning: { default: "服务端默认", disabled: "关闭", low: "低", medium: "中", high: "高" },
     llmReasoningDeepseek: {
       default: "服务端默认",
@@ -259,11 +261,11 @@ export const settings: Messages["settings"] = {
   },
   subsections: {
     scrapeSites: "刮削站点",
-    scrapeSitesDescription: "启用网站、优先级与自定义地址",
+    scrapeSitesDescription: "启用网站与优先级",
     scrapePacing: "刮削节奏",
-    filenameFiltering: "文件名过滤",
+    filenameFiltering: "文件过滤",
     proxyAndRequests: "代理与请求",
-    siteCredentials: "站点凭证",
+    siteAccess: "站点访问",
     assetDownloads: "资源下载",
     interface: "界面",
     shortcuts: "快捷键",

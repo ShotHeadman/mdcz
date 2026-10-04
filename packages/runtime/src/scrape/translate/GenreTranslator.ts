@@ -1,30 +1,14 @@
-import type { Configuration } from "@mdcz/shared/config";
+import { detectLanguage } from "../../shared";
 import { throwIfAborted } from "../utils/abort";
 import { ensureTargetChinese, normalizeTermKey } from "./shared";
 import type { LanguageTarget, TranslationMappingStore } from "./types";
-
-type TranslateTextFn = (
-  input: string,
-  target: LanguageTarget,
-  config: Configuration,
-  signal?: AbortSignal,
-) => Promise<string>;
-
-type TranslateGenresFn = (genres: string[]) => Promise<string[] | null>;
 
 export class GenreTranslator {
   private readonly cache = new Map<string, string>();
 
   constructor(private readonly mappingStore?: TranslationMappingStore) {}
 
-  async translateTerms(
-    terms: string[],
-    target: LanguageTarget,
-    config: Configuration,
-    translateText: TranslateTextFn,
-    translateGenres: TranslateGenresFn,
-    signal?: AbortSignal,
-  ): Promise<string[]> {
+  async resolve(terms: string[], target: LanguageTarget, signal?: AbortSignal) {
     throwIfAborted(signal);
 
     const normalizedTerms = terms.map((term) => term.trim());
@@ -41,8 +25,9 @@ export class GenreTranslator {
       }
       if (unresolvedByKey.has(key)) continue;
 
-      const mapped = await this.mappingStore?.findMappedGenreName(term, target);
-      if (mapped !== null && mapped !== undefined) {
+      const mapped =
+        (await this.mappingStore?.findMappedGenreName(term, target)) ?? (detectLanguage(term) === "zh" ? term : null);
+      if (mapped !== null) {
         const normalized = ensureTargetChinese(mapped.trim(), target);
         this.cache.set(key, normalized);
         resolvedByKey.set(key, normalized);
@@ -51,25 +36,23 @@ export class GenreTranslator {
       }
     }
 
-    const unresolvedEntries = [...unresolvedByKey.entries()];
-    if (config.translate.engine === "google") {
-      await Promise.all(
-        unresolvedEntries.map(async ([key, term]) => {
-          const translated = await translateText(term, target, config, signal);
-          const normalized = ensureTargetChinese(translated.trim(), target) || term;
-          this.cache.set(key, normalized);
-          resolvedByKey.set(key, normalized);
-        }),
-      );
-    } else {
-      const translated = await translateGenres(unresolvedEntries.map(([, term]) => term));
-      if (translated && translated.length === unresolvedEntries.length) {
-        unresolvedEntries.forEach(([key, term], index) => {
-          const normalized = ensureTargetChinese(translated[index]?.trim() ?? "", target) || term;
-          this.cache.set(key, normalized);
-          resolvedByKey.set(key, normalized);
-        });
-      }
+    return { normalizedTerms, resolvedByKey, unresolvedEntries: [...unresolvedByKey.entries()] };
+  }
+
+  remember(
+    state: Awaited<ReturnType<GenreTranslator["resolve"]>>,
+    translated: Array<string | null>,
+    target: LanguageTarget,
+  ): string[] {
+    const { normalizedTerms, resolvedByKey, unresolvedEntries } = state;
+    if (translated.length === unresolvedEntries.length) {
+      unresolvedEntries.forEach(([key, term], index) => {
+        const value = translated[index]?.trim();
+        if (!value || value === term) return;
+        const normalized = ensureTargetChinese(value, target);
+        this.cache.set(key, normalized);
+        resolvedByKey.set(key, normalized);
+      });
     }
 
     return normalizedTerms.flatMap((term) => {

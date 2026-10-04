@@ -60,12 +60,21 @@ export type NfoField = (typeof NFO_FIELD_OPTIONS)[number];
 
 const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
 
+export const BAIDU_SERVICE_OPTIONS = ["general", "llm"] as const;
+
+export const mirrorUrlSchema = z
+  .url({ protocol: /^https?$/u })
+  .or(z.literal(""))
+  .default("");
+
 const networkSchema = z.object({
   proxyType: z.enum(ProxyType).default(ProxyType.NONE),
   proxy: z.string().default(""),
   useProxy: z.boolean().default(false),
   timeout: z.number().int().min(1).max(300).default(10),
   retryCount: z.number().int().min(0).max(10).default(3),
+  javdbUrl: mirrorUrlSchema,
+  javbusUrl: mirrorUrlSchema,
   javdbCookie: z.string().default(""),
   javbusCookie: z.string().default(""),
   fantiaCookie: z.string().default(""),
@@ -75,6 +84,7 @@ const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
   filenameIgnoreTokens: z.array(z.string()).default([]),
   filenameBlacklistTokens: z.array(z.string()).default([]),
+  minVideoSizeMb: z.number().int().min(0).max(10240).default(0),
   r18MetadataLanguage: z.enum(R18_METADATA_LANGUAGE_OPTIONS).default(DEFAULT_R18_METADATA_LANGUAGE),
   threadNumber: z.number().int().min(1).max(128).default(2),
   javdbDelaySeconds: z.number().int().min(0).max(120).default(10),
@@ -109,6 +119,11 @@ const translationTargetSchema = z
 const translateSchema = z.object({
   enableTranslation: z.boolean().default(false),
   engine: z.enum(TranslateEngine).default(TranslateEngine.OPENAI),
+  deeplApiKey: z.string().default(""),
+  baiduService: z.enum(BAIDU_SERVICE_OPTIONS).default("general"),
+  baiduAppId: z.string().default(""),
+  baiduSecretKey: z.string().default(""),
+  baiduApiKey: z.string().default(""),
   llmModelName: z.string().default("gpt-5.2"),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
@@ -435,6 +450,12 @@ export const configurationSchema = z
     shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
     ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),
+    watch: z
+      .object({
+        enabled: z.boolean().default(false),
+        intervalMinutes: z.number().int().min(1).max(1440).default(5),
+      })
+      .default(() => ({ enabled: false, intervalMinutes: 5 })),
     behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
     titleRepair: titleRepairSchema.default(() => titleRepairSchema.parse({})),
     aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),
@@ -506,6 +527,32 @@ export const configurationSchema = z
   });
 
 export type Configuration = z.infer<typeof configurationSchema>;
+
+export const OFFICIAL_SITE_URLS = {
+  [Website.JAVDB]: "https://javdb.com",
+  [Website.JAVBUS]: "https://www.javbus.com",
+} as const;
+
+export type MirrorableSite = keyof typeof OFFICIAL_SITE_URLS;
+export type SiteUrlConfiguration = Pick<Configuration["network"], "javdbUrl" | "javbusUrl">;
+
+export const OFFICIAL_SITE_HOSTS = {
+  [Website.JAVDB]: ["javdb.com", "www.javdb.com"],
+  [Website.JAVBUS]: ["www.javbus.com", "javbus.com"],
+} as const satisfies Record<MirrorableSite, readonly string[]>;
+
+const MIRROR_URL_KEYS = {
+  [Website.JAVDB]: "javdbUrl",
+  [Website.JAVBUS]: "javbusUrl",
+} as const satisfies Record<MirrorableSite, keyof SiteUrlConfiguration>;
+
+export const isMirrorableSite = (site: Website): site is MirrorableSite => site in OFFICIAL_SITE_URLS;
+
+// Mirrors serve the same paths as the official site, so only the configured origin is used.
+export const resolveSiteUrl = (network: SiteUrlConfiguration, site: MirrorableSite): string => {
+  const configured = network[MIRROR_URL_KEYS[site]];
+  return configured ? new URL(configured).origin : OFFICIAL_SITE_URLS[site];
+};
 
 export type DeepPartial<T> =
   T extends Array<infer U> ? Array<DeepPartial<U>> : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;

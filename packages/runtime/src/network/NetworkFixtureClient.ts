@@ -191,7 +191,7 @@ export class NetworkRecordClient extends NetworkClient {
       await mkdir(directory, { recursive: true });
       await atomicWriteFile(path.join(directory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
       const destination = resolveNetworkFixtureDirectory(this.publishRoot, session.caseId);
-      await rm(destination, { recursive: true, force: true });
+      await rm(destination, { recursive: true, force: true, maxRetries: 5 });
       await cp(directory, destination, { recursive: true });
     }
   }

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
@@ -147,29 +147,34 @@ describe("buildServer scan integration", () => {
     expect(retriedLibraryResponse.json().result.data.total).toBe(0);
   });
 
-  it("lists supported candidates and applies the current literal blacklist to file and folder names", async () => {
+  it("lists candidates using blacklist and size limits while keeping only standalone STRM files", async () => {
     mediaDirectory = await createTempDirectory("server-scan-candidates");
     await mkdir(join(mediaDirectory.path, "nested"));
     await mkdir(join(mediaDirectory.path, "JAV_output"));
-    await writeFile(join(mediaDirectory.path, "nested", "movie.mp4"), "video");
+    await writeFile(join(mediaDirectory.path, "nested", "movie.mp4"), Buffer.alloc(1024 * 1024));
     await writeFile(join(mediaDirectory.path, "nested", "trailer.mp4"), "trailer");
     await writeFile(join(mediaDirectory.path, "nested", "notes.txt"), "text");
-    await writeFile(join(mediaDirectory.path, "JAV_output", "done.mp4"), "video");
+    await writeFile(join(mediaDirectory.path, "JAV_output", "done.mp4"), Buffer.alloc(1024 * 1024));
     await mkdir(join(mediaDirectory.path, "nested", ".@__thumb", "deep"), { recursive: true });
-    await writeFile(join(mediaDirectory.path, "nested", ".@__thumb", "deep", "thumb.mp4"), "video");
-    await writeFile(join(mediaDirectory.path, "nested", "DeFaUlT001.mp4"), "video");
-    await writeFile(join(mediaDirectory.path, "nested", "ads+[2024].mp4"), "video");
-    await writeFile(join(mediaDirectory.path, "nested", "ads-2024.mp4"), "video");
+    await writeFile(join(mediaDirectory.path, "nested", ".@__thumb", "deep", "thumb.mp4"), Buffer.alloc(1024 * 1024));
+    await writeFile(join(mediaDirectory.path, "nested", "DeFaUlT001.mp4"), Buffer.alloc(1024 * 1024));
+    await writeFile(join(mediaDirectory.path, "nested", "ads+[2024].mp4"), Buffer.alloc(1024 * 1024));
+    await writeFile(join(mediaDirectory.path, "nested", "ads-2024.mp4"), Buffer.alloc(1024 * 1024));
+    const smallVideo = join(mediaDirectory.path, "nested", "small.mp4");
+    const smallStrm = join(mediaDirectory.path, "nested", "small.StRm");
+    await writeFile(smallVideo, "garbage-video");
+    await writeFile(smallStrm, "https://x/y/z");
+    await writeFile(join(mediaDirectory.path, "nested", "standalone.strm"), "https://x/y/z");
 
     const { fastify, services } = await createTestServer();
     await services.config.update({
-      scrape: { filenameBlacklistTokens: ["default", "ADS+[2024]", ".@__THUMB", "   "] },
+      scrape: { filenameBlacklistTokens: ["default", "ADS+[2024]", ".@__THUMB", "   "], minVideoSizeMb: 1 },
     });
     const token = await loginAsAdmin(fastify);
     const response = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(
-        JSON.stringify({ recursive: true, scanDir: mediaDirectory.path, supportedExtensions: ["mp4"] }),
+        JSON.stringify({ recursive: true, scanDir: mediaDirectory.path, supportedExtensions: ["mp4", "strm"] }),
       )}`,
       headers: { authorization: `Bearer ${token}` },
     });
@@ -185,15 +190,22 @@ describe("buildServer scan integration", () => {
         name: "movie.mp4",
         ref: { relativePath: "nested/movie.mp4", rootId: deterministicMediaRootId(mediaDirectory.path) },
       }),
+      expect.objectContaining({ name: "standalone.strm", size: 13 }),
     ]);
-    await services.config.update({ scrape: { filenameBlacklistTokens: [] } });
+    expect(response.json().result.data.warnings.count).toBe(0);
+    expect(await readFile(smallVideo, "utf8")).toBe("garbage-video");
+    expect(await readFile(smallStrm, "utf8")).toBe("https://x/y/z");
+    await services.config.update({ scrape: { filenameBlacklistTokens: [], minVideoSizeMb: 0 } });
     const refreshedResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: true, scanDir: mediaDirectory.path }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(refreshedResponse.statusCode).toBe(200);
-    expect(refreshedResponse.json().result.data.candidates).toHaveLength(6);
+    expect(refreshedResponse.json().result.data.candidates).toHaveLength(8);
+    expect(refreshedResponse.json().result.data.candidates).toContainEqual(
+      expect.objectContaining({ name: "small.mp4", size: 13 }),
+    );
     const shallowResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: false, scanDir: mediaDirectory.path }))}`,

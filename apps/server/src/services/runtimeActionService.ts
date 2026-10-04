@@ -1,28 +1,24 @@
 import { type CrawlerProvider, probeSiteConnectivity } from "@mdcz/runtime/crawler";
 import { checkConfiguredSiteCookies, type NetworkClient } from "@mdcz/runtime/network";
-import { ensureWatermarkDirectory, LlmApiClient } from "@mdcz/runtime/scrape";
-import { testLlmConnectivity } from "@mdcz/runtime/translate";
+import { ensureWatermarkDirectory } from "@mdcz/runtime/scrape";
+import { testTranslation } from "@mdcz/runtime/translate";
 import type {
   AppEnsureWatermarkDirectoryResponse,
   CrawlerListSitesResponse,
   CrawlerProbeSiteConnectivityInput,
   NetworkCheckCookiesResponse,
   SiteConnectivityProbeResponse,
-  TranslateTestLlmInputDto,
-  TranslateTestLlmResponse,
+  TranslateTestInputDto,
+  TranslateTestResponse,
 } from "@mdcz/shared/serverDtos";
 import type { ServerConfigService } from "./configService";
 
 export class RuntimeActionService {
-  private readonly llmApiClient: LlmApiClient;
-
   constructor(
     private readonly config: ServerConfigService,
     private readonly networkClient: NetworkClient,
     private readonly crawlerProvider: CrawlerProvider,
-  ) {
-    this.llmApiClient = new LlmApiClient(networkClient);
-  }
+  ) {}
 
   async ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse> {
     return {
@@ -51,7 +47,7 @@ export class RuntimeActionService {
     return await checkConfiguredSiteCookies(await this.config.get(), this.networkClient);
   }
 
-  async testLlm(input: TranslateTestLlmInputDto): Promise<TranslateTestLlmResponse> {
-    return await testLlmConnectivity(input, await this.config.get(), this.llmApiClient);
+  async testTranslation(input: TranslateTestInputDto): Promise<TranslateTestResponse> {
+    return await testTranslation(input, await this.config.get(), this.networkClient);
   }
 }

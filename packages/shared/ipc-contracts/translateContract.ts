@@ -1,7 +1,7 @@
 import { IpcChannel } from "../IpcChannel";
-import type { IpcProcedure, TranslateTestLlmInput } from "../ipcTypes";
-import type { TranslateTestLlmResponse } from "../serverDtos";
+import type { IpcProcedure, TranslateTestInput } from "../ipcTypes";
+import type { TranslateTestResponse } from "../serverDtos";
 
 export type TranslateIpcContract = {
-  [IpcChannel.Translate_TestLlm]: IpcProcedure<TranslateTestLlmInput, TranslateTestLlmResponse>;
+  [IpcChannel.Translate_Test]: IpcProcedure<TranslateTestInput, TranslateTestResponse>;
 };

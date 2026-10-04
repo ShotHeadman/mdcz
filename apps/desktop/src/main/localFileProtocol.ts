@@ -1,6 +1,6 @@
-import { open, realpath, stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import path from "node:path";
-import { findEnclosingMediaRoot, toRootRelativePath } from "@mdcz/media-store";
+import { canonicalPath, findEnclosingMediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { LOCAL_FILE_SCHEME, parseLocalFileUrl, toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import { protocol } from "electron";
 
@@ -173,17 +173,17 @@ export const resolveLocalFileRequest = async (
 
   const resolvedPath = path.resolve(root.hostPath, ref.relativePath);
   let canonicalRoot: string;
-  let canonicalPath: string;
+  let canonicalFile: string;
   try {
-    canonicalRoot = await realpath(root.hostPath);
-    canonicalPath = await realpath(resolvedPath);
+    canonicalRoot = await canonicalPath(root.hostPath);
+    canonicalFile = await canonicalPath(resolvedPath);
   } catch {
     throw new LocalFileProtocolError("Asset path does not exist");
   }
 
-  assertCanonicalContainment(canonicalRoot, canonicalPath);
+  assertCanonicalContainment(canonicalRoot, canonicalFile);
 
-  const stats = await stat(canonicalPath);
+  const stats = await stat(canonicalFile);
   if (stats.isDirectory()) {
     throw new LocalFileProtocolError("Asset path is a directory");
   }
@@ -191,7 +191,7 @@ export const resolveLocalFileRequest = async (
     throw new LocalFileProtocolError("Asset path is not a file");
   }
 
-  return canonicalPath;
+  return canonicalFile;
 };
 
 export function registerLocalFileScheme(): void {

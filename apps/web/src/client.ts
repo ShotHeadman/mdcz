@@ -164,7 +164,7 @@ export const api: ServerApiContract = {
     checkCookies: () => trpcMutation("network.checkCookies"),
   },
   translate: {
-    testLlm: (input) => trpcMutation("translate.testLlm", input),
+    test: (input) => trpcMutation("translate.test", input),
   },
   serverPaths: {
     suggest: (input) => trpcQuery("serverPaths.suggest", input),

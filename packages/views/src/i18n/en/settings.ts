@@ -4,16 +4,17 @@ import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { NamingPreviewSampleId } from "@mdcz/shared/types";
 
 export const settings = {
-  llmTest: {
+  translationTest: {
     ok: (sample: string) => `Metadata translation sample verified: ${sample}`,
     missing_model: "Please configure the LLM model name first",
-    missing_api_key: "Please enter the LLM API key (required for the default OpenAI endpoint)",
+    missing_credentials: "Please enter the credentials required by this translation engine",
     failed: "Connection failed",
   },
   siteConnectivity: {
     httpResult: (ok: boolean, status: number, latencyMs: number) =>
       `${ok ? "" : "Connection error · "}HTTP ${status} · ${latencyMs}ms`,
     requestFailed: "Request failed",
+    redirected: (host: string) => `Redirected to ${host}; not a working mirror`,
   },
   namingPreviewSamples: {
     standard: "Standard",
@@ -22,7 +23,13 @@ export const settings = {
     noActor: "No actors",
   } as Record<NamingPreviewSampleId, string>,
   options: {
-    translateEngine: { openai: "LLM translation", google: "Google Translate (free)" },
+    translateEngine: {
+      openai: "LLM translation",
+      google: "Google Translate (free)",
+      deepl: "DeepL",
+      baidu: "Baidu Translate",
+    },
+    baiduService: { general: "General text translation", llm: "LLM text translation" },
     llmReasoning: { default: "Server default", disabled: "Off", low: "Low", medium: "Medium", high: "High" },
     llmReasoningDeepseek: {
       default: "Server default",
@@ -287,11 +294,11 @@ export const settings = {
   },
   subsections: {
     scrapeSites: "Scrape sites",
-    scrapeSitesDescription: "Enabled sites, priority and custom URLs",
+    scrapeSitesDescription: "Enabled sites and priority",
     scrapePacing: "Scrape pacing",
-    filenameFiltering: "File name filtering",
+    filenameFiltering: "File filtering",
     proxyAndRequests: "Proxy and requests",
-    siteCredentials: "Site credentials",
+    siteAccess: "Site access",
     assetDownloads: "Asset downloads",
     interface: "Interface",
     shortcuts: "Shortcuts",

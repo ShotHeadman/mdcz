@@ -109,6 +109,18 @@ export const desktop = {
   saveFailed: (error: string) => `Save failed: ${error}`,
   enableDebug: "Enable debug",
 
+  // Updates
+  updateCheckNow: "Check now",
+  updateChecking: "Checking for updates…",
+  updateLatest: "You are on the latest version",
+  updateAvailable: (version: string) => `MDCz v${version} is available`,
+  updateDownload: "Download",
+  updateOpenDownload: "Get from GitHub",
+  updateDownloading: (version: string, percent: number) => `Downloading v${version}… ${percent}%`,
+  updateDownloaded: (version: string) => `v${version} is ready. It installs when MDCz restarts or quits.`,
+  updateInstall: "Restart now",
+  updateFailed: (error: string) => `Update failed: ${error}`,
+
   // Library route
   removedFromLibrary: "Removed from library",
 

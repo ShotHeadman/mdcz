@@ -1,4 +1,5 @@
-import type { Configuration } from "@mdcz/shared/config";
+import { type Configuration, OFFICIAL_SITE_HOSTS, resolveSiteUrl } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
 import type { RuntimeNetworkClient } from "../network";
 import { createScrapeRestGate, type ScrapeRestGate, type ScrapeRestGateLogger } from "./restGate";
 
@@ -8,26 +9,10 @@ export interface ScrapeNetworkPolicyClient {
   clearDomainLimit?(domain: string): void;
 }
 
-export interface ScrapeNetworkPolicyRule {
-  domains: readonly string[];
-  delaySeconds: (configuration: Configuration) => number;
-  intervalCap?: number;
-  concurrency?: number;
-}
-
 export interface ScrapeExecutionPolicy {
   concurrency: number;
   restGate: ScrapeRestGate | null;
 }
-
-export const SCRAPE_NETWORK_POLICY_RULES: readonly ScrapeNetworkPolicyRule[] = [
-  {
-    domains: ["javdb.com", "www.javdb.com"],
-    delaySeconds: (configuration) => configuration.scrape.javdbDelaySeconds,
-    intervalCap: 1,
-    concurrency: 1,
-  },
-];
 
 const hasScrapeNetworkPolicyApi = (
   client: RuntimeNetworkClient | ScrapeNetworkPolicyClient,
@@ -41,21 +26,21 @@ export const getScrapeConcurrency = (configuration: Configuration): number =>
 export const applyScrapeNetworkPolicy = (
   networkClient: RuntimeNetworkClient | ScrapeNetworkPolicyClient,
   configuration: Configuration,
-  rules: readonly ScrapeNetworkPolicyRule[] = SCRAPE_NETWORK_POLICY_RULES,
 ): void => {
   if (!hasScrapeNetworkPolicyApi(networkClient)) {
     return;
   }
 
-  for (const rule of rules) {
-    const delaySeconds = Math.max(0, Math.trunc(rule.delaySeconds(configuration)));
-    for (const domain of rule.domains) {
-      if (delaySeconds > 0) {
-        networkClient.setDomainInterval(domain, delaySeconds * 1000, rule.intervalCap ?? 1, rule.concurrency ?? 1);
-        continue;
-      }
-
-      networkClient.clearDomainLimit?.(domain);
+  const javdbHosts = new Set([
+    ...OFFICIAL_SITE_HOSTS[Website.JAVDB],
+    new URL(resolveSiteUrl(configuration.network, Website.JAVDB)).hostname,
+  ]);
+  const delaySeconds = Math.max(0, Math.trunc(configuration.scrape.javdbDelaySeconds));
+  for (const host of javdbHosts) {
+    if (delaySeconds > 0) {
+      networkClient.setDomainInterval(host, delaySeconds * 1000, 1, 1);
+    } else {
+      networkClient.clearDomainLimit?.(host);
     }
   }
 };
