@@ -1,5 +1,6 @@
 import {
   createPersistenceDatabase,
+  FolderWatchRepository,
   isSchemaMigrationFailure,
   LibraryRepository,
   MediaRootRepository,
@@ -15,6 +16,7 @@ import { acquireDatabaseLease } from "../databaseFiles";
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
+  folderWatch: FolderWatchRepository;
   library: LibraryRepository;
   mediaRoots: MediaRootRepository;
   scrapeRuns: ScrapeRunRepository;
@@ -72,6 +74,7 @@ export class ServerPersistenceService {
       this.state = {
         database,
         repositories: {
+          folderWatch: new FolderWatchRepository(database),
           library: new LibraryRepository(database),
           mediaRoots,
           scrapeRuns,

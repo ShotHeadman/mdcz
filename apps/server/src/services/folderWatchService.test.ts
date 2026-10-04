@@ -1,7 +1,9 @@
-import { appendFile, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rename, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { walkFiles } from "@mdcz/media-store";
+import { filesystemPathKey, walkFiles } from "@mdcz/media-store";
+import { FolderWatchRepository } from "@mdcz/persistence";
+import { createTestPersistenceDatabase } from "@mdcz/persistence/test";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerConfigService } from "./configService";
@@ -31,6 +33,7 @@ describe("FolderWatchService", () => {
     const maintenance = { getActiveSession: vi.fn().mockResolvedValue(null) };
     const inventoryOwnership = vi.fn().mockReturnValue([]);
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const database = createTestPersistenceDatabase();
     let releaseBaseline!: () => void;
     const baseline = new Promise<void>((resolve) => {
       releaseBaseline = resolve;
@@ -58,7 +61,11 @@ describe("FolderWatchService", () => {
       } as never,
       scrape,
       maintenance,
-      { getState: async () => ({ repositories: { library: { inventoryOwnership } } }) } as never,
+      {
+        getState: async () => ({
+          repositories: { library: { inventoryOwnership }, folderWatch: new FolderWatchRepository(database) },
+        }),
+      } as never,
       logger,
     );
     const settled = () => vi.waitFor(() => expect(vi.getTimerCount()).toBe(configuration.watch.enabled ? 1 : 0));
@@ -136,6 +143,7 @@ describe("FolderWatchService", () => {
       await cycle();
       expect(scrape.start).toHaveBeenCalledTimes(4);
 
+      await writeFile(path.join(mediaPath, "settings-change.mp4"), "arrived before changes");
       for (const change of [
         () => {
           configuration.paths.successOutputFolder = "new-output";
@@ -162,13 +170,25 @@ describe("FolderWatchService", () => {
           configuration.paths.metadataPath = "metadata";
         },
       ]) {
-        await writeFile(path.join(mediaPath, "settings-change.mp4"), "existing before change");
         change();
         await changed();
-        await cycle();
-        await cycle();
-        expect(scrape.start).toHaveBeenCalledTimes(4);
       }
+      inventoryOwnership.mockImplementation((refs: Array<{ relativePath: string }>) =>
+        refs.filter(({ relativePath }) => relativePath.endsWith("finished.mp4")),
+      );
+      await cycle();
+      await cycle();
+      expect(scrape.start).toHaveBeenCalledTimes(5);
+      expect(scrape.start.mock.lastCall?.[0].refs).toHaveLength(2);
+      expect(scrape.start).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          refs: expect.arrayContaining([
+            { rootId: "media", relativePath: "ignored.mp4" },
+            { rootId: "media", relativePath: "settings-change.mp4" },
+          ]),
+        }),
+      );
+      inventoryOwnership.mockReturnValue([]);
 
       const actual = await vi.importActual<typeof import("@mdcz/media-store")>("@mdcz/media-store");
       let hidden: string[] = [];
@@ -190,9 +210,9 @@ describe("FolderWatchService", () => {
       await cycle();
       hidden = [];
       await cycle();
-      expect(scrape.start).toHaveBeenCalledTimes(4);
-      await cycle();
       expect(scrape.start).toHaveBeenCalledTimes(5);
+      await cycle();
+      expect(scrape.start).toHaveBeenCalledTimes(6);
       expect(scrape.start.mock.calls.at(-1)?.[0].refs).toEqual([
         { rootId: "media", relativePath: "warning-arrival.mp4" },
       ]);
@@ -200,12 +220,28 @@ describe("FolderWatchService", () => {
 
       configuration.watch.enabled = false;
       await changed();
-      await writeFile(path.join(mediaPath, "while-disabled.mp4"), "baseline again");
+      await writeFile(path.join(mediaPath, "while-disabled.mp4"), "arrived while disabled");
       await cycle();
       configuration.watch.enabled = true;
       await changed();
       await cycle();
-      expect(scrape.start).toHaveBeenCalledTimes(5);
+      expect(scrape.start).toHaveBeenCalledTimes(7);
+      expect(scrape.start.mock.calls.at(-1)?.[0].refs).toEqual([
+        { rootId: "media", relativePath: "while-disabled.mp4" },
+      ]);
+
+      const nested = path.join(mediaPath, "release", "nested.mp4");
+      await mkdir(path.dirname(nested));
+      await writeFile(nested, "ready");
+      await cycle();
+      await cycle();
+      await rm(path.dirname(nested), { recursive: true });
+      await cycle();
+      await mkdir(path.dirname(nested));
+      await writeFile(nested, "ready again");
+      await cycle();
+      await cycle();
+      expect(scrape.start).toHaveBeenCalledTimes(9);
 
       let release!: () => void;
       maintenance.getActiveSession.mockImplementationOnce(
@@ -225,7 +261,7 @@ describe("FolderWatchService", () => {
       release();
       await closing;
       await vi.advanceTimersByTimeAsync(180_000);
-      expect(scrape.start).toHaveBeenCalledTimes(5);
+      expect(scrape.start).toHaveBeenCalledTimes(9);
       expect(unsubscribe).toHaveBeenCalledTimes(1);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -233,6 +269,88 @@ describe("FolderWatchService", () => {
       await watcher.close();
       vi.useRealTimers();
       vi.mocked(walkFiles).mockRestore();
+      database.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("resumes the persisted snapshot after a restart and rebuilds it for a new media directory", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "mdcz-watch-"));
+    const roots = ["media", "other"].map((id) => ({
+      id,
+      hostPath: path.join(directory, id),
+      realPath: path.join(directory, id),
+    }));
+    for (const root of roots) await mkdir(root.hostPath);
+    const [media, other] = roots;
+    const configuration = structuredClone(defaultConfiguration);
+    configuration.paths.mediaPath = media.hostPath;
+    configuration.scrape.minVideoSizeMb = 0;
+    configuration.watch = { enabled: true, intervalMinutes: 1 };
+    const database = createTestPersistenceDatabase();
+    const folderWatch = new FolderWatchRepository(database);
+    const scrape = { start: vi.fn().mockResolvedValue({ task: { id: "task" } }) };
+    let listener: Parameters<ServerConfigService["onChange"]>[0] | undefined;
+    const createWatcher = () =>
+      new FolderWatchService(
+        {
+          get: async () => configuration,
+          onChange: (next) => {
+            listener = next;
+            return () => {};
+          },
+        },
+        {
+          registerPathIntent: async (hostPath: string) => roots.find((root) => root.hostPath === hostPath),
+          listRoots: async () => roots,
+          rootIntegrityGuard: () => async () => {},
+          prepareOutputDirectory: async () => ({ id: "media", relativeDirectory: "output" }),
+        } as never,
+        scrape,
+        { getActiveSession: async () => null },
+        {
+          getState: async () => ({
+            repositories: { library: { inventoryOwnership: () => [] }, folderWatch },
+          }),
+        } as never,
+        { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      );
+    const settled = () => vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+    const cycle = async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+      await settled();
+    };
+    vi.useFakeTimers();
+    let watcher = createWatcher();
+    try {
+      await writeFile(path.join(media.hostPath, "existing.mp4"), "baseline");
+      await watcher.start();
+      await settled();
+      await watcher.close();
+
+      // Cloud drive transfers keep the original modification time, so offline arrivals must not be judged by it.
+      await writeFile(path.join(media.hostPath, "offline.mp4"), "arrived while stopped");
+      await utimes(path.join(media.hostPath, "offline.mp4"), new Date("2020-01-01"), new Date("2020-01-01"));
+      watcher = createWatcher();
+      await watcher.start();
+      await settled();
+      await cycle();
+      expect(scrape.start).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ refs: [{ rootId: "media", relativePath: "offline.mp4" }] }),
+      );
+
+      await writeFile(path.join(other.hostPath, "other-existing.mp4"), "baseline");
+      configuration.paths.mediaPath = other.hostPath;
+      listener?.({ configuration } as never);
+      await settled();
+      await cycle();
+      await cycle();
+      expect(scrape.start).toHaveBeenCalledTimes(1);
+      expect(folderWatch.load(filesystemPathKey(media.hostPath))).toBeUndefined();
+    } finally {
+      await watcher.close();
+      vi.useRealTimers();
+      database.close();
       await rm(directory, { recursive: true, force: true });
     }
   });

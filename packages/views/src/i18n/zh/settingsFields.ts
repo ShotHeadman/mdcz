@@ -15,7 +15,8 @@ export const settingsFields: Messages["settingsFields"] = {
   fields: {
     "watch.enabled": {
       label: "自动刮削新增媒体",
-      description: "仅服务端。监控媒体目录；启动时或修改监控设置后已存在的文件作为基线，需要手动刮削。",
+      description:
+        "仅服务端。监控媒体目录；首次监控某个目录时已存在的文件作为基线，需要手动刮削；服务端停止期间新增的文件会在重启后自动处理。",
     },
     "watch.intervalMinutes": {
       label: "扫描间隔（分钟）",

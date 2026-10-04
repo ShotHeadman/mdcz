@@ -21,6 +21,10 @@ export class DirectoryInventory {
     if (!this.directories.has(key)) this.directories.set(key, Promise.resolve(entries));
   }
 
+  listedEntries(path: string): Promise<readonly Dirent[]> | undefined {
+    return this.directories.get(filesystemPathKey(path));
+  }
+
   canonicalDirectory(path: string): Promise<string> {
     const key = filesystemPathKey(path);
     let pending = this.directoryPaths.get(key);

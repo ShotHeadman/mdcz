@@ -45,7 +45,7 @@ const fields: Record<FieldKey, FieldText> = {
   "watch.enabled": {
     label: "Automatically scrape new media",
     description:
-      "Server only. Watch the media directory; files already present at startup or after changing watch settings become the baseline and require manual scraping.",
+      "Server only. Watch the media directory. Files already present when a directory is first watched become the baseline and require manual scraping; files added while the server is stopped are picked up after it restarts.",
   },
   "watch.intervalMinutes": {
     label: "Scan interval (minutes)",

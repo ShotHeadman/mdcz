@@ -43,6 +43,13 @@
       "when": 1790985600000,
       "tag": "0005_drop_scrape_run_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791072000000,
+      "tag": "0006_folder_watch_snapshots",
+      "breakpoints": true
     }
   ]
 }

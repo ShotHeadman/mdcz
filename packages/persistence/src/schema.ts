@@ -168,6 +168,11 @@ export const libraryItemAssets = sqliteTable(
   ],
 );
 
+export const folderWatchSnapshots = sqliteTable("folder_watch_snapshots", {
+  scopeKey: text("scope_key").primaryKey(),
+  fileKeysJson: text("file_keys_json").notNull(),
+});
+
 export const schema = {
   mediaRoots,
   scanTasks,
@@ -177,6 +182,7 @@ export const schema = {
   libraryItems,
   libraryItemFiles,
   libraryItemAssets,
+  folderWatchSnapshots,
 };
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;

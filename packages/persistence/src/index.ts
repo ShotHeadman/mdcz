@@ -1,5 +1,6 @@
 export * from "./database";
 export * from "./errors";
+export * from "./folderWatchRepository";
 export * from "./libraryRepository";
 export * from "./mediaRootRepository";
 export * from "./migrate";

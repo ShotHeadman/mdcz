@@ -13,11 +13,12 @@ import type { RuntimeLogService } from "./runtimeLogService";
 import type { ScrapeService } from "./scrapeService";
 
 export class FolderWatchService {
-  private readonly known = new Set<string>();
+  // Undefined until the persisted snapshot of the watched media directory is loaded.
+  private known?: Set<string>;
   private readonly pending = new Map<string, string>();
   private configuration?: Configuration;
   private configurationKey = "";
-  private baseline = true;
+  private scopeKey = "";
   private revision = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private controller?: AbortController;
@@ -66,9 +67,13 @@ export class FolderWatchService {
     this.revision += 1;
     clearTimeout(this.timer);
     this.controller?.abort();
-    this.known.clear();
     this.pending.clear();
-    this.baseline = true;
+    const mediaPath = configuration.paths.mediaPath.trim();
+    const scopeKey = mediaPath && filesystemPathKey(path.resolve(mediaPath));
+    if (scopeKey !== this.scopeKey) {
+      this.scopeKey = scopeKey;
+      this.known = undefined;
+    }
     if (!this.inFlight) this.run();
   }
 
@@ -92,6 +97,7 @@ export class FolderWatchService {
   }
 
   private async tick(configuration: Configuration, signal: AbortSignal): Promise<void> {
+    const scopeKey = this.scopeKey;
     const mediaPath = configuration.paths.mediaPath.trim();
     const targetDir = resolveSuccessTargetDir(mediaPath, configuration.paths.successOutputFolder) || mediaPath;
     const { refs, discovery, inventory } = await discoverDirectoryFiles({
@@ -123,50 +129,74 @@ export class FolderWatchService {
       if (stats) current.set(key, { ref, signature: `${stats.size}:${stats.mtimeMs}` });
     }
     signal.throwIfAborted();
-    if (this.baseline) {
-      for (const key of current.keys()) this.known.add(key);
-      this.baseline = false;
-      return;
-    }
-    // An incomplete scan cannot prove that a known file disappeared.
-    if (!discovery.skipped) {
-      for (const key of this.known) if (!current.has(key)) this.known.delete(key);
-    }
-    for (const key of this.pending.keys()) if (!current.has(key)) this.pending.delete(key);
-    const stable: Array<{ key: string; ref: RootFileRef }> = [];
-    for (const [key, { ref, signature }] of current) {
-      if (this.known.has(key)) continue;
-      if (this.pending.get(key) === signature) stable.push({ key, ref });
-      else this.pending.set(key, signature);
-    }
-    if (!stable.length) return;
-    const maintenance = await this.maintenance.getActiveSession();
-    if (maintenance && ACTIVE_MAINTENANCE_STATUSES.includes(maintenance.status)) return;
     const { repositories } = await this.persistence.getState();
     signal.throwIfAborted();
-    const owned = new Set(
-      repositories.library.inventoryOwnership(stable.map(({ ref }) => ref)).map((entry) => locate(entry).key),
-    );
-    const submitted = stable.filter(({ key }) => !owned.has(key));
-    for (const { key } of stable) {
-      if (!owned.has(key)) continue;
-      this.known.add(key);
-      this.pending.delete(key);
+    const known = this.known ?? repositories.folderWatch.load(scopeKey);
+    if (!known) {
+      this.known = new Set(current.keys());
+      repositories.folderWatch.save(scopeKey, this.known);
+      return;
     }
-    if (!submitted.length) return;
-    const output = await this.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
-    signal.throwIfAborted();
-    const snapshot = await this.scrape.start({
-      executionMode: "batch",
-      refs: submitted.map(({ ref }) => ref),
-      outputRootId: output.id,
-      outputRelativeDirectory: output.relativeDirectory,
-    });
-    signal.throwIfAborted();
-    for (const { key } of submitted) {
-      this.known.add(key);
-      this.pending.delete(key);
+    this.known = known;
+    let changed = false;
+    try {
+      for (const key of known) {
+        if (current.has(key)) continue;
+        // Filters, exclusions and unreadable directories also hide files. Without extra I/O on slow network mounts,
+        // a file is gone only when the closest directory this scan listed lacks the next segment of its path.
+        let child = key;
+        let parent = path.dirname(child);
+        while (parent !== child && !inventory.listedEntries(parent)) {
+          child = parent;
+          parent = path.dirname(parent);
+        }
+        const listing = inventory.listedEntries(parent);
+        if (!listing || (await listing).some((entry) => filesystemPathKey(path.join(parent, entry.name)) === child)) {
+          continue;
+        }
+        known.delete(key);
+        changed = true;
+      }
+      for (const key of this.pending.keys()) if (!current.has(key)) this.pending.delete(key);
+      const stable: Array<{ key: string; ref: RootFileRef }> = [];
+      for (const [key, { ref, signature }] of current) {
+        if (known.has(key)) continue;
+        if (this.pending.get(key) === signature) stable.push({ key, ref });
+        else this.pending.set(key, signature);
+      }
+      if (!stable.length) return;
+      const maintenance = await this.maintenance.getActiveSession();
+      if (maintenance && ACTIVE_MAINTENANCE_STATUSES.includes(maintenance.status)) return;
+      signal.throwIfAborted();
+      const owned = new Set(
+        repositories.library.inventoryOwnership(stable.map(({ ref }) => ref)).map((entry) => locate(entry).key),
+      );
+      const submitted = stable.filter(({ key }) => !owned.has(key));
+      for (const { key } of stable) {
+        if (!owned.has(key)) continue;
+        known.add(key);
+        this.pending.delete(key);
+        changed = true;
+      }
+      if (!submitted.length) return;
+      const output = await this.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
+      signal.throwIfAborted();
+      const snapshot = await this.scrape.start({
+        executionMode: "batch",
+        refs: submitted.map(({ ref }) => ref),
+        outputRootId: output.id,
+        outputRelativeDirectory: output.relativeDirectory,
+      });
+      // Record the submission even if settings changed meanwhile; the task already owns these files.
+      for (const { key } of submitted) {
+        known.add(key);
+        this.pending.delete(key);
+      }
+      changed = true;
+      this.logger.info(`Submitted ${submitted.length} watched media files: taskId=${snapshot.task.id}`);
+    } finally {
+      // Switching media directories mid-tick must not overwrite the new directory's snapshot.
+      if (changed && scopeKey === this.scopeKey) repositories.folderWatch.save(scopeKey, known);
     }
-    this.logger.info(`Submitted ${submitted.length} watched media files: taskId=${snapshot.task.id}`);
   }
 }
