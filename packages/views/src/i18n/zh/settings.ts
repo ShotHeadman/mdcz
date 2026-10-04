@@ -11,6 +11,7 @@ export const settings: Messages["settings"] = {
   siteConnectivity: {
     httpResult: (ok, status, latencyMs) => `${ok ? "" : "连接异常 · "}HTTP ${status} · ${latencyMs}ms`,
     requestFailed: "请求失败",
+    redirected: (host) => `已跳转到 ${host}，不是可用的镜像`,
   },
   namingPreviewSamples: {
     standard: "普通",
@@ -19,7 +20,8 @@ export const settings: Messages["settings"] = {
     noActor: "演员为空",
   },
   options: {
-    translateEngine: { openai: "LLM 翻译", google: "Google 翻译（免费）", deepl: "DeepL / DeepLX", baidu: "百度翻译" },
+    translateEngine: { openai: "LLM 翻译", google: "Google 翻译（免费）", deepl: "DeepL", baidu: "百度翻译" },
+    baiduService: { general: "通用文本翻译", llm: "大模型文本翻译" },
     llmReasoning: { default: "服务端默认", disabled: "关闭", low: "低", medium: "中", high: "高" },
     llmReasoningDeepseek: {
       default: "服务端默认",

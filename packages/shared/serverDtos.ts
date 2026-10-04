@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Configuration, DeepPartial } from "./config";
+import { BAIDU_SERVICE_OPTIONS, type Configuration, type DeepPartial } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import {
@@ -941,6 +941,8 @@ export const siteConnectivityProbeResponseSchema = z.object({
   latencyMs: z.number(),
   status: z.number().optional(),
   resolvedUrl: z.string().optional(),
+  /** Host a configured mirror redirected to instead of serving the site itself. */
+  redirectedHost: z.string().optional(),
   /** Raw request error when the probe could not get an HTTP response. */
   error: z.string().optional(),
 });
@@ -977,9 +979,10 @@ export const translateTestInputSchema = z.object({
   engine: z.enum(TranslateEngine).optional(),
   targetLanguage: z.enum(TRANSLATION_TARGET_OPTIONS).optional(),
   deeplApiKey: z.string().optional(),
-  deeplApiUrl: z.url().or(z.literal("")).optional(),
+  baiduService: z.enum(BAIDU_SERVICE_OPTIONS).optional(),
   baiduAppId: z.string().optional(),
   baiduSecretKey: z.string().optional(),
+  baiduApiKey: z.string().optional(),
   llmModelName: z.string().optional(),
   llmApiKey: z.string().optional(),
   llmBaseUrl: z.string().optional(),

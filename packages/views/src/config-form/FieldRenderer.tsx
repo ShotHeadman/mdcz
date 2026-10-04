@@ -13,9 +13,10 @@ import {
   ShortcutInput,
   Switch,
   Textarea,
+  useFormField,
 } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
-import { createContext, type ReactElement, type ReactNode, useContext, useState } from "react";
+import { type ComponentProps, createContext, type ReactElement, type ReactNode, useContext, useState } from "react";
 import type { ControllerRenderProps, FieldValues, RegisterOptions } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
@@ -139,7 +140,7 @@ function ConnectedBaseField({ name, description, labelAddon, children, layout, c
 
         return (
           <FormItem className="block space-y-0">
-            <SettingRow
+            <FormSettingRow
               fieldName={name}
               label={label}
               description={description ?? text.description}
@@ -158,6 +159,12 @@ function ConnectedBaseField({ name, description, labelAddon, children, layout, c
   );
 }
 
+// The form item id only exists inside FormItem; FormControl assigns it to the control the label names.
+function FormSettingRow(props: Omit<ComponentProps<typeof SettingRow>, "htmlFor">) {
+  const { formItemId } = useFormField();
+  return <SettingRow {...props} htmlFor={formItemId} />;
+}
+
 // ── Boolean ──
 
 export function BoolField({
@@ -169,17 +176,11 @@ export function BoolField({
   description?: string;
   disabled?: boolean;
 }) {
-  const t = useT();
   return (
     <BaseField name={name} description={description} commitMode="immediate">
       {(field) => (
         <FormControl>
-          <Switch
-            aria-label={t.settingsFields.fields[name].label}
-            checked={Boolean(field.value)}
-            onCheckedChange={field.onChange}
-            disabled={disabled}
-          />
+          <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} disabled={disabled} />
         </FormControl>
       )}
     </BaseField>

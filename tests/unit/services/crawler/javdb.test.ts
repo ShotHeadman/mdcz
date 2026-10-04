@@ -9,7 +9,7 @@ describe("JavdbCrawler", () => {
     const cases = [
       {
         number: "SSIS-243",
-        searchUrl: "https://javdb.com/search?q=SSIS-243&locale=zh",
+        searchUrl: "https://javdb.com/search?q=SSIS-243",
         detailUrl: "https://javdb.com/v/abcd1",
         searchHtml: `
           <html><body>
@@ -36,8 +36,7 @@ describe("JavdbCrawler", () => {
             <div class="panel-block">
               <strong>演員:</strong>
               <span class="value">
-                <a>Actor1</a><strong class="symbol female">♀</strong>
-                <a>Actor2</a><strong class="symbol female">♀</strong>
+                <a class="actor-female" href="/actors/1">Actor1</a>, <a class="actor-female" href="/actors/2">Actor2</a>
               </span>
             </div>
             <img class="video-cover" src="/covers/cover1.jpg" />
@@ -74,7 +73,7 @@ describe("JavdbCrawler", () => {
       },
       {
         number: "ABF-075",
-        searchUrl: "https://javdb.com/search?q=ABF-075&locale=zh",
+        searchUrl: "https://javdb.com/search?q=ABF-075",
         detailUrl: "https://javdb.com/v/ner5DV",
         searchHtml: `
           <html><body>
@@ -93,9 +92,7 @@ describe("JavdbCrawler", () => {
             <div class="panel-block">
               <strong>演員:</strong>
               <span class="value">
-                <a href="/actors/a">吉村卓</a><strong class="symbol male">♂</strong>&nbsp;
-                <a href="/actors/b">貞松大輔</a><strong class="symbol male">♂</strong>&nbsp;
-                <a href="/actors/c">瀧本雫葉</a><strong class="symbol female">♀</strong>&nbsp;
+                <a class="actor-female" href="/actors/c">瀧本雫葉</a>, <a href="/actors/a">吉村卓</a>, <a href="/actors/b">貞松大輔</a>
               </span>
             </div>
           </body></html>
@@ -110,7 +107,7 @@ describe("JavdbCrawler", () => {
       },
       {
         number: "ABW-123",
-        searchUrl: "https://javdb.com/search?q=ABW-123&locale=zh",
+        searchUrl: "https://javdb.com/search?q=ABW-123",
         detailUrl: "https://javdb.com/v/fuzzy1",
         searchHtml: `
           <html><body>
@@ -139,7 +136,7 @@ describe("JavdbCrawler", () => {
       },
       {
         number: "MIDE-999",
-        searchUrl: "https://javdb.com/search?q=MIDE-999&locale=zh",
+        searchUrl: "https://javdb.com/search?q=MIDE-999",
         detailUrl: "https://javdb.com/v/fallback1",
         searchHtml: `
           <html><body>
@@ -182,7 +179,7 @@ describe("JavdbCrawler", () => {
       {
         number: "MIRR-001",
         baseUrl: "https://javdb571.com",
-        searchUrl: "https://javdb571.com/search?q=MIRR-001&locale=zh",
+        searchUrl: "https://javdb571.com/search?q=MIRR-001",
         detailUrl: "https://javdb571.com/v/mirror1",
         searchHtml: `
           <html><body>
@@ -212,7 +209,8 @@ describe("JavdbCrawler", () => {
         [searchUrl, searchHtml],
         [detailUrl, detailHtml],
       ]);
-      const crawler = new JavdbCrawler(withGateway(new FixtureNetworkClient(fixtures)));
+      const networkClient = new FixtureNetworkClient(fixtures);
+      const crawler = new JavdbCrawler(withGateway(networkClient));
 
       const response = await crawler.crawl({
         number,
@@ -221,6 +219,10 @@ describe("JavdbCrawler", () => {
       });
 
       expect(response.result.success).toBe(true);
+      expect(networkClient.requests.map(({ headers }) => headers.get("accept-language"))).toEqual([
+        "zh-TW,zh;q=0.9",
+        "zh-TW,zh;q=0.9",
+      ]);
       assert(response as Awaited<ReturnType<JavdbCrawler["crawl"]>>);
     }
   });

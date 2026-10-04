@@ -21,16 +21,16 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "新增文件的大小和修改时间连续两轮不变后才会提交刮削。",
     },
     "translate.deeplApiKey": {
-      label: "DeepL API Key / 端点令牌",
-      description: "官方 DeepL 必填；自定义端点按服务配置填写访问令牌。",
+      label: "DeepL API Key",
+      description: "以 :fx 结尾的 Free Key 使用 Free 接口，其余使用 Pro 接口。",
     },
-    "translate.deeplApiUrl": {
-      label: "DeepL 翻译端点",
-      description:
-        "留空时根据 API Key 选择官方 Free 或 Pro 地址。自建 DeepLX 请填写完整的 /v2/translate 地址；端点允许时可不填 Key。",
+    "translate.baiduService": {
+      label: "百度翻译服务",
+      description: "需在百度翻译开放平台开通对应服务；通用文本翻译使用密钥，大模型文本翻译使用 API Key。",
     },
-    "translate.baiduAppId": { label: "百度翻译 App ID" },
-    "translate.baiduSecretKey": { label: "百度翻译密钥" },
+    "translate.baiduAppId": { label: "百度翻译 APPID", description: "在百度翻译开放平台「开发者信息」页面查看。" },
+    "translate.baiduSecretKey": { label: "百度翻译密钥", description: "在「开发者信息」页面查看。" },
+    "translate.baiduApiKey": { label: "百度翻译 API Key", description: "在管理控制台「API Key 管理」页面创建。" },
     "paths.mediaPath": { label: "媒体目录", aliases: ["媒体库"] },
     "paths.defaultScanExcludeDirs": {
       label: "排除目录",

@@ -14,6 +14,7 @@ export const settings = {
     httpResult: (ok: boolean, status: number, latencyMs: number) =>
       `${ok ? "" : "Connection error · "}HTTP ${status} · ${latencyMs}ms`,
     requestFailed: "Request failed",
+    redirected: (host: string) => `Redirected to ${host}; not a working mirror`,
   },
   namingPreviewSamples: {
     standard: "Standard",
@@ -25,9 +26,10 @@ export const settings = {
     translateEngine: {
       openai: "LLM translation",
       google: "Google Translate (free)",
-      deepl: "DeepL / DeepLX",
+      deepl: "DeepL",
       baidu: "Baidu Translate",
     },
+    baiduService: { general: "General text translation", llm: "LLM text translation" },
     llmReasoning: { default: "Server default", disabled: "Off", low: "Low", medium: "Medium", high: "High" },
     llmReasoningDeepseek: {
       default: "Server default",

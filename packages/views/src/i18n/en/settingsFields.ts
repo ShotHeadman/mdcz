@@ -51,16 +51,26 @@ const fields: Record<FieldKey, FieldText> = {
     description: "New files are submitted after their size and modification time remain unchanged across two scans.",
   },
   "translate.deeplApiKey": {
-    label: "DeepL API key / endpoint token",
-    description: "Required for official DeepL; custom endpoints may require an access token.",
+    label: "DeepL API key",
+    description: "Free keys ending in :fx use the Free API; other keys use the Pro API.",
   },
-  "translate.deeplApiUrl": {
-    label: "DeepL translation endpoint",
+  "translate.baiduService": {
+    label: "Baidu translation service",
     description:
-      "Leave empty to select the official Free or Pro endpoint from the API key. For self-hosted DeepLX, enter the full /v2/translate URL; a key is optional when the endpoint allows it.",
+      "Enable the service on the Baidu Translate Open Platform first. General text translation uses the secret key; LLM text translation uses an API key.",
   },
-  "translate.baiduAppId": { label: "Baidu translation app ID" },
-  "translate.baiduSecretKey": { label: "Baidu translation secret key" },
+  "translate.baiduAppId": {
+    label: "Baidu translation APPID",
+    description: "Shown on the Developer Information page of the Baidu Translate Open Platform.",
+  },
+  "translate.baiduSecretKey": {
+    label: "Baidu translation secret key",
+    description: "Shown on the Developer Information page.",
+  },
+  "translate.baiduApiKey": {
+    label: "Baidu translation API key",
+    description: "Create it under API Key Management in the console.",
+  },
   "paths.mediaPath": { label: "Media directory", aliases: ["media", "library"] },
   "paths.defaultScanExcludeDirs": {
     label: "Excluded directories",

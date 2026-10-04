@@ -691,6 +691,7 @@ export function TranslateSection() {
   const search = useOptionalSettingsSearch();
   const engine = useWatch({ control: form.control, name: "translate.engine" });
   const serviceType = useWatch({ control: form.control, name: "translate.llmServiceType" });
+  const baiduService = useWatch({ control: form.control, name: "translate.baiduService" });
   const isLLM = engine === "openai";
 
   const handleTestTranslation = async () => {
@@ -698,9 +699,10 @@ export function TranslateSection() {
       engine,
       targetLanguage: form.getValues("translate.targetLanguage"),
       deeplApiKey: String(form.getValues("translate.deeplApiKey") ?? ""),
-      deeplApiUrl: String(form.getValues("translate.deeplApiUrl") ?? ""),
+      baiduService: form.getValues("translate.baiduService") ?? "general",
       baiduAppId: String(form.getValues("translate.baiduAppId") ?? ""),
       baiduSecretKey: String(form.getValues("translate.baiduSecretKey") ?? ""),
+      baiduApiKey: String(form.getValues("translate.baiduApiKey") ?? ""),
       llmModelName: String(form.getValues("translate.llmModelName") ?? ""),
       llmApiKey: String(form.getValues("translate.llmApiKey") ?? ""),
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
@@ -757,16 +759,17 @@ export function TranslateSection() {
         )}
       </BaseField>
       <EnumField name="translate.engine" options={toEnumOptions(t.settings.options.translateEngine)} />
-      {shouldMountConditionalSettings(engine === "deepl", search) && (
-        <>
-          <SecretField name="translate.deeplApiKey" />
-          <UrlField name="translate.deeplApiUrl" />
-        </>
-      )}
+      {shouldMountConditionalSettings(engine === "deepl", search) && <SecretField name="translate.deeplApiKey" />}
       {shouldMountConditionalSettings(engine === "baidu", search) && (
         <>
+          <EnumField name="translate.baiduService" options={toEnumOptions(t.settings.options.baiduService)} />
           <TextField name="translate.baiduAppId" />
-          <SecretField name="translate.baiduSecretKey" />
+          {shouldMountConditionalSettings(baiduService !== "llm", search) && (
+            <SecretField name="translate.baiduSecretKey" />
+          )}
+          {shouldMountConditionalSettings(baiduService === "llm", search) && (
+            <SecretField name="translate.baiduApiKey" />
+          )}
         </>
       )}
       {shouldMountConditionalSettings(isLLM, search) && (

@@ -237,33 +237,31 @@ describe("TranslateService term consistency", () => {
   });
 
   it.each([
-    [TranslateEngine.GOOGLE, "", "", "zh-CN"],
-    [TranslateEngine.DEEPL, "pro", "", "zh-TW"],
-    [TranslateEngine.BAIDU, "", "", "zh-TW"],
-  ] as const)("restores metadata positions for %s (%s, %s, %s)", async (engine, key, url, targetLanguage) => {
+    [TranslateEngine.GOOGLE, "", "zh-CN"],
+    [TranslateEngine.DEEPL, "pro", "zh-TW"],
+    [TranslateEngine.BAIDU, "", "zh-TW"],
+  ] as const)("restores metadata positions for %s (%s, %s)", async (engine, key, targetLanguage) => {
     const generateText = vi.fn();
     const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
     const outputs = ["标题", "第一行\n第二行", "剧情"];
     const getJson = vi.spyOn(networkClient, "getJson").mockImplementation(async () => [[[outputs.shift()]]]);
-    const postJson = vi.spyOn(networkClient, "postJson").mockImplementation(async (_url, payload) => ({
-      translations: (payload as { text: string[] }).text.map(() => ({ text: outputs.shift() })),
-    }));
-    const postText = vi.spyOn(networkClient, "postText").mockResolvedValue(
-      JSON.stringify({
-        error_code: 52000,
-        trans_result: ["标题", "第一行", "第二行", "剧情"].map((dst) => ({ src: "source", dst })),
-      }),
-    );
+    const postJson = vi
+      .spyOn(networkClient, "postJson")
+      .mockImplementation(async (url, payload) =>
+        url.includes("baidu")
+          ? { error_code: 52000, trans_result: ["标题", "第一行", "第二行", "剧情"].map((dst) => ({ dst })) }
+          : { translations: (payload as { text: string[] }).text.map(() => ({ text: outputs.shift() })) },
+      );
 
     const service = createTranslateService(networkClient, llmApiClient);
     const config = configurationSchema.parse({
       translate: {
         engine,
         deeplApiKey: key,
-        deeplApiUrl: url,
+        baiduService: "llm",
         baiduAppId: "app",
-        baiduSecretKey: "secret",
+        baiduApiKey: "secret",
         targetLanguage,
         enableTranslation: true,
       },
@@ -288,8 +286,7 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.plot_zh).toBe("第一行\n第二行");
     expect(translated.data.genres).toEqual(Array(3).fill(targetLanguage === "zh-TW" ? "劇情" : "剧情"));
     expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 3 : 0);
-    expect(postJson).toHaveBeenCalledTimes(engine === TranslateEngine.DEEPL ? 1 : 0);
-    expect(postText).toHaveBeenCalledTimes(engine === TranslateEngine.BAIDU ? 1 : 0);
+    expect(postJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 0 : 1);
   });
 
   it("converts Chinese fields and Han-only genres locally", async () => {
@@ -322,32 +319,26 @@ describe("TranslateService term consistency", () => {
     expect(generateText).not.toHaveBeenCalled();
   });
 
-  it("uses DeepL endpoint authentication and batch sizes appropriate to the endpoint", async () => {
-    for (const [key, url, endpoint, target, language, batches] of [
-      ["free:fx", "", "https://api-free.deepl.com/v2/translate", "zh_cn", "ZH-HANS", [2]],
-      ["pro", "", "https://api.deepl.com/v2/translate", "zh_tw", "ZH-HANT", [2]],
-      ["", "http://localhost:1188/v2/translate", "http://localhost:1188/v2/translate", "zh_cn", "ZH-HANS", [1, 1]],
-      ["token", "http://localhost:1188/v2/translate", "http://localhost:1188/v2/translate", "zh_cn", "ZH-HANS", [1, 1]],
+  it("selects the DeepL Free or Pro endpoint from the API key", async () => {
+    for (const [key, endpoint, target, language] of [
+      ["free:fx", "https://api-free.deepl.com/v2/translate", "zh_cn", "ZH-HANS"],
+      ["pro", "https://api.deepl.com/v2/translate", "zh_tw", "ZH-HANT"],
     ] as const) {
       const network = new NetworkClient({});
       const postJson = vi.spyOn(network, "postJson").mockImplementation(async (_url, payload) => ({
         translations: (payload as { text: string[] }).text.map((text) => ({ text: `译文 ${text}` })),
       }));
       const config = createBaseConfig();
-      Object.assign(config.translate, { engine: TranslateEngine.DEEPL, deeplApiKey: key, deeplApiUrl: url });
+      Object.assign(config.translate, { engine: TranslateEngine.DEEPL, deeplApiKey: key });
       const service = createTranslateService(network, createLlmApiClient());
       await expect(
         service.translateMetadata({ title: "Title", plot: null, genres: ["Drama"] }, target, config),
       ).resolves.toEqual({ title: "译文 Title", plot: null, genres: ["译文 Drama"] });
-      expect(postJson.mock.calls.map(([, payload]) => (payload as { text: string[] }).text.length)).toEqual(batches);
-      for (const [actualUrl, payload, init] of postJson.mock.calls) {
-        expect(actualUrl).toBe(endpoint);
-        expect(payload).toMatchObject({ target_lang: language });
-        expect(init).toEqual({
-          signal: undefined,
-          headers: key ? { Authorization: `DeepL-Auth-Key ${key}` } : undefined,
-        });
-      }
+      expect(postJson).toHaveBeenCalledExactlyOnceWith(
+        endpoint,
+        { text: ["Title", "Drama"], target_lang: language },
+        { signal: undefined, headers: { Authorization: `DeepL-Auth-Key ${key}` } },
+      );
     }
   });
 
@@ -393,12 +384,20 @@ describe("TranslateService term consistency", () => {
       const network = new NetworkClient({});
       vi.spyOn(network, "getJson").mockRejectedValue(new Error(message));
       if (failure === "quota") vi.spyOn(network, "postJson").mockRejectedValue(new Error(message));
-      else vi.spyOn(network, "postJson").mockResolvedValue({ translations: [] });
-      vi.spyOn(network, "postText").mockResolvedValue(
-        JSON.stringify(failure === "rate" ? { error_code: "54003", error_msg: "Rate limited" } : { trans_result: [] }),
-      );
+      else
+        vi.spyOn(network, "postJson").mockResolvedValue(
+          failure === "rate"
+            ? { error_code: "54003", error_msg: "Rate limited" }
+            : { translations: [], trans_result: [] },
+        );
       const config = createBaseConfig();
-      Object.assign(config.translate, { engine, deeplApiKey: "key", baiduAppId: "app", baiduSecretKey: "secret" });
+      Object.assign(config.translate, {
+        engine,
+        deeplApiKey: "key",
+        baiduService: "llm",
+        baiduAppId: "app",
+        baiduApiKey: "secret",
+      });
       findMappedActorName.mockResolvedValue("小花暖");
       findMappedGenreName.mockImplementation(async (term) => (term === "Mapped" ? "剧情" : null));
       const data = {
@@ -442,36 +441,55 @@ describe("TranslateService term consistency", () => {
     });
   });
 
-  it("signs and chunks Baidu text within the UTF-8 byte limit while preserving lines", async () => {
+  it.each([
+    "general",
+    "llm",
+  ] as const)("sends Baidu %s batches within the byte limit and restores per-line or multi-line results", async (baiduService) => {
     const network = new NetworkClient({});
-    const setDomainLimit = vi.spyOn(network, "setDomainLimit");
-    const postText = vi.spyOn(network, "postText").mockImplementation(async (url, body, init) => {
+    const setDomainInterval = vi.spyOn(network, "setDomainInterval");
+    const sentLines: number[] = [];
+    const answer = (q: string) => {
+      expect(Buffer.byteLength(q, "utf8")).toBeLessThanOrEqual(6000);
+      const lines = q.split("\n");
+      sentLines.push(lines.length);
+      return {
+        trans_result:
+          sentLines.length === 1 ? lines.map(() => ({ dst: "译文" })) : [{ dst: lines.map(() => "译文").join("\n") }],
+      };
+    };
+    vi.spyOn(network, "postText").mockImplementation(async (url, body, init) => {
       expect(url).toBe("https://fanyi-api.baidu.com/api/trans/vip/translate");
       expect(init?.headers).toEqual({ "Content-Type": "application/x-www-form-urlencoded" });
       const params = new URLSearchParams(body);
-      const q = params.get("q");
-      if (!q) throw new Error("Missing translation text");
-      expect(Buffer.byteLength(q, "utf8")).toBeLessThanOrEqual(6000);
-      expect(params.get("to")).toBe("cht");
-      expect(params.get("from")).toBe("auto");
-      expect(params.get("appid")).toBe("app");
+      const q = params.get("q") ?? "";
+      expect([params.get("appid"), params.get("from"), params.get("to")]).toEqual(["app", "auto", "cht"]);
       expect(params.get("sign")).toBe(
         createHash("md5")
           .update(`app${q}${params.get("salt")}secret`)
           .digest("hex"),
       );
-      return JSON.stringify({ trans_result: q.split("\n").map((src) => ({ src, dst: "译文" })) });
+      return JSON.stringify(answer(q));
+    });
+    vi.spyOn(network, "postJson").mockImplementation(async (url, payload, init) => {
+      expect(url).toBe("https://fanyi-api.baidu.com/ait/api/aiTextTranslate");
+      expect(init?.headers).toEqual({ Authorization: "Bearer key" });
+      const { appid, q, from, to } = payload as Record<string, string>;
+      expect([appid, from, to]).toEqual(["app", "auto", "cht"]);
+      return answer(q);
     });
     const config = createBaseConfig();
-    Object.assign(config.translate, { engine: TranslateEngine.BAIDU, baiduAppId: "app", baiduSecretKey: "secret" });
-    const source = `${"a".repeat(6001)}${"あ".repeat(1000)}${"\u{1F600}".repeat(1000)}\nつぎ`;
+    Object.assign(config.translate, {
+      engine: TranslateEngine.BAIDU,
+      baiduService,
+      baiduAppId: "app",
+      baiduSecretKey: "secret",
+      baiduApiKey: "key",
+    });
+    const source = ["あ".repeat(1500), "い".repeat(1500), "つぎ"].join("\n");
     const service = createTranslateService(network, createLlmApiClient());
-    await expect(service.translateText(source, "zh_tw", config)).resolves.toBe("譯文譯文譯文\n譯文");
-    expect(setDomainLimit).toHaveBeenCalledExactlyOnceWith("fanyi-api.baidu.com", 1, 1);
-    expect(postText).toHaveBeenCalledTimes(3);
-    const sentChunks = postText.mock.calls.flatMap(([, body]) => new URLSearchParams(body).get("q")?.split("\n") ?? []);
-    expect(sentChunks.slice(0, 3).join("")).toBe(source.split("\n")[0]);
-    expect(sentChunks[3]).toBe("つぎ");
+    await expect(service.translateText(source, "zh_tw", config)).resolves.toBe("譯文\n譯文\n譯文");
+    expect(setDomainInterval).toHaveBeenCalledExactlyOnceWith("fanyi-api.baidu.com", 1100);
+    expect(sentLines).toEqual([1, 2]);
   });
 
   it("normalizes unsupported translation target config values to zh-CN without migration", () => {

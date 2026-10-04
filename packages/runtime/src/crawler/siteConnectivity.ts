@@ -49,8 +49,16 @@ const appendCookie = (headers: Record<string, string>, cookie: string | undefine
   headers.cookie = headers.cookie ? `${headers.cookie}; ${normalized}` : normalized;
 };
 
+// A mirror whose homepage loads may still not serve the search pages the crawlers use.
+const MIRROR_PROBE_PATHS: Record<MirrorableSite, string> = {
+  [Website.JAVDB]: "/search?q=ABP-001",
+  [Website.JAVBUS]: "/search/ABP-001",
+};
+
 export const resolveSiteConnectivityTargetUrl = (site: Website, configuration: Configuration): string =>
-  isMirrorableSite(site) ? resolveSiteUrl(configuration.network, site) : DEFAULT_SITE_CONNECTIVITY_URLS[site];
+  isMirrorableSite(site)
+    ? `${resolveSiteUrl(configuration.network, site)}${MIRROR_PROBE_PATHS[site]}`
+    : DEFAULT_SITE_CONNECTIVITY_URLS[site];
 
 export const buildSiteConnectivityHeaders = (site: Website, configuration: Configuration): Record<string, string> => {
   const headers: Record<string, string> = {};
@@ -83,11 +91,15 @@ export const probeSiteConnectivity = async (
       timeout,
       headers,
     });
+    // Expired mirror domains answer 200 after redirecting to an unrelated parking host.
+    const resolvedHost = new URL(result.resolvedUrl).host;
+    const redirectedHost = isMirrorableSite(site) && resolvedHost !== new URL(url).host ? resolvedHost : undefined;
     return {
-      ok: result.ok,
+      ok: result.ok && !redirectedHost,
       latencyMs: Date.now() - startedAt,
       status: result.status,
       resolvedUrl: result.resolvedUrl,
+      redirectedHost,
     };
   } catch (error) {
     return { ok: false, latencyMs: Date.now() - startedAt, error: toErrorMessage(error) };

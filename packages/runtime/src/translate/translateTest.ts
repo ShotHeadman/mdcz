@@ -2,7 +2,6 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateTestInputDto, TranslateTestResponse } from "@mdcz/shared/serverDtos";
 import type { RuntimeNetworkClient } from "../network";
 import { TranslateService, type TranslateServiceOptions } from "../scrape/TranslateService";
-import { isOfficialDeeplUrl } from "../scrape/translate/engines/DeeplTranslator";
 import { isMissingRequiredLlmApiKey } from "../scrape/translate/engines/LlmApiClient";
 import { toTarget } from "../scrape/translate/types";
 import { toErrorMessage } from "../shared";
@@ -27,8 +26,10 @@ export const testTranslation = async (
     if (settings.engine === "openai" && !settings.llmModelName.trim()) return { status: "missing_model" };
     if (
       (settings.engine === "openai" && isMissingRequiredLlmApiKey(settings.llmBaseUrl, settings.llmApiKey)) ||
-      (settings.engine === "deepl" && isOfficialDeeplUrl(settings.deeplApiUrl) && !settings.deeplApiKey.trim()) ||
-      (settings.engine === "baidu" && (!settings.baiduAppId.trim() || !settings.baiduSecretKey.trim()))
+      (settings.engine === "deepl" && !settings.deeplApiKey.trim()) ||
+      (settings.engine === "baidu" &&
+        (!settings.baiduAppId.trim() ||
+          !(settings.baiduService === "llm" ? settings.baiduApiKey : settings.baiduSecretKey).trim()))
     ) {
       return { status: "missing_credentials" };
     }

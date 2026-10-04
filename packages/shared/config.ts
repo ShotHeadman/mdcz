@@ -60,6 +60,8 @@ export type NfoField = (typeof NFO_FIELD_OPTIONS)[number];
 
 const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
 
+export const BAIDU_SERVICE_OPTIONS = ["general", "llm"] as const;
+
 export const mirrorUrlSchema = z
   .url({ protocol: /^https?$/u })
   .or(z.literal(""))
@@ -118,9 +120,10 @@ const translateSchema = z.object({
   enableTranslation: z.boolean().default(false),
   engine: z.enum(TranslateEngine).default(TranslateEngine.OPENAI),
   deeplApiKey: z.string().default(""),
-  deeplApiUrl: z.url().or(z.literal("")).default(""),
+  baiduService: z.enum(BAIDU_SERVICE_OPTIONS).default("general"),
   baiduAppId: z.string().default(""),
   baiduSecretKey: z.string().default(""),
+  baiduApiKey: z.string().default(""),
   llmModelName: z.string().default("gpt-5.2"),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),

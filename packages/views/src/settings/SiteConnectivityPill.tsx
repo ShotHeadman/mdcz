@@ -66,8 +66,9 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
       const text = getT().settings.siteConnectivity;
       setState({
         kind: result.ok ? "success" : "error",
-        message:
-          result.status === undefined
+        message: result.redirectedHost
+          ? text.redirected(result.redirectedHost)
+          : result.status === undefined
             ? `${text.requestFailed}: ${result.error}`
             : text.httpResult(result.ok, result.status, Math.max(0, Math.trunc(result.latencyMs))),
       });

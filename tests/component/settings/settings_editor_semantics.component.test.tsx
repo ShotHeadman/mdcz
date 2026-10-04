@@ -80,15 +80,17 @@ function FormHarness({
 
 function SettingsSurfaceHarness({
   engine = "openai",
+  baiduService = "general",
   isServer = false,
 }: {
   engine?: "openai" | "deepl" | "baidu";
+  baiduService?: "general" | "llm";
   isServer?: boolean;
 }) {
   const configuration = useMemo(
     () => ({
       ...defaultConfiguration,
-      translate: { ...defaultConfiguration.translate, engine },
+      translate: { ...defaultConfiguration.translate, engine, baiduService },
       behavior: {
         ...defaultConfiguration.behavior,
         metadataOnly: true,
@@ -108,7 +110,7 @@ function SettingsSurfaceHarness({
         enabled: true,
       },
     }),
-    [engine],
+    [engine, baiduService],
   );
 
   return (
@@ -180,8 +182,12 @@ test("settings editor renders every visible registry field", async () => {
       await dialog.getByRole("button", { name: "完成", exact: true }).click();
     }
     await screen.unmount();
-    for (const engine of ["deepl", "baidu"] as const) {
-      const variant = await render(<SettingsSurfaceHarness engine={engine} isServer />);
+    for (const [engine, baiduService] of [
+      ["deepl", "general"],
+      ["baidu", "general"],
+      ["baidu", "llm"],
+    ] as const) {
+      const variant = await render(<SettingsSurfaceHarness engine={engine} baiduService={baiduService} isServer />);
       await variant.getByRole("button", { name: "显示高级设置" }).click();
       for (const element of variant.container.querySelectorAll<HTMLElement>("[data-field-name]")) {
         if (element.dataset.fieldName) renderedFields.add(element.dataset.fieldName);
@@ -354,14 +360,16 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
     </FormHarness>,
   );
   const credentials =
-    engine === "deepl"
-      ? { deeplApiKey: "edited-key", deeplApiUrl: "http://localhost:1188/v2/translate" }
-      : { baiduAppId: "edited-app", baiduSecretKey: "edited-secret" };
+    engine === "deepl" ? { deeplApiKey: "edited-key" } : { baiduAppId: "edited-app", baiduSecretKey: "edited-secret" };
+  const labels: Record<string, string> = {
+    deeplApiKey: "DeepL API Key",
+    baiduAppId: "百度翻译 APPID",
+    baiduSecretKey: "百度翻译密钥",
+  };
   for (const [key, value] of Object.entries(credentials)) {
-    const input = screen.container.querySelector(`[data-field-name="translate.${key}"] input`);
-    if (!input) throw new Error(`Missing credential field ${key}`);
-    await page.elementLocator(input).fill(value);
+    await screen.getByLabelText(labels[key], { exact: true }).fill(value);
   }
+  await expect.element(screen.getByRole("switch", { name: "启用内容翻译" })).toBeVisible();
   expect(screen.container.querySelector('[data-field-name="translate.llmModelName"]')).toBeNull();
   await screen.getByRole("button", { name: "验证元数据翻译" }).click();
   expect(testTranslation).toHaveBeenCalledWith(
