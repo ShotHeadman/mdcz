@@ -8,7 +8,7 @@ import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { buildCrawlerOptions } from "./crawlerOptions";
 import { FieldAggregator, summarizeFailedSiteResults } from "./fieldAggregation";
 import { type AdmissionReject, resolveSiteAdmission } from "./siteAdmission";
-import { applyTitleRepair } from "./titleRepair";
+import { applyTextRepair } from "./textRepair";
 import { createAbortError, throwIfAborted } from "./utils/abort";
 
 export type { AggregationStrategy } from "./fieldAggregation";
@@ -211,7 +211,7 @@ export class AggregationService {
       sources: aggregatedSources,
       imageAlternatives,
     } = fieldAggregator.aggregate(successes);
-    const data = applyTitleRepair(aggregatedData, this.config.titleRepair);
+    const data = applyTextRepair(aggregatedData, this.config.titleRepair);
     const sources = aggregatedSources;
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(

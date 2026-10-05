@@ -360,10 +360,10 @@ const fields: Record<FieldKey, FieldText> = {
   "naming.folderTemplate": { label: "Folder template", aliases: ["template", "folder naming"] },
   "naming.fileTemplate": { label: "File name template", aliases: ["template", "file naming"] },
   "titleRepair.enabled": {
-    label: "Restore masked title words",
+    label: "Restore masked words in titles and plots",
     description:
-      "Restore censorship symbols (●, 〇, etc.) in official titles to the original words (e.g. 「催●」 → 「催眠」, 「盗●」 → 「盗撮」); the original title is still kept in the NFO.",
-    aliases: ["title repair", "masked title"],
+      "Restore censorship symbols (●, 〇, etc.) in official titles and plots to the original words (e.g. 「催●」 → 「催眠」, 「●っ払う」 → 「酔っ払う」) before translation; the original title is still kept in the NFO.",
+    aliases: ["title repair", "masked title", "masked plot"],
   },
   "titleRepair.stripTrailingActors": {
     label: "Remove actor names from title end",

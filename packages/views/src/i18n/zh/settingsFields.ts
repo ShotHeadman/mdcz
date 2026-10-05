@@ -266,10 +266,10 @@ export const settingsFields: Messages["settingsFields"] = {
     "naming.folderTemplate": { label: "文件夹模板", aliases: ["命名模板"] },
     "naming.fileTemplate": { label: "文件名模板", aliases: ["命名模板"] },
     "titleRepair.enabled": {
-      label: "标题屏蔽词还原",
+      label: "标题与简介屏蔽词还原",
       description:
-        "自动将官方标题中的避讳符号（●、〇 等）还原为原始词汇（例如把「催●」还原为「催眠」，「盗●」还原为「盗撮」）；原始标题仍会保留在 NFO 中。",
-      aliases: ["标题修复", "遮蔽标题"],
+        "自动将官方标题和简介中的避讳符号（●、〇 等）还原为原始词汇（例如把「催●」还原为「催眠」，「●っ払う」还原为「酔っ払う」），翻译前生效；原始标题仍会保留在 NFO 中。",
+      aliases: ["标题修复", "遮蔽标题", "简介屏蔽词"],
     },
     "titleRepair.stripTrailingActors": {
       label: "去除标题末尾的演员名",

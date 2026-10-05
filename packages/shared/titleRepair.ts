@@ -1,15 +1,4 @@
-import type { Configuration } from "./config";
 import { BUILTIN_TITLE_REPAIR_RULES } from "./titleRepairDefaults";
-
-export interface TitleRepairPreview {
-  originalTitle: string;
-  repairedTitle: string;
-  matchedRules: string[];
-  applied: boolean;
-  reason: "disabled" | "no_match" | "repaired";
-}
-
-type TitleRepairConfiguration = Pick<Configuration["titleRepair"], "enabled">;
 
 const MASK_CHARS = new Set(["●", "〇", "○", "*", "＊", "×", "■"]);
 
@@ -41,28 +30,17 @@ export const stripTrailingActorNames = (title: string, actors: readonly string[]
   return stripped || title;
 };
 
-export const previewTitleRepair = (title: string, configuration: TitleRepairConfiguration): TitleRepairPreview => {
-  if (!configuration.enabled) {
-    return { originalTitle: title, repairedTitle: title, matchedRules: [], applied: false, reason: "disabled" };
-  }
+const REPAIR_RULES = BUILTIN_TITLE_REPAIR_RULES.map(({ source, replacement }) => ({
+  replacement,
+  regex: buildRuleRegex(source),
+  masked: [...source].some((char) => MASK_CHARS.has(char)),
+}));
+// Plots only get mask rules: euphemism rules would rewrite ordinary words inside sentences (閉じ込められた → 監禁られた).
+const MASKED_REPAIR_RULES = REPAIR_RULES.filter((rule) => rule.masked);
 
-  let repairedTitle = title;
-  const matchedRules: string[] = [];
-  for (const rule of BUILTIN_TITLE_REPAIR_RULES) {
-    if (!rule.replacement) {
-      continue;
-    }
-    const regex = buildRuleRegex(rule.source);
-    const nextTitle = repairedTitle.replace(regex, rule.replacement);
-    if (nextTitle !== repairedTitle) {
-      repairedTitle = nextTitle;
-      matchedRules.push(rule.source);
-    }
-  }
+const applyRules = (text: string, rules: typeof REPAIR_RULES): string =>
+  rules.reduce((repaired, rule) => repaired.replace(rule.regex, rule.replacement), text);
 
-  if (matchedRules.length === 0 || !repairedTitle.trim()) {
-    return { originalTitle: title, repairedTitle: title, matchedRules, applied: false, reason: "no_match" };
-  }
+export const repairTitle = (title: string): string => applyRules(title, REPAIR_RULES);
 
-  return { originalTitle: title, repairedTitle, matchedRules, applied: true, reason: "repaired" };
-};
+export const repairMaskedWords = (text: string): string => applyRules(text, MASKED_REPAIR_RULES);

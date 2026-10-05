@@ -1,9 +1,8 @@
 import { NfoGenerator } from "@mdcz/runtime/scrape/nfo";
 import { NamingEngine } from "@mdcz/runtime/scrape/organize/NamingEngine";
-import { applyTitleRepair } from "@mdcz/runtime/scrape/titleRepair";
+import { applyTextRepair } from "@mdcz/runtime/scrape/textRepair";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
-import { previewTitleRepair } from "@mdcz/shared/titleRepair";
 import { describe, expect, it } from "vitest";
 
 const titleRepair = {
@@ -21,27 +20,29 @@ const crawlerData = (title: string, actors: string[] = []) => ({
 });
 
 describe("title repair", () => {
-  it("repairs builtin masked and euphemistic terms", () => {
-    const repaired = applyTitleRepair(crawlerData("催●的●●相姦课程"), titleRepair);
+  it("restores masked and euphemistic title words but only masked plot words", () => {
+    const repaired = applyTextRepair(
+      {
+        ...crawlerData("催●的●●相姦课程 痴×电车与麻*事件 合意なし"),
+        plot: "●っ払うと無理やり犯●れた。部屋に閉じ込められた",
+      },
+      titleRepair,
+    );
 
-    expect(repaired).toMatchObject({ title: "催眠的近親相姦课程", original_title: "催●的●●相姦课程" });
-    expect(previewTitleRepair("催〇的盗○记录", titleRepair)).toMatchObject({
-      repairedTitle: "催眠的盗撮记录",
-      matchedRules: ["催●", "盗●"],
+    expect(repaired).toMatchObject({
+      title: "催眠的近親相姦课程 痴漢电车与麻薬事件 レイプ",
+      original_title: "催●的●●相姦课程 痴×电车与麻*事件 合意なし",
+      plot: "酔っ払うと無理やり犯された。部屋に閉じ込められた",
     });
-    expect(previewTitleRepair("痴×电车与麻*事件", titleRepair)).toMatchObject({
-      repairedTitle: "痴漢电车与麻薬事件",
-      matchedRules: ["麻●", "痴●"],
-    });
-    expect(previewTitleRepair("合意なし与閉じ込め", titleRepair).repairedTitle).toBe("レイプ与監禁");
   });
 
   it("leaves disabled, unmatched, and already repaired data unchanged", () => {
-    expect(previewTitleRepair("催●", { enabled: false }).reason).toBe("disabled");
-    expect(previewTitleRepair("没有遮蔽", titleRepair).reason).toBe("no_match");
+    const masked = { ...crawlerData("催●"), plot: "犯●れた" };
+    expect(applyTextRepair(masked, { ...titleRepair, enabled: false })).toEqual(masked);
+    expect(applyTextRepair(crawlerData("没有遮蔽"), titleRepair)).toEqual(crawlerData("没有遮蔽"));
 
-    const data = { ...crawlerData("催眠"), original_title: "催●" };
-    expect(applyTitleRepair(data, titleRepair)).toBe(data);
+    const repaired = { ...crawlerData("催眠"), original_title: "催●" };
+    expect(applyTextRepair(repaired, titleRepair)).toEqual(repaired);
   });
 
   it.each([
@@ -52,14 +53,14 @@ describe("title repair", () => {
     { title: "三上悠亜の休日", actors: ["三上悠亜"], strip: true, expected: "三上悠亜の休日" },
     { title: "新人デビュー 三上悠亜", actors: ["三上悠亜"], strip: false, expected: "新人デビュー 三上悠亜" },
   ])("strips trailing actor names only when enabled: $title", ({ title, actors, strip, expected }) => {
-    const repaired = applyTitleRepair(crawlerData(title, actors), { enabled: false, stripTrailingActors: strip });
+    const repaired = applyTextRepair(crawlerData(title, actors), { enabled: false, stripTrailingActors: strip });
 
     expect(repaired.title).toBe(expected);
     expect(repaired.original_title).toBeUndefined();
   });
 
   it("keeps the original title available to NFO and naming", () => {
-    const data = applyTitleRepair(crawlerData("催●课程"), titleRepair);
+    const data = applyTextRepair(crawlerData("催●课程"), titleRepair);
     const configuration = {
       ...defaultConfiguration,
       naming: {
