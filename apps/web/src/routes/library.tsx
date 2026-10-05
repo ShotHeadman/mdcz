@@ -131,13 +131,8 @@ function LibraryEntryLink({
   className?: string;
   entry: LibraryEntryDto;
 }) {
-  const outcomeId = entry.fileRefs.find((file) => file.id === entry.displayFileId)?.scrapeOutcomeId;
-  if (!outcomeId) {
-    return null;
-  }
-
   return (
-    <AppLink className={className} to={`/scrape/${encodeURIComponent(outcomeId)}`}>
+    <AppLink className={className} to={`/scrape/${encodeURIComponent(entry.displayFileId)}`}>
       {children}
     </AppLink>
   );

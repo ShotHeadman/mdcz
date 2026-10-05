@@ -4,6 +4,7 @@ import { type AggregationResult, PosterWatermarkService } from "@mdcz/runtime/sc
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildServer } from "./app";
 import {
   closeTestServers,
   createTempRoot,
@@ -15,6 +16,7 @@ import {
   syncMediaRootFromConfig,
   waitForScrapeRunStatus,
 } from "./app.testSupport";
+import { ServerConfigService } from "./services/configService";
 import type { ScrapeServiceResources } from "./services/scrapeService";
 
 vi.mock("mediainfo.js", async (importOriginal) => ({
@@ -325,9 +327,22 @@ describe("buildServer scrape integration", () => {
       "ABC-123 - 800p.mp4",
       "ABC-123.mp4",
     ]);
+    for (const file of movie.files) {
+      const detail = await fastify.inject({
+        method: "GET",
+        url: `/trpc/scrape.result?input=${encodeURIComponent(JSON.stringify({ id: file.id }))}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json().result.data.result).toMatchObject({
+        outputRootId: file.rootId,
+        outputRelativePath: file.rootRelativePath,
+        crawlerData: { number: "ABC-123" },
+      });
+    }
   });
 
-  it("runs the full scrape runtime pipeline and indexes organized output", async () => {
+  it("indexes scraped output and resolves its details and poster editing after restart", async () => {
     const root = await createTempRoot("scrape-runtime-root");
     const actorRoot = await createTempRoot("actor-root");
     const actorPhotoPath = join(actorRoot, "Actor A.jpg");
@@ -534,6 +549,40 @@ describe("buildServer scrape integration", () => {
       ]),
     );
     unsubscribeTaskEvents();
+
+    await fastify.close();
+    const restarted = buildServer({
+      services: { config: new ServerConfigService(services.config.runtimePaths) },
+      webStaticDir: false,
+    });
+    try {
+      const snapshot = await restarted.services.scrape.snapshot({ taskId });
+      expect(snapshot.items).toEqual([]);
+      const detail = await restarted.services.scrape.result(entry.displayFileId);
+      expect(detail.result).toMatchObject({
+        id: entry.displayFileId,
+        rootId,
+        outputRootId: rootId,
+        relativePath: outputRelativePath,
+        outputRelativePath,
+        nfoRootId: rootId,
+        nfoRelativePath,
+        crawlerData: { number: "ABC-123", title: "Runtime Title ABC-123" },
+        assets: expect.arrayContaining([
+          { type: "local", kind: "poster", file: { rootId, relativePath: entry.thumbnailPath } },
+        ]),
+      });
+      const crop = await restarted.services.scrape.posterCropSession(entry.displayFileId);
+      expect(crop).toMatchObject({
+        sourceRelativePath: cropSession.sourceRelativePath,
+        targetRelativePath: cropSession.targetRelativePath,
+      });
+      await expect(
+        restarted.services.scrape.posterCropSave({ id: entry.displayFileId, crop: crop.initialCrop }),
+      ).resolves.toMatchObject({ revision: expect.any(String) });
+    } finally {
+      await restarted.fastify.close();
+    }
   });
 
   it("applies configured poster tag badges with the same runtime rendering used by desktop", async () => {

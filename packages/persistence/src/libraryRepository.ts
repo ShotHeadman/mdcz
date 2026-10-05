@@ -136,8 +136,6 @@ export interface LibraryItemFileRecord {
   partNumber: number | null;
   partSuffix: string | null;
   resolution: string | null;
-  sourceItemId: string | null;
-  sourceRunId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -169,11 +167,7 @@ const safeActors = (value: string): string[] => {
   }
 };
 
-const toLibraryItemFileRecord = (
-  row: LibraryItemFileRow,
-  sourceRunId: string | null = null,
-  sourceItemId: string | null = null,
-): LibraryItemFileRecord => ({
+const toLibraryItemFileRecord = (row: LibraryItemFileRow): LibraryItemFileRecord => ({
   id: row.id,
   itemId: row.itemId,
   rootId: row.rootId,
@@ -186,8 +180,6 @@ const toLibraryItemFileRecord = (
   partNumber: row.partNumber,
   partSuffix: row.partSuffix,
   resolution: row.resolution,
-  sourceItemId,
-  sourceRunId,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -756,7 +748,7 @@ export class LibraryRepository {
             .orderBy(asc(libraryItemFiles.partNumber), asc(libraryItemFiles.createdAt), asc(libraryItemFiles.id))
             .all()
         : [];
-    return groupByItem(rows.map((row) => toLibraryItemFileRecord(row)));
+    return groupByItem(rows.map(toLibraryItemFileRecord));
   }
 
   private async listAssetsForItems(ids: string[]): Promise<Map<string, LibraryItemAssetRecord[]>> {

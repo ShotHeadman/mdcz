@@ -22,8 +22,6 @@ const createEntry = (id: string): LibraryEntryDto => ({
       partNumber: null,
       partSuffix: null,
       resolution: null,
-      runId: null,
-      scrapeOutcomeId: null,
       relativePath: `movies/${id}.mp4`,
       rootDisplayName: "Media",
       rootId: "root-1",

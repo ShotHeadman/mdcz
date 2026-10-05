@@ -687,7 +687,6 @@ describe("buildServer composition integration", () => {
         expect.objectContaining({
           id: "entry-c",
           available: "unchecked",
-          fileRefs: expect.arrayContaining([expect.objectContaining({ runId: null, scrapeOutcomeId: null })]),
         }),
         expect.objectContaining({ id: "entry-b", available: "unchecked" }),
       ],

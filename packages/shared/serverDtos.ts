@@ -690,8 +690,6 @@ export const libraryEntrySchema = z.object({
       partNumber: z.number().int().positive().nullable(),
       partSuffix: z.string().nullable(),
       resolution: z.string().nullable(),
-      runId: z.string().nullable(),
-      scrapeOutcomeId: z.string().nullable(),
       available: z.boolean().nullable(),
       availabilityError: z.string().nullable(),
     }),

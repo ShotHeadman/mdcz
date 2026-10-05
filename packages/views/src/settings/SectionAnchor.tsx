@@ -49,12 +49,7 @@ export function SectionAnchor({
   }
 
   return (
-    <section
-      ref={sectionRef}
-      data-toc-id={id}
-      id={`settings-${id}`}
-      className={cn("scroll-mt-28 [content-visibility:auto] [contain-intrinsic-size:auto_800px]", className)}
-    >
+    <section ref={sectionRef} data-toc-id={id} id={`settings-${id}`} className={cn("scroll-mt-28", className)}>
       <Collapsible open={resolvedOpen} onOpenChange={setOpen}>
         {(title || description) && (
           <header className="mb-4">
