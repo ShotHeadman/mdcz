@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 
 export interface TocSection {
   id: string;
@@ -32,7 +32,6 @@ interface TocProviderProps {
 export function TocProvider({ children, scrollContainerRef }: TocProviderProps) {
   const [sections, setSections] = useState<TocSection[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const releasePinRef = useRef<(() => void) | null>(null);
 
   const register = useCallback((section: TocSection) => {
     setSections((prev) => {
@@ -46,34 +45,18 @@ export function TocProvider({ children, scrollContainerRef }: TocProviderProps) 
 
   const scrollToSection = useCallback(
     (id: string, behavior: ScrollBehavior) => {
-      releasePinRef.current?.();
       const container = scrollContainerRef.current;
-      const content = container?.firstElementChild;
       const target = container?.querySelector(`[data-toc-id="${id}"]`);
-      if (!container || !content || !target) return;
-      // Deferred sections swap their estimated height for real content as the scroll passes them, so keep the
-      // target pinned on every layout change until the user takes over.
-      const observer = new ResizeObserver(() =>
-        container.scrollBy({
-          top: target.getBoundingClientRect().top - container.getBoundingClientRect().top - 24,
-          behavior,
-        }),
-      );
-      const release = new AbortController();
-      releasePinRef.current = () => {
-        observer.disconnect();
-        release.abort();
-        releasePinRef.current = null;
-      };
-      observer.observe(content);
-      for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) {
-        window.addEventListener(type, () => releasePinRef.current?.(), { capture: true, signal: release.signal });
-      }
+      if (!container || !target) return;
+      const containerTop = container.getBoundingClientRect().top;
+      const targetTop = target.getBoundingClientRect().top;
+      container.scrollBy({
+        top: targetTop - containerTop - 24,
+        behavior,
+      });
     },
     [scrollContainerRef],
   );
-
-  useEffect(() => () => releasePinRef.current?.(), []);
 
   const value = useMemo<TocContextValue>(
     () => ({ sections, activeId, setActiveId, register, scrollToSection, scrollContainerRef }),

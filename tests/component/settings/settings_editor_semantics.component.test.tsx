@@ -133,69 +133,45 @@ function SettingsSurfaceHarness({
 }
 
 test("settings editor renders every visible registry field", async () => {
-  class ImmediateIntersectionObserver implements IntersectionObserver {
-    readonly root = null;
-    readonly rootMargin = "";
-    readonly thresholds = [0];
+  const screen = await render(<SettingsSurfaceHarness />);
+  await screen.getByRole("button", { name: "显示高级设置" }).click();
 
-    constructor(private readonly callback: IntersectionObserverCallback) {}
+  const expectedFields = FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map((entry) => entry.key);
+  const renderedFields = new Set(
+    Array.from(
+      screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),
+      (element) => element.dataset.fieldName,
+    ).filter((key): key is string => Boolean(key)),
+  );
 
-    disconnect() {}
-    observe(target: Element) {
-      this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this);
-    }
-    takeRecords(): IntersectionObserverEntry[] {
-      return [];
-    }
-    unobserve() {}
+  for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
+    ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
+    ["http://localhost:8082", "http://localhost:8081", "localhost:8082", "localhost:8081"],
+  ]) {
+    await screen.getByPlaceholder("https://javdb.com", { exact: true }).fill(javdbUrl);
+    await screen.getByPlaceholder("https://www.javbus.com", { exact: true }).fill(javbusUrl);
+    const siteField = screen.container.querySelector('[data-field-name="scrape.sites"]');
+    if (!siteField) throw new Error("Site priority field is missing");
+    await page.elementLocator(siteField).getByRole("button", { name: "编辑", exact: true }).click();
+    const dialog = screen.getByRole("dialog");
+    await expect.element(dialog.getByText(`javdb · ${javdbHost}`, { exact: true })).toBeVisible();
+    await expect.element(dialog.getByText(`javbus · ${javbusHost}`, { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "完成", exact: true }).click();
   }
-
-  const nativeIntersectionObserver = window.IntersectionObserver;
-  vi.stubGlobal("IntersectionObserver", ImmediateIntersectionObserver);
-
-  try {
-    const screen = await render(<SettingsSurfaceHarness />);
-    await screen.getByRole("button", { name: "显示高级设置" }).click();
-
-    const expectedFields = FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map((entry) => entry.key);
-    const renderedFields = new Set(
-      Array.from(
-        screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),
-        (element) => element.dataset.fieldName,
-      ).filter((key): key is string => Boolean(key)),
-    );
-
-    for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
-      ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
-      ["http://localhost:8082", "http://localhost:8081", "localhost:8082", "localhost:8081"],
-    ]) {
-      await screen.getByPlaceholder("https://javdb.com", { exact: true }).fill(javdbUrl);
-      await screen.getByPlaceholder("https://www.javbus.com", { exact: true }).fill(javbusUrl);
-      const siteField = screen.container.querySelector('[data-field-name="scrape.sites"]');
-      if (!siteField) throw new Error("Site priority field is missing");
-      await page.elementLocator(siteField).getByRole("button", { name: "编辑", exact: true }).click();
-      const dialog = screen.getByRole("dialog");
-      await expect.element(dialog.getByText(`javdb · ${javdbHost}`, { exact: true })).toBeVisible();
-      await expect.element(dialog.getByText(`javbus · ${javbusHost}`, { exact: true })).toBeVisible();
-      await dialog.getByRole("button", { name: "完成", exact: true }).click();
+  await screen.unmount();
+  for (const [engine, baiduService] of [
+    ["deepl", "general"],
+    ["baidu", "general"],
+    ["baidu", "llm"],
+  ] as const) {
+    const variant = await render(<SettingsSurfaceHarness engine={engine} baiduService={baiduService} isServer />);
+    await variant.getByRole("button", { name: "显示高级设置" }).click();
+    for (const element of variant.container.querySelectorAll<HTMLElement>("[data-field-name]")) {
+      if (element.dataset.fieldName) renderedFields.add(element.dataset.fieldName);
     }
-    await screen.unmount();
-    for (const [engine, baiduService] of [
-      ["deepl", "general"],
-      ["baidu", "general"],
-      ["baidu", "llm"],
-    ] as const) {
-      const variant = await render(<SettingsSurfaceHarness engine={engine} baiduService={baiduService} isServer />);
-      await variant.getByRole("button", { name: "显示高级设置" }).click();
-      for (const element of variant.container.querySelectorAll<HTMLElement>("[data-field-name]")) {
-        if (element.dataset.fieldName) renderedFields.add(element.dataset.fieldName);
-      }
-      await variant.unmount();
-    }
-    expect(renderedFields).toEqual(new Set(expectedFields));
-  } finally {
-    vi.stubGlobal("IntersectionObserver", nativeIntersectionObserver);
+    await variant.unmount();
   }
+  expect(renderedFields).toEqual(new Set(expectedFields));
 });
 
 test("ordered site field exposes grouped priority semantics", async () => {
@@ -254,29 +230,14 @@ test("profile capsule marks loading busy state", async () => {
   expect(screen.container.querySelector('[aria-busy="true"]')).not.toBeNull();
 });
 
-test("section anchors defer content until force-opened", async () => {
-  const deferred = await render(
-    <SectionAnchor id="custom" label="Custom" title="Custom" deferContent estimatedContentHeight={320}>
-      <div>Deferred content</div>
+test("section anchors render section content and header", async () => {
+  const rendered = await render(
+    <SectionAnchor id="custom" label="Custom" title="Custom Title">
+      <div>Section content</div>
     </SectionAnchor>,
   );
-  await expect.element(deferred.getByText("Deferred content")).not.toBeInTheDocument();
-  expect(deferred.container.querySelector('[data-deferred-placeholder="true"]')).not.toBeNull();
-
-  const forced = await render(
-    <SectionAnchor
-      id="custom-force"
-      label="Custom Force"
-      title="Custom Force"
-      deferContent
-      forceOpen
-      estimatedContentHeight={320}
-    >
-      <div>Force-open content</div>
-    </SectionAnchor>,
-  );
-  await expect.element(forced.getByText("Force-open content")).toBeVisible();
-  expect(forced.container.querySelector('[data-deferred-placeholder="true"]')).toBeNull();
+  await expect.element(rendered.getByText("Custom Title")).toBeVisible();
+  await expect.element(rendered.getByText("Section content")).toBeVisible();
 });
 
 test("advanced settings footer hides while search filters are active", async () => {
