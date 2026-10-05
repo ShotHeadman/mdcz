@@ -37,6 +37,7 @@ const sections: Record<FieldAnchor, SectionText> = {
   translate: { label: "Translation", aliases: ["translate", "translation", "translator", "llm", "language"] },
   naming: { label: "Naming", aliases: ["naming", "name", "template", "rule", "rules"] },
   download: { label: "Downloads", aliases: ["download", "asset", "poster", "fanart", "nfo"] },
+  mediaServer: { label: "Media servers", aliases: ["media server", "jellyfin", "emby", "person", "actor"] },
   system: { label: "Interface & shortcuts", aliases: ["system", "ui", "interface", "shortcut", "hotkey"] },
 };
 
@@ -359,10 +360,16 @@ const fields: Record<FieldKey, FieldText> = {
   "naming.folderTemplate": { label: "Folder template", aliases: ["template", "folder naming"] },
   "naming.fileTemplate": { label: "File name template", aliases: ["template", "file naming"] },
   "titleRepair.enabled": {
-    label: "Restore masked title words",
+    label: "Restore masked words in titles and plots",
     description:
-      "Restore censorship symbols (●, 〇, etc.) in official titles to the original words (e.g. 「催●」 → 「催眠」, 「盗●」 → 「盗撮」); the original title is still kept in the NFO.",
-    aliases: ["title repair", "masked title"],
+      "Restore censorship symbols (●, 〇, etc.) in official titles and plots to the original words (e.g. 「催●」 → 「催眠」, 「●っ払う」 → 「酔っ払う」) before translation; the original title is still kept in the NFO.",
+    aliases: ["title repair", "masked title", "masked plot"],
+  },
+  "titleRepair.stripTrailingActors": {
+    label: "Remove actor names from title end",
+    description:
+      'Some sites append actor names to the title (e.g. "… Yua Mikami"); when enabled they are removed based on the movie\'s actor list.',
+    aliases: ["title actors", "actress name"],
   },
   "naming.assetNamingMode": {
     label: "Asset file naming",
@@ -411,7 +418,16 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Upper limit of genres or tags kept after aggregation.",
     aliases: ["aggregation", "genres", "tags"],
   },
-  "translate.enableTranslation": { label: "Translate content" },
+  "translate.enableTranslation": {
+    label: "Translate content",
+    description:
+      "Classic machine translation (DeepL, Baidu) is limited in quality, so an LLM is recommended; you can also leave this off and translate NFOs with another tool later.",
+  },
+  "translate.fields": {
+    label: "Fields to translate",
+    description: "Only the selected fields are translated; the rest keep the original text.",
+    aliases: ["translation scope"],
+  },
   "translate.engine": { label: "Translation engine", aliases: ["translator", "translation"] },
   "translate.llmModelName": { label: "LLM model name", aliases: ["model", "openai", "llm"] },
   "translate.llmApiKey": {

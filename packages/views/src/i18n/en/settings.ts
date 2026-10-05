@@ -1,4 +1,4 @@
-import type { ConfigIssueCode, NfoField } from "@mdcz/shared/config";
+import type { ConfigIssueCode, NfoField, TranslationField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { NamingPreviewSampleId } from "@mdcz/shared/types";
@@ -53,7 +53,8 @@ export const settings = {
   },
   nfoFields: {
     num: "code compatibility fields",
-    plot: "plot and outline",
+    plot: "plot",
+    outline: "short plot",
     release: "release info",
     runtime: "runtime",
     fileinfo: "video technical info",
@@ -72,6 +73,7 @@ export const settings = {
     sourceComment: "aggregation source comment",
   } as Record<NfoField, string>,
   nfoFieldOption: (field: string, label: string) => `${field} (${label})`,
+  translateFields: { title: "Title", plot: "Plot", genres: "Genres" } as Record<TranslationField, string>,
   badgeOverrides: {
     openFolder: "Open folder",
     createDirFailed: (error: string) => `Failed to create the badge image directory: ${error}`,
@@ -339,6 +341,30 @@ export const settings = {
     selectOverwriteTarget: "Select the profile to overwrite",
     activeProfileRefreshHint: "The active profile is refreshed with the new content as soon as the import finishes.",
     importAction: "Import",
+    savingWait: (action: string) => `Configuration is saving automatically. Please wait before you ${action}.`,
+    actions: {
+      reset: "reset defaults",
+      switch: "switch profiles",
+      export: "export the profile",
+      import: "import a profile",
+    },
+    failed: {
+      reset: "Reset failed",
+      create: "Create failed",
+      switch: "Switch failed",
+      delete: "Delete failed",
+      export: "Export failed",
+      selectFile: "File selection failed",
+      import: "Import failed",
+    },
+    resetSucceeded: (name: string) => `Profile "${name}" reset to defaults`,
+    created: (name: string) => `Profile "${name}" created`,
+    switched: (name: string) => `Switched to profile "${name}"`,
+    deleted: "Profile deleted",
+    exported: (name: string) => `Profile "${name}" exported`,
+    imported: (name: string) => `Profile "${name}" imported`,
+    overwritten: (name: string) => `Profile "${name}" overwritten and imported`,
+    loadFailed: (error: string) => `Failed to load settings: ${error}`,
   },
   layout: {
     title: "Settings",

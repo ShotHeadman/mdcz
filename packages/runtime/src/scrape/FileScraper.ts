@@ -51,9 +51,8 @@ const findExistingNfoInInventory = async (
   nfoNaming: Parameters<typeof getNfoReadCandidates>[1],
 ): Promise<string | undefined> => {
   for (const candidatePath of getNfoReadCandidates(nfoPath, nfoNaming)) {
-    const entries = await inventory.entries(path.dirname(candidatePath));
     const name = path.basename(candidatePath);
-    if (entries.some((entry) => (entry.isFile() || entry.isSymbolicLink()) && entryNameMatches(entry.name, name)))
+    if ((await inventory.files(path.dirname(candidatePath), (entry) => entryNameMatches(entry, name))).length)
       return candidatePath;
   }
   return undefined;
@@ -253,7 +252,6 @@ export class FileScraper {
         let localState = options.localState;
         if (configuration.download.generateNfo && configuration.download.keepNfo) {
           const directory = path.dirname(parsedFileInfo.filePath);
-          const listed = await inventory.entries(directory);
           const videos = await inventory.mediaEntries(directory);
           const singleMovie = videos.every(
             (entry) =>
@@ -264,9 +262,7 @@ export class FileScraper {
             parsedFileInfo.part?.suffix,
             singleMovie,
           );
-          const nfos = listed.filter(
-            (entry) => (entry.isFile() || entry.isSymbolicLink()) && path.extname(entry.name).toLowerCase() === ".nfo",
-          );
+          const nfos = await inventory.files(directory, (name) => path.extname(name).toLowerCase() === ".nfo");
           const [selectedName] = selectLocalNfoNames(
             nfos.map((entry) => entry.name),
             candidates,

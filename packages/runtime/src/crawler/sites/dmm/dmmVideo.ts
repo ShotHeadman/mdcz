@@ -290,7 +290,8 @@ export const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Par
     director: (content.directors ?? []).map((item) => item.name).find((value): value is string => Boolean(value)),
     publisher: content.label?.name ?? content.maker?.name,
     series: content.series?.name,
-    plot: content.description,
+    // GraphQL descriptions carry HTML line breaks; only <br> is converted since plots may contain literal angle brackets.
+    plot: content.description?.replace(/<br\s*\/?>/giu, "\n"),
     release_date: content.makerReleasedAt?.slice(0, 10) ?? content.deliveryStartDate?.slice(0, 10),
     rating: data?.reviewSummary?.average,
     thumb_url: content.packageImage?.largeUrl,

@@ -86,33 +86,42 @@ export class TranslateService {
     const mappedActorProfiles = await Promise.all(
       (data.actor_profiles ?? []).map((profile) => this.actorNameNormalizer.normalizeProfile(profile)),
     );
-    const prepareField = (input: string | undefined): { source: string | null; translated: string | undefined } => {
+    const selectedFields = new Set(config.translate.fields);
+    const prepareField = (
+      field: "title" | "plot",
+      input: string | undefined,
+    ): { source: string | null; translated: string | undefined } => {
       const text = normalizeNewlines(input ?? "").trim();
-      if (!text) return { source: null, translated: undefined };
+      if (!text || !selectedFields.has(field)) return { source: null, translated: undefined };
       if (detectLanguage(text) === "zh") return { source: null, translated: ensureTargetChinese(text, target) };
       return { source: text, translated: undefined };
     };
-    const fields = { title: prepareField(data.title), plot: prepareField(data.plot) };
-    const genres = await this.genreTranslator.resolve(data.genres ?? [], target, signal);
+    const fields = { title: prepareField("title", data.title), plot: prepareField("plot", data.plot) };
+    const translateGenres = selectedFields.has("genres");
+    const genres = await this.genreTranslator.resolve(translateGenres ? (data.genres ?? []) : [], target, signal);
     let metadataTranslation: Awaited<ReturnType<TranslateService["translateMetadata"]>> | null = null;
     let translationError: string | null = null;
-    try {
-      metadataTranslation = await this.translateMetadata(
-        {
-          title: fields.title.source,
-          plot: fields.plot.source,
-          genres: genres.unresolvedEntries.map(([, term]) => term),
-        },
-        target,
-        config,
-        signal,
-      );
-    } catch (error) {
-      if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
-      translationError = toErrorMessage(error);
-      this.logger.warn(`Translation failed for ${data.number}: ${translationError}`);
+    if (fields.title.source || fields.plot.source || genres.unresolvedEntries.length > 0) {
+      try {
+        metadataTranslation = await this.translateMetadata(
+          {
+            title: fields.title.source,
+            plot: fields.plot.source,
+            genres: genres.unresolvedEntries.map(([, term]) => term),
+          },
+          target,
+          config,
+          signal,
+        );
+      } catch (error) {
+        if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
+        translationError = toErrorMessage(error);
+        this.logger.warn(`Translation failed for ${data.number}: ${translationError}`);
+      }
     }
-    const mappedGenres = this.genreTranslator.remember(genres, metadataTranslation?.genres ?? [], target);
+    const mappedGenres = translateGenres
+      ? this.genreTranslator.remember(genres, metadataTranslation?.genres ?? [], target)
+      : (data.genres ?? []);
 
     for (const field of ["title", "plot"] as const) {
       const prepared = fields[field];

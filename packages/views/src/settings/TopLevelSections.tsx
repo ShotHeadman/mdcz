@@ -6,6 +6,7 @@ import { SettingsSectionModeProvider } from "./SettingsSectionModeContext";
 import { useSettingsServices } from "./SettingsServices";
 import { SitePriorityEditorField } from "./SitePriorityEditorField";
 import { Subsection } from "./Subsection";
+import { MediaServerSection } from "./sections/MediaServerSections";
 import {
   AggregationBehaviorSection,
   AggregationPrioritySection,
@@ -34,17 +35,6 @@ interface SystemSectionProps {
   forceOpen?: boolean;
 }
 
-const DEFERRED_SECTION_HEIGHTS = {
-  paths: 1400,
-  scrape: 1040,
-  network: 920,
-  translate: 980,
-  naming: 1260,
-  download: 960,
-  system: 840,
-  advancedSettings: 1760,
-} as const;
-
 export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
   const t = useT();
   return (
@@ -53,8 +43,6 @@ export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolea
       label={t.settingsFields.sections.paths.label}
       title={t.settingsFields.sections.paths.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.paths}
     >
       <PathsSection />
     </SectionAnchor>
@@ -69,8 +57,6 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
       label={t.settingsFields.sections.scrape.label}
       title={t.settingsFields.sections.scrape.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.scrape}
     >
       <Subsection
         title={t.settings.subsections.scrapeSites}
@@ -97,8 +83,6 @@ export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: bool
       label={t.settingsFields.sections.network.label}
       title={t.settingsFields.sections.network.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.network}
     >
       <Subsection title={t.settings.subsections.proxyAndRequests} className="mb-6 last:mb-0">
         <NetworkConnectionSection />
@@ -118,8 +102,6 @@ export function TranslateTopLevelSection({ forceOpen = false }: { forceOpen?: bo
       label={t.settingsFields.sections.translate.label}
       title={t.settingsFields.sections.translate.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.translate}
     >
       <TranslateSection />
     </SectionAnchor>
@@ -134,8 +116,6 @@ export function NamingTopLevelSection({ forceOpen = false }: { forceOpen?: boole
       label={t.settingsFields.sections.naming.label}
       title={t.settingsFields.sections.naming.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.naming}
     >
       <NamingSection />
     </SectionAnchor>
@@ -150,8 +130,6 @@ export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boo
       label={t.settingsFields.sections.download.label}
       title={t.settingsFields.sections.download.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.download}
     >
       <Subsection title={t.settings.subsections.assetDownloads} className="mb-6 last:mb-0">
         <AssetDownloadsSection />
@@ -159,6 +137,20 @@ export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boo
       <Subsection title="NFO" className="mb-6 last:mb-0">
         <NfoSection />
       </Subsection>
+    </SectionAnchor>
+  );
+}
+
+export function MediaServerTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
+  return (
+    <SectionAnchor
+      id="mediaServer"
+      label={t.settingsFields.sections.mediaServer.label}
+      title={t.settingsFields.sections.mediaServer.label}
+      forceOpen={forceOpen}
+    >
+      <MediaServerSection />
     </SectionAnchor>
   );
 }
@@ -178,8 +170,6 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
       label={t.settingsFields.sections.system.label}
       title={t.settingsFields.sections.system.label}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.system}
     >
       <Subsection title={t.settings.subsections.interface} className="mb-6 last:mb-0">
         <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
@@ -207,8 +197,6 @@ export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: Site
       label={t.settings.subsections.advanced}
       title={t.settings.subsections.advanced}
       forceOpen={forceOpen}
-      deferContent
-      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.advancedSettings}
     >
       <SettingsSectionModeProvider mode="advanced">
         <AdvancedDomainSubsection anchor="scrape">

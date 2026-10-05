@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, link, mkdir, rename, rm, symlink } from "node:fs/promises";
+import { copyFile, link, mkdir, rename, rm } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
+import { canonicalPath } from "@mdcz/media-store";
 import { pathExists } from "../utils/filesystem";
 import { sanitizePathSegment } from "../utils/path";
 
@@ -34,7 +35,9 @@ export class ActorPhotoMaterializer {
     await mkdir(actorsDirectory, { recursive: true });
 
     try {
-      await this.createTemporaryMaterialization(sourcePath, temporaryPath);
+      // Publication consumes staged photos only as regular files: never symlink, and link the resolved
+      // file because Linux link() on a symlinked library photo would create another symlink.
+      await link(await canonicalPath(sourcePath), temporaryPath).catch(() => copyFile(sourcePath, temporaryPath));
       await rename(temporaryPath, targetPath);
     } catch {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
@@ -43,23 +46,5 @@ export class ActorPhotoMaterializer {
 
     this.logger.info(`Materialized actor photo for ${actorName}: ${targetPath}`);
     return relative(movieDirectory, targetPath).replaceAll("\\", "/");
-  }
-
-  private async createTemporaryMaterialization(sourcePath: string, temporaryPath: string): Promise<void> {
-    try {
-      await link(sourcePath, temporaryPath);
-      return;
-    } catch {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
-    }
-
-    try {
-      await symlink(sourcePath, temporaryPath, "file");
-      return;
-    } catch {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
-    }
-
-    await copyFile(sourcePath, temporaryPath);
   }
 }

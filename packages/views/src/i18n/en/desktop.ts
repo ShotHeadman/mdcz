@@ -1,11 +1,5 @@
 export const desktop = {
   // Person sync & connection
-  personSyncConfig: "Person sync configuration",
-  serverConnectionSettings: (server: string) => `${server} connection settings`,
-  readingCurrentConfig: "Reading current configuration…",
-  configLoadFailed: "Failed to load configuration",
-  serverSettingsHelp:
-    "Connection diagnostics and person sync read the server address, API key, and user ID saved here.",
   diagnosingServerConnection: (server: string) => `Diagnosing ${server} connection…`,
   serverDiagnosticPassed: (server: string) => `${server} connection diagnostic passed`,
   serverConnectivityTestFailed: (server: string, error: string) => `${server} connectivity test failed: ${error}`,
@@ -133,27 +127,6 @@ export const desktop = {
   clearAllLogsDescription: "Are you sure you want to clear all log entries?",
   confirmClear: "Confirm clear",
   logsCleared: "Logs cleared successfully",
-
-  // Settings route
-  savingWaitMessage: (action: string) =>
-    `Configuration is saving automatically. Please wait before attempting to ${action}.`,
-  actionResetDefault: "reset defaults",
-  actionSwitchProfile: "switch profiles",
-  actionExportProfile: "export profile",
-  actionImportProfile: "import profile",
-  profileResetSuccess: (name: string) => `Profile "${name}" reset to defaults`,
-  resetFailed: (error: string) => `Reset failed: ${error}`,
-  profileCreated: (name: string) => `Profile "${name}" created`,
-  createFailed: (error: string) => `Create failed: ${error}`,
-  profileSwitched: (name: string) => `Switched to profile "${name}"`,
-  switchFailed: (error: string) => `Switch failed: ${error}`,
-  profileDeleted: "Profile deleted",
-  deleteFailed: (error: string) => `Delete failed: ${error}`,
-  profileExported: (name: string) => `Profile "${name}" exported`,
-  exportFailed: (error: string) => `Export failed: ${error}`,
-  profileImported: (name: string) => `Profile "${name}" imported`,
-  profileOverwritten: (name: string) => `Profile "${name}" overwritten and imported`,
-  importFailed: (error: string) => `Import failed: ${error}`,
 
   // Workbench route
   stopScrapeFirst: "Please stop the current scrape task first",

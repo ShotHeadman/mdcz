@@ -29,31 +29,10 @@ export const web = {
   recentAcquisitions: "Recent acquisitions",
   removedFromRecent: "Removed from recent acquisitions",
 
-  // Settings controller & settings route
+  // Settings services
   copiedWatermarkDir: "Server watermark directory path copied.",
   browserCannotOpenFolder: "The browser cannot open the server folder. Please copy the server path above.",
   copyServerPath: "Copy server path",
-  savingWaitMessage: (action: string) =>
-    `Configuration is saving automatically. Please wait before attempting to ${action}.`,
-  actionResetDefault: "reset defaults",
-  actionSwitchProfile: "switch profiles",
-  actionExportProfile: "export profile",
-  actionImportProfile: "import profile",
-  profileResetSuccess: (name: string) => `Profile "${name}" reset to defaults`,
-  resetFailed: "Reset failed",
-  profileCreated: (name: string) => `Profile "${name}" created`,
-  createFailed: "Create failed",
-  profileSwitched: (name: string) => `Switched to profile "${name}"`,
-  switchFailed: "Switch failed",
-  profileDeleted: "Profile deleted",
-  deleteFailed: "Delete failed",
-  profileExported: (name: string) => `Profile "${name}" exported`,
-  exportFailed: "Export failed",
-  selectFileFailed: "File selection failed",
-  profileImported: (name: string) => `Profile "${name}" imported`,
-  profileOverwritten: (name: string) => `Profile "${name}" overwritten and imported`,
-  importFailed: "Import failed",
-  loadSettingsFailed: (error: string) => `Failed to load settings: ${error}`,
 
   // Library
   removedFromLibrary: "Removed from library",

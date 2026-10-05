@@ -1,5 +1,5 @@
 import type * as NodeFsPromises from "node:fs/promises";
-import { link, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,11 +38,12 @@ import {
   atomicWriteFile,
   atomicWriteRootFile,
   createMediaRoot,
-  inspectFileEntry,
+  filesystemPathKey,
   listRootDirectory,
   listRootFiles,
   normalizeRootRelativePath,
   readRootFile,
+  resolveEntryPath,
   resolveRootRelativePath,
   StorageError,
   statRootPath,
@@ -229,15 +230,14 @@ describe("mounted filesystem helpers", () => {
       "links/linked-dir/target.mp4",
       "movie.mkv",
     ]);
-    const direct = await inspectFileEntry(path.join(root.hostPath, "linked/target.mp4"));
-    const aliased = await inspectFileEntry(path.join(root.hostPath, "links/linked-dir/target.mp4"));
-    expect(aliased.entryIdentity).toBe(direct.entryIdentity);
-    expect(aliased.traversalIdentity).toBe(direct.traversalIdentity);
+    const entryIdentity = async (relativePath: string) =>
+      filesystemPathKey(await resolveEntryPath(path.join(root.hostPath, relativePath)));
+    expect(await entryIdentity("links/linked-dir/target.mp4")).toBe(await entryIdentity("linked/target.mp4"));
     await link(path.join(root.hostPath, "movie.mkv"), path.join(root.hostPath, "hardlink.mkv"));
-    const original = await inspectFileEntry(path.join(root.hostPath, "movie.mkv"));
-    const hardlink = await inspectFileEntry(path.join(root.hostPath, "hardlink.mkv"));
-    expect(hardlink.entryIdentity).not.toBe(original.entryIdentity);
-    expect(hardlink.referentFacts.ino).toBe(original.referentFacts.ino);
+    expect(await entryIdentity("hardlink.mkv")).not.toBe(await entryIdentity("movie.mkv"));
+    expect((await stat(path.join(root.hostPath, "hardlink.mkv"))).ino).toBe(
+      (await stat(path.join(root.hostPath, "movie.mkv"))).ino,
+    );
   });
 
   it("maps missing filesystem paths to stable missing-path errors", async () => {

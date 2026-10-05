@@ -101,7 +101,7 @@ export function isFieldVisible(entry: FieldEntry, state: SettingsFilterState): b
   const { parsedQuery, showAdvanced, modifiedKeys } = state;
   const isModified = modifiedKeys.has(entry.key);
 
-  if (entry.surface !== "settings" || entry.visibility === "hidden") {
+  if (entry.visibility === "hidden") {
     return false;
   }
   if (state.target === "server" && (entry.key.startsWith("shortcuts.") || entry.key.startsWith("ui."))) {

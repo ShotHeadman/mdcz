@@ -1,11 +1,6 @@
 import type { Messages } from "../en";
 
 export const desktop: Messages["desktop"] = {
-  personSyncConfig: "人物同步配置",
-  serverConnectionSettings: (server: string) => `${server} 连接设置`,
-  readingCurrentConfig: "正在读取当前配置",
-  configLoadFailed: "配置加载失败",
-  serverSettingsHelp: "连接诊断和人物同步会读取这里保存的服务器地址、API Key 与用户 ID。",
   diagnosingServerConnection: (server: string) => `正在诊断 ${server} 连接状态...`,
   serverDiagnosticPassed: (server: string) => `${server} 连接诊断通过`,
   serverConnectivityTestFailed: (server: string, error: string) => `${server} 连通性测试失败: ${error}`,
@@ -114,25 +109,6 @@ export const desktop: Messages["desktop"] = {
   clearAllLogsDescription: "确定要清空所有日志内容吗？",
   confirmClear: "确定清空",
   logsCleared: "日志已成功清空",
-
-  savingWaitMessage: (action: string) => `有配置正在自动保存，请稍候再${action}`,
-  actionResetDefault: "恢复默认设置",
-  actionSwitchProfile: "切换档案",
-  actionExportProfile: "导出配置档案",
-  actionImportProfile: "导入配置档案",
-  profileResetSuccess: (name: string) => `已恢复档案 "${name}" 的默认设置`,
-  resetFailed: (error: string) => `重置失败: ${error}`,
-  profileCreated: (name: string) => `配置档案 "${name}" 已创建`,
-  createFailed: (error: string) => `创建失败: ${error}`,
-  profileSwitched: (name: string) => `已切换到配置档案 "${name}"`,
-  switchFailed: (error: string) => `切换失败: ${error}`,
-  profileDeleted: "配置档案已删除",
-  deleteFailed: (error: string) => `删除失败: ${error}`,
-  profileExported: (name: string) => `配置档案 "${name}" 已导出`,
-  exportFailed: (error: string) => `导出失败: ${error}`,
-  profileImported: (name: string) => `配置档案 "${name}" 已导入`,
-  profileOverwritten: (name: string) => `配置档案 "${name}" 已覆盖导入`,
-  importFailed: (error: string) => `导入失败: ${error}`,
 
   stopScrapeFirst: "请先停止当前刮削任务",
   stopMaintenanceFirst: "请先停止当前维护任务",

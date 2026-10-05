@@ -47,8 +47,7 @@ export const resolvePublicationAssetLayout = async (input: {
 
   const scanDirectoryAssets = async (directory: string, isSourceDir: boolean) => {
     const sceneFolder = join(directory, config.paths.sceneImagesFolder);
-    for (const entry of await inventory.entries(sceneFolder)) {
-      if (!entry.isFile() || !SCENE_IMAGE_FILE_PATTERN.test(entry.name)) continue;
+    for (const entry of await inventory.files(sceneFolder, (name) => SCENE_IMAGE_FILE_PATTERN.test(name))) {
       const source = join(sceneFolder, entry.name);
       if (!retained.has(source)) {
         const target =
@@ -60,8 +59,7 @@ export const resolvePublicationAssetLayout = async (input: {
     }
 
     const actorsFolder = join(directory, ".actors");
-    for (const entry of await inventory.entries(actorsFolder)) {
-      if (!entry.isFile()) continue;
+    for (const entry of await inventory.files(actorsFolder)) {
       const source = join(actorsFolder, entry.name);
       if (!retained.has(source)) {
         const target = isSourceDir && layout.mode === "move" ? join(layout.metadataDir, ".actors", entry.name) : source;
@@ -69,20 +67,21 @@ export const resolvePublicationAssetLayout = async (input: {
       }
     }
 
-    for (const entry of await inventory.entries(directory)) {
-      if (!entry.isFile()) continue;
-      const ext = parse(entry.name).ext.toLowerCase();
-      for (const kind of ["thumb", "poster", "fanart", "trailer"] as const) {
-        const base = parse(names[kind]).name;
+    const assetKinds = (fileName: string) =>
+      (["thumb", "poster", "fanart", "trailer"] as const).filter((kind) => {
         const exts: readonly string[] = kind === "trailer" ? [".mp4"] : imageExtensions;
-        if (entry.name === names[kind] || (parse(entry.name).name === base && exts.includes(ext))) {
-          const source = join(directory, entry.name);
-          if (!retained.has(source)) {
-            const target =
-              isSourceDir && layout.mode === "move" ? join(layout.metadataDir, `${base}${parse(source).ext}`) : source;
-            retained.set(source, target);
-          }
-        }
+        const { name, ext } = parse(fileName);
+        return fileName === names[kind] || (name === parse(names[kind]).name && exts.includes(ext.toLowerCase()));
+      });
+    for (const entry of await inventory.files(directory, (name) => assetKinds(name).length > 0)) {
+      const source = join(directory, entry.name);
+      for (const kind of assetKinds(entry.name)) {
+        if (retained.has(source)) continue;
+        const target =
+          isSourceDir && layout.mode === "move"
+            ? join(layout.metadataDir, `${parse(names[kind]).name}${parse(source).ext}`)
+            : source;
+        retained.set(source, target);
       }
     }
   };

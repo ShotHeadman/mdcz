@@ -3,6 +3,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path
 import { atomicWriteFile } from "@mdcz/media-store";
 import { inspectStrmTarget, prepareMovedStrmContent } from "../scrape/utils/strm";
 import { SUBTITLE_EXTENSIONS } from "../scrape/utils/subtitles";
+import { runtimeLoggerService, toErrorMessage } from "../shared";
 
 export * from "./AmazonJpImageService";
 export { applyAmazonPosters, lookupAmazonPoster, scanAmazonPosters } from "./amazonPoster";
@@ -190,8 +191,12 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
       await symlink(sourcePath, destinationPath);
       linkedSources.add(sourceKey);
       result.linked += 1;
-    } catch {
+    } catch (error) {
       result.failed += 1;
+      // Windows refuses unprivileged symlinks without Developer Mode; surface why each file failed.
+      runtimeLoggerService
+        .getLogger("SymlinkTool")
+        .warn(`Failed to link ${sourcePath} -> ${destinationPath}: ${toErrorMessage(error)}`);
     }
   }
 

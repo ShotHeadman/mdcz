@@ -97,6 +97,34 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.genres).toEqual(["统一译名"]);
   });
 
+  it.each([
+    { fields: ["plot"] as const, llmCalls: 1, plotZh: "中文简介" },
+    { fields: [] as const, llmCalls: 0, plotZh: undefined },
+  ])("translates only the selected fields $fields", async ({ fields, llmCalls, plotZh }) => {
+    const generateText = vi.fn().mockResolvedValue(JSON.stringify({ title: null, plot: "中文简介", genres: [] }));
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
+    const config = createBaseConfig();
+    config.translate.fields = [...fields];
+
+    const translated = await service.translateCrawlerData(
+      {
+        title: "日本語タイトル",
+        plot: "日本語の説明",
+        number: "ABC-123",
+        actors: [],
+        genres: ["ジャンル"],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(generateText).toHaveBeenCalledTimes(llmCalls);
+    expect(translated.data.title_zh).toBeUndefined();
+    expect(translated.data.plot_zh).toBe(plotZh);
+    expect(translated.data.genres).toEqual(["ジャンル"]);
+  });
+
   it("applies actor/genre mappings without llm and preserves actor photos", async () => {
     const generateText = vi.fn();
     const llmApiClient = createLlmApiClient(generateText);

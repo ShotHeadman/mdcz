@@ -75,47 +75,28 @@ export const findSubtitleSidecars = async (
 ): Promise<SubtitleSidecarMatch[]> => {
   const video = parse(videoPath);
   const videoBaseCandidates = buildVideoBaseCandidates(videoPath);
-  const entries = await inventory.entries(video.dir);
+  const subtitles = await inventory.files(video.dir, (name) => SUBTITLE_EXTENSIONS.has(extname(name).toLowerCase()));
   const siblingVideos = (await inventory.mediaEntries(video.dir)).filter((entry) => entry.name !== video.base);
   const number = parseFileInfo(videoPath).number;
   if (siblingVideos.some((entry) => parseFileInfo(entry.name).number === number)) videoBaseCandidates.splice(1);
-  const matches = await Promise.all(
-    entries.map(async (entry) => {
-      if (!SUBTITLE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
-        return null;
-      }
-
-      const sidecarPath = join(video.dir, entry.name);
-      if (entry.isSymbolicLink()) {
-        const targetStats = await inventory.stats(sidecarPath).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return null;
-          throw error;
-        });
-        if (!targetStats?.isFile()) {
-          return null;
-        }
-      } else if (!entry.isFile()) {
-        return null;
-      }
-
-      const sidecarBaseName = parse(entry.name).name;
-      const ownedBySibling = siblingVideos.some((sibling) => {
-        const siblingName = parse(sibling.name).name;
-        return siblingName.length > video.name.length && matchSidecarBase(sidecarBaseName, [siblingName]).matched;
-      });
-      if (ownedBySibling) return null;
-      const matched = matchSidecarBase(sidecarBaseName, videoBaseCandidates);
-      return matched.matched
-        ? {
-            path: sidecarPath,
+  return subtitles.flatMap((entry) => {
+    const sidecarBaseName = parse(entry.name).name;
+    const ownedBySibling = siblingVideos.some((sibling) => {
+      const siblingName = parse(sibling.name).name;
+      return siblingName.length > video.name.length && matchSidecarBase(sidecarBaseName, [siblingName]).matched;
+    });
+    if (ownedBySibling) return [];
+    const matched = matchSidecarBase(sidecarBaseName, videoBaseCandidates);
+    return matched.matched
+      ? [
+          {
+            path: join(video.dir, entry.name),
             suffix: matched.suffix,
             subtitleTag: detectSubtitleTagFromSidecarSuffix(matched.suffix),
-          }
-        : null;
-    }),
-  );
-
-  return matches.filter((entry): entry is SubtitleSidecarMatch => entry !== null);
+          },
+        ]
+      : [];
+  });
 };
 
 export const getPreferredSubtitleTagFromSidecars = (sidecars: SubtitleSidecarMatch[]): SubtitleTag | undefined => {

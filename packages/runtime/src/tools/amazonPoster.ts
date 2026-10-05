@@ -9,13 +9,13 @@ import type {
 } from "@mdcz/shared/ipcTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";
 import type { RuntimeDownloadNetworkClient } from "../network";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
-import { parseNfo } from "../scrape/nfo";
 import { type ImageValidation, validateImage } from "../scrape/utils/image";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
 import {
@@ -130,6 +130,7 @@ export const scanAmazonPosters = async (
   dependencies: AmazonPosterDependencies = {},
 ): Promise<AmazonPosterScanItem[]> => {
   const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
+  const logger = dependencies.logger ?? runtimeLoggerService.getLogger("AmazonPoster");
   const normalizedRoot = resolve(rootDirectory.trim());
   if (!(await stat(normalizedRoot)).isDirectory()) throw new Error(`Directory not found: ${normalizedRoot}`);
   const nfoPaths = await listNfoFiles(normalizedRoot);
@@ -144,8 +145,14 @@ export const scanAmazonPosters = async (
 
   const items: AmazonPosterScanItem[] = [];
   for (const nfoPath of nfoPaths) {
-    const xml = await readFile(nfoPath, "utf8");
-    const parsed = parseNfo(xml, nfoPath);
+    let parsed: CrawlerData;
+    try {
+      parsed = parseNfoSnapshot(await readFile(nfoPath, "utf8")).crawlerData;
+    } catch (error) {
+      // Scanned folders may hold NFOs written by other tools; one unreadable file must not abort the scan.
+      logger.warn(`Skipping unreadable NFO ${nfoPath}: ${toErrorText(error)}`);
+      continue;
+    }
     const directory = dirname(nfoPath);
     const nfoBaseName = basename(nfoPath, extname(nfoPath)).toLowerCase();
     if (nfoBaseName === MOVIE_NFO_BASE_NAME && (directoryNamedNfoCounts.get(directory) ?? 0) > 0) {
@@ -230,7 +237,7 @@ export const applyAmazonPosters = async (
     let savedPosterPath = join(directory, POSTER_FILE_NAME);
     let replacedExisting = false;
     try {
-      const parsedNfo = parseNfo(await readFile(normalizedNfoPath, "utf8"), normalizedNfoPath);
+      const parsedNfo = parseNfoSnapshot(await readFile(normalizedNfoPath, "utf8")).crawlerData;
       savedPosterPath =
         buildPosterCandidatePaths(
           directory,

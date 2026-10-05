@@ -2,7 +2,6 @@ import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
-import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
@@ -136,10 +135,10 @@ export const nfoIgnoreFieldsToEnabledFields = (
 const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
+  originalPlot: string | undefined,
   options: NfoOptions | undefined,
 ): Record<string, unknown> | undefined => {
   const enabledFields = options?.enabledFields;
-  const originalPlot = isNfoFieldEnabled(enabledFields, "plot") ? data.plot?.trim() : undefined;
   const includeRemoteSceneImageUrls = options?.includeRemoteSceneImageUrls ?? true;
   const allowRemoteTrailerFallback = options?.allowRemoteTrailerFallback ?? true;
   const remoteThumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
@@ -194,7 +193,8 @@ export class NfoGenerator {
     const originaltitle = data.original_title?.trim() || data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
     const title = renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
-    const plot = data.plot_zh?.trim() || data.plot?.trim();
+    const sourcePlot = data.plot?.trim();
+    const plot = data.plot_zh?.trim() || sourcePlot;
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
     const assets = options?.assets;
     const sources = options?.sources;
@@ -215,9 +215,11 @@ export class NfoGenerator {
     }
 
     movie.title = title;
-    movie.originaltitle = originaltitle;
+    // Original-language tags are only written when they differ, so untranslated NFOs carry no duplicate text.
+    movie.originaltitle = originaltitle !== title ? originaltitle : undefined;
     movie.plot = isNfoFieldEnabled(enabledFields, "plot") && plot && plot.length > 0 ? plot : undefined;
-    movie.outline = isNfoFieldEnabled(enabledFields, "plot") ? outline : undefined;
+    movie.outline =
+      isNfoFieldEnabled(enabledFields, "plot") && isNfoFieldEnabled(enabledFields, "outline") ? outline : undefined;
     movie.premiered = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.releasedate = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.dateadded = new Date().toISOString();
@@ -257,8 +259,12 @@ export class NfoGenerator {
       const fanartNode = buildFanartNode(data, assets);
       if (fanartNode) movie.fanart = fanartNode;
     }
-    const hasCustomTitleTemplate = titleTemplate !== "{title}";
-    const mdczNode = buildMdczNode(data, hasCustomTitleTemplate ? rawTitle : undefined, options);
+    const mdczNode = buildMdczNode(
+      data,
+      rawTitle !== title ? rawTitle : undefined,
+      isNfoFieldEnabled(enabledFields, "plot") && sourcePlot !== plot ? sourcePlot : undefined,
+      options,
+    );
     if (mdczNode) movie.mdcz = mdczNode;
     if (isNfoFieldEnabled(enabledFields, "fileinfo") && videoNode) {
       movie.fileinfo = { streamdetails: { video: videoNode } };
@@ -479,71 +485,3 @@ function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
   lines.push("  ");
   return lines.join("\n");
 }
-
-const readTag = (xml: string, tag: string): string | undefined => {
-  const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "u"));
-  return match?.[1]
-    ?.replace(/&quot;/gu, '"')
-    .replace(/&gt;/gu, ">")
-    .replace(/&lt;/gu, "<")
-    .replace(/&amp;/gu, "&")
-    .trim();
-};
-
-const readUniqueId = (xml: string): { number?: string; website?: Website } => {
-  const match = xml.match(/<uniqueid\b([^>]*)>([\s\S]*?)<\/uniqueid>/u);
-  const number = match?.[2]
-    ?.replace(/&quot;/gu, '"')
-    .replace(/&gt;/gu, ">")
-    .replace(/&lt;/gu, "<")
-    .replace(/&amp;/gu, "&")
-    .trim();
-  const type = match?.[1]?.match(/type=["']([^"']+)["']/u)?.[1];
-  const website = type && Object.values(Website).includes(type as Website) ? (type as Website) : undefined;
-  return { number, website };
-};
-
-export const inferNumber = (relativePath: string): string => {
-  const base = basename(
-    relativePath,
-    relativePath.includes(".") ? relativePath.slice(relativePath.lastIndexOf(".")) : undefined,
-  );
-  const match = base.match(/[A-Za-z]{2,10}[-_ ]?\d{2,6}|FC2[-_ ]?\d{5,8}|\d{6,}/u);
-  return (match?.[0] ?? base).replace(/[ _]/gu, "-").toUpperCase();
-};
-
-export const parseNfo = (xml: string, fallbackPath: string): CrawlerData => {
-  const actors = Array.from(xml.matchAll(/<actor>\s*<name>([\s\S]*?)<\/name>\s*<\/actor>/gu)).map((match) =>
-    match[1].trim(),
-  );
-  const genres = Array.from(xml.matchAll(/<genre>([\s\S]*?)<\/genre>/gu)).map((match) => match[1].trim());
-  const title = readTag(xml, "title");
-  const originaltitle = readTag(xml, "originaltitle");
-  const uniqueid = readUniqueId(xml);
-  return {
-    title:
-      originaltitle ??
-      title ??
-      basename(
-        fallbackPath,
-        fallbackPath.includes(".") ? fallbackPath.slice(fallbackPath.lastIndexOf(".")) : undefined,
-      ),
-    title_zh: title && title !== originaltitle ? title : undefined,
-    number: uniqueid.number ?? readTag(xml, "id") ?? inferNumber(fallbackPath),
-    actors,
-    genres,
-    studio: readTag(xml, "studio"),
-    director: readTag(xml, "director"),
-    publisher: readTag(xml, "publisher"),
-    series: readTag(xml, "set"),
-    plot: readTag(xml, "original_plot") ?? readTag(xml, "plot"),
-    plot_zh: readTag(xml, "outline"),
-    release_date: readTag(xml, "premiered"),
-    thumb_url: readTag(xml, "thumb"),
-    poster_url: readTag(xml, "poster"),
-    trailer_url: readTag(xml, "trailer"),
-    trailer_source_url: readTag(xml, "trailer_source_url"),
-    scene_images: [],
-    website: uniqueid.website ?? Website.JAVDB,
-  };
-};

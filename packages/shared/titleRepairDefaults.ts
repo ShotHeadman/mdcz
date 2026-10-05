@@ -21,6 +21,10 @@ export const BUILTIN_TITLE_REPAIR_RULES: readonly TitleRepairRuleItem[] = [
   { source: "ア●ル", replacement: "アナル" },
   { source: "潮●き", replacement: "潮吹き" },
   { source: "お●らし", replacement: "おもらし" },
+  { source: "犯●れ", replacement: "犯され" },
+  { source: "●っ払", replacement: "酔っ払" },
+  { source: "チ●ポ", replacement: "チンポ" },
+  { source: "マ●コ", replacement: "マンコ" },
 
   // 2. 高频官方避讳词（两字词）
   { source: "催●", replacement: "催眠" },

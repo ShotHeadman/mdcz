@@ -1,5 +1,10 @@
 import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
-import { type Configuration, NFO_FIELD_OPTIONS, OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
+import {
+  type Configuration,
+  NFO_FIELD_OPTIONS,
+  OFFICIAL_SITE_URLS,
+  TRANSLATION_FIELD_OPTIONS,
+} from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
 import {
   POSTER_TAG_BADGE_ASPECT_HEIGHT,
@@ -568,7 +573,12 @@ function NamingPreview() {
 }
 
 function TitleRepairSection() {
-  return <BoolField name="titleRepair.enabled" />;
+  return (
+    <>
+      <BoolField name="titleRepair.enabled" />
+      <BoolField name="titleRepair.stripTrailingActors" />
+    </>
+  );
 }
 
 type NamingTemplateHelpKind = "folder" | "file";
@@ -758,6 +768,10 @@ export function TranslateSection() {
           </div>
         )}
       </BaseField>
+      <ChipArrayFieldWrapper
+        name="translate.fields"
+        options={TRANSLATION_FIELD_OPTIONS.map((value) => ({ value, label: t.settings.translateFields[value] }))}
+      />
       <EnumField name="translate.engine" options={toEnumOptions(t.settings.options.translateEngine)} />
       {shouldMountConditionalSettings(engine === "deepl", search) && <SecretField name="translate.deeplApiKey" />}
       {shouldMountConditionalSettings(engine === "baidu", search) && (
@@ -964,5 +978,3 @@ export function MetadataExportSection() {
     </>
   );
 }
-
-export { EmbySection, JellyfinSection, PersonSyncSharedSection } from "./sections/MediaServerSections";

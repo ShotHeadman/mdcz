@@ -10,6 +10,7 @@ interface TocContextValue {
   activeId: string | null;
   setActiveId: (id: string | null) => void;
   register: (section: TocSection) => () => void;
+  scrollToSection: (id: string, behavior: ScrollBehavior) => void;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -42,9 +43,24 @@ export function TocProvider({ children, scrollContainerRef }: TocProviderProps) 
     };
   }, []);
 
+  const scrollToSection = useCallback(
+    (id: string, behavior: ScrollBehavior) => {
+      const container = scrollContainerRef.current;
+      const target = container?.querySelector(`[data-toc-id="${id}"]`);
+      if (!container || !target) return;
+      const containerTop = container.getBoundingClientRect().top;
+      const targetTop = target.getBoundingClientRect().top;
+      container.scrollBy({
+        top: targetTop - containerTop - 24,
+        behavior,
+      });
+    },
+    [scrollContainerRef],
+  );
+
   const value = useMemo<TocContextValue>(
-    () => ({ sections, activeId, setActiveId, register, scrollContainerRef }),
-    [sections, activeId, register, scrollContainerRef],
+    () => ({ sections, activeId, setActiveId, register, scrollToSection, scrollContainerRef }),
+    [sections, activeId, register, scrollToSection, scrollContainerRef],
   );
 
   return <TocContext.Provider value={value}>{children}</TocContext.Provider>;

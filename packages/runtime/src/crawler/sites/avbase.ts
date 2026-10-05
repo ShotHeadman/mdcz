@@ -1,5 +1,6 @@
 import { normalizeCode, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
+import { stripTrailingActorNames } from "@mdcz/shared/titleRepair";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 
@@ -106,10 +107,6 @@ const toNonEmptyString = (value: unknown): string | undefined => {
   return normalized.length > 0 ? normalized : undefined;
 };
 
-const escapeRegExp = (value: string): string => {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-};
-
 const parseMinutesToSeconds = (value: string | undefined): number | undefined => {
   if (!value) {
     return undefined;
@@ -147,29 +144,6 @@ const buildDetailUrl = (baseUrl: string, prefix: string | undefined, workId: str
   return normalizedPrefix
     ? `${baseUrl}/works/${encodeURIComponent(normalizedPrefix)}:${encodedWorkId}`
     : `${baseUrl}/works/${encodedWorkId}`;
-};
-
-const stripTrailingActorsFromTitle = (title: string, actors: string[]): string => {
-  if (actors.length === 0) {
-    return title;
-  }
-
-  const actorPattern = actors
-    .map((actor) => escapeRegExp(actor))
-    .sort((left, right) => right.length - left.length)
-    .join("|");
-
-  if (!actorPattern) {
-    return title;
-  }
-
-  const actorListPattern = `(?:${actorPattern})(?:\\s*[、,/&＆]\\s*(?:${actorPattern}))*`;
-  const stripped = title
-    .replace(new RegExp(`\\s*[（(]\\s*${actorListPattern}\\s*[）)]\\s*$`, "u"), "")
-    .replace(new RegExp(`\\s+${actorListPattern}\\s*$`, "u"), "")
-    .trim();
-
-  return stripped || title;
 };
 
 const pickFirstNonEmpty = (
@@ -392,7 +366,7 @@ export class AvbaseCrawler extends BaseCrawler {
 
     const actors = resolveWorkActors($, work);
     const genres = uniqueStrings((work?.genres ?? []).map((genre) => toNonEmptyString(genre.name)));
-    const title = stripTrailingActorsFromTitle(rawTitle.replace(ON_DEMAND_DISC_SUFFIX, ""), actors);
+    const title = stripTrailingActorNames(rawTitle.replace(ON_DEMAND_DISC_SUFFIX, ""), actors);
     const products = getProducts(work);
     const metadata = resolveProductMetadata(products);
 

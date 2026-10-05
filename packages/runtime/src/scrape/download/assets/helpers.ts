@@ -1,4 +1,3 @@
-import type { Dirent } from "node:fs";
 import { basename, dirname, extname } from "node:path";
 
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -18,15 +17,14 @@ export const SCENE_IMAGE_FILE_PATTERN = /^(?:scene-\d+|fanart\d+)\.(?:jpe?g|png|
 const entryNameMatches = (entryName: string, candidateName: string): boolean =>
   process.platform === "win32" ? entryName.toLowerCase() === candidateName.toLowerCase() : entryName === candidateName;
 
-const directoryHasFile = (entries: readonly Dirent[], name: string): boolean =>
-  entries.some((entry) => (entry.isFile() || entry.isSymbolicLink()) && entryNameMatches(entry.name, name));
-
 export const resolveExistingAsset = async (
   assetPath: string,
   inventory: DirectoryInventory,
 ): Promise<string | undefined> => {
-  const entries = await inventory.entries(dirname(assetPath));
-  return directoryHasFile(entries, basename(assetPath)) ? assetPath : undefined;
+  const name = basename(assetPath);
+  return (await inventory.files(dirname(assetPath), (entry) => entryNameMatches(entry, name))).length
+    ? assetPath
+    : undefined;
 };
 
 export const resolveExistingImageAsset = async (
@@ -34,9 +32,12 @@ export const resolveExistingImageAsset = async (
   inventory: DirectoryInventory,
 ): Promise<string | undefined> => {
   const directory = dirname(assetPath);
-  const entries = await inventory.entries(directory);
-  for (const candidatePath of buildImageFilePathVariants(assetPath)) {
-    if (directoryHasFile(entries, basename(candidatePath))) return candidatePath;
+  const candidates = buildImageFilePathVariants(assetPath);
+  const files = await inventory.files(directory, (entry) =>
+    candidates.some((candidatePath) => entryNameMatches(entry, basename(candidatePath))),
+  );
+  for (const candidatePath of candidates) {
+    if (files.some((entry) => entryNameMatches(entry.name, basename(candidatePath)))) return candidatePath;
   }
   return undefined;
 };

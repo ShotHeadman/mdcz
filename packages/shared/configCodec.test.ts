@@ -85,6 +85,7 @@ describe("configuration codec", () => {
     const expectedFields: NfoField[] = [
       "num",
       "plot",
+      "outline",
       "release",
       "runtime",
       "fileinfo",

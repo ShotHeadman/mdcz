@@ -7,46 +7,33 @@ import {
   UrlField,
 } from "../../config-form/FieldRenderer";
 import { useT } from "../../i18n";
-import { useHasRenderableFields } from "../sectionVisibility";
+import { Subsection } from "../Subsection";
 
-const PERSON_SYNC_SHARED_FIELD_KEYS = ["personSync.personOverviewSources", "personSync.personImageSources"] as const;
-
-export function PersonSyncSharedSection() {
+export function MediaServerSection() {
   const t = useT();
-  const hasRenderableFields = useHasRenderableFields(PERSON_SYNC_SHARED_FIELD_KEYS);
-  if (!hasRenderableFields) return null;
-
-  return (
-    <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
-      <div className="space-y-1">
-        <h4 className="text-sm font-medium">{t.settings.subsections.sharedPersonSources}</h4>
-        <p className="text-xs text-muted-foreground">{t.settings.subsections.sharedPersonSourcesHint}</p>
-      </div>
-      <ChipArrayFieldWrapper name="personSync.personOverviewSources" options={[...ACTOR_OVERVIEW_SOURCE_OPTIONS]} />
-      <ChipArrayFieldWrapper name="personSync.personImageSources" options={[...ACTOR_IMAGE_SOURCE_OPTIONS]} />
-    </div>
-  );
-}
-
-export function JellyfinSection() {
   return (
     <>
-      <UrlField name="jellyfin.url" />
-      <CookieFieldWrapper name="jellyfin.apiKey" />
-      <TextField name="jellyfin.userId" />
-      <BoolField name="jellyfin.refreshPersonAfterSync" />
-      <BoolField name="jellyfin.lockOverviewAfterSync" />
-    </>
-  );
-}
-
-export function EmbySection() {
-  return (
-    <>
-      <UrlField name="emby.url" />
-      <CookieFieldWrapper name="emby.apiKey" />
-      <TextField name="emby.userId" />
-      <BoolField name="emby.refreshPersonAfterSync" />
+      <Subsection title="Jellyfin" className="mb-6 last:mb-0">
+        <UrlField name="jellyfin.url" />
+        <CookieFieldWrapper name="jellyfin.apiKey" />
+        <TextField name="jellyfin.userId" />
+        <BoolField name="jellyfin.refreshPersonAfterSync" />
+        <BoolField name="jellyfin.lockOverviewAfterSync" />
+      </Subsection>
+      <Subsection title="Emby" className="mb-6 last:mb-0">
+        <UrlField name="emby.url" />
+        <CookieFieldWrapper name="emby.apiKey" />
+        <TextField name="emby.userId" />
+        <BoolField name="emby.refreshPersonAfterSync" />
+      </Subsection>
+      <Subsection
+        title={t.settings.subsections.sharedPersonSources}
+        description={t.settings.subsections.sharedPersonSourcesHint}
+        className="mb-6 last:mb-0"
+      >
+        <ChipArrayFieldWrapper name="personSync.personOverviewSources" options={[...ACTOR_OVERVIEW_SOURCE_OPTIONS]} />
+        <ChipArrayFieldWrapper name="personSync.personImageSources" options={[...ACTOR_IMAGE_SOURCE_OPTIONS]} />
+      </Subsection>
     </>
   );
 }

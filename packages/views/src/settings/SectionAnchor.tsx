@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CrossFieldBanner } from "./CrossFieldBanner";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
-import { type FieldEntry, SECTION_ORDER } from "./settingsRegistry";
+import { type FieldEntry, isFieldAnchor } from "./settingsRegistry";
 import { useOptionalToc } from "./TocContext";
 import { useCrossFieldErrors } from "./useCrossFieldErrors";
 
@@ -15,13 +15,7 @@ interface SectionAnchorProps {
   className?: string;
   defaultOpen?: boolean;
   forceOpen?: boolean;
-  deferContent?: boolean;
-  estimatedContentHeight?: number;
   children: ReactNode;
-}
-
-function isKnownAnchor(id: string): id is FieldEntry["anchor"] {
-  return (SECTION_ORDER as readonly string[]).includes(id);
 }
 
 export function SectionAnchor({
@@ -32,8 +26,6 @@ export function SectionAnchor({
   className,
   defaultOpen = true,
   forceOpen = false,
-  deferContent = false,
-  estimatedContentHeight = 480,
   children,
 }: SectionAnchorProps) {
   const toc = useOptionalToc();
@@ -42,10 +34,8 @@ export function SectionAnchor({
   const sectionRef = useRef<HTMLElement | null>(null);
   const shouldForceOpen = forceOpen || Boolean(search?.hasActiveFilters);
   const resolvedOpen = shouldForceOpen || open;
-  const hiddenBySearch = isKnownAnchor(id) && search ? !search.isAnchorVisible(id) : false;
+  const hiddenBySearch = isFieldAnchor(id) && search ? !search.isAnchorVisible(id) : false;
   const registerSection = toc?.register;
-  const shouldDeferContent = deferContent && !shouldForceOpen;
-  const [contentReady, setContentReady] = useState(() => !shouldDeferContent);
 
   useEffect(() => {
     if (hiddenBySearch || !registerSection) {
@@ -54,49 +44,17 @@ export function SectionAnchor({
     return registerSection({ id, label });
   }, [hiddenBySearch, id, label, registerSection]);
 
-  useEffect(() => {
-    if (!shouldDeferContent) {
-      if (!contentReady) {
-        setContentReady(true);
-      }
-      return;
-    }
-
-    if (contentReady) {
-      return;
-    }
-
-    const node = sectionRef.current;
-    if (!node || typeof IntersectionObserver === "undefined") {
-      setContentReady(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setContentReady(true);
-          observer.disconnect();
-        }
-      },
-      {
-        root: toc?.scrollContainerRef.current ?? null,
-        rootMargin: "420px 0px",
-      },
-    );
-
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-    };
-  }, [contentReady, shouldDeferContent, toc?.scrollContainerRef]);
-
   if (hiddenBySearch) {
     return null;
   }
 
   return (
-    <section ref={sectionRef} data-toc-id={id} id={`settings-${id}`} className={cn("scroll-mt-28", className)}>
+    <section
+      ref={sectionRef}
+      data-toc-id={id}
+      id={`settings-${id}`}
+      className={cn("scroll-mt-28 [content-visibility:auto] [contain-intrinsic-size:auto_800px]", className)}
+    >
       <Collapsible open={resolvedOpen} onOpenChange={setOpen}>
         {(title || description) && (
           <header className="mb-4">
@@ -121,13 +79,9 @@ export function SectionAnchor({
             </CollapsibleTrigger>
           </header>
         )}
-        {isKnownAnchor(id) && <SectionBanner sectionKey={id} />}
+        {isFieldAnchor(id) && <SectionBanner sectionKey={id} />}
         <CollapsibleContent className="data-[state=closed]:animate-none data-[state=open]:animate-none">
-          {contentReady ? (
-            <div className="space-y-1">{children}</div>
-          ) : (
-            <DeferredSectionPlaceholder estimatedContentHeight={estimatedContentHeight} />
-          )}
+          <div className="space-y-1">{children}</div>
         </CollapsibleContent>
       </Collapsible>
     </section>
@@ -137,24 +91,4 @@ export function SectionAnchor({
 function SectionBanner({ sectionKey }: { sectionKey: FieldEntry["anchor"] }) {
   const errors = useCrossFieldErrors(sectionKey);
   return <CrossFieldBanner errors={errors} />;
-}
-
-function DeferredSectionPlaceholder({ estimatedContentHeight }: { estimatedContentHeight: number }) {
-  return (
-    <div
-      data-deferred-placeholder="true"
-      aria-hidden="true"
-      className="overflow-hidden rounded-[var(--radius-quiet-xl)] border border-border/35 bg-surface/70 px-5 py-5"
-      style={{ minHeight: estimatedContentHeight }}
-    >
-      <div className="space-y-4">
-        <div className="h-4 w-36 animate-pulse rounded-full bg-foreground/8" />
-        <div className="space-y-3">
-          <div className="h-10 rounded-[var(--radius-quiet-lg)] bg-surface-low/80" />
-          <div className="h-10 rounded-[var(--radius-quiet-lg)] bg-surface-low/70" />
-          <div className="h-10 rounded-[var(--radius-quiet-lg)] bg-surface-low/60" />
-        </div>
-      </div>
-    </div>
-  );
 }

@@ -79,6 +79,8 @@ describe("Crawler actual fixture replay", () => {
       expect(data.actors).toEqual(expectedActors);
       if (expectedStudio) expect(data.studio).toBe(expectedStudio);
       if (expectedDirector) expect(data.director).toBe(expectedDirector);
+      expect(data.plot).toBeTruthy();
+      expect(data.plot).not.toMatch(/<br/iu);
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();
       expect(data.genres?.length).toBeGreaterThan(0);
@@ -108,6 +110,8 @@ describe("Crawler actual fixture replay", () => {
       expect(data.number).toBe(number);
       expect(data.title).toBe(expectedTitle);
       expect(data.actors).toEqual(expectedActors);
+      expect(data.plot).toBeTruthy();
+      expect(data.plot).not.toMatch(/<br/iu);
       expect(data.thumb_url).toBeTruthy();
       expect(data.poster_url).toBeTruthy();
     });
