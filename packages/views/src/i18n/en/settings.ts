@@ -54,7 +54,7 @@ export const settings = {
   nfoFields: {
     num: "code compatibility fields",
     plot: "plot",
-    outline: "outline (plot summary)",
+    outline: "short plot",
     release: "release info",
     runtime: "runtime",
     fileinfo: "video technical info",

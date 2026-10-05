@@ -46,7 +46,7 @@ export const settings: Messages["settings"] = {
   nfoFields: {
     num: "番号兼容字段",
     plot: "简介",
-    outline: "摘要（简介截断）",
+    outline: "简短简介",
     release: "发行信息",
     runtime: "片长",
     fileinfo: "视频技术信息",
