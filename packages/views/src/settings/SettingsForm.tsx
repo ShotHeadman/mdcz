@@ -5,6 +5,7 @@ import { AdvancedSettingsFooterContent } from "./SettingsFooter";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { useCrawlerSiteOptions } from "./settingsContent";
 import type { FieldAnchor } from "./settingsRegistry";
+import { useToc } from "./TocContext";
 import {
   AdvancedTopLevelSection,
   DownloadTopLevelSection,
@@ -32,10 +33,11 @@ export function SettingsForm({
 }: SettingsFormProps) {
   const siteOptions = useCrawlerSiteOptions(flatDefaults);
   const search = useSettingsSearch();
+  const { scrollToSection } = useToc();
 
   useEffect(() => {
-    if (initialSection) document.getElementById(`settings-${initialSection}`)?.scrollIntoView({ block: "start" });
-  }, [initialSection]);
+    if (initialSection) scrollToSection(initialSection, "instant");
+  }, [initialSection, scrollToSection]);
 
   return (
     <div className="space-y-12">

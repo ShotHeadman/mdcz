@@ -13,6 +13,7 @@ export * from "./SettingRow";
 export * from "./SettingsEditor";
 export * from "./SettingsFooter";
 export * from "./SettingsLayout";
+export * from "./SettingsPage";
 export * from "./SettingsProfileDialogs";
 export * from "./SettingsSearch";
 export * from "./SettingsSearchContext";

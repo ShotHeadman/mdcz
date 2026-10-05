@@ -8,7 +8,7 @@ interface FloatingTocProps {
 }
 
 export function FloatingToc({ className }: FloatingTocProps) {
-  const { sections, activeId, setActiveId, scrollContainerRef } = useToc();
+  const { sections, activeId, setActiveId, scrollToSection, scrollContainerRef } = useToc();
   const [optimisticActiveId, setOptimisticActiveId] = useState<string | null>(null);
 
   useScrollSpy({
@@ -27,13 +27,7 @@ export function FloatingToc({ className }: FloatingTocProps) {
 
   const handleClick = (id: string) => {
     setOptimisticActiveId(id);
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const el = container.querySelector<HTMLElement>(`[data-toc-id="${id}"]`);
-    if (!el) return;
-    const containerTop = container.getBoundingClientRect().top;
-    const elTop = el.getBoundingClientRect().top;
-    container.scrollBy({ top: elTop - containerTop - 24, behavior: "smooth" });
+    scrollToSection(id, "smooth");
   };
 
   return (

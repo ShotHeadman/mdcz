@@ -2,22 +2,15 @@ import { getT } from "@mdcz/views/i18n";
 import {
   mergeConfigWithFlatPayload,
   type SettingsCrawlerSiteInfo,
-  type SettingsNotifier,
+  type SettingsProfileActions,
   type SettingsServices,
-  toConfigErrorMessage,
 } from "@mdcz/views/settings";
 import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import type { QueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { clearImportedFile, promptForImportFile, readImportedFile, triggerDownload } from "../browserFile";
 import { api } from "../client";
 import { CURRENT_CONFIG_QUERY_KEY } from "../hooks/configQueries";
 import { queryKeys } from "../lib/queryKeys";
-
-export const PROFILE_IMPORT_FILTERS: Array<{ name: string; extensions: string[] }> = [
-  { name: "TOML/JSON", extensions: ["toml", "json"] },
-];
-
-export type ImportMode = "new" | "overwrite";
 
 export const createSettingsServices = (queryClient: QueryClient): SettingsServices => ({
   browsePath: async () => ({ canceled: true, paths: [] }),
@@ -83,46 +76,27 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
   },
 });
 
-export const createSettingsNotifier = (): SettingsNotifier => ({
-  error: toast.error,
-  info: toast.info,
-  success: toast.success,
+export const createProfileActions = (queryClient: QueryClient): SettingsProfileActions => ({
+  reset: async () => await api.config.reset(),
+  create: async (name) => await api.config.profiles.create({ name }),
+  switch: async (name) => await api.config.profiles.switch({ name }),
+  delete: async (name) => await api.config.profiles.delete({ name }),
+  export: async (name) => {
+    const result = await api.config.profiles.export({ name });
+    triggerDownload(result.fileName, result.content, "application/toml;charset=utf-8");
+    return result;
+  },
+  pickImportFile: async () => await promptForImportFile([{ name: "TOML/JSON", extensions: ["toml", "json"] }]),
+  import: async ({ path, name, overwrite }) => {
+    const file = await readImportedFile(path);
+    const result = await api.config.profiles.import({
+      name,
+      content: file.content,
+      fileName: file.fileName,
+      overwrite,
+    });
+    clearImportedFile(path);
+    return result;
+  },
+  invalidate: () => queryClient.invalidateQueries({ queryKey: queryKeys.config.all }),
 });
-
-export const invalidateConfigQueries = (queryClient: QueryClient): void => {
-  queryClient.invalidateQueries({ queryKey: queryKeys.config.all });
-};
-
-export const ensureProfileActionReady = (actionLabel: string): boolean => {
-  const inFlight = useSettingsSavingStore.getState().inFlight;
-  if (inFlight > 0) {
-    toast.warning(getT().web.savingWaitMessage(actionLabel));
-    return false;
-  }
-  return true;
-};
-
-export const handleProfileActionError = (label: string, error: unknown): void => {
-  toast.error(`${label}: ${toConfigErrorMessage(error)}`);
-};
-
-export function suggestImportProfileName(fileName: string, existingProfiles: string[]): string {
-  const baseName = fileName.replace(/\.(json|toml)$/iu, "");
-  const normalized =
-    baseName
-      .trim()
-      .replace(/[^\p{L}\p{N}_-]+/gu, "-")
-      .replace(/^-+|-+$/gu, "") || "imported-profile";
-
-  if (!existingProfiles.includes(normalized)) {
-    return normalized;
-  }
-
-  let index = 2;
-  let candidate = `${normalized}-${index}`;
-  while (existingProfiles.includes(candidate)) {
-    index += 1;
-    candidate = `${normalized}-${index}`;
-  }
-  return candidate;
-}

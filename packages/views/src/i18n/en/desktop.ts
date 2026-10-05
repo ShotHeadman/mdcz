@@ -128,27 +128,6 @@ export const desktop = {
   confirmClear: "Confirm clear",
   logsCleared: "Logs cleared successfully",
 
-  // Settings route
-  savingWaitMessage: (action: string) =>
-    `Configuration is saving automatically. Please wait before attempting to ${action}.`,
-  actionResetDefault: "reset defaults",
-  actionSwitchProfile: "switch profiles",
-  actionExportProfile: "export profile",
-  actionImportProfile: "import profile",
-  profileResetSuccess: (name: string) => `Profile "${name}" reset to defaults`,
-  resetFailed: (error: string) => `Reset failed: ${error}`,
-  profileCreated: (name: string) => `Profile "${name}" created`,
-  createFailed: (error: string) => `Create failed: ${error}`,
-  profileSwitched: (name: string) => `Switched to profile "${name}"`,
-  switchFailed: (error: string) => `Switch failed: ${error}`,
-  profileDeleted: "Profile deleted",
-  deleteFailed: (error: string) => `Delete failed: ${error}`,
-  profileExported: (name: string) => `Profile "${name}" exported`,
-  exportFailed: (error: string) => `Export failed: ${error}`,
-  profileImported: (name: string) => `Profile "${name}" imported`,
-  profileOverwritten: (name: string) => `Profile "${name}" overwritten and imported`,
-  importFailed: (error: string) => `Import failed: ${error}`,
-
   // Workbench route
   stopScrapeFirst: "Please stop the current scrape task first",
   stopMaintenanceFirst: "Please stop the current maintenance task first",
