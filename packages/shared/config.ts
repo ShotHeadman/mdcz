@@ -39,6 +39,7 @@ const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 export const NFO_FIELD_OPTIONS = [
   "num",
   "plot",
+  "outline",
   "release",
   "runtime",
   "fileinfo",
@@ -61,6 +62,8 @@ export type NfoField = (typeof NFO_FIELD_OPTIONS)[number];
 const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
 
 export const BAIDU_SERVICE_OPTIONS = ["general", "llm"] as const;
+export const TRANSLATION_FIELD_OPTIONS = ["title", "plot", "genres"] as const;
+export type TranslationField = (typeof TRANSLATION_FIELD_OPTIONS)[number];
 
 export const mirrorUrlSchema = z
   .url({ protocol: /^https?$/u })
@@ -118,6 +121,7 @@ const translationTargetSchema = z
 
 const translateSchema = z.object({
   enableTranslation: z.boolean().default(false),
+  fields: z.array(z.enum(TRANSLATION_FIELD_OPTIONS)).default(() => [...TRANSLATION_FIELD_OPTIONS]),
   engine: z.enum(TranslateEngine).default(TranslateEngine.OPENAI),
   deeplApiKey: z.string().default(""),
   baiduService: z.enum(BAIDU_SERVICE_OPTIONS).default("general"),
@@ -291,6 +295,7 @@ const behaviorSchema = z.object({
 
 const titleRepairSchema = z.object({
   enabled: z.boolean().default(false),
+  stripTrailingActors: z.boolean().default(false),
 });
 
 const fieldPrioritiesSchema = z.object({

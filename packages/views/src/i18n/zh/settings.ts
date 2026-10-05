@@ -45,7 +45,8 @@ export const settings: Messages["settings"] = {
   },
   nfoFields: {
     num: "番号兼容字段",
-    plot: "简介与摘要",
+    plot: "简介",
+    outline: "摘要（简介截断）",
     release: "发行信息",
     runtime: "片长",
     fileinfo: "视频技术信息",
@@ -64,6 +65,7 @@ export const settings: Messages["settings"] = {
     sourceComment: "聚合来源注释",
   },
   nfoFieldOption: (field, label) => `${field}（${label}）`,
+  translateFields: { title: "标题", plot: "简介", genres: "类别" },
   badgeOverrides: {
     openFolder: "打开文件夹",
     createDirFailed: (error) => `创建角标图片目录失败: ${error}`,

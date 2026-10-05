@@ -47,9 +47,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
       "num": [
         "IPZZ-907",
       ],
-      "originaltitle": [
-        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-08-07",
       ],
@@ -71,9 +69,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
       "num": [
         "SNOS-301",
       ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-07-24",
       ],
@@ -95,9 +91,7 @@ exports[`scrapes recorded movies end to end: 'batch across folders' 1`] = `
       "num": [
         "SNOS-334",
       ],
-      "originaltitle": [
-        "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-08-07",
       ],
@@ -180,9 +174,7 @@ exports[`scrapes recorded movies end to end: 'chinese subtitle marker' 1`] = `
       "num": [
         "SNOS-301",
       ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-07-24",
       ],
@@ -241,9 +233,7 @@ exports[`scrapes recorded movies end to end: 'fc2 extra moves with its movie' 1`
       "num": [
         "FC2-4984259",
       ],
-      "originaltitle": [
-        "【最高額交渉】元人気アイドル１８才/Eカップ。脱退後、即FC2出演。最初で最後の最高額ハメ撮り映像。※高画質5GB原版先着限定配布",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-09-28",
       ],
@@ -322,9 +312,7 @@ exports[`scrapes recorded movies end to end: 'rerun with current settings' 1`] =
       "num": [
         "SNOS-301",
       ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-07-24",
       ],
@@ -387,9 +375,7 @@ exports[`scrapes recorded movies end to end: 'rescrape replaces stale metadata' 
       "num": [
         "SNOS-301",
       ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-07-24",
       ],
@@ -453,9 +439,7 @@ exports[`scrapes recorded movies end to end: 'single file' 1`] = `
       "num": [
         "SNOS-301",
       ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-07-24",
       ],
@@ -517,9 +501,7 @@ exports[`scrapes recorded movies end to end: 'split disc' 1`] = `
       "num": [
         "SNOS-301",
       ],
-      "originaltitle": [
-        "【主従逆転】仕えるだけじゃ物足りない。本当はわたくしに支配されたいんでしょう？",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-07-24",
       ],
@@ -582,9 +564,7 @@ exports[`scrapes recorded movies end to end: 'strm with relative target' 1`] = `
       "num": [
         "SNOS-334",
       ],
-      "originaltitle": [
-        "最強ビジュOLさん、出張先で死ぬほど嫌いな中年上司と相部屋… でも過激セクハラにまさかの快楽堕ちしちゃう！",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-08-07",
       ],
@@ -646,9 +626,7 @@ exports[`scrapes recorded movies end to end: 'subtitle sidecars' 1`] = `
       "num": [
         "IPZZ-907",
       ],
-      "originaltitle": [
-        "明日葉みつは史上【最大絶頂】 中出し解禁 生ハメオーガズム",
-      ],
+      "originaltitle": [],
       "premiered": [
         "2026-08-07",
       ],

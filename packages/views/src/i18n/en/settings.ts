@@ -1,4 +1,4 @@
-import type { ConfigIssueCode, NfoField } from "@mdcz/shared/config";
+import type { ConfigIssueCode, NfoField, TranslationField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { NamingPreviewSampleId } from "@mdcz/shared/types";
@@ -53,7 +53,8 @@ export const settings = {
   },
   nfoFields: {
     num: "code compatibility fields",
-    plot: "plot and outline",
+    plot: "plot",
+    outline: "outline (plot summary)",
     release: "release info",
     runtime: "runtime",
     fileinfo: "video technical info",
@@ -72,6 +73,7 @@ export const settings = {
     sourceComment: "aggregation source comment",
   } as Record<NfoField, string>,
   nfoFieldOption: (field: string, label: string) => `${field} (${label})`,
+  translateFields: { title: "Title", plot: "Plot", genres: "Genres" } as Record<TranslationField, string>,
   badgeOverrides: {
     openFolder: "Open folder",
     createDirFailed: (error: string) => `Failed to create the badge image directory: ${error}`,

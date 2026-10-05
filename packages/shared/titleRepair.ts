@@ -9,21 +9,37 @@ export interface TitleRepairPreview {
   reason: "disabled" | "no_match" | "repaired";
 }
 
-type TitleRepairConfiguration = Configuration["titleRepair"];
+type TitleRepairConfiguration = Pick<Configuration["titleRepair"], "enabled">;
 
 const MASK_CHARS = new Set(["●", "〇", "○", "*", "＊", "×", "■"]);
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
 function buildRuleRegex(source: string): RegExp {
   let pattern = "";
   for (const char of source) {
-    if (MASK_CHARS.has(char)) {
-      pattern += "[●〇○*＊×■]";
-    } else {
-      pattern += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    }
+    pattern += MASK_CHARS.has(char) ? "[●〇○*＊×■]" : escapeRegExp(char);
   }
   return new RegExp(pattern, "gu");
 }
+
+/** Removes actor names that sites append to a title, e.g. "タイトル 三上悠亜" or "タイトル（A、B）". */
+export const stripTrailingActorNames = (title: string, actors: readonly string[]): string => {
+  const actorPattern = actors
+    .map((actor) => actor.trim())
+    .filter((actor) => actor.length > 0)
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegExp)
+    .join("|");
+  if (!actorPattern) return title;
+
+  const actorList = `(?:${actorPattern})(?:\\s*[、,/&＆]\\s*(?:${actorPattern}))*`;
+  const stripped = title
+    .replace(new RegExp(`\\s*[（(]\\s*${actorList}\\s*[）)]\\s*$`, "u"), "")
+    .replace(new RegExp(`\\s+${actorList}\\s*$`, "u"), "")
+    .trim();
+  return stripped || title;
+};
 
 export const previewTitleRepair = (title: string, configuration: TitleRepairConfiguration): TitleRepairPreview => {
   if (!configuration.enabled) {

@@ -136,10 +136,10 @@ export const nfoIgnoreFieldsToEnabledFields = (
 const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
+  originalPlot: string | undefined,
   options: NfoOptions | undefined,
 ): Record<string, unknown> | undefined => {
   const enabledFields = options?.enabledFields;
-  const originalPlot = isNfoFieldEnabled(enabledFields, "plot") ? data.plot?.trim() : undefined;
   const includeRemoteSceneImageUrls = options?.includeRemoteSceneImageUrls ?? true;
   const allowRemoteTrailerFallback = options?.allowRemoteTrailerFallback ?? true;
   const remoteThumbSourceUrl = data.thumb_source_url ?? toRemoteImageSourceUrl(data.thumb_url);
@@ -194,7 +194,8 @@ export class NfoGenerator {
     const originaltitle = data.original_title?.trim() || data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
     const title = renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
-    const plot = data.plot_zh?.trim() || data.plot?.trim();
+    const sourcePlot = data.plot?.trim();
+    const plot = data.plot_zh?.trim() || sourcePlot;
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
     const assets = options?.assets;
     const sources = options?.sources;
@@ -215,9 +216,11 @@ export class NfoGenerator {
     }
 
     movie.title = title;
-    movie.originaltitle = originaltitle;
+    // Original-language tags are only written when they differ, so untranslated NFOs carry no duplicate text.
+    movie.originaltitle = originaltitle !== title ? originaltitle : undefined;
     movie.plot = isNfoFieldEnabled(enabledFields, "plot") && plot && plot.length > 0 ? plot : undefined;
-    movie.outline = isNfoFieldEnabled(enabledFields, "plot") ? outline : undefined;
+    movie.outline =
+      isNfoFieldEnabled(enabledFields, "plot") && isNfoFieldEnabled(enabledFields, "outline") ? outline : undefined;
     movie.premiered = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.releasedate = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.dateadded = new Date().toISOString();
@@ -257,8 +260,12 @@ export class NfoGenerator {
       const fanartNode = buildFanartNode(data, assets);
       if (fanartNode) movie.fanart = fanartNode;
     }
-    const hasCustomTitleTemplate = titleTemplate !== "{title}";
-    const mdczNode = buildMdczNode(data, hasCustomTitleTemplate ? rawTitle : undefined, options);
+    const mdczNode = buildMdczNode(
+      data,
+      rawTitle !== title ? rawTitle : undefined,
+      isNfoFieldEnabled(enabledFields, "plot") && sourcePlot !== plot ? sourcePlot : undefined,
+      options,
+    );
     if (mdczNode) movie.mdcz = mdczNode;
     if (isNfoFieldEnabled(enabledFields, "fileinfo") && videoNode) {
       movie.fileinfo = { streamdetails: { video: videoNode } };

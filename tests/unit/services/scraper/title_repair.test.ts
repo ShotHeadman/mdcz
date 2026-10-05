@@ -8,21 +8,21 @@ import { describe, expect, it } from "vitest";
 
 const titleRepair = {
   enabled: true,
+  stripTrailingActors: false,
 };
+
+const crawlerData = (title: string, actors: string[] = []) => ({
+  title,
+  number: "ABC-123",
+  actors,
+  genres: [],
+  scene_images: [],
+  website: Website.DMM,
+});
 
 describe("title repair", () => {
   it("repairs builtin masked and euphemistic terms", () => {
-    const repaired = applyTitleRepair(
-      {
-        title: "催●的●●相姦课程",
-        number: "ABC-123",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.DMM,
-      },
-      titleRepair,
-    );
+    const repaired = applyTitleRepair(crawlerData("催●的●●相姦课程"), titleRepair);
 
     expect(repaired).toMatchObject({ title: "催眠的近親相姦课程", original_title: "催●的●●相姦课程" });
     expect(previewTitleRepair("催〇的盗○记录", titleRepair)).toMatchObject({
@@ -40,30 +40,26 @@ describe("title repair", () => {
     expect(previewTitleRepair("催●", { enabled: false }).reason).toBe("disabled");
     expect(previewTitleRepair("没有遮蔽", titleRepair).reason).toBe("no_match");
 
-    const data = {
-      title: "催眠",
-      original_title: "催●",
-      number: "ABC-123",
-      actors: [],
-      genres: [],
-      scene_images: [],
-      website: Website.DMM,
-    };
+    const data = { ...crawlerData("催眠"), original_title: "催●" };
     expect(applyTitleRepair(data, titleRepair)).toBe(data);
   });
 
+  it.each([
+    { title: "新人デビュー 三上悠亜", actors: ["三上悠亜"], strip: true, expected: "新人デビュー" },
+    { title: "共演作品　A、B", actors: ["A", "B"], strip: true, expected: "共演作品" },
+    { title: "共演作品（A / B）", actors: ["A", "B"], strip: true, expected: "共演作品" },
+    { title: "三上悠亜", actors: ["三上悠亜"], strip: true, expected: "三上悠亜" },
+    { title: "三上悠亜の休日", actors: ["三上悠亜"], strip: true, expected: "三上悠亜の休日" },
+    { title: "新人デビュー 三上悠亜", actors: ["三上悠亜"], strip: false, expected: "新人デビュー 三上悠亜" },
+  ])("strips trailing actor names only when enabled: $title", ({ title, actors, strip, expected }) => {
+    const repaired = applyTitleRepair(crawlerData(title, actors), { enabled: false, stripTrailingActors: strip });
+
+    expect(repaired.title).toBe(expected);
+    expect(repaired.original_title).toBeUndefined();
+  });
+
   it("keeps the original title available to NFO and naming", () => {
-    const data = applyTitleRepair(
-      {
-        title: "催●课程",
-        number: "ABC-123",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.DMM,
-      },
-      titleRepair,
-    );
+    const data = applyTitleRepair(crawlerData("催●课程"), titleRepair);
     const configuration = {
       ...defaultConfiguration,
       naming: {

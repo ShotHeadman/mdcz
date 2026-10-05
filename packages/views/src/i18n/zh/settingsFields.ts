@@ -271,6 +271,11 @@ export const settingsFields: Messages["settingsFields"] = {
         "自动将官方标题中的避讳符号（●、〇 等）还原为原始词汇（例如把「催●」还原为「催眠」，「盗●」还原为「盗撮」）；原始标题仍会保留在 NFO 中。",
       aliases: ["标题修复", "遮蔽标题"],
     },
+    "titleRepair.stripTrailingActors": {
+      label: "去除标题末尾的演员名",
+      description: "部分站点把演员名附在标题末尾（如「…… 三上悠亜」）；开启后按本片演员名单移除。",
+      aliases: ["标题演员", "女优名"],
+    },
     "naming.assetNamingMode": { label: "附属文件命名", description: "海报、横版缩略图、背景图与预告片的文件名规则。" },
     "naming.nfoTitleTemplate": {
       label: "NFO 标题模板",
@@ -315,7 +320,15 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "聚合后的类型或标签数量上限。",
       aliases: ["最多标签"],
     },
-    "translate.enableTranslation": { label: "启用内容翻译" },
+    "translate.enableTranslation": {
+      label: "启用内容翻译",
+      description: "DeepL、百度等传统机器翻译质量有限，推荐使用 LLM；也可以保持关闭，之后用其他工具翻译 NFO。",
+    },
+    "translate.fields": {
+      label: "翻译字段",
+      description: "只翻译选中的字段，其余保持原文。",
+      aliases: ["翻译范围", "只翻译简介"],
+    },
     "translate.engine": { label: "翻译引擎", aliases: ["翻译引擎"] },
     "translate.llmModelName": { label: "LLM 模型名称" },
     "translate.llmApiKey": {

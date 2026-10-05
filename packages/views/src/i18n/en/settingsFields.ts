@@ -365,6 +365,12 @@ const fields: Record<FieldKey, FieldText> = {
       "Restore censorship symbols (●, 〇, etc.) in official titles to the original words (e.g. 「催●」 → 「催眠」, 「盗●」 → 「盗撮」); the original title is still kept in the NFO.",
     aliases: ["title repair", "masked title"],
   },
+  "titleRepair.stripTrailingActors": {
+    label: "Remove actor names from title end",
+    description:
+      'Some sites append actor names to the title (e.g. "… Yua Mikami"); when enabled they are removed based on the movie\'s actor list.',
+    aliases: ["title actors", "actress name"],
+  },
   "naming.assetNamingMode": {
     label: "Asset file naming",
     description: "File name rule for posters, thumbnails, fanart and trailers.",
@@ -412,7 +418,16 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Upper limit of genres or tags kept after aggregation.",
     aliases: ["aggregation", "genres", "tags"],
   },
-  "translate.enableTranslation": { label: "Translate content" },
+  "translate.enableTranslation": {
+    label: "Translate content",
+    description:
+      "Classic machine translation (DeepL, Baidu) is limited in quality, so an LLM is recommended; you can also leave this off and translate NFOs with another tool later.",
+  },
+  "translate.fields": {
+    label: "Fields to translate",
+    description: "Only the selected fields are translated; the rest keep the original text.",
+    aliases: ["translation scope"],
+  },
   "translate.engine": { label: "Translation engine", aliases: ["translator", "translation"] },
   "translate.llmModelName": { label: "LLM model name", aliases: ["model", "openai", "llm"] },
   "translate.llmApiKey": {

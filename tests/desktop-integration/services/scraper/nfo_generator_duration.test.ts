@@ -317,6 +317,7 @@ describe("NfoGenerator", () => {
       title_zh: "中文标题",
       original_title: "Original",
       plot: "A long plot",
+      plot_zh: "中文简介",
       release_date: "2024-01-02",
       durationSeconds: 3600,
       rating: 8.5,
@@ -348,9 +349,10 @@ describe("NfoGenerator", () => {
       enabledFields: allFields,
       buildTags: () => ["中字"],
     });
-    expect(all).toContain("<plot>A long plot</plot>");
+    expect(all).toContain("<plot>中文简介</plot>");
     expect(all).toContain("<num>ABC-123</num>");
-    expect(all).toContain("<outline>A long plot</outline>");
+    expect(all).toContain("<outline>中文简介</outline>");
+    expect(all).toContain("<original_plot>A long plot</original_plot>");
     expect(all).toContain("<premiered>2024-01-02</premiered>");
     expect(all).toContain("<runtime>60</runtime>");
     expect(all).toContain("<rating>8.5</rating>");
@@ -376,7 +378,8 @@ describe("NfoGenerator", () => {
 
     const optionalFieldTokens: Record<NfoField, string[]> = {
       num: ["<num>"],
-      plot: ["<plot>", "<outline>", "<original_plot>"],
+      plot: ["<plot>", "<original_plot>"],
+      outline: ["<outline>"],
       release: ["<premiered>", "<releasedate>", "<year>"],
       runtime: ["<runtime>"],
       fileinfo: ["<fileinfo>", "<streamdetails>"],
@@ -420,7 +423,7 @@ describe("NfoGenerator", () => {
       for (const field of NFO_FIELD_OPTIONS) {
         const tokens = optionalFieldTokens[field];
         for (const token of tokens) {
-          if (field === disabledField) {
+          if (field === disabledField || (disabledField === "plot" && field === "outline")) {
             expect(xml).not.toContain(token);
           } else {
             expect(xml).toContain(token);
@@ -439,6 +442,13 @@ describe("NfoGenerator", () => {
       enabledFields: [],
     });
     expect(customTitleWithEmptyPolicy).toContain("<raw_title>中文标题</raw_title>");
+
+    const untranslated = generator.buildXml(createCrawlerData({ title: "Original", plot: "A long plot" }));
+    expect(untranslated).toContain("<title>Original</title>");
+    expect(untranslated).toContain("<plot>A long plot</plot>");
+    for (const duplicate of ["<originaltitle>", "<original_plot>", "<raw_title>"]) {
+      expect(untranslated).not.toContain(duplicate);
+    }
   });
 
   it("keeps fanart fallback metadata independent from the thumb field", () => {

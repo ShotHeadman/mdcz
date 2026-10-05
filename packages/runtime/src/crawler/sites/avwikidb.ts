@@ -1,6 +1,7 @@
 import type { SiteRequestConfig } from "@mdcz/runtime/network";
 import { runtimeLoggerService, toErrorMessage, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
+import { stripTrailingActorNames } from "@mdcz/shared/titleRepair";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { load } from "cheerio";
 import type { AdapterDependencies, CrawlerInput, CrawlerResponse, FailureReason, SiteAdapter } from "../base/types";
@@ -223,22 +224,6 @@ const readTrailerUrl = (movie: JsonRecord, dmmData: JsonRecord | undefined): str
     readSampleVideoUrlsJson(movie.sampleVideoUrlsJson),
     ...collectUrlStrings(dmmData?.sampleMovieURL),
   );
-};
-
-const stripTrailingActorNames = (value: string, actors: string[]): string => {
-  const actorNames = uniqueStrings(actors.map((actor) => asString(actor))).sort((a, b) => b.length - a.length);
-  const title = value.trim();
-
-  for (const actor of actorNames) {
-    for (const separator of [" ", "　"]) {
-      const suffix = `${separator}${actor}`;
-      if (title.endsWith(suffix)) {
-        return title.slice(0, -suffix.length).trim();
-      }
-    }
-  }
-
-  return title;
 };
 
 const normalizeNumber = (value: string): string => value.trim().toUpperCase();
