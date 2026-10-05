@@ -1,12 +1,14 @@
 import { Search } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { useT } from "../i18n";
 import { AdvancedSettingsFooterContent } from "./SettingsFooter";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { useCrawlerSiteOptions } from "./settingsContent";
+import type { FieldAnchor } from "./settingsRegistry";
 import {
   AdvancedTopLevelSection,
   DownloadTopLevelSection,
+  MediaServerTopLevelSection,
   NamingTopLevelSection,
   NetworkTopLevelSection,
   PathsTopLevelSection,
@@ -19,11 +21,21 @@ interface SettingsFormProps {
   extraContent?: ReactNode;
   flatDefaults: Record<string, unknown>;
   initialUseCustomTitleBar: boolean;
+  initialSection?: FieldAnchor;
 }
 
-export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitleBar }: SettingsFormProps) {
+export function SettingsForm({
+  extraContent,
+  flatDefaults,
+  initialUseCustomTitleBar,
+  initialSection,
+}: SettingsFormProps) {
   const siteOptions = useCrawlerSiteOptions(flatDefaults);
   const search = useSettingsSearch();
+
+  useEffect(() => {
+    if (initialSection) document.getElementById(`settings-${initialSection}`)?.scrollIntoView({ block: "start" });
+  }, [initialSection]);
 
   return (
     <div className="space-y-12">
@@ -37,6 +49,7 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
           <TranslateTopLevelSection />
           <NamingTopLevelSection />
           <DownloadTopLevelSection />
+          <MediaServerTopLevelSection />
           <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
           <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>

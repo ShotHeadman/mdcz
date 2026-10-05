@@ -23,7 +23,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
     expect(entry("scrape.filenameIgnoreTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
     expect(entry("scrape.filenameBlacklistTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
-    expect(entry("jellyfin.url")).toMatchObject({ surface: "tools" });
+    expect(entry("jellyfin.url")).toMatchObject({ anchor: "mediaServer", visibility: "public" });
 
     const keys = new Set<string>(FIELD_REGISTRY.map((candidate) => candidate.key));
     expect(keys.has("behavior.updateCheck")).toBe(false);
@@ -80,7 +80,7 @@ describe("settings editor metadata and filtering", () => {
     const normal = buildSettingsBrowseState({ query: "", showAdvanced: false, modifiedKeys: new Set<string>() });
     expect(normal.visibleKeySet.has("paths.mediaPath")).toBe(true);
     expect(normal.visibleKeySet.has("download.sceneImageConcurrency")).toBe(false);
-    expect(normal.visibleKeySet.has("jellyfin.url")).toBe(false);
+    expect(normal.visibleKeySet.has("jellyfin.url")).toBe(true);
 
     const advanced = buildSettingsBrowseState({ query: "", showAdvanced: true, modifiedKeys: new Set<string>() });
     expect(advanced.visibleKeySet.has("download.sceneImageConcurrency")).toBe(true);

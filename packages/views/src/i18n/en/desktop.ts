@@ -1,11 +1,5 @@
 export const desktop = {
   // Person sync & connection
-  personSyncConfig: "Person sync configuration",
-  serverConnectionSettings: (server: string) => `${server} connection settings`,
-  readingCurrentConfig: "Reading current configuration…",
-  configLoadFailed: "Failed to load configuration",
-  serverSettingsHelp:
-    "Connection diagnostics and person sync read the server address, API key, and user ID saved here.",
   diagnosingServerConnection: (server: string) => `Diagnosing ${server} connection…`,
   serverDiagnosticPassed: (server: string) => `${server} connection diagnostic passed`,
   serverConnectivityTestFailed: (server: string, error: string) => `${server} connectivity test failed: ${error}`,

@@ -6,6 +6,7 @@ import { SettingsSectionModeProvider } from "./SettingsSectionModeContext";
 import { useSettingsServices } from "./SettingsServices";
 import { SitePriorityEditorField } from "./SitePriorityEditorField";
 import { Subsection } from "./Subsection";
+import { MediaServerSection } from "./sections/MediaServerSections";
 import {
   AggregationBehaviorSection,
   AggregationPrioritySection,
@@ -41,6 +42,7 @@ const DEFERRED_SECTION_HEIGHTS = {
   translate: 980,
   naming: 1260,
   download: 960,
+  mediaServer: 900,
   system: 840,
   advancedSettings: 1760,
 } as const;
@@ -159,6 +161,22 @@ export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boo
       <Subsection title="NFO" className="mb-6 last:mb-0">
         <NfoSection />
       </Subsection>
+    </SectionAnchor>
+  );
+}
+
+export function MediaServerTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
+  return (
+    <SectionAnchor
+      id="mediaServer"
+      label={t.settingsFields.sections.mediaServer.label}
+      title={t.settingsFields.sections.mediaServer.label}
+      forceOpen={forceOpen}
+      deferContent
+      estimatedContentHeight={DEFERRED_SECTION_HEIGHTS.mediaServer}
+    >
+      <MediaServerSection />
     </SectionAnchor>
   );
 }

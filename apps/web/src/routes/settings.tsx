@@ -1,6 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { useT } from "@mdcz/views/i18n";
-import { SettingsEditor, SettingsLayout, SettingsProfileDialogs, SettingsServicesProvider } from "@mdcz/views/settings";
+import {
+  type FieldAnchor,
+  isFieldAnchor,
+  SettingsEditor,
+  SettingsLayout,
+  SettingsProfileDialogs,
+  SettingsServicesProvider,
+} from "@mdcz/views/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
@@ -21,6 +28,7 @@ import {
 
 export const SettingsPage = () => {
   const t = useT();
+  const { section } = Route.useSearch();
   const queryClient = useQueryClient();
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -227,6 +235,7 @@ export const SettingsPage = () => {
               onResetConfig={handleOpenResetDialog}
               onExportProfile={handleExportProfile}
               onImportProfile={handleOpenImportDialog}
+              initialSection={section}
             />
           ) : (
             <SettingsLayout
@@ -288,6 +297,9 @@ export const SettingsPage = () => {
 };
 
 export const Route = createFileRoute("/settings")({
+  validateSearch: (search): { section?: FieldAnchor } => ({
+    section: isFieldAnchor(search.section) ? search.section : undefined,
+  }),
   component: SettingsPage,
 });
 

@@ -1,6 +1,8 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { useT } from "@mdcz/views/i18n";
 import {
+  type FieldAnchor,
+  isFieldAnchor,
   mergeConfigWithFlatPayload,
   SettingsEditor,
   SettingsLayout,
@@ -19,6 +21,9 @@ import { ipc } from "@/client/ipc";
 import { CURRENT_CONFIG_QUERY_KEY, useConfigProfiles, useCurrentConfig, useDefaultConfig } from "@/hooks/configQueries";
 
 export const Route = createFileRoute("/settings")({
+  validateSearch: (search): { section?: FieldAnchor } => ({
+    section: isFieldAnchor(search.section) ? search.section : undefined,
+  }),
   component: SettingsComponent,
 });
 
@@ -30,6 +35,7 @@ type ImportMode = "new" | "overwrite";
 
 function SettingsComponent() {
   const t = useT();
+  const { section } = Route.useSearch();
   const queryClient = useQueryClient();
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
@@ -302,6 +308,7 @@ function SettingsComponent() {
               onResetConfig={handleOpenResetDialog}
               onExportProfile={handleExportProfile}
               onImportProfile={handleOpenImportDialog}
+              initialSection={section}
             />
           ) : (
             <SettingsLayout

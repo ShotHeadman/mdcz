@@ -7,14 +7,15 @@ import {
   describeFirstDiagnosticBlocker,
   getEmptyPersonLibraryMessage,
   PersonMediaLibraryDetail,
+  type PersonServer,
   type PersonServerPanelState,
   type PersonSyncMode,
 } from "@mdcz/views/tools";
 import { useMutation } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
 import { ipc } from "@/client/ipc";
 import { useToast } from "@/contexts/ToastProvider";
-import { type PersonServer, PersonServerSettingsDialog } from "./PersonServerSettingsDialog";
 
 function clearProgressResetTimer(timerRef: MutableRefObject<number | null>) {
   if (timerRef.current !== null) {
@@ -29,6 +30,7 @@ function formatSyncResult(label: string, result: PersonSyncResult) {
 
 export function Person() {
   const t = useT();
+  const navigate = useNavigate();
   const { showError, showInfo, showSuccess } = useToast();
   const checkJellyfinConnectionMut = useMutation({
     mutationFn: async () => ipc.tool.checkJellyfinConnection(),
@@ -37,7 +39,6 @@ export function Person() {
     mutationFn: async () => ipc.tool.checkEmbyConnection(),
   });
   const [selectedPersonServer, setSelectedPersonServer] = useState<PersonServer>("jellyfin");
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [jellyfinCheckResult, setJellyfinCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
   const [embyCheckResult, setEmbyCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
   const [jellyfinActorInfoMode, setJellyfinActorInfoMode] = useState<PersonSyncMode>("missing");
@@ -281,46 +282,38 @@ export function Person() {
   };
 
   return (
-    <>
-      <PersonMediaLibraryDetail
-        activeServer={selectedPersonServer}
-        emby={embyState}
-        jellyfin={jellyfinState}
-        settingsDisabled={anyPersonSyncRunning || anyPersonCheckPending}
-        onCheck={(server) => {
-          if (server === "jellyfin") {
-            showInfo(t.desktop.diagnosingServerConnection("Jellyfin"));
-            void runJellyfinConnectionCheck();
-          } else {
-            showInfo(t.desktop.diagnosingServerConnection("Emby"));
-            void runEmbyConnectionCheck();
-          }
-        }}
-        onInfoModeChange={(server, mode) => {
-          if (server === "jellyfin") setJellyfinActorInfoMode(mode);
-          else setEmbyActorInfoMode(mode);
-        }}
-        onOpenSettings={() => setSettingsDialogOpen(true)}
-        onPhotoModeChange={(server, mode) => {
-          if (server === "jellyfin") setJellyfinActorPhotoMode(mode);
-          else setEmbyActorPhotoMode(mode);
-        }}
-        onServerChange={setSelectedPersonServer}
-        onSyncInfo={(server) => {
-          if (server === "jellyfin") void handleSyncJellyfinActorInfo();
-          else void handleSyncEmbyActorInfo();
-        }}
-        onSyncPhoto={(server) => {
-          if (server === "jellyfin") void handleSyncJellyfinPhotos();
-          else void handleSyncEmbyPhotos();
-        }}
-      />
-
-      <PersonServerSettingsDialog
-        open={settingsDialogOpen}
-        server={selectedPersonServer}
-        onOpenChange={setSettingsDialogOpen}
-      />
-    </>
+    <PersonMediaLibraryDetail
+      activeServer={selectedPersonServer}
+      emby={embyState}
+      jellyfin={jellyfinState}
+      settingsDisabled={anyPersonSyncRunning || anyPersonCheckPending}
+      onCheck={(server) => {
+        if (server === "jellyfin") {
+          showInfo(t.desktop.diagnosingServerConnection("Jellyfin"));
+          void runJellyfinConnectionCheck();
+        } else {
+          showInfo(t.desktop.diagnosingServerConnection("Emby"));
+          void runEmbyConnectionCheck();
+        }
+      }}
+      onInfoModeChange={(server, mode) => {
+        if (server === "jellyfin") setJellyfinActorInfoMode(mode);
+        else setEmbyActorInfoMode(mode);
+      }}
+      onOpenSettings={() => void navigate({ to: "/settings", search: { section: "mediaServer" } })}
+      onPhotoModeChange={(server, mode) => {
+        if (server === "jellyfin") setJellyfinActorPhotoMode(mode);
+        else setEmbyActorPhotoMode(mode);
+      }}
+      onServerChange={setSelectedPersonServer}
+      onSyncInfo={(server) => {
+        if (server === "jellyfin") void handleSyncJellyfinActorInfo();
+        else void handleSyncEmbyActorInfo();
+      }}
+      onSyncPhoto={(server) => {
+        if (server === "jellyfin") void handleSyncJellyfinPhotos();
+        else void handleSyncEmbyPhotos();
+      }}
+    />
   );
 }

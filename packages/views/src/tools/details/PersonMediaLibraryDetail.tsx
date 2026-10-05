@@ -28,7 +28,7 @@ export interface PersonMediaLibraryDetailProps {
   settingsDisabled?: boolean;
   onCheck: (server: PersonServer) => void;
   onInfoModeChange: (server: PersonServer, mode: PersonSyncMode) => void;
-  onOpenSettings?: () => void;
+  onOpenSettings: () => void;
   onPhotoModeChange: (server: PersonServer, mode: PersonSyncMode) => void;
   onServerChange: (server: PersonServer) => void;
   onSyncInfo: (server: PersonServer) => void;
@@ -144,16 +144,14 @@ export function PersonMediaLibraryDetail({
           </SelectContent>
         </Select>
 
-        {onOpenSettings ? (
-          <Button
-            variant="secondary"
-            onClick={onOpenSettings}
-            disabled={settingsDisabled || anySyncRunning || anyCheckPending}
-            className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
-          >
-            {t.tools.connectionSettings}
-          </Button>
-        ) : null}
+        <Button
+          variant="secondary"
+          onClick={onOpenSettings}
+          disabled={settingsDisabled || anySyncRunning || anyCheckPending}
+          className="h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75"
+        >
+          {t.tools.connectionSettings}
+        </Button>
 
         <Button
           variant="secondary"

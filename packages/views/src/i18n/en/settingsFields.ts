@@ -37,6 +37,7 @@ const sections: Record<FieldAnchor, SectionText> = {
   translate: { label: "Translation", aliases: ["translate", "translation", "translator", "llm", "language"] },
   naming: { label: "Naming", aliases: ["naming", "name", "template", "rule", "rules"] },
   download: { label: "Downloads", aliases: ["download", "asset", "poster", "fanart", "nfo"] },
+  mediaServer: { label: "Media servers", aliases: ["media server", "jellyfin", "emby", "person", "actor"] },
   system: { label: "Interface & shortcuts", aliases: ["system", "ui", "interface", "shortcut", "hotkey"] },
 };
 

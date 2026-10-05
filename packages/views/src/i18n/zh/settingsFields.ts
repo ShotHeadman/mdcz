@@ -9,6 +9,7 @@ export const settingsFields: Messages["settingsFields"] = {
     translate: { label: "翻译服务" },
     naming: { label: "命名规则" },
     download: { label: "下载选项" },
+    mediaServer: { label: "媒体服务器", aliases: ["媒体服务器", "Jellyfin", "Emby", "人物", "演员"] },
     system: { label: "界面与快捷键", aliases: ["系统", "界面", "快捷键"] },
   },
   fields: {

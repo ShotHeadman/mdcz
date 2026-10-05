@@ -1,5 +1,5 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
-import { SETTINGS_FIELD_REGISTRY } from "@mdcz/shared/settingsRegistry";
+import { FIELD_REGISTRY } from "@mdcz/shared/settingsRegistry";
 import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form";
 import {
   AdvancedSettingsFooterContent,
@@ -157,9 +157,7 @@ test("settings editor renders every visible registry field", async () => {
     const screen = await render(<SettingsSurfaceHarness />);
     await screen.getByRole("button", { name: "显示高级设置" }).click();
 
-    const expectedFields = SETTINGS_FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map(
-      (entry) => entry.key,
-    );
+    const expectedFields = FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map((entry) => entry.key);
     const renderedFields = new Set(
       Array.from(
         screen.container.querySelectorAll<HTMLElement>("[data-field-name]"),

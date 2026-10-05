@@ -21,6 +21,7 @@ import {
   ToolDetailShell,
 } from "@mdcz/views/tools";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { api, getLibraryAssetSrc } from "../../client";
 import { queryKeys } from "../../lib/queryKeys";
@@ -65,6 +66,7 @@ const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPat
 
 export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const t = useT();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [singleFileRootId, setSingleFileRootId] = useState("");
   const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
@@ -208,6 +210,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
               if (server === "jellyfin") setJellyfinPhotoMode(mode);
               else setEmbyPhotoMode(mode);
             }}
+            onOpenSettings={() => void navigate({ to: "/settings", search: { section: "mediaServer" } })}
             onServerChange={setPersonServer}
             onSyncInfo={async (server) => {
               const mode = server === "jellyfin" ? jellyfinInfoMode : embyInfoMode;

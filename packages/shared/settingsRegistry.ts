@@ -1,7 +1,19 @@
-export const SECTION_ORDER = ["paths", "scrape", "network", "translate", "naming", "download", "system"] as const;
+export const SECTION_ORDER = [
+  "paths",
+  "scrape",
+  "network",
+  "translate",
+  "naming",
+  "download",
+  "mediaServer",
+  "system",
+] as const;
 
 export type FieldAnchor = (typeof SECTION_ORDER)[number];
-export type FieldSurface = "settings" | "tools" | "about" | "internal";
+
+export function isFieldAnchor(value: unknown): value is FieldAnchor {
+  return (SECTION_ORDER as readonly unknown[]).includes(value);
+}
 export type FieldVisibility = "public" | "advanced" | "hidden";
 
 export const AGGREGATION_PRIORITY_KEYS = [
@@ -39,7 +51,6 @@ const ADVANCED_FIELD_KEYS = new Set<string>([
 interface RawFieldEntry {
   key: string;
   anchor: FieldAnchor;
-  surface?: FieldSurface;
   visibility?: FieldVisibility;
 }
 
@@ -140,17 +151,17 @@ const RAW_FIELD_REGISTRY = [
   { key: "translate.llmMaxRetries", anchor: "translate" },
   { key: "translate.llmMaxRequestsPerSecond", anchor: "translate" },
   { key: "translate.targetLanguage", anchor: "translate" },
-  { key: "personSync.personOverviewSources", anchor: "system", surface: "tools" },
-  { key: "personSync.personImageSources", anchor: "system", surface: "tools" },
-  { key: "jellyfin.url", anchor: "system", surface: "tools" },
-  { key: "jellyfin.apiKey", anchor: "system", surface: "tools" },
-  { key: "jellyfin.userId", anchor: "system", surface: "tools" },
-  { key: "jellyfin.refreshPersonAfterSync", anchor: "system", surface: "tools" },
-  { key: "jellyfin.lockOverviewAfterSync", anchor: "system", surface: "tools" },
-  { key: "emby.url", anchor: "system", surface: "tools" },
-  { key: "emby.apiKey", anchor: "system", surface: "tools" },
-  { key: "emby.userId", anchor: "system", surface: "tools" },
-  { key: "emby.refreshPersonAfterSync", anchor: "system", surface: "tools" },
+  { key: "personSync.personOverviewSources", anchor: "mediaServer" },
+  { key: "personSync.personImageSources", anchor: "mediaServer" },
+  { key: "jellyfin.url", anchor: "mediaServer" },
+  { key: "jellyfin.apiKey", anchor: "mediaServer" },
+  { key: "jellyfin.userId", anchor: "mediaServer" },
+  { key: "jellyfin.refreshPersonAfterSync", anchor: "mediaServer" },
+  { key: "jellyfin.lockOverviewAfterSync", anchor: "mediaServer" },
+  { key: "emby.url", anchor: "mediaServer" },
+  { key: "emby.apiKey", anchor: "mediaServer" },
+  { key: "emby.userId", anchor: "mediaServer" },
+  { key: "emby.refreshPersonAfterSync", anchor: "mediaServer" },
   { key: "shortcuts.startOrStopScrape", anchor: "system" },
   { key: "shortcuts.retryScrape", anchor: "system" },
   { key: "shortcuts.openFolder", anchor: "system" },
@@ -169,14 +180,12 @@ export type FieldKey = (typeof RAW_FIELD_REGISTRY)[number]["key"];
 export interface FieldEntry {
   key: FieldKey;
   anchor: FieldAnchor;
-  surface: FieldSurface;
   visibility: FieldVisibility;
 }
 
 export const FIELD_REGISTRY: FieldEntry[] = RAW_FIELD_REGISTRY.map((entry: RawFieldEntry & { key: FieldKey }) => ({
   key: entry.key,
   anchor: entry.anchor,
-  surface: entry.surface ?? "settings",
   visibility: entry.visibility ?? (ADVANCED_FIELD_KEYS.has(entry.key) ? "advanced" : "public"),
 }));
 
@@ -229,10 +238,8 @@ export const FIELD_REGISTRY_BY_KEY = Object.fromEntries(FIELD_REGISTRY.map((entr
   FieldEntry
 >;
 
-export const SETTINGS_FIELD_REGISTRY = FIELD_REGISTRY.filter((entry) => entry.surface === "settings");
-
 export function isFieldManagedBySettingsSearch(key: string): boolean {
-  return FIELD_REGISTRY_BY_KEY[key as FieldKey]?.surface === "settings";
+  return Object.hasOwn(FIELD_REGISTRY_BY_KEY, key);
 }
 
 export function getNestedValue(obj: Record<string, unknown>, path: string): unknown {

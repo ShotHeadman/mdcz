@@ -964,5 +964,3 @@ export function MetadataExportSection() {
     </>
   );
 }
-
-export { EmbySection, JellyfinSection, PersonSyncSharedSection } from "./sections/MediaServerSections";

@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CrossFieldBanner } from "./CrossFieldBanner";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
-import { type FieldEntry, SECTION_ORDER } from "./settingsRegistry";
+import { type FieldEntry, isFieldAnchor } from "./settingsRegistry";
 import { useOptionalToc } from "./TocContext";
 import { useCrossFieldErrors } from "./useCrossFieldErrors";
 
@@ -18,10 +18,6 @@ interface SectionAnchorProps {
   deferContent?: boolean;
   estimatedContentHeight?: number;
   children: ReactNode;
-}
-
-function isKnownAnchor(id: string): id is FieldEntry["anchor"] {
-  return (SECTION_ORDER as readonly string[]).includes(id);
 }
 
 export function SectionAnchor({
@@ -42,7 +38,7 @@ export function SectionAnchor({
   const sectionRef = useRef<HTMLElement | null>(null);
   const shouldForceOpen = forceOpen || Boolean(search?.hasActiveFilters);
   const resolvedOpen = shouldForceOpen || open;
-  const hiddenBySearch = isKnownAnchor(id) && search ? !search.isAnchorVisible(id) : false;
+  const hiddenBySearch = isFieldAnchor(id) && search ? !search.isAnchorVisible(id) : false;
   const registerSection = toc?.register;
   const shouldDeferContent = deferContent && !shouldForceOpen;
   const [contentReady, setContentReady] = useState(() => !shouldDeferContent);
@@ -121,7 +117,7 @@ export function SectionAnchor({
             </CollapsibleTrigger>
           </header>
         )}
-        {isKnownAnchor(id) && <SectionBanner sectionKey={id} />}
+        {isFieldAnchor(id) && <SectionBanner sectionKey={id} />}
         <CollapsibleContent className="data-[state=closed]:animate-none data-[state=open]:animate-none">
           {contentReady ? (
             <div className="space-y-1">{children}</div>

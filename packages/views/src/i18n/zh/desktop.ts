@@ -1,11 +1,6 @@
 import type { Messages } from "../en";
 
 export const desktop: Messages["desktop"] = {
-  personSyncConfig: "人物同步配置",
-  serverConnectionSettings: (server: string) => `${server} 连接设置`,
-  readingCurrentConfig: "正在读取当前配置",
-  configLoadFailed: "配置加载失败",
-  serverSettingsHelp: "连接诊断和人物同步会读取这里保存的服务器地址、API Key 与用户 ID。",
   diagnosingServerConnection: (server: string) => `正在诊断 ${server} 连接状态...`,
   serverDiagnosticPassed: (server: string) => `${server} 连接诊断通过`,
   serverConnectivityTestFailed: (server: string, error: string) => `${server} 连通性测试失败: ${error}`,

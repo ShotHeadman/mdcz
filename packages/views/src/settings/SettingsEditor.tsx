@@ -4,7 +4,7 @@ import type { FieldValues } from "react-hook-form";
 import { useForm } from "react-hook-form";
 import { SettingsLayout } from "./SettingsLayout";
 import { SettingsSearchProvider } from "./SettingsSearchContext";
-import { flattenConfig } from "./settingsRegistry";
+import { type FieldAnchor, flattenConfig } from "./settingsRegistry";
 import { SettingsEditorAutosaveProvider, valuesEqual } from "./useAutoSaveField";
 
 const loadSettingsForm = () => import("./SettingsForm");
@@ -32,6 +32,7 @@ interface SettingsEditorProps {
   onExportProfile: () => void;
   onImportProfile: () => void;
   extraContent?: ReactNode;
+  initialSection?: FieldAnchor;
 }
 
 export function SettingsEditor({
@@ -48,6 +49,7 @@ export function SettingsEditor({
   onExportProfile,
   onImportProfile,
   extraContent,
+  initialSection,
 }: SettingsEditorProps) {
   const flatConfigValues = useMemo(() => flattenConfig(data), [data]);
   const flatDefaultValues = useMemo(() => flattenConfig(defaultConfig), [defaultConfig]);
@@ -100,6 +102,7 @@ export function SettingsEditor({
                   extraContent={extraContent}
                   flatDefaults={flatConfigValues}
                   initialUseCustomTitleBar={initialUseCustomTitleBarRef.current ?? true}
+                  initialSection={initialSection}
                 />
               </Suspense>
             </SettingsLayout>
