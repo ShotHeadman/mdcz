@@ -1,5 +1,5 @@
 import { realpath as realpathCallback } from "node:fs";
-import { lstat, readlink, realpath, stat } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { MediaRoot } from "./mediaRoot";
@@ -38,27 +38,4 @@ export const filesystemPathKey = (value: string): string =>
 export const resolveEntryPath = async (value: string): Promise<string> => {
   const absolute = path.resolve(value);
   return path.join(await canonicalPath(path.dirname(absolute)), path.basename(absolute));
-};
-
-export const inspectFileEntry = async (value: string) => {
-  const entryPath = await resolveEntryPath(value);
-  const entry = await lstat(entryPath);
-  const linkTarget = entry.isSymbolicLink() ? await readlink(entryPath) : null;
-  const referent = linkTarget === null ? entry : await stat(entryPath);
-  if (!referent.isFile()) throw new Error(`Media entry is not a file: ${value}`);
-  return {
-    stats: referent,
-    entryPath,
-    entryIdentity: filesystemPathKey(entryPath),
-    traversalIdentity: filesystemPathKey(path.dirname(entryPath)),
-    linkTarget,
-    entryFacts: { size: entry.size, mtimeMs: entry.mtimeMs, dev: entry.dev, ino: entry.ino },
-    referentFacts: {
-      path: linkTarget === null ? entryPath : await canonicalPath(entryPath),
-      size: referent.size,
-      mtimeMs: referent.mtimeMs,
-      dev: referent.dev,
-      ino: referent.ino,
-    },
-  };
 };
