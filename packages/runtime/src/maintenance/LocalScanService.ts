@@ -113,10 +113,9 @@ const listSubdirFiles = async (
   inventory: DirectoryInventory,
 ): Promise<string[]> => {
   const subDir = join(parentDir, subDirName);
-  const entries = await inventory.entries(subDir);
-  return entries
-    .filter((entry) => entry.isFile() && extensions.has(extname(entry.name).toLowerCase()))
-    .map((entry) => join(subDir, entry.name));
+  return (await inventory.files(subDir, (name) => extensions.has(extname(name).toLowerCase()))).map((entry) =>
+    join(subDir, entry.name),
+  );
 };
 
 export class LocalScanService {
@@ -485,10 +484,7 @@ export class LocalScanService {
   ): Promise<string[]> {
     try {
       throwIfAborted(signal);
-      const entries = await inventory.entries(dir);
-      const nfoEntries = entries.filter(
-        (entry) => (entry.isFile() || entry.isSymbolicLink()) && extname(entry.name).toLowerCase() === ".nfo",
-      );
+      const nfoEntries = await inventory.files(dir, (name) => extname(name).toLowerCase() === ".nfo");
 
       if (nfoEntries.length === 0) return [];
 

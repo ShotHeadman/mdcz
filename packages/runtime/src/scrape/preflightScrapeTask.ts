@@ -106,14 +106,6 @@ export async function checkScrapeTargets(
       const targetPath = join(directory, entry.name);
       const matches = planned.get(filesystemPathKey(join(directory, parse(entry.name).name)));
       if (!matches) continue;
-      if (entry.isSymbolicLink()) {
-        try {
-          if (!(await inventory.stats(targetPath)).isFile()) continue;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-          throw error;
-        }
-      }
       for (const { member } of matches) {
         if (sources.get(member.itemId) === filesystemPathKey(targetPath)) continue;
         addConflict(conflicts, member, targetPath, "Target directory already contains a movie with the same name");

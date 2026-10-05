@@ -33,24 +33,22 @@ export const findGeneratedVideoSidecars = async (
   }
 
   const directory = dirname(sourceVideoPath);
-  const matches: GeneratedVideoSidecarMatch[] = [];
-  for (const entry of await inventory.entries(directory)) {
-    const path = join(directory, entry.name);
-    if (
-      !isVideoFileName(entry.name) ||
-      !isGeneratedSidecarVideo(entry.name) ||
-      resolve(path) === resolve(sourceVideoPath) ||
-      parseFileInfo(path).number.toUpperCase() !== number
-    )
-      continue;
-    const name = parse(path).name.normalize("NFC");
-    const suffix = (FC2_FEATURE_SUFFIX.exec(name) ?? TRAILER_SUFFIX.exec(name))?.[0];
-    if (!suffix) continue;
-    if (entry.isFile() || (entry.isSymbolicLink() && (await inventory.stats(path)).isFile())) {
-      matches.push({ path, suffix });
-    }
-  }
-  return matches.sort((left, right) => left.path.localeCompare(right.path));
+  const suffixOf = (fileName: string) => {
+    const name = parse(fileName).name.normalize("NFC");
+    return (FC2_FEATURE_SUFFIX.exec(name) ?? TRAILER_SUFFIX.exec(name))?.[0];
+  };
+  const sidecars = await inventory.files(
+    directory,
+    (name) =>
+      isVideoFileName(name) &&
+      isGeneratedSidecarVideo(name) &&
+      resolve(directory, name) !== resolve(sourceVideoPath) &&
+      parseFileInfo(join(directory, name)).number.toUpperCase() === number &&
+      suffixOf(name) !== undefined,
+  );
+  return sidecars
+    .map((entry) => ({ path: join(directory, entry.name), suffix: suffixOf(entry.name) as string }))
+    .sort((left, right) => left.path.localeCompare(right.path));
 };
 
 export const buildGeneratedVideoSidecarTargetPath = (

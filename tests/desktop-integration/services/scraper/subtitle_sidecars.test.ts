@@ -79,7 +79,7 @@ describe("sidecar inventory", () => {
   });
 
   it.skipIf(process.platform === "win32")(
-    "shares alias observations while preserving separate hard-link and symlink entries",
+    "shares alias observations, keeps hard-link and symlink entries, and ignores dangling links",
     async () => {
       const directory = await fs.mkdtemp(join(tmpdir(), "mdcz-sidecars-"));
       tempDirs.push(directory);
@@ -93,6 +93,8 @@ describe("sidecar inventory", () => {
       await fs.writeFile(subtitle, "subtitle");
       await fs.link(subtitle, hardlink);
       await fs.symlink(subtitle, symlink);
+      await fs.symlink(join(directory, "missing.srt"), join(source, "ABC-456.en.srt"));
+      await fs.symlink(join(directory, "missing.mp4"), join(source, "ABC-789.mp4"));
       await fs.writeFile(join(source, "movie.nfo"), "<movie><title>Local title</title><num>ABC-123</num></movie>");
       const listing = vi.spyOn(fs, "readdir");
       const stats = vi.spyOn(fs, "stat");
@@ -123,7 +125,9 @@ describe("sidecar inventory", () => {
         expect(sidecars.map((sidecar) => sidecar.path)).toEqual([expectedSubtitle]);
         expect(sidecars[0].subtitleTag).toBe("中文字幕");
       }
-      expect(stats).toHaveBeenCalledTimes(3);
+      expect(await inventory.mediaEntries(source)).toEqual([]);
+      // Only the two dangling links are stat'ed beyond the observed facts, each once.
+      expect(stats).toHaveBeenCalledTimes(5);
       expect(listing).toHaveBeenCalledTimes(1);
     },
   );

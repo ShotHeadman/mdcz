@@ -15,8 +15,7 @@ import {
 import type { AssetDownloader, DownloadExecutionContext, DownloadExecutionPlan } from "./types";
 
 const listExistingSceneImages = async (sceneDir: string, inventory: DirectoryInventory): Promise<string[]> =>
-  (await inventory.entries(sceneDir))
-    .filter((entry) => entry.isFile() && SCENE_IMAGE_FILE_PATTERN.test(entry.name))
+  (await inventory.files(sceneDir, (name) => SCENE_IMAGE_FILE_PATTERN.test(name)))
     .map((entry) => join(sceneDir, entry.name))
     .sort((a, b) => a.localeCompare(b));
 

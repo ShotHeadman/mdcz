@@ -200,12 +200,7 @@ export class FileOrganizer {
 
     if (sameDirectoryOutput && !options.allowSharedDirectory) {
       const sourceFileInfo = parseFileInfo(sourceFilePath);
-      const videoFiles: string[] = [];
-      for (const entry of await inventory.mediaEntries(sourceDir)) {
-        const candidate = join(sourceDir, entry.name);
-        if (entry.isFile() || (entry.isSymbolicLink() && (await inventory.stats(candidate)).isFile()))
-          videoFiles.push(candidate);
-      }
+      const videoFiles = (await inventory.mediaEntries(sourceDir)).map((entry) => join(sourceDir, entry.name));
       const otherVideos = videoFiles.filter(
         (filePath) =>
           resolve(filePath) !== resolve(sourceFilePath) &&

@@ -158,21 +158,33 @@ export class DirectoryInventory {
     return [...admitted.values()];
   }
 
+  /**
+   * Regular files and symlinks to files whose names pass `include`; dangling links are as invisible as missing
+   * files. Names are filtered before any stat because each stat is a round trip on network mounts.
+   */
+  async files(directory: string, include: (name: string) => boolean = () => true): Promise<readonly Dirent[]> {
+    const entries = await Promise.all(
+      (await this.entries(directory)).map(async (entry) => {
+        if (!include(entry.name)) return undefined;
+        if (entry.isFile()) return entry;
+        if (!entry.isSymbolicLink()) return undefined;
+        try {
+          return (await this.stats(join(directory, entry.name))).isFile() ? entry : undefined;
+        } catch (error) {
+          if (["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
+          throw error;
+        }
+      }),
+    );
+    return entries.filter((entry) => entry !== undefined);
+  }
+
   async mediaEntries(directory: string): Promise<readonly Dirent[]> {
-    const entries = await this.entries(directory);
-    const candidates = entries.filter((entry) => {
-      if ((!entry.isFile() && !entry.isSymbolicLink()) || !isPrimaryVideoFile(entry.name)) return false;
-      const name = parse(entry.name);
-      if (name.ext.toLowerCase() !== ".strm") return true;
-      return !entries.some(
-        (sibling) =>
-          (sibling.isFile() || sibling.isSymbolicLink()) &&
-          isPrimaryVideoFile(sibling.name) &&
-          parse(sibling.name).ext.toLowerCase() !== ".strm" &&
-          filesystemPathKey(join(directory, parse(sibling.name).name)) ===
-            filesystemPathKey(join(directory, name.name)),
-      );
-    });
-    return candidates;
+    const videos = await this.files(directory, isPrimaryVideoFile);
+    const baseKey = (entry: Dirent) => filesystemPathKey(join(directory, parse(entry.name).name));
+    const isStrm = (entry: Dirent) => parse(entry.name).ext.toLowerCase() === ".strm";
+    return videos.filter(
+      (entry) => !isStrm(entry) || !videos.some((sibling) => !isStrm(sibling) && baseKey(sibling) === baseKey(entry)),
+    );
   }
 }
