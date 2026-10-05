@@ -214,5 +214,3 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
     localState: normalizeNfoLocalState({ uncensoredChoice, tags: localTags }),
   };
 };
-
-export const parseNfo = (xml: string): CrawlerData => parseNfoSnapshot(xml).crawlerData;

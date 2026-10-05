@@ -6,7 +6,7 @@ import { CachedAsyncResolver, toErrorMessage } from "@mdcz/runtime/shared";
 import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
-import { parseNfo } from "../../maintenance/nfoSnapshot";
+import { parseNfoSnapshot } from "../../maintenance/nfoSnapshot";
 import { mergeActorSourceHints } from "../sourceHints";
 import type { ActorLookupQuery, ActorSourceHint, ActorSourceResult, BaseActorSource } from "../types";
 
@@ -133,7 +133,7 @@ const buildLocalActorRecordIndex = async (configuration: Configuration): Promise
   for (const nfoPath of nfoFiles) {
     try {
       const xml = await readFile(nfoPath, "utf8");
-      const parsed = parseNfo(xml);
+      const parsed = parseNfoSnapshot(xml).crawlerData;
       const sourceHints = createSourceHints(parsed);
       const profilesByName = new Map<string, IndexedActorProfile>();
 

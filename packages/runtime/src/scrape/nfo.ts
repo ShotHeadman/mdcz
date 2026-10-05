@@ -2,7 +2,6 @@ import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
-import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
@@ -486,71 +485,3 @@ function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
   lines.push("  ");
   return lines.join("\n");
 }
-
-const readTag = (xml: string, tag: string): string | undefined => {
-  const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "u"));
-  return match?.[1]
-    ?.replace(/&quot;/gu, '"')
-    .replace(/&gt;/gu, ">")
-    .replace(/&lt;/gu, "<")
-    .replace(/&amp;/gu, "&")
-    .trim();
-};
-
-const readUniqueId = (xml: string): { number?: string; website?: Website } => {
-  const match = xml.match(/<uniqueid\b([^>]*)>([\s\S]*?)<\/uniqueid>/u);
-  const number = match?.[2]
-    ?.replace(/&quot;/gu, '"')
-    .replace(/&gt;/gu, ">")
-    .replace(/&lt;/gu, "<")
-    .replace(/&amp;/gu, "&")
-    .trim();
-  const type = match?.[1]?.match(/type=["']([^"']+)["']/u)?.[1];
-  const website = type && Object.values(Website).includes(type as Website) ? (type as Website) : undefined;
-  return { number, website };
-};
-
-export const inferNumber = (relativePath: string): string => {
-  const base = basename(
-    relativePath,
-    relativePath.includes(".") ? relativePath.slice(relativePath.lastIndexOf(".")) : undefined,
-  );
-  const match = base.match(/[A-Za-z]{2,10}[-_ ]?\d{2,6}|FC2[-_ ]?\d{5,8}|\d{6,}/u);
-  return (match?.[0] ?? base).replace(/[ _]/gu, "-").toUpperCase();
-};
-
-export const parseNfo = (xml: string, fallbackPath: string): CrawlerData => {
-  const actors = Array.from(xml.matchAll(/<actor>\s*<name>([\s\S]*?)<\/name>\s*<\/actor>/gu)).map((match) =>
-    match[1].trim(),
-  );
-  const genres = Array.from(xml.matchAll(/<genre>([\s\S]*?)<\/genre>/gu)).map((match) => match[1].trim());
-  const title = readTag(xml, "title");
-  const originaltitle = readTag(xml, "originaltitle");
-  const uniqueid = readUniqueId(xml);
-  return {
-    title:
-      originaltitle ??
-      title ??
-      basename(
-        fallbackPath,
-        fallbackPath.includes(".") ? fallbackPath.slice(fallbackPath.lastIndexOf(".")) : undefined,
-      ),
-    title_zh: title && title !== originaltitle ? title : undefined,
-    number: uniqueid.number ?? readTag(xml, "id") ?? inferNumber(fallbackPath),
-    actors,
-    genres,
-    studio: readTag(xml, "studio"),
-    director: readTag(xml, "director"),
-    publisher: readTag(xml, "publisher"),
-    series: readTag(xml, "set"),
-    plot: readTag(xml, "original_plot") ?? readTag(xml, "plot"),
-    plot_zh: readTag(xml, "outline"),
-    release_date: readTag(xml, "premiered"),
-    thumb_url: readTag(xml, "thumb"),
-    poster_url: readTag(xml, "poster"),
-    trailer_url: readTag(xml, "trailer"),
-    trailer_source_url: readTag(xml, "trailer_source_url"),
-    scene_images: [],
-    website: uniqueid.website ?? Website.JAVDB,
-  };
-};
