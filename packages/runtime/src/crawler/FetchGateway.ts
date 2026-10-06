@@ -1,4 +1,4 @@
-import type { RuntimeNetworkClient, RuntimeProbeResult } from "@mdcz/runtime/network";
+import { type RuntimeNetworkClient, type RuntimeProbeResult, SiteError } from "@mdcz/runtime/network";
 
 export interface FetchOptions {
   timeout?: number;
@@ -49,10 +49,10 @@ export class FetchGateway {
   async fetchGraphQL<T>(endpoint: string, operation: GraphQLOperation, options: FetchOptions = {}): Promise<T> {
     const payload = await this.fetchPost<{ data?: T; errors?: unknown }>(endpoint, operation, options);
     if (payload.errors) {
-      throw new Error(`GraphQL response contains errors for ${endpoint}`);
+      throw new SiteError("http_error", `GraphQL response contains errors for ${endpoint}`);
     }
     if (payload.data === undefined) {
-      throw new Error(`GraphQL response missing data for ${endpoint}`);
+      throw new SiteError("parse_error", `GraphQL response missing data for ${endpoint}`);
     }
     return payload.data;
   }

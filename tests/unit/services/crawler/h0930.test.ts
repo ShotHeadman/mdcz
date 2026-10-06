@@ -95,14 +95,14 @@ describe("H0930Crawler", () => {
     ]);
   });
 
-  it("accepts raw movie ids and manual detail URLs", async () => {
+  it("validates the movie identity on manual detail URLs", async () => {
     const networkClient = new FixtureNetworkClient(
       new Map<string, unknown>([["https://www.h0930.com/moviepages/gol205/index.html", createDetailHtml()]]),
     );
     const crawler = new H0930Crawler(withGateway(networkClient));
 
     const response = await crawler.crawl({
-      number: "ignored",
+      number: "H0930-GOL205",
       site: Website.H0930,
       options: {
         detailUrl: "https://www.h0930.com/moviepages/gol205/index.html",
@@ -115,6 +115,12 @@ describe("H0930Crawler", () => {
     }
 
     expect(response.result.data.number).toBe("H0930-GOL205");
+    const mismatch = await crawler.crawl({
+      number: "H0930-GOL206",
+      site: Website.H0930,
+      options: { detailUrl: "https://www.h0930.com/moviepages/gol205/index.html" },
+    });
+    expect(mismatch.result).toMatchObject({ success: false, reason: "not_found" });
   });
 
   it("returns a normal crawler failure for unparseable pages", async () => {
@@ -136,7 +142,7 @@ describe("H0930Crawler", () => {
       throw new Error("Expected H0930 crawl to fail");
     }
 
-    expect(response.result.failureReason).toBe("not_found");
+    expect(response.result.reason).toBe("not_found");
     expect(response.result.error).toContain("Detail URL not found");
   });
 });

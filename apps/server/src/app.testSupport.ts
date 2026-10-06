@@ -156,7 +156,9 @@ export const waitForScrapeRunStatus = async (
   token: string,
   runId: string,
   status: string,
+  timeout = 10_000,
 ): Promise<void> => {
+  let current: unknown;
   await expect
     .poll(
       async () => {
@@ -174,9 +176,14 @@ export const waitForScrapeRunStatus = async (
         });
         return historyResponse.json().result?.data?.runs[0]?.disposition;
       },
-      { timeout: 10_000 },
+      { timeout },
     )
-    .toBe(status);
+    // A run that ended in another state will not change again, so stop waiting as soon as it does.
+    .toSatisfy((value) => {
+      current = value;
+      return value === status || ["completed", "failed", "stopped", "interrupted"].includes(String(value));
+    });
+  expect(current).toBe(status);
 };
 
 export const startLocalHttpServer = async (
@@ -265,8 +272,7 @@ export const createTestAggregation = (
         successCount: 1,
         failedCount: 0,
         skippedCount: 0,
-        siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
-        rejectedSites: [],
+        siteResults: [{ site: Website.JAVDB, status: "success", elapsedMs: 1 }],
         totalElapsedMs: 1,
       },
     };

@@ -1,49 +1,41 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { NetworkClientOptions } from "./NetworkClient";
-import { NetworkRecordClient, NetworkReplayClient } from "./NetworkFixtureClient";
+import { NetworkFixtureClient } from "./NetworkFixtureClient";
 
-interface NetworkFixtureSettings {
-  mode: "record" | "replay";
-  root: string;
-  stagingRoot: string;
-  delayMs: number;
-}
+const findWorkspaceRoot = (start: string): string => {
+  for (let directory = path.resolve(start); ; directory = path.dirname(directory)) {
+    if (existsSync(path.join(directory, "pnpm-workspace.yaml"))) return directory;
+    if (path.dirname(directory) === directory) throw new Error(`No pnpm workspace above ${start}`);
+  }
+};
 
-let recorder: NetworkRecordClient | undefined;
-
-const readSettings = (env: NodeJS.ProcessEnv): NetworkFixtureSettings => {
-  const mode = env.MDCZ_NETWORK_FIXTURE_MODE?.trim();
+/**
+ * Dev apps scrape online and record every movie to `.tmp/network-recordings`; `MDCZ_NETWORK=replay` replays
+ * those recordings, then the committed test recordings, without touching the network.
+ */
+export const createDevNetworkClient = (
+  options: NetworkClientOptions = {},
+  env: NodeJS.ProcessEnv = process.env,
+): NetworkFixtureClient => {
+  const mode = env.MDCZ_NETWORK?.trim() || "record";
   if (mode !== "record" && mode !== "replay") {
-    throw new Error(`MDCZ_NETWORK_FIXTURE_MODE must be record or replay, got ${mode || "unset"}`);
+    throw new Error(`MDCZ_NETWORK must be record or replay, got ${mode}`);
   }
   const delayMs = Number(env.MDCZ_REPLAY_DELAY_MS ?? 0);
   if (!Number.isFinite(delayMs) || delayMs < 0) {
     throw new Error(`MDCZ_REPLAY_DELAY_MS must be a non-negative number, got ${env.MDCZ_REPLAY_DELAY_MS}`);
   }
-  return {
-    mode,
-    root: env.MDCZ_NETWORK_FIXTURES_ROOT || "tests/fixtures/network",
-    stagingRoot: env.MDCZ_NETWORK_FIXTURE_STAGING || "test-results/recording/network",
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const recordRoot = path.join(workspaceRoot, ".tmp", "network-recordings");
+  return new NetworkFixtureClient({
+    recordRoot,
+    replayRoots: [recordRoot, path.join(workspaceRoot, "tests", "fixtures", "network")],
+    mode: () => mode,
+    autosave: true,
+    allowUnscopedLive: mode === "record",
+    mockMediaRoot: path.join(workspaceRoot, "tests", "fixtures", "mock-media"),
     delayMs,
-  };
-};
-
-export const createNetworkFixtureClient = (
-  options: NetworkClientOptions = {},
-  env: NodeJS.ProcessEnv = process.env,
-): NetworkRecordClient | NetworkReplayClient => {
-  const fixture = readSettings(env);
-  if (fixture.mode === "record") {
-    const client = new NetworkRecordClient({
-      stagingRoot: fixture.stagingRoot,
-      publishRoot: fixture.root,
-      network: options,
-    });
-    if (env === process.env) recorder = client;
-    return client;
-  }
-  return new NetworkReplayClient({ fixturesRoot: fixture.root, delayMs: fixture.delayMs, network: options });
-};
-
-export const finalizeNetworkFixtures = async (): Promise<void> => {
-  await recorder?.finalize();
+    network: options,
+  });
 };

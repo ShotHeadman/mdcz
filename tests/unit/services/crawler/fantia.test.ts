@@ -213,7 +213,7 @@ describe("FantiaCrawler", () => {
       <html><head>
         <meta property="og:image" content="https://c.fantia.jp/uploads/product/image/12345/blurred_ogp_main.jpg" />
       </head><body>
-        <script type="application/ld+json">{"fanclub_name":"Test club"}</script>
+        <script type="application/ld+json">{"fanclub_name":"Test club","content_id":12345,"content_type":"product"}</script>
         <h1 class="product-title mb-20">Correct result</h1>
         <div class="product-description">Correct description</div>
       </body></html>
@@ -272,6 +272,6 @@ describe("FantiaCrawler", () => {
 
     expect(response.result.success).toBe(false);
     if (response.result.success) throw new Error("expected failure");
-    expect(response.result.failureReason).toBe("not_found");
+    expect(response.result.reason).toBe("not_found");
   });
 });

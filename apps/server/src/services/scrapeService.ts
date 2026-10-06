@@ -109,6 +109,7 @@ export class ScrapeService {
           library: state.repositories.library,
           mediaRoots: this.mediaRoots,
         },
+        recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
         getConfiguration: async () => await this.config.get(),
         networkClient: this.networkClient,
         crawlerProvider: this.crawlerProvider,

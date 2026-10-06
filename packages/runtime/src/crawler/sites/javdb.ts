@@ -1,9 +1,11 @@
-import { normalizeCode, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
+import { SiteError, type SiteRequestConfig } from "@mdcz/runtime/network";
+import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
+import { movieNumbersMatch, toDateSequenceLabel } from "../base/identity";
 import { extractAttr, extractText, parseDate } from "../base/parser";
 import type { Context } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
@@ -11,29 +13,22 @@ import { extractParentLinksByLabelSelector, extractParentTextByLabelSelector, to
 
 type CheerioInput = Parameters<CheerioAPI>[0];
 
-type JavdbSearchResult = {
-  href: string;
-  title: string;
-  meta: string;
-};
-
-const pickJavdbSearchResultUrl = (
-  pageUrl: string,
-  results: JavdbSearchResult[],
-  expectedNumber: string,
-): string | null => {
-  const expectedTitle = expectedNumber.toUpperCase();
-  const exact = results.find((item) => item.title.toUpperCase().includes(expectedTitle));
-  if (exact) {
-    return toAbsoluteUrl(pageUrl, exact.href) ?? null;
-  }
-
-  const normalizedExpected = normalizeCode(expectedNumber);
-  const fuzzy = results.find((item) => normalizeCode(item.title + item.meta).includes(normalizedExpected));
-  return fuzzy ? (toAbsoluteUrl(pageUrl, fuzzy.href) ?? null) : null;
-};
+// JavDB answers mirrors too, so its block pages are recognized by crawler rather than by host.
+const JAVDB_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
+  {
+    id: "crawler:javdb",
+    matches: (_url, site) => site === Website.JAVDB,
+    classifyBlockedPage: (body) => {
+      if (body.includes("Due to copyright restrictions")) return "region_blocked";
+      if (body.includes("banned your access")) return "ip_banned";
+      return null;
+    },
+  },
+];
 
 export class JavdbCrawler extends BaseCrawler {
+  static readonly siteRequestConfigs = JAVDB_SITE_REQUEST_CONFIGS;
+
   site(): Website {
     return Website.JAVDB;
   }
@@ -49,7 +44,7 @@ export class JavdbCrawler extends BaseCrawler {
       return null;
     }
 
-    let number = raw;
+    let number = toDateSequenceLabel(raw) ?? raw;
     const oldDate = number.match(/\D+(\d{2}\.\d{2}\.\d{2})$/u);
     if (oldDate) {
       number = number.replace(oldDate[1], `20${oldDate[1]}`);
@@ -59,41 +54,30 @@ export class JavdbCrawler extends BaseCrawler {
   }
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
-    const pageText = $.root().text();
-    if (pageText.includes("banned your access")) {
-      throw new Error("JavDB temporarily banned current IP");
-    }
-
-    if (pageText.includes("Due to copyright restrictions")) {
-      throw new Error("JavDB blocked due to region restriction");
-    }
-
-    const results = $("a.box")
+    // Search results include similar numbers, such as another studio's title from the same day.
+    const result = $("a.box")
       .toArray()
-      .map((element: CheerioInput) => {
-        const href = $(element).attr("href") ?? "";
-        const title = $(element).find("div.video-title strong").text().trim();
-        const meta = $(element).find("div.meta").text().trim();
-        return { href, title, meta };
-      })
-      .filter((item) => item.href.length > 0);
-
-    if (results.length === 0) {
-      this.logger.debug(`No javdb search results for ${context.number} via ${searchUrl}`);
-      return null;
-    }
-
-    return pickJavdbSearchResultUrl(searchUrl, results, context.number);
+      .find((element: CheerioInput) =>
+        movieNumbersMatch($(element).find("div.video-title strong").text(), context.number),
+      );
+    const href = result && $(result).attr("href");
+    return href ? (toAbsoluteUrl(searchUrl, href) ?? null) : null;
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
+  // JavDB redirects FC2 and uncensored titles to its sign-in page unless the cookie belongs to a signed-in account.
+  protected override classifyDetailFailure(_context: Context, detailHtml: string): SiteError | null {
+    return detailHtml.includes('action="/user_sessions"')
+      ? new SiteError("login_wall", "JavDB requires a signed-in cookie for this title")
+      : null;
+  }
+
+  protected async parseDetailPage(_context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const title = extractText($, "h2.title.is-4 strong.current-title");
     if (!title) {
       return null;
     }
 
-    const number =
-      extractAttr($, "a.button.is-white.copy-to-clipboard", "data-clipboard-text")?.trim() || context.number;
+    const number = extractAttr($, "a.button.is-white.copy-to-clipboard", "data-clipboard-text")?.trim() ?? "";
 
     // JavDB marks only actresses; unmarked links in the actor row are male performers.
     const actresses = uniqueStrings(

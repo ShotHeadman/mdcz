@@ -27,11 +27,18 @@ const DEFAULT_SITES: Website[] = [
   Website.DAHLIA,
   Website.FC2,
   Website.FC2HUB,
+  Website.PPVDATABANK,
   Website.JAVDB,
   Website.JAVBUS,
   Website.JAV321,
   Website.KM_PRODUCE,
   Website.AVBASE,
+  Website.OFFICIAL,
+  Website.ONEPONDO,
+  Website.TENMUSUME,
+  Website.CARIBBEANCOM,
+  Website.HEYZO,
+  Website.R18_DEV,
 ];
 
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
@@ -74,6 +81,8 @@ const networkSchema = z.object({
   proxyType: z.enum(ProxyType).default(ProxyType.NONE),
   proxy: z.string().default(""),
   useProxy: z.boolean().default(false),
+  /** Sites that connect directly while the proxy is on. */
+  directSites: z.array(z.enum(Website)).default([]),
   timeout: z.number().int().min(1).max(300).default(10),
   retryCount: z.number().int().min(0).max(10).default(3),
   javdbUrl: mirrorUrlSchema,
@@ -90,7 +99,7 @@ const scrapeSchema = z.object({
   minVideoSizeMb: z.number().int().min(0).max(10240).default(0),
   r18MetadataLanguage: z.enum(R18_METADATA_LANGUAGE_OPTIONS).default(DEFAULT_R18_METADATA_LANGUAGE),
   threadNumber: z.number().int().min(1).max(128).default(2),
-  javdbDelaySeconds: z.number().int().min(0).max(120).default(10),
+  javdbDelaySeconds: z.number().int().min(0).max(120).default(3),
   restAfterCount: z.number().int().min(1).max(500).default(20),
   restDuration: z.number().int().min(0).default(60),
 });

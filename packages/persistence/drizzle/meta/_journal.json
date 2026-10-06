@@ -50,6 +50,13 @@
       "when": 1791072000000,
       "tag": "0006_folder_watch_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791158400000,
+      "tag": "0007_site_results",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,10 @@
+import { SiteError } from "@mdcz/runtime/network";
 import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
+import { movieNumbersMatch } from "../base/identity";
 import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
@@ -45,7 +47,6 @@ const isSokmilLoginWall = ($: CheerioAPI): boolean => {
   return (
     title.includes("ログイン") ||
     h1 === "ログイン" ||
-    $("html.sk-nonmember").length > 0 ||
     $("form[action*='/member/login']").length > 0 ||
     $("input[name='login_id'], input[name='mailaddress']").length > 0
   );
@@ -97,15 +98,15 @@ export class SokmilCrawler extends BaseCrawler {
     }
 
     if (isSokmilLoginWall($)) {
-      throw new Error("SOKMIL: login wall");
+      throw new SiteError("login_wall", "SOKMIL: login wall");
     }
 
-    const match = $("div.product[data-pid], div.product, li.product")
+    const match = $(".product[data-pid]")
       .toArray()
       .map((element: CheerioInput) => {
         const root = $(element);
-        const title = root.find(".title").first().text().trim();
-        const actor = root.find(".cast, .performer, .actor").first().text().trim();
+        const title = root.find(".product-title .title-link").first().text().trim();
+        const actor = root.find(".stars").text().trim();
         return {
           href: root.find("a[href*='_item/item']").first().attr("href"),
           title,
@@ -129,7 +130,7 @@ export class SokmilCrawler extends BaseCrawler {
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     if (isSokmilLoginWall($)) {
-      throw new Error("SOKMIL: login wall");
+      throw new SiteError("login_wall", "SOKMIL: login wall");
     }
 
     const h1 = $("h1").first().text().trim();
@@ -144,7 +145,6 @@ export class SokmilCrawler extends BaseCrawler {
     const director = extractDtDdValue($, "監督");
     const series = extractDtDdValue($, "シリーズ");
 
-    // Actors from the "出演" field
     const actorDd = $("dt")
       .filter((_i: number, el: CheerioInput) => $(el).text().trim() === "出演")
       .first()
@@ -158,7 +158,6 @@ export class SokmilCrawler extends BaseCrawler {
     const actors =
       actorLinks.length > 0 ? uniqueStrings(actorLinks) : actorText ? uniqueStrings(actorText.split(/[,、]/u)) : [];
 
-    // Genres from the "ジャンル" field
     const genreDd = $("dt")
       .filter((_i: number, el: CheerioInput) => $(el).text().trim() === "ジャンル")
       .first()
@@ -169,12 +168,14 @@ export class SokmilCrawler extends BaseCrawler {
       .get()
       .filter((name: string) => name.length > 0);
 
-    // Cover image
     const jacketImg = toAbsoluteUrl(SOKMIL_BASE_URL, $("img.jacket-img").first().attr("src") ?? undefined);
 
     return {
       title,
-      number: context.number,
+      number:
+        [extractDtDdValue($, "品番"), title, `${title} ${actors.join(" ")}`].find(
+          (candidate) => candidate !== undefined && movieNumbersMatch(candidate, context.number),
+        ) ?? "",
       actors,
       genres,
       studio,

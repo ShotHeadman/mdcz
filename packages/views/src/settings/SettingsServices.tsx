@@ -6,6 +6,7 @@ import type {
   TranslateTestInputDto,
   TranslateTestResponse,
 } from "@mdcz/shared/serverDtos";
+import type { SiteHealth } from "@mdcz/shared/siteResults";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { PathAutocompleteResult } from "../path";
@@ -30,6 +31,7 @@ export interface SettingsCrawlerSiteInfo {
   name: string;
   enabled: boolean;
   native: boolean;
+  health?: SiteHealth;
 }
 
 export interface SettingsWatermarkDirectoryInfo {

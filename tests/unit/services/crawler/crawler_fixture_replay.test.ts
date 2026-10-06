@@ -1,14 +1,31 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { FetchGateway } from "@mdcz/runtime/crawler";
+import { getCrawlerConstructor } from "@mdcz/runtime/crawler/registry";
 import { AvbaseCrawler } from "@mdcz/runtime/crawler/sites/avbase";
 import { DmmCrawler } from "@mdcz/runtime/crawler/sites/dmm";
 import { DmmTvCrawler } from "@mdcz/runtime/crawler/sites/dmm/dmm_tv";
+import type { NetworkClientOptions } from "@mdcz/runtime/network";
 import { runWithCrawlerSource, runWithScrapeItem } from "@mdcz/runtime/network";
-import { NetworkReplayClient } from "@mdcz/runtime/network/NetworkFixtureClient";
+import { NetworkFixtureClient } from "@mdcz/runtime/network/NetworkFixtureClient";
+import { extractNumber } from "@mdcz/runtime/scrape/utils/number";
 import { Website } from "@mdcz/shared/enums";
+import { validateManualScrapeUrl } from "@mdcz/shared/manualScrapeUrl";
 import { describe, expect, it } from "vitest";
 
 const fixturesRoot = path.resolve(process.cwd(), "tests/fixtures/network");
+const hasNetworkFixtures =
+  existsSync(fixturesRoot) &&
+  existsSync(path.join(fixturesRoot, "snos-301", "manifest.json"));
+
+const replayClient = (network?: NetworkClientOptions) =>
+  new NetworkFixtureClient({
+    recordRoot: fixturesRoot,
+    replayRoots: [fixturesRoot],
+    mode: () => "replay",
+    mockMediaRoot: path.resolve(process.cwd(), "tests/fixtures/mock-media"),
+    network,
+  });
 
 interface FixtureCaseExpectation {
   caseId: string;
@@ -46,7 +63,80 @@ const fixtureCases: FixtureCaseExpectation[] = [
   },
 ];
 
-describe("Crawler actual fixture replay", () => {
+describe.skipIf(!hasNetworkFixtures)("Crawler actual fixture replay", () => {
+  it.each([
+    {
+      site: Website.OFFICIAL,
+      number: "SNOS-301",
+      actors: ["浅野こころ"],
+      duration: 140 * 60,
+      url: "https://s1s1s1.com/works/detail/snos301",
+    },
+    {
+      site: Website.ONEPONDO,
+      number: "1PON-100524_001",
+      actors: ["ルナ"],
+      duration: 3217,
+      url: "https://www.1pondo.tv/moviepages/100524_001/index.html",
+    },
+    {
+      site: Website.TENMUSUME,
+      number: "10MU-100524_01",
+      actors: ["川口あかり"],
+      duration: 3543,
+      url: "https://www.10musume.com/moviepages/100524_01/index.html",
+    },
+    {
+      site: Website.CARIBBEANCOM,
+      number: "CARIB-100524-001",
+      actors: ["中田みなみ"],
+      duration: 3624,
+      url: "https://www.caribbeancom.com/moviepages/100524-001/index.html",
+    },
+    {
+      site: Website.HEYZO,
+      number: "HEYZO-3806",
+      actors: ["さとみ"],
+      duration: 3702,
+      url: "https://www.heyzo.com/moviepages/3806/index.html",
+    },
+  ])("replays $site metadata and rejects a mismatched manual landing page", async ({
+    site,
+    number,
+    actors,
+    duration,
+    url,
+  }) => {
+    const Crawler = getCrawlerConstructor(site);
+    if (!Crawler) throw new Error(`Missing crawler ${site}`);
+    const replay = replayClient();
+    const crawl = (requestedNumber: string, manual: boolean) =>
+      runWithScrapeItem({ caseId: number.toLowerCase(), execution: {} }, () =>
+        runWithCrawlerSource(site, () =>
+          new Crawler({ gateway: new FetchGateway(replay) }).crawl({
+            number: requestedNumber,
+            site,
+            options: manual ? { detailUrl: url } : undefined,
+          }),
+        ),
+      );
+    expect(extractNumber(`${number}.mp4`)).toBe(number);
+    expect(validateManualScrapeUrl(url, { javdbUrl: "", javbusUrl: "" })).toMatchObject({
+      valid: true,
+      route: { site, detailUrl: url },
+    });
+    const response = await crawl(number, false);
+    expect(response.result).toMatchObject({
+      success: true,
+      data: { number, actors, durationSeconds: duration, website: site },
+    });
+    if (!response.result.success) throw new Error(response.result.error);
+    expect(response.result.data.title).toBeTruthy();
+    expect(response.result.data.thumb_url).toMatch(/^https:\/\//u);
+    expect((await crawl("WRONG-999", true)).result).toMatchObject({ success: false, reason: "not_found" });
+    expect(replay.missingInteractions).toEqual([]);
+  });
+
   describe.each(fixtureCases)("case $number ($caseId)", ({
     caseId,
     number,
@@ -57,7 +147,7 @@ describe("Crawler actual fixture replay", () => {
     expectedDirector,
   }) => {
     it("parses DMM recorded network data", async () => {
-      const replay = new NetworkReplayClient({ fixturesRoot });
+      const replay = replayClient();
       const item = { caseId, execution: {} };
 
       const response = await runWithScrapeItem(
@@ -87,10 +177,7 @@ describe("Crawler actual fixture replay", () => {
     });
 
     it("parses DMM_TV recorded network data", async () => {
-      const replay = new NetworkReplayClient({
-        fixturesRoot,
-        network: { getRetryCount: () => 1 },
-      });
+      const replay = replayClient({ getRetryCount: () => 1 });
       const item = { caseId, execution: {} };
 
       const response = await runWithScrapeItem(
@@ -117,7 +204,7 @@ describe("Crawler actual fixture replay", () => {
     });
 
     it("parses AVBASE recorded network data", async () => {
-      const replay = new NetworkReplayClient({ fixturesRoot });
+      const replay = replayClient();
       const item = { caseId, execution: {} };
 
       const response = await runWithScrapeItem(

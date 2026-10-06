@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { Website } from "@mdcz/shared/enums";
+import { FAILURE_REASONS } from "@mdcz/shared/siteResults";
 import { z } from "zod";
 import type { RawNetworkRequest } from "./NetworkClient";
 
@@ -11,7 +13,6 @@ const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const requestSchema = z.object({
   method: z.string().min(1),
   url: z.url(),
-  headers: headerListSchema,
   bodyBase64: z.string().nullable(),
 });
 const bodySchema = z.discriminatedUnion("kind", [
@@ -21,13 +22,16 @@ const bodySchema = z.discriminatedUnion("kind", [
     sha256: sha256Schema,
     byteLength: z.int().nonnegative(),
   }),
+  // Images keep only their shape; replay generates stand-ins of the same size.
   z.object({
-    kind: z.literal("blob"),
+    kind: z.literal("image"),
     sha256: sha256Schema,
     byteLength: z.int().nonnegative(),
     width: z.int().positive().optional(),
     height: z.int().positive().optional(),
   }),
+  // Videos keep nothing; replay serves one stock video for all of them.
+  z.object({ kind: z.literal("video") }),
 ]);
 const responseSchema = z.object({
   status: z.int().min(100).max(599),
@@ -49,24 +53,37 @@ const interactionSchema = z
   });
 
 export const networkFixtureManifestSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   caseId: z.string().min(1),
   credentialSeed: z.object({
     cookies: z.record(z.string(), z.string()),
     tokens: z.record(z.string(), z.string()),
   }),
+  /** Sites whose outcome depended on the recording network; replay fails them with the same reason. */
+  skippedSites: z.array(z.object({ site: z.enum(Website), reason: z.enum(FAILURE_REASONS) })),
   interactions: z.array(interactionSchema),
 });
 
 export type NetworkFixtureManifest = z.infer<typeof networkFixtureManifestSchema>;
 export type NetworkFixtureInteraction = NetworkFixtureManifest["interactions"][number];
+export type NetworkFixtureRequest = NetworkFixtureInteraction["request"];
 export type NetworkFixtureCredentialSeed = NetworkFixtureManifest["credentialSeed"];
+
+// Cache-busting parameters that change on every request without changing the response.
+const VOLATILE_QUERY_PARAMS: Record<string, readonly string[]> = {
+  "raw.githubusercontent.com": ["t"],
+};
+
+/** Replay matches on method, this URL form, and body; headers never take part. */
+export const normalizeFixtureUrl = (value: string): string => {
+  const url = new URL(value);
+  for (const name of VOLATILE_QUERY_PARAMS[url.hostname] ?? []) url.searchParams.delete(name);
+  url.searchParams.sort();
+  return url.toString();
+};
 
 export const resolveNetworkFixtureDirectory = (fixturesRoot: string, caseId: string): string =>
   path.resolve(fixturesRoot, caseId);
-
-export const resolveNetworkFixtureBlob = (fixturesRoot: string, sha256: string): string =>
-  path.resolve(fixturesRoot, "blobs", sha256);
 
 export const responseBodyExtension = (contentType: string | null): string => {
   const type = (contentType ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
@@ -101,12 +118,9 @@ export const rawRequestBodyToBase64 = async (body: unknown): Promise<string | nu
   throw new Error(`Network fixture does not support request body type ${body.constructor?.name ?? typeof body}`);
 };
 
-export const networkRequestIdentity = async (
-  request: RawNetworkRequest,
-): Promise<NetworkFixtureInteraction["request"]> => ({
+export const networkRequestIdentity = async (request: RawNetworkRequest): Promise<NetworkFixtureRequest> => ({
   method: (request.init.method ?? "GET").toUpperCase(),
   url: request.url,
-  headers: headersToFixtureList(request.init.headers),
   bodyBase64: await rawRequestBodyToBase64(request.init.body),
 });
 

@@ -64,8 +64,7 @@ const createAmbiguousUncensoredAggregation = (
         successCount: 1,
         failedCount: 0,
         skippedCount: 0,
-        siteResults: [{ site: Website.JAVDB, success: true, elapsedMs: 1 }],
-        rejectedSites: [],
+        siteResults: [{ site: Website.JAVDB, status: "success", elapsedMs: 1 }],
         totalElapsedMs: 1,
       },
     };

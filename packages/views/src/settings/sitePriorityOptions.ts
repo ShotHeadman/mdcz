@@ -22,7 +22,7 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
   { id: "dmm_family", sites: [Website.DMM, Website.DMM_TV] },
   {
     id: "official",
-    sites: [Website.MGSTAGE, Website.PRESTIGE, Website.FALENO, Website.DAHLIA, Website.KM_PRODUCE],
+    sites: [Website.OFFICIAL, Website.MGSTAGE, Website.PRESTIGE, Website.FALENO, Website.DAHLIA, Website.KM_PRODUCE],
   },
   { id: Website.AVBASE, sites: [Website.AVBASE] },
   { id: Website.R18_DEV, sites: [Website.R18_DEV] },
@@ -31,6 +31,7 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
   { id: Website.JAVBUS, sites: [Website.JAVBUS] },
   { id: Website.JAV321, sites: [Website.JAV321] },
   { id: "h0930_family", sites: [Website.H0930, Website.H4610] },
+  { id: "uncensored_official", sites: [Website.ONEPONDO, Website.TENMUSUME, Website.CARIBBEANCOM, Website.HEYZO] },
   { id: Website.FC2, sites: [Website.FC2] },
   { id: Website.FC2HUB, sites: [Website.FC2HUB] },
   { id: Website.PPVDATABANK, sites: [Website.PPVDATABANK] },

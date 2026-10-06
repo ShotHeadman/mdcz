@@ -2,7 +2,6 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { getNetworkRequestExecutionContext, runWithNetworkChannel } from "./network/networkExecution";
-import { activateNetworkFixtureContext } from "./network/networkFixtureContext";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import { ScrapeTargetConflictError } from "./scrape/preflightScrapeTask";
 import { type ScrapeRunExecution, type ScrapeRunItem, ScrapeRunSession, TaskExecutor } from "./tasks";
@@ -113,7 +112,6 @@ const executionFor = (): ScrapeRunExecution<ScrapeRunItem, string> => {
 
 describe("scrape movie groups", () => {
   it("retains whole-group preparation and its network scrape across pause and resume", async () => {
-    activateNetworkFixtureContext();
     const networkScrape = async () =>
       await runWithNetworkChannel("media", async () => getNetworkRequestExecutionContext()?.execution);
     const execution = executionFor();

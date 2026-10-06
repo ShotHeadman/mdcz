@@ -158,7 +158,7 @@ export class Jav321Crawler extends BaseCrawler {
   }
 
   protected async parseDetailPage(
-    context: Jav321Context,
+    _context: Jav321Context,
     $: CheerioAPI,
     _detailUrl: string,
   ): Promise<CrawlerData | null> {
@@ -198,7 +198,7 @@ export class Jav321Crawler extends BaseCrawler {
         .filter((v): v is string => Boolean(v) && v.length > 0);
     };
 
-    const number = (extractField("品番") ?? context.number).toUpperCase();
+    const number = (extractField("品番") ?? "").toUpperCase();
     const releaseDate = parseDate(extractField("配信開始日") ?? extractField("発売日")) ?? undefined;
     const studio = extractFieldLinks("メーカー")[0];
     const publisher = extractFieldLinks("レーベル")[0] ?? studio;

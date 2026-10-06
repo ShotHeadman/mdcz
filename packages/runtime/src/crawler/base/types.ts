@@ -1,6 +1,7 @@
 import type { SiteRequestConfig } from "@mdcz/runtime/network";
 import type { Website } from "@mdcz/shared/enums";
 import type { R18MetadataLanguage } from "@mdcz/shared/r18";
+import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { FetchGateway } from "../FetchGateway";
 
@@ -36,7 +37,9 @@ export interface CrawlerSuccessResult {
 export interface CrawlerErrorResult {
   success: false;
   error: string;
-  failureReason?: FailureReason;
+  reason: FailureReason;
+  httpStatus?: number;
+  retryAfterMs?: number;
   cause?: unknown;
 }
 
@@ -46,8 +49,6 @@ export interface SearchPageResolution {
   detailUrl: string;
   reuseSearchDocument?: boolean;
 }
-
-export type FailureReason = "not_found" | "region_blocked" | "login_wall" | "timeout" | "parse_error" | "unknown";
 
 export interface CrawlerResponse {
   input: CrawlerInput;
@@ -67,4 +68,5 @@ export interface AdapterDependencies {
 export interface SiteAdapterConstructor {
   new (dependencies: AdapterDependencies): SiteAdapter;
   readonly siteRequestConfigs?: readonly SiteRequestConfig[];
+  readonly numberPattern?: RegExp;
 }

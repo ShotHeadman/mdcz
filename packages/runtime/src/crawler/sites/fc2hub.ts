@@ -1,3 +1,4 @@
+import { SiteError } from "@mdcz/runtime/network";
 import { normalizeCode, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -7,7 +8,8 @@ import { extractAttr, parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
-import { pickSearchResultDetailUrl, toAbsoluteUrl } from "./helpers";
+import { pageIdentityUrl, pickSearchResultDetailUrl, toAbsoluteUrl } from "./helpers";
+import { parseIsoDurationToSeconds } from "./jsonLd";
 
 const BASE_URL = "https://javten.com";
 
@@ -117,23 +119,6 @@ const toJsonLdActorNames = (value: unknown): string[] => {
 const toRating = (value: unknown): number | undefined => {
   const numeric = typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
   return Number.isFinite(numeric) ? numeric : undefined;
-};
-
-const parseIsoDurationToSeconds = (value: unknown): number | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const matched = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/iu);
-  if (!matched) {
-    return undefined;
-  }
-
-  const hours = Number.parseInt(matched[1] ?? "0", 10);
-  const minutes = Number.parseInt(matched[2] ?? "0", 10);
-  const seconds = Number.parseInt(matched[3] ?? "0", 10);
-  const total = hours * 3600 + minutes * 60 + seconds;
-  return total > 0 ? total : undefined;
 };
 
 const readDescriptionText = ($: CheerioAPI): string | undefined => {
@@ -256,7 +241,7 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
   ): Promise<string | SearchPageResolution | null> {
     const pageText = $.root().text();
     if (pageText.includes("Access denied")) {
-      throw new Error("FC2HUB access denied");
+      throw new SiteError("cloudflare", "FC2HUB access denied");
     }
 
     const metaUrl = extractDetailUrlFromMeta($, context.number);
@@ -271,7 +256,7 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
     return pickSearchResultDetailUrl(BASE_URL, candidates, context.number);
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     const movie = readMovieJsonLd($);
     const title = normalizeText($("h1.card-text.fc2-title").first().text()) || normalizeText(movie?.name);
     if (!title) {
@@ -303,7 +288,12 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
     const jsonLdPlot = normalizeText(movie?.description);
     const plot = extractDescriptionText($) ?? (jsonLdPlot || undefined);
 
-    return this.buildFc2Data(context, {
+    const number =
+      toStringArray(movie?.identifier)[0] ??
+      pageIdentityUrl($).match(/\/video\/(?:FC2[-_]?(?:PPV[-_]?)?)?(\d+)/iu)?.[1] ??
+      "";
+    return this.buildFc2Data({
+      number,
       title,
       actors,
       studio,

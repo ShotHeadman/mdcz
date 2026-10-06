@@ -6,6 +6,7 @@ import {
   OverviewMaintenanceCard,
   RecentAcquisitionRemoveDialog,
   RecentAcquisitionsGrid,
+  SiteHealthCard,
 } from "@mdcz/views/overview";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -38,6 +39,7 @@ export function OverviewPage() {
     queryFn: () => api.overview.summary(),
     retry: false,
   });
+  const sitesQ = useQuery({ queryKey: queryKeys.overview.sites, queryFn: () => api.crawler.listSites(), retry: false });
   const output = overviewQ.data?.output;
   const recent = overviewQ.data?.recentAcquisitions ?? [];
   const configured = hasWorkbenchOutput({
@@ -70,6 +72,13 @@ export function OverviewPage() {
             }}
           />
         </section>
+
+        <SiteHealthCard
+          sites={sitesQ.data?.sites ?? []}
+          onOpenSettings={() => {
+            void navigate({ to: buildHref("/settings", { section: "scrape" }) });
+          }}
+        />
 
         {overviewQ.error && <ErrorBanner>{toErrorMessage(overviewQ.error)}</ErrorBanner>}
 

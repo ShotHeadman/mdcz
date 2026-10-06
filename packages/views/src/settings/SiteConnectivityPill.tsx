@@ -14,9 +14,11 @@ type ConnectivityState =
 
 interface SiteConnectivityPillProps {
   site: Website;
+  /** Runs after every check; a passing check lifts the site's unavailability on the backend. */
+  onChecked?: () => void;
 }
 
-export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
+export function SiteConnectivityPill({ site, onChecked }: SiteConnectivityPillProps) {
   const t = useT();
   const form = useFormContext<FieldValues>();
   const services = useSettingsServices();
@@ -31,6 +33,7 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
       "network.proxyType",
       "network.proxy",
       "network.useProxy",
+      "network.directSites",
       "network.javdbUrl",
       "network.javbusUrl",
       "network.javdbCookie",
@@ -63,15 +66,21 @@ export function SiteConnectivityPill({ site }: SiteConnectivityPillProps) {
         return;
       }
 
-      const text = getT().settings.siteConnectivity;
+      const messages = getT();
+      const text = messages.settings.siteConnectivity;
+      const httpResult =
+        result.status === undefined
+          ? `${text.requestFailed}: ${result.error}`
+          : text.httpResult(result.ok, result.status, Math.max(0, Math.trunc(result.latencyMs)));
       setState({
         kind: result.ok ? "success" : "error",
         message: result.redirectedHost
           ? text.redirected(result.redirectedHost)
-          : result.status === undefined
-            ? `${text.requestFailed}: ${result.error}`
-            : text.httpResult(result.ok, result.status, Math.max(0, Math.trunc(result.latencyMs))),
+          : result.reason
+            ? `${messages.domain.failureReasons[result.reason]} · ${httpResult}`
+            : httpResult,
       });
+      onChecked?.();
     } catch (error) {
       if (requestVersionRef.current !== requestVersion) {
         return;

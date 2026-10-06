@@ -22,7 +22,14 @@ pnpm exec playwright install chromium # 组件测试首次运行或浏览器版�
 pnpm exec vitest run --project component --silent
 ```
 
-`test:integration` 同时运行 Node integration、Desktop integration 与 contract tests。`test:coverage` 对 Server 与核心 packages 执行 V8 覆盖率非回退门禁，并在 `coverage/` 生成 HTML/JSON 报告。组件测试通过 Vitest project 直接选择，避免继续增加根脚本。测试策略与设计原则参见 [AGENTS.md](AGENTS.md)，网络录制与回放规则参见 [测试 Fixture 指南](docs/testing-fixtures.md)。
+`test:integration` 同时运行 Node integration、Desktop integration 与 contract tests。`test:coverage` 对 Server 与核心 packages 执行 V8 覆盖率非回退门禁，并在 `coverage/` 生成 HTML/JSON 报告。组件测试通过 Vitest project 直接选择，避免继续增加根脚本。测试策略与设计原则参见 [AGENTS.md](AGENTS.md)。
+
+### 网络录制与回放
+
+- `pnpm dev:webui` 与 `pnpm dev:desktop` 联网刮削，并把每部影片的全部请求录制到 `.tmp/network-recordings/<编号>/`，失败也一并保留（超时除外）。设置 `MDCZ_NETWORK=replay` 则离线回放：先查 `.tmp/network-recordings`，再查 `tests/fixtures/network`，两处都没有的影片直接失败；`MDCZ_REPLAY_DELAY_MS` 为每个回放响应加延迟，用于验证暂停、恢复与停止。
+- 回放按请求方法、规范化后的 URL 与请求体匹配，不比较请求头。录制中的 Cookie、Token 等凭据会替换为确定性的测试值；图片只保存尺寸与哈希，回放时生成同尺寸替身；视频不保存，回放统一使用 `tests/fixtures/mock-media/sample.mp4`。
+- 场景测试位于 `apps/server/src/app.scrape-replay.integration.test.ts`。本地运行 `pnpm test:integration` 时，缺少录制的影片会联网录制并写入 `tests/fixtures/network`；已有录制但请求未命中时测试失败，不会静默重录；`pnpm test:integration -u` 重新录制并更新快照；CI 只读回放。
+- 测试录制只保留与影片本身有关的结果（成功、`not_found`、`parse_error`）。因录制网络导致的失败（地区封锁、登录墙、Cloudflare、限流、IP 封禁、超时、连接失败）记入 `skippedSites`，回放时以相同原因立即失败。`-u` 使用当前机器的网络重录，例如在日本以外重录会把 DMM 记为 `region_blocked`。
 
 ## 代码风格
 

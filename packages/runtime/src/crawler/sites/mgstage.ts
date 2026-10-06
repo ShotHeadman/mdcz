@@ -14,6 +14,8 @@ const MGSTAGE_BASE_URL = "https://www.mgstage.com";
 type CheerioInput = Parameters<CheerioAPI>[0];
 
 export class MGStageCrawler extends BaseCrawler {
+  static readonly numberPattern =
+    /^(?:\d{3}[A-Z]+|SIRO|LUXU|GANA|ARA|MAAN|SCUTE|S-CUTE|SPAY|KIRAY|NAMA|MIUM|ABF|ABP|ABW|ABS|CHN|ENF|ESK|MBM|MGT|PPT|RDT|STARS|SDDE|SDJS|SDAB)[-_]?\d+$/iu;
   site(): Website {
     return Website.MGSTAGE;
   }
@@ -44,7 +46,7 @@ export class MGStageCrawler extends BaseCrawler {
     return pickSearchResultDetailUrl(MGSTAGE_BASE_URL, candidates, context.number);
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     const titleRaw = extractText($, "h1.tag") ?? extractText($, "title");
     if (!titleRaw) {
       return null;
@@ -55,7 +57,7 @@ export class MGStageCrawler extends BaseCrawler {
       return null;
     }
 
-    const number = extractByLabel($, "品番") ?? context.number;
+    const number = extractByLabel($, "品番") ?? "";
     const releaseDate = parseDate(extractByLabel($, "配信開始日") ?? extractByLabel($, "発売日")) ?? undefined;
     const studio = extractByLabel($, "メーカー");
     const publisher = extractByLabel($, "レーベル") ?? studio;

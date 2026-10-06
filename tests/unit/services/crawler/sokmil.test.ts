@@ -5,15 +5,13 @@ import { describe, expect, it } from "vitest";
 import { FixtureNetworkClient, withGateway } from "./fixtures";
 
 const createSearchHtml = (items: Array<{ href: string; pid: string; title: string; actor: string }>): string => `
-  <html><body>
+  <html class="sk-nonmember"><body>
     ${items
       .map(
         (item) => `
           <div class="product" data-pid="${item.pid}">
-            <a href="${item.href}">
-              <span class="title">${item.title}</span>
-            </a>
-            <span class="cast">${item.actor}</span>
+            <div class="product-title"><a class="title-link" href="${item.href}">${item.title}</a></div>
+            <div class="stars">${item.actor}</div>
           </div>
         `,
       )
@@ -22,7 +20,7 @@ const createSearchHtml = (items: Array<{ href: string; pid: string; title: strin
 `;
 
 const detailHtml = `
-  <html><body>
+  <html class="sk-nonmember"><body>
     <h1>甘えたいカラダ 真田まこと</h1>
     <dl>
       <dt>発売日</dt><dd>2026/03/21</dd>
@@ -119,7 +117,7 @@ describe("SokmilCrawler", () => {
       throw new Error("expected failure");
     }
 
-    expect(response.result.failureReason).toBe("not_found");
+    expect(response.result.reason).toBe("not_found");
   });
 
   it("classifies login-wall search pages instead of reporting not found", async () => {
@@ -138,7 +136,7 @@ describe("SokmilCrawler", () => {
       throw new Error("expected failure");
     }
 
-    expect(response.result.failureReason).toBe("login_wall");
+    expect(response.result.reason).toBe("login_wall");
     expect(response.result.error).toBe("SOKMIL: login wall");
   });
 });

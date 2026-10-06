@@ -67,16 +67,20 @@ const looksLikeCode = (text: string): boolean => SCRIPT_PATTERN.test(text);
 const isPrimaryImageField = (field: keyof CrawlerData): field is PrimaryImageAlternativeField =>
   field === "thumb_url" || field === "poster_url";
 
-export const summarizeFailedSiteResults = (number: string, siteResults: SiteCrawlResult[]): string => {
-  const failures = siteResults
-    .filter((result) => !result.success)
-    .map((result) => `${result.site}: ${result.error ?? result.failureReason ?? "unknown error"}`);
+export const summarizeFailedSiteResults = (number: string, siteResults: readonly SiteCrawlResult[]): string => {
+  const reasons = siteResults
+    .filter((result) => result.status !== "success")
+    .map(({ site, status, reason, skipReason }) =>
+      status === "failed"
+        ? `${site}: ${reason}`
+        : `${site}: skipped (${[skipReason, reason].filter(Boolean).join(", ")})`,
+    );
 
-  if (failures.length === 0) {
+  if (reasons.length === 0) {
     return `No crawler returned metadata for ${number}`;
   }
 
-  return `No crawler returned metadata for ${number}. ${failures.join("; ")}`;
+  return `No crawler returned metadata for ${number}. ${reasons.join("; ")}`;
 };
 
 export class FieldAggregator {

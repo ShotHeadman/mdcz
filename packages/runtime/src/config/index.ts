@@ -18,7 +18,12 @@ import {
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { FileOrganizer } from "../scrape/FileOrganizer";
 
-export { buildComputedConfiguration, type ComputedConfiguration } from "./computed";
+export {
+  buildComputedConfiguration,
+  type ComputedConfiguration,
+  resolveSiteProxyUrl,
+  siteNetworkKey,
+} from "./computed";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
 export const RUNTIME_DEFAULT_PROFILE_NAME = "default";

@@ -6,7 +6,7 @@ import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import type { ActorImageService } from "@mdcz/runtime/scrape";
+import type { ActorImageService, SiteResultSink } from "@mdcz/runtime/scrape";
 import { DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
 import { applyDesktopPosterTagBadges } from "../output";
 import { translationMappingStore } from "../translationMappingStore";
@@ -18,6 +18,7 @@ export interface DesktopMaintenanceRuntimeOptions {
   imageHostCooldownStore: PersistentCooldownStore;
   networkClient: NetworkClient;
   signalService: SignalService;
+  recordSiteResults: SiteResultSink;
 }
 
 export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRuntimeOptions): MaintenanceRuntime => {
@@ -26,6 +27,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
     actorImageService: options.actorImageService,
     actorSourceProvider: options.actorSourceProvider,
     crawlerProvider: options.crawlerProvider,
+    recordSiteResults: options.recordSiteResults,
     logger,
     config: {
       get: async () => await configManager.getValidated(),

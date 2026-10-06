@@ -1,3 +1,4 @@
+import { SiteError } from "@mdcz/runtime/network";
 import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -7,7 +8,7 @@ import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
-import { parseClockDurationToSeconds, toAbsoluteUrl } from "./helpers";
+import { pageIdentityUrl, parseClockDurationToSeconds, toAbsoluteUrl } from "./helpers";
 
 const BASE_URL = "https://ppvdatabank.com";
 const NOT_FOUND_MARKERS = ["404 File Not Found", "お探しのページは見つかりませんでした"] as const;
@@ -84,7 +85,7 @@ export class PpvDatabankCrawler extends BaseFc2Crawler {
     return this.reuseSearchDocument(searchUrl);
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const title = extractTitle($);
     if (!title) {
       return null;
@@ -98,7 +99,15 @@ export class PpvDatabankCrawler extends BaseFc2Crawler {
         .map((element) => toAbsoluteUrl(detailUrl, $(element).attr("href"))),
     );
 
-    return this.buildFc2Data(context, {
+    const number =
+      pageIdentityUrl($).match(/\/article\/(\d+)\//u)?.[1] ??
+      pageIdentityUrl($).match(/[?&]id=(\d+)(?:&|$)/u)?.[1] ??
+      $("div.article_title, title")
+        .text()
+        .match(/FC2[\s-]*(?:PPV[\s-]*)?(\d+)/iu)?.[1] ??
+      "";
+    return this.buildFc2Data({
+      number,
       title,
       studio: extractSellerName($),
       thumbUrl,
@@ -110,9 +119,9 @@ export class PpvDatabankCrawler extends BaseFc2Crawler {
     });
   }
 
-  protected override classifyDetailFailure(_context: Context, _detailHtml: string, $: CheerioAPI): string | null {
+  protected override classifyDetailFailure(_context: Context, _detailHtml: string, $: CheerioAPI): SiteError | null {
     if (isNotFoundPage($)) {
-      return "Product not found on ppvdatabank";
+      return new SiteError("not_found", "Product not found on ppvdatabank");
     }
 
     return null;

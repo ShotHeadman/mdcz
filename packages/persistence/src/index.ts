@@ -6,3 +6,4 @@ export * from "./mediaRootRepository";
 export * from "./migrate";
 export * from "./scanTaskRepository";
 export * from "./scrapeRunRepository";
+export * from "./siteResultRepository";

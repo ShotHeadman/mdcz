@@ -1,18 +1,15 @@
-import { normalizeText, toErrorMessage, uniqueStrings } from "@mdcz/runtime/shared";
+import { failureReasonOf } from "@mdcz/runtime/network";
+import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import { DEFAULT_R18_METADATA_LANGUAGE, type R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { CrawlerData } from "@mdcz/shared/types";
+import { toCrawlerErrorResult } from "../base/BaseCrawler";
+import { movieNumbersMatch, verifyMovieNumber } from "../base/identity";
 import { parseDate } from "../base/parser";
-import type {
-  AdapterDependencies,
-  CrawlerInput,
-  CrawlerResponse,
-  CrawlerResult,
-  FailureReason,
-  SiteAdapter,
-} from "../base/types";
+import type { AdapterDependencies, CrawlerInput, CrawlerResponse, CrawlerResult, SiteAdapter } from "../base/types";
 import type { FetchGateway } from "../FetchGateway";
 import type { CrawlerRegistration } from "../registration";
+import { toDmmMovieNumber } from "./dmm/contentId";
 
 const R18_BASE_URL = "https://r18.dev";
 const MAX_GENERATED_GALLERY_IMAGES = 100;
@@ -69,18 +66,6 @@ const readNumber = (record: JsonRecord, keys: readonly string[]): number | undef
   return undefined;
 };
 
-const canonicalR18Code = (value: string | undefined): string => {
-  if (!value) {
-    return "";
-  }
-
-  return value
-    .trim()
-    .replace(/[^a-z0-9]/giu, "")
-    .toUpperCase()
-    .replace(/^([A-Z]+)0+(\d+)$/u, "$1$2");
-};
-
 const looksLikeVideoRecord = (record: JsonRecord): boolean => VIDEO_MARKER_KEYS.some((key) => key in record);
 
 const collectVideoRecords = (value: unknown, depth = 0): JsonRecord[] => {
@@ -116,17 +101,13 @@ const collectVideoRecords = (value: unknown, depth = 0): JsonRecord[] => {
 };
 
 const recordMatchesCode = (record: JsonRecord, expectedCode: string): boolean => {
-  const expected = canonicalR18Code(expectedCode);
-  if (!expected) {
-    return true;
-  }
-
-  const candidates = [
-    readString(record, ["dvd_id", "dvdId", "product_id", "productId"]),
-    readString(record, ["content_id", "contentId"]),
-  ];
-
-  return candidates.some((candidate) => canonicalR18Code(candidate) === expected);
+  const contentId = readString(record, ["content_id", "contentId"]);
+  const dvdId = readString(record, ["dvd_id", "dvdId", "product_id", "productId"]);
+  return (
+    contentId !== undefined &&
+    movieNumbersMatch(toDmmMovieNumber(contentId, expectedCode), expectedCode) &&
+    (dvdId === undefined || movieNumbersMatch(toDmmMovieNumber(dvdId, expectedCode), expectedCode))
+  );
 };
 
 const selectBestRecord = (payload: unknown, expectedCode: string): JsonRecord | null => {
@@ -135,7 +116,7 @@ const selectBestRecord = (payload: unknown, expectedCode: string): JsonRecord | 
     return null;
   }
 
-  return records.find((record) => recordMatchesCode(record, expectedCode)) ?? records[0] ?? null;
+  return records.find((record) => recordMatchesCode(record, expectedCode)) ?? null;
 };
 
 const buildCompactLookupCode = (number: string): string | null => {
@@ -145,13 +126,6 @@ const buildCompactLookupCode = (number: string): string | null => {
   }
 
   return `${matched[1].toLowerCase()}${matched[2].padStart(5, "0")}`;
-};
-
-const buildLookupCodes = (number: string): string[] => {
-  const values = [number.trim(), buildCompactLookupCode(number)].filter((value): value is string =>
-    Boolean(value?.trim()),
-  );
-  return Array.from(new Set(values));
 };
 
 const buildDvdLookupUrl = (code: string): string =>
@@ -329,11 +303,7 @@ const readDurationSeconds = (record: JsonRecord): number | undefined => {
   return seconds === undefined ? undefined : Math.max(0, Math.trunc(seconds));
 };
 
-const mapR18RecordToCrawlerData = (
-  record: JsonRecord,
-  inputNumber: string,
-  language: R18MetadataLanguage,
-): CrawlerData | null => {
+const mapR18RecordToCrawlerData = (record: JsonRecord, language: R18MetadataLanguage): CrawlerData | null => {
   const title = pickLocalizedValue(record, language, {
     ja: ["title_ja", "titleJa", "title_japanese", "titleJapanese"],
     en: ["title_en", "titleEn", "title_english", "titleEnglish"],
@@ -343,7 +313,7 @@ const mapR18RecordToCrawlerData = (
     return null;
   }
 
-  const number = readString(record, ["dvd_id", "dvdId", "product_id", "productId"]) ?? inputNumber;
+  const number = readString(record, ["dvd_id", "dvdId", "product_id", "productId", "content_id", "contentId"]) ?? "";
   const actressNames = readEntityNames(record, ["actresses", "actress", "female_performers"], language);
   const actorNames = readEntityNames(record, ["actors", "actor", "performers", "casts"], language);
   const genres = readEntityNames(record, ["categories", "category", "genres", "genre"], language);
@@ -381,29 +351,7 @@ const mapR18RecordToCrawlerData = (
   };
 };
 
-const toFailureReason = (message: string): FailureReason => {
-  const lowered = message.toLowerCase();
-  if (
-    lowered.includes("timeout") ||
-    lowered.includes("timed out") ||
-    lowered.includes("etimedout") ||
-    lowered.includes("abort")
-  ) {
-    return "timeout";
-  }
-
-  if (lowered.includes("404") || lowered.includes("not found")) {
-    return "not_found";
-  }
-
-  if (lowered.includes("parse") || lowered.includes("metadata") || lowered.includes("malformed")) {
-    return "parse_error";
-  }
-
-  return "unknown";
-};
-
-const isNotFoundError = (error: unknown): boolean => toFailureReason(toErrorMessage(error)) === "not_found";
+const isNotFoundError = (error: unknown): boolean => failureReasonOf(error) === "not_found";
 
 export class R18DevCrawler implements SiteAdapter {
   private readonly gateway: FetchGateway;
@@ -430,47 +378,42 @@ export class R18DevCrawler implements SiteAdapter {
   private async crawlInternal(input: CrawlerInput): Promise<CrawlerResult> {
     try {
       const language = input.options?.r18MetadataLanguage ?? DEFAULT_R18_METADATA_LANGUAGE;
-      const lookupRecord = await this.fetchLookupRecord(input);
-      if (!lookupRecord) {
+      const record = await this.fetchRecord(input);
+      if (!record) {
         return {
           success: false,
           error: `R18.dev detail URL not found for ${input.number}`,
-          failureReason: "not_found",
+          reason: "not_found",
         };
       }
 
-      const contentId = readString(lookupRecord, ["content_id", "contentId"]);
-      const detailRecord = contentId
-        ? ((await this.fetchCombinedRecord(contentId, input)) ?? lookupRecord)
-        : lookupRecord;
-      const data = mapR18RecordToCrawlerData(detailRecord, input.number, language);
+      const data = mapR18RecordToCrawlerData(record, language);
       if (!data) {
         return {
           success: false,
           error: `R18.dev metadata parsing failed for ${input.number}`,
-          failureReason: "parse_error",
+          reason: "parse_error",
         };
       }
 
+      data.number = toDmmMovieNumber(data.number, input.number);
+      verifyMovieNumber(data.number, input.number);
       return {
         success: true,
         data,
       };
     } catch (error) {
-      const message = toErrorMessage(error);
-      return {
-        success: false,
-        error: message,
-        failureReason: toFailureReason(message),
-        cause: error,
-      };
+      return toCrawlerErrorResult(error);
     }
   }
 
-  private async fetchLookupRecord(input: CrawlerInput): Promise<JsonRecord | null> {
-    for (const code of buildLookupCodes(input.number)) {
+  private async fetchRecord(input: CrawlerInput): Promise<JsonRecord | null> {
+    const contentId = buildCompactLookupCode(input.number);
+    const urls = [...(contentId ? [buildCombinedUrl(contentId)] : []), buildDvdLookupUrl(input.number.trim())];
+    let lookupRecord: JsonRecord | null = null;
+    for (const url of urls) {
       try {
-        const payload = await this.gateway.fetchJson<unknown>(buildDvdLookupUrl(code), {
+        const payload = await this.gateway.fetchJson<unknown>(url, {
           timeout: input.options?.timeoutMs,
           signal: input.options?.signal,
           headers: {
@@ -478,7 +421,14 @@ export class R18DevCrawler implements SiteAdapter {
           },
         });
         const record = selectBestRecord(payload, input.number);
-        if (record) {
+        const recordContentId = record ? readString(record, ["content_id", "contentId"]) : undefined;
+        if (record && recordContentId) {
+          const combinedUrl = buildCombinedUrl(recordContentId);
+          if (url.includes("/dvd_id=") && !urls.includes(combinedUrl)) {
+            lookupRecord = record;
+            urls.push(combinedUrl);
+            continue;
+          }
           return record;
         }
       } catch (error) {
@@ -488,25 +438,7 @@ export class R18DevCrawler implements SiteAdapter {
       }
     }
 
-    return null;
-  }
-
-  private async fetchCombinedRecord(contentId: string, input: CrawlerInput): Promise<JsonRecord | null> {
-    try {
-      const payload = await this.gateway.fetchJson<unknown>(buildCombinedUrl(contentId), {
-        timeout: input.options?.timeoutMs,
-        signal: input.options?.signal,
-        headers: {
-          accept: "application/json",
-        },
-      });
-      return selectBestRecord(payload, contentId);
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        return null;
-      }
-      throw error;
-    }
+    return lookupRecord;
   }
 }
 

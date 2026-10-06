@@ -1,4 +1,4 @@
-import type { SiteRequestConfig } from "@mdcz/runtime/network";
+import { SiteError, type SiteRequestConfig } from "@mdcz/runtime/network";
 import { normalizeCode } from "@mdcz/runtime/shared/utils";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -9,6 +9,9 @@ import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { toAbsoluteUrl } from "./helpers";
+
+const FANTIA_AGE_VERIFICATION_MESSAGE =
+  "Fantia age verification detected; please login first via browser and provide cookies";
 
 const FANTIA_BASE_URL = "https://fantia.jp";
 const FANTIA_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
@@ -203,13 +206,13 @@ export class FantiaCrawler extends BaseCrawler {
       const html = await this.fetch(url, context);
       const $ = load(html);
       if (isAgeVerificationPage($)) {
-        throw new Error("Fantia age verification detected; please login first via browser and provide cookies");
+        throw new SiteError("login_wall", FANTIA_AGE_VERIFICATION_MESSAGE);
       }
       if (isExpectedDetailPage($, urlpath)) {
         return url;
       }
     } catch (error) {
-      if (error instanceof Error && error.message.includes("Fantia age verification detected")) {
+      if (error instanceof SiteError && error.reason === "login_wall") {
         throw error;
       }
       this.logger.debug(`Failed to fetch direct URL: ${url}`);
@@ -306,8 +309,7 @@ export class FantiaCrawler extends BaseCrawler {
     searchUrl: string,
   ): Promise<string | SearchPageResolution | null> {
     if (isAgeVerificationPage($)) {
-      this.logger.debug("Fantia age verification detected; please login first via browser and provide cookies");
-      throw new Error("Fantia age verification detected; please login first via browser and provide cookies");
+      throw new SiteError("login_wall", FANTIA_AGE_VERIFICATION_MESSAGE);
     }
 
     return this.reuseSearchDocument(searchUrl);
@@ -316,10 +318,10 @@ export class FantiaCrawler extends BaseCrawler {
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     this.logger.debug(`url is ${_detailUrl}`);
     if (isAgeVerificationPage($)) {
-      throw new Error("Fantia age verification detected; please login first via browser and provide cookies");
+      throw new SiteError("login_wall", FANTIA_AGE_VERIFICATION_MESSAGE);
     }
 
-    const number = context.number;
+    const number = getJsonLdValue($, "content_id") ?? "";
     const publisher = getJsonLdValue($, "fanclub_name");
     if (!publisher) {
       return null;

@@ -56,18 +56,3 @@ export const classifyJavbusPage = (html: string): JavbusPageClassification => {
 
   return "unknown";
 };
-
-// The English prefixes ("region blocked" / "login wall") are load-bearing:
-// BaseCrawler.toFailureReason derives failureReason by keyword-matching the
-// thrown message.
-export const javbusBlockedPageMessage = (page: JavbusPageClassification): string | null => {
-  if (page === "verification_required") {
-    return `JavBus region blocked by age/region verification. JavBus movie pages require age/region verification. Please complete verification in your browser and copy cookies. Forum account registration does not resolve this.`;
-  }
-
-  if (page === "login_wall") {
-    return "JavBus login wall detected; the current Cookie cannot access film content.";
-  }
-
-  return null;
-};

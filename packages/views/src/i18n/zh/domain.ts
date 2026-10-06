@@ -1,6 +1,35 @@
 import type { Messages } from "../en";
 
 export const domain: Messages["domain"] = {
+  failureReasons: {
+    region_blocked: "当前网络地区受限",
+    login_wall: "需要登录或验证",
+    cloudflare: "被 Cloudflare 验证拦截",
+    rate_limited: "请求过于频繁",
+    ip_banned: "当前网络的 IP 已被封禁",
+    timeout: "超时",
+    empty_shell: "返回空白页面",
+    not_found: "未找到",
+    parse_error: "页面解析失败",
+    http_error: "HTTP 错误",
+    network_error: "连接失败",
+    unknown: "未知错误",
+  },
+  siteHealth: {
+    title: "当前网络下不可用的站点",
+    unavailable: (site, reason) => `${site}：${reason}。`,
+    paused: (site, reason, until) => `${site}：${reason}，暂停至 ${until}。`,
+    remedies: {
+      region_blocked: "为该站点开启日本代理，或停用该站点；其他已启用的站点不受影响。",
+      login_wall: "在网络设置中填写或更新该站点的 Cookie。",
+      cloudflare: "通过代理或镜像访问该站点。",
+      ip_banned: "等待封禁解除、更换代理出口，或停用该站点。",
+    },
+    recheck: "连通性检测通过、修改代理或 Cookie、或重启应用后，该站点会恢复可用。",
+    openSettings: "站点设置",
+    useProxy: "代理",
+    proxyOff: "请先在网络设置中启用代理",
+  },
   maintenancePresets: {
     import_local: { label: "本地导入", description: "读取现有 NFO 与图片并登记到媒体库，不修改任何文件" },
     refresh_metadata: { label: "原地更新", description: "联网刷新元数据，对比NFO差异" },

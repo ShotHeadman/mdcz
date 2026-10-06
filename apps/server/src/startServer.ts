@@ -2,23 +2,14 @@ import type { BuildServerOptions } from "./app";
 import { buildServer } from "./app";
 import { parseHost, parsePort } from "./config";
 
-export const startServer = async (
-  options: BuildServerOptions = {},
-  finalize: () => Promise<void> = async () => undefined,
-): Promise<void> => {
+export const startServer = async (options: BuildServerOptions = {}): Promise<void> => {
   const port = parsePort(process.env.PORT);
   const host = parseHost(process.env.MDCZ_HOST);
   const { fastify } = buildServer(options);
   let shutdownPromise: Promise<void> | undefined;
 
   const shutdown = (): Promise<void> => {
-    shutdownPromise ??= (async () => {
-      try {
-        await fastify.close();
-      } finally {
-        await finalize();
-      }
-    })();
+    shutdownPromise ??= fastify.close();
     return shutdownPromise;
   };
 

@@ -1,12 +1,13 @@
-import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
+import { SiteError } from "@mdcz/runtime/network";
+import { isRecord, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../base/BaseCrawler";
 import type { Context, CrawlerInput, SearchPageResolution } from "../base/types";
-import { toAbsoluteUrl } from "./helpers";
-import { type JsonLdRecord, readFirstJsonLdRecord } from "./jsonLd";
+import { pageIdentityUrl, toAbsoluteUrl } from "./helpers";
+import { type JsonLdRecord, parseIsoDurationToSeconds, readFirstJsonLdRecord, readJsonLdActors } from "./jsonLd";
 
 interface H0930FamilyContext extends Context {
   movieId: string;
@@ -22,9 +23,6 @@ export interface H0930FamilySite {
 }
 
 const MOVIE_ID_PATTERN = /^[a-z]+\d+$/iu;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const toStringValue = (value: unknown): string | undefined => {
   if (typeof value !== "string" && typeof value !== "number") {
@@ -50,39 +48,6 @@ const readFirstString = (...values: unknown[]): string | undefined => {
 };
 
 const parseIsoDate = (value: string | undefined): string | undefined => value?.match(/^(\d{4}-\d{2}-\d{2})/u)?.[1];
-
-const parseIsoDurationToSeconds = (value: unknown): number | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const matched = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/iu);
-  if (!matched) {
-    return undefined;
-  }
-
-  const hours = Number.parseInt(matched[1] ?? "0", 10);
-  const minutes = Number.parseInt(matched[2] ?? "0", 10);
-  const seconds = Number.parseInt(matched[3] ?? "0", 10);
-  const total = hours * 3600 + minutes * 60 + seconds;
-  return total > 0 ? total : undefined;
-};
-
-const toJsonLdActors = (value: unknown): string[] => {
-  if (typeof value === "string") {
-    return uniqueStrings([value]);
-  }
-
-  if (Array.isArray(value)) {
-    return uniqueStrings(
-      value.map((entry) =>
-        typeof entry === "string" ? entry : isRecord(entry) ? toStringValue(entry.name) : undefined,
-      ),
-    );
-  }
-
-  return isRecord(value) ? uniqueStrings([toStringValue(value.name)]) : [];
-};
 
 const toJsonLdImage = (value: unknown): string | undefined => {
   if (typeof value === "string") {
@@ -172,8 +137,8 @@ export abstract class BaseH0930FamilyCrawler extends BaseCrawler {
     _detailHtml: string,
     _$: CheerioAPI,
     _detailUrl: string,
-  ): string | null {
-    return `Detail URL not found for ${context.canonicalNumber}`;
+  ): SiteError {
+    return new SiteError("not_found", `Detail URL not found for ${context.canonicalNumber}`);
   }
 
   protected async parseDetailPage(
@@ -202,16 +167,17 @@ export abstract class BaseH0930FamilyCrawler extends BaseCrawler {
       detailUrl,
       readFirstString(video?.contentUrl, $("video source").first().attr("src"), $("video").first().attr("src")),
     );
-    const actors = uniqueStrings([...toJsonLdActors(jsonLd?.actor), ...toJsonLdActors(video?.actor)]);
+    const actors = uniqueStrings([...readJsonLdActors(jsonLd?.actor), ...readJsonLdActors(video?.actor)]);
     const metaKeywords = extractMetaContent($, "meta[name='keywords']")
       ?.split(/[、,，]/u)
       .map((value) => normalizeText(value))
       .filter((value) => value.length > 0);
     const provider = readFirstString(video?.provider, readRecordString(jsonLd, "provider"), this.family.provider);
+    const movieId = (pageIdentityUrl($) || coverUrl || "").match(/\/moviepages\/([a-z]+\d+)\//iu)?.[1];
 
     return {
       title,
-      number: context.canonicalNumber,
+      number: movieId ? `${this.family.numberPrefix}-${movieId.toUpperCase()}` : "",
       actors,
       genres: uniqueStrings(metaKeywords ?? []),
       studio: provider,

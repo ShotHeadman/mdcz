@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { FixtureNetworkClient, withGateway } from "./fixtures";
 
 describe("JavdbCrawler", () => {
-  it("parses detail pages and keeps only explicitly marked female actors", async () => {
+  it("picks the search result with the same number, parses detail pages, and explains sign-in redirects", async () => {
     const cases = [
       {
         number: "SSIS-243",
@@ -14,7 +14,7 @@ describe("JavdbCrawler", () => {
         searchHtml: `
           <html><body>
             <a class="box" href="/v/abcd1">
-              <div class="video-title"><strong>SSIS-243 Something</strong></div>
+              <div class="video-title"><strong>SSIS-243</strong> Something</div>
               <div class="meta">meta text</div>
             </a>
           </body></html>
@@ -106,32 +106,28 @@ describe("JavdbCrawler", () => {
         },
       },
       {
-        number: "ABW-123",
-        searchUrl: "https://javdb.com/search?q=ABW-123",
-        detailUrl: "https://javdb.com/v/fuzzy1",
+        number: "1PON-091026_001",
+        searchUrl: "https://javdb.com/search?q=091026_001",
+        detailUrl: "https://javdb.com/v/onepon1",
         searchHtml: `
           <html><body>
-            <a class="box" href="/v/fuzzy1">
-              <div class="video-title"><strong>Completely Different Title</strong></div>
-              <div class="meta">ABW 123 2024-02-08</div>
-            </a>
+            <a class="box" href="/v/carib1"><div class="video-title"><strong>091026-001</strong> Caribbeancom</div></a>
+            <a class="box" href="/v/onepon1"><div class="video-title"><strong>091026_001</strong> 1pondo</div></a>
           </body></html>
         `,
         detailHtml: `
           <html><body>
-            <h2 class="title is-4">
-              <strong class="current-title">ABW-123 Fuzzy Match Title</strong>
-            </h2>
-            <a class="button is-white copy-to-clipboard" data-clipboard-text="ABW-123">copy</a>
+            <h2 class="title is-4"><strong class="current-title">1pondo Title</strong></h2>
+            <a class="button is-white copy-to-clipboard" data-clipboard-text="091026_001">copy</a>
           </body></html>
         `,
-        cookies: undefined,
+        cookies: "javdb=cookie",
         assert: (data: ReturnType<JavdbCrawler["crawl"]> extends Promise<infer T> ? T : never) => {
           if (!data.result.success) {
             throw new Error("expected success");
           }
-          expect(data.result.data.number).toBe("ABW-123");
-          expect(data.result.data.title).toBe("ABW-123 Fuzzy Match Title");
+          expect(data.result.data.number).toBe("091026_001");
+          expect(data.result.data.title).toBe("1pondo Title");
         },
       },
       {
@@ -150,6 +146,7 @@ describe("JavdbCrawler", () => {
           <html><body>
             <h2 class="title is-4">
               <strong class="current-title">MIDE-999 Title</strong>
+              <a class="button is-white copy-to-clipboard" data-clipboard-text="MIDE-999"></a>
             </h2>
             <div class="panel-block">
               <strong>演員:</strong>
@@ -191,6 +188,7 @@ describe("JavdbCrawler", () => {
         detailHtml: `
           <html><body>
             <h2 class="title is-4"><strong class="current-title">Mirror Title</strong></h2>
+            <a class="button is-white copy-to-clipboard" data-clipboard-text="MIRR-001"></a>
             <img class="video-cover" src="/covers/mirror.jpg" />
           </body></html>
         `,
@@ -200,6 +198,25 @@ describe("JavdbCrawler", () => {
             throw new Error("expected success");
           }
           expect(data.result.data.thumb_url).toBe("https://javdb571.com/covers/mirror.jpg");
+        },
+      },
+      {
+        number: "HEYZO-3806",
+        searchUrl: "https://javdb.com/search?q=HEYZO-3806",
+        detailUrl: "https://javdb.com/v/6dWKWQ",
+        searchHtml: `
+          <html><body>
+            <a class="box" href="/v/6dWKWQ"><div class="video-title"><strong>HEYZO-3806</strong></div></a>
+          </body></html>
+        `,
+        detailHtml: `
+          <html><head><title> Sign in | JavDB </title></head><body>
+            <form action="/user_sessions" accept-charset="UTF-8" method="post"><input name="email" /></form>
+          </body></html>
+        `,
+        cookies: undefined,
+        assert: (data: ReturnType<JavdbCrawler["crawl"]> extends Promise<infer T> ? T : never) => {
+          expect(data.result).toMatchObject({ success: false, reason: "login_wall" });
         },
       },
     ];
@@ -218,7 +235,6 @@ describe("JavdbCrawler", () => {
         options: { cookies, baseUrl },
       });
 
-      expect(response.result.success).toBe(true);
       expect(networkClient.requests.map(({ headers }) => headers.get("accept-language"))).toEqual([
         "zh-TW,zh;q=0.9",
         "zh-TW,zh;q=0.9",

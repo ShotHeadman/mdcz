@@ -9,6 +9,7 @@ import {
   DownloadManager,
   FileOrganizer,
   NfoGenerator,
+  type SiteResultSink,
   TranslateService,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
@@ -23,6 +24,7 @@ export interface ServerMaintenanceRuntimeDependencies {
   actorImageService: ActorImageService;
   actorSourceProvider: ActorSourceProvider;
   mappingStore?: TranslationMappingStore;
+  recordSiteResults: SiteResultSink;
 }
 
 export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDependencies): MaintenanceRuntime => {
@@ -31,6 +33,7 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
     actorImageService: deps.actorImageService,
     actorSourceProvider: deps.actorSourceProvider,
     crawlerProvider: deps.crawlerProvider,
+    recordSiteResults: deps.recordSiteResults,
     logger,
     config: deps.config,
     downloadManager: new DownloadManager(deps.networkClient, {

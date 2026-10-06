@@ -27,20 +27,13 @@ export class RuntimeActionService {
   }
 
   async listCrawlerSites(): Promise<CrawlerListSitesResponse> {
-    const configuration = await this.config.get();
-    const enabledSites = new Set(configuration.scrape.sites);
-    return {
-      sites: this.crawlerProvider.listSites().map(({ site, native }) => ({
-        site,
-        name: site,
-        enabled: enabledSites.has(site),
-        native,
-      })),
-    };
+    return { sites: this.crawlerProvider.listSites((await this.config.get()).scrape.sites) };
   }
 
   async probeSiteConnectivity(input: CrawlerProbeSiteConnectivityInput): Promise<SiteConnectivityProbeResponse> {
-    return await probeSiteConnectivity(input.site, await this.config.get(), this.networkClient);
+    const result = await probeSiteConnectivity(input.site, await this.config.get(), this.networkClient);
+    if (result.ok) this.crawlerProvider.resetSite(input.site);
+    return result;
   }
 
   async checkCookies(): Promise<NetworkCheckCookiesResponse> {

@@ -1,14 +1,7 @@
+import { isRecord, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import type { CheerioAPI } from "cheerio";
 
 export type JsonLdRecord = Record<string, unknown>;
-
-const toRecord = (value: unknown): JsonLdRecord | null => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as JsonLdRecord;
-};
 
 const unpackGraphRecords = (record: JsonLdRecord): JsonLdRecord[] => {
   const graph = record["@graph"];
@@ -16,7 +9,7 @@ const unpackGraphRecords = (record: JsonLdRecord): JsonLdRecord[] => {
     return [record];
   }
 
-  const fromGraph = graph.map((entry) => toRecord(entry)).filter((entry): entry is JsonLdRecord => Boolean(entry));
+  const fromGraph = graph.filter(isRecord);
   return fromGraph.length > 0 ? fromGraph : [record];
 };
 
@@ -34,12 +27,11 @@ export const readFirstJsonLdRecord = <T extends JsonLdRecord = JsonLdRecord>($: 
       const records = Array.isArray(parsed) ? parsed : [parsed];
 
       for (const record of records) {
-        const normalized = toRecord(record);
-        if (!normalized) {
+        if (!isRecord(record)) {
           continue;
         }
 
-        const candidate = unpackGraphRecords(normalized)[0];
+        const candidate = unpackGraphRecords(record)[0];
         if (candidate) {
           return candidate as T;
         }
@@ -49,3 +41,29 @@ export const readFirstJsonLdRecord = <T extends JsonLdRecord = JsonLdRecord>($: 
 
   return null;
 };
+
+export const parseIsoDurationToSeconds = (value: unknown): number | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const matched = value.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/iu);
+  if (!matched) {
+    return undefined;
+  }
+
+  const hours = Number.parseInt(matched[1] ?? "0", 10);
+  const minutes = Number.parseInt(matched[2] ?? "0", 10);
+  const seconds = Number.parseInt(matched[3] ?? "0", 10);
+  const total = hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : undefined;
+};
+
+/** Actor names from a JSON-LD `actor` value, which may be a name, a Person, or a list of either. */
+export const readJsonLdActors = (value: unknown): string[] =>
+  uniqueStrings(
+    (Array.isArray(value) ? value : [value]).map((actor) => {
+      const name = isRecord(actor) ? actor.name : actor;
+      return typeof name === "string" ? normalizeText(name) : undefined;
+    }),
+  );

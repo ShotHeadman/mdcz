@@ -25,14 +25,6 @@ interface DmmVideoDataResponse {
     maker?: { name?: string };
     label?: { name?: string };
     genres?: Array<{ name?: string }>;
-    relatedTags?: Array<
-      | {
-          tags?: Array<{ name?: string }>;
-        }
-      | {
-          name?: string;
-        }
-    >;
     packageImage?: { largeUrl?: string; mediumUrl?: string };
     sampleImages?: Array<{ largeImageUrl?: string }>;
     sample2DMovie?: { highestMovieUrl?: string; hlsMovieUrl?: string };
@@ -53,7 +45,7 @@ interface DmmVideoSearchResponse {
 }
 
 const CONTENT_PAGE_DATA_QUERY =
-  "query ContentPageData($id: ID!, $shouldFetchRelatedTags: Boolean = true) { ppvContent(id: $id) { title description makerContentId makerReleasedAt deliveryStartDate duration packageImage { largeUrl mediumUrl } sampleImages { largeImageUrl } sample2DMovie { highestMovieUrl hlsMovieUrl } actresses { name } directors { name } series { name } maker { name } label { name } genres { name } relatedTags(limit: 16) @include(if: $shouldFetchRelatedTags) { ... on ContentTagGroup { tags { name } } ... on ContentTag { name } } } reviewSummary(contentId: $id) { average } }";
+  "query ContentPageData($id: ID!) { ppvContent(id: $id) { title description makerContentId makerReleasedAt deliveryStartDate duration packageImage { largeUrl mediumUrl } sampleImages { largeImageUrl } sample2DMovie { highestMovieUrl hlsMovieUrl } actresses { name } directors { name } series { name } maker { name } label { name } genres { name } } reviewSummary(contentId: $id) { average } }";
 
 export const normalizeDmmVideoToken = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/gu, "");
 
@@ -143,7 +135,6 @@ export const buildDmmVideoPayload = (id: string): GraphQLOperation => {
     query: CONTENT_PAGE_DATA_QUERY,
     variables: {
       id,
-      shouldFetchRelatedTags: true,
     },
   };
 };
@@ -256,27 +247,26 @@ const buildTrailerFromPlaylist = (playlistUrl: string | undefined): string | und
   return liteVideo.replace("playlist.m3u8", `${match[1]}_sm_w.mp4`);
 };
 
-export const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Partial<CrawlerData> | null => {
+export const parseDmmVideoData = (payload: unknown): Partial<CrawlerData> | null => {
   const data = (payload as { data?: DmmVideoDataResponse })?.data ?? (payload as DmmVideoDataResponse);
   const content = data?.ppvContent;
   if (!content?.title) {
     return null;
   }
 
-  const relatedTags = uniqueStrings(
-    (content.relatedTags ?? []).flatMap((item) => {
-      if ("tags" in item && Array.isArray(item.tags)) {
-        return item.tags.map((tag) => tag.name);
-      }
+  const genres = uniqueStrings((content.genres ?? []).map((item) => item.name));
+  const releasedAt = content.makerReleasedAt || content.deliveryStartDate;
+  // DMM timestamps use UTC; midnight in Japan falls on the previous UTC date.
+  const releaseDate = releasedAt
+    ? new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(releasedAt))
+    : undefined;
 
-      return "name" in item ? [item.name] : [];
-    }),
-  );
-  const genres = uniqueStrings([...(content.genres ?? []).map((item) => item.name), ...relatedTags]).filter(
-    (value): value is string => Boolean(value),
-  );
-
-  const number = content.makerContentId?.trim() || fallbackNumber;
+  const number = content.makerContentId?.trim() ?? "";
   const trailer =
     content.sample2DMovie?.highestMovieUrl ?? buildTrailerFromPlaylist(content.sample2DMovie?.hlsMovieUrl);
 
@@ -292,7 +282,7 @@ export const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Par
     series: content.series?.name,
     // GraphQL descriptions carry HTML line breaks; only <br> is converted since plots may contain literal angle brackets.
     plot: content.description?.replace(/<br\s*\/?>/giu, "\n"),
-    release_date: content.makerReleasedAt?.slice(0, 10) ?? content.deliveryStartDate?.slice(0, 10),
+    release_date: releaseDate,
     rating: data?.reviewSummary?.average,
     thumb_url: content.packageImage?.largeUrl,
     poster_url: content.packageImage?.mediumUrl,
@@ -305,7 +295,6 @@ export const parseDmmVideoData = (payload: unknown, fallbackNumber: string): Par
 
 export const toDmmVideoCrawlerData = (
   data: Partial<CrawlerData> | null | undefined,
-  fallbackNumber: string,
   website: Website.DMM | Website.DMM_TV,
 ): CrawlerData | null => {
   if (!data?.title || hasLoginWallTitle(data.title)) {
@@ -314,7 +303,7 @@ export const toDmmVideoCrawlerData = (
 
   return {
     title: data.title,
-    number: data.number ?? fallbackNumber,
+    number: data.number ?? "",
     durationSeconds: data.durationSeconds,
     actors: data.actors ?? [],
     genres: data.genres ?? [],

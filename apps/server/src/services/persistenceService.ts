@@ -8,6 +8,7 @@ import {
   runMigrations,
   ScanTaskRepository,
   ScrapeRunRepository,
+  SiteResultRepository,
 } from "@mdcz/persistence";
 import { recoverInterruptedPublications } from "@mdcz/runtime";
 import type Database from "better-sqlite3";
@@ -21,6 +22,7 @@ export interface ServerPersistenceRepositories {
   mediaRoots: MediaRootRepository;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
+  siteResults: SiteResultRepository;
 }
 
 export interface ServerPersistenceState {
@@ -79,6 +81,7 @@ export class ServerPersistenceService {
           mediaRoots,
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
+          siteResults: new SiteResultRepository(database),
         },
       };
       return this.state;

@@ -31,11 +31,13 @@ describe("settings parity runtime helpers", () => {
     const probe = vi.fn(async () => ({
       ok: true,
       status: 200,
+      contentLength: null,
       resolvedUrl: "https://fantia.jp",
     }));
 
     await expect(probeSiteConnectivity(Website.FANTIA, config, { probe })).resolves.toMatchObject({ ok: true });
     expect(probe).toHaveBeenCalledWith("https://fantia.jp", {
+      method: "GET",
       headers: { cookie: "fantia_session=ok" },
       timeout: 10000,
     });

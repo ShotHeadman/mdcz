@@ -58,7 +58,7 @@ import type {
 import { toScrapeRunSnapshotDto } from "../tasks/session/scrapeRunSnapshotDto";
 import type { ActorImageService } from "./ActorImageService";
 import type { RuntimeActorSourceProvider } from "./actorOutput";
-import { AggregationService } from "./aggregation";
+import { AggregationService, type CrawlerPort, type SiteResultSink } from "./aggregation";
 import { DirectoryInventory } from "./DirectoryInventory";
 import { createDirectoryScope, discoverDirectoryFiles } from "./directoryDiscovery";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
@@ -171,9 +171,10 @@ export interface ScrapeRunnerDependencies {
     library: LibraryRepository;
     mediaRoots: ConfiguredMediaRootService;
   };
+  recordSiteResults: SiteResultSink;
   getConfiguration: () => Promise<Configuration>;
   networkClient: NetworkClient;
-  crawlerProvider: import("../crawler").CrawlerProvider;
+  crawlerProvider: CrawlerPort;
   imageHostCooldownStore: ImageHostCooldownStore;
   actorImageService: ActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
@@ -941,6 +942,7 @@ export class ScrapeRunner {
             config: configuration,
             logger: this.logger,
             signal,
+            recordSiteResults: this.deps.recordSiteResults,
           }),
         translateService: this.translateService,
         nfoGenerator: this.nfoGenerator,

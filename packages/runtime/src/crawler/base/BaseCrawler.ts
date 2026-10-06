@@ -1,16 +1,18 @@
+import { findSiteError, SiteError } from "@mdcz/runtime/network";
 import { runtimeLoggerService, toErrorMessage } from "@mdcz/runtime/shared";
 import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { type CheerioAPI, load } from "cheerio";
 import type { FetchGateway, FetchOptions } from "../FetchGateway";
+import { verifyMovieNumber } from "./identity";
 
 import type {
   AdapterDependencies,
   Context,
+  CrawlerErrorResult,
   CrawlerInput,
   CrawlerResponse,
   CrawlerResult,
-  FailureReason,
   SearchPageResolution,
   SiteAdapter,
 } from "./types";
@@ -30,35 +32,16 @@ interface DetailRequest {
   searchDoc?: CheerioAPI;
 }
 
-const toFailureReason = (message: string): FailureReason => {
-  const lowered = message.toLowerCase();
-
-  if (lowered.includes("region blocked")) {
-    return "region_blocked";
-  }
-
-  if (lowered.includes("login wall")) {
-    return "login_wall";
-  }
-
-  if (
-    lowered.includes("timeout") ||
-    lowered.includes("timed out") ||
-    lowered.includes("etimedout") ||
-    lowered.includes("abort")
-  ) {
-    return "timeout";
-  }
-
-  if (lowered.includes("not found") || lowered.includes("detail url not found") || lowered.includes("search url")) {
-    return "not_found";
-  }
-
-  if (lowered.includes("parse") || lowered.includes("metadata")) {
-    return "parse_error";
-  }
-
-  return "unknown";
+export const toCrawlerErrorResult = (error: unknown): CrawlerErrorResult => {
+  const siteError = findSiteError(error);
+  return {
+    success: false,
+    error: toErrorMessage(error),
+    reason: siteError?.reason ?? "unknown",
+    httpStatus: siteError?.options.httpStatus,
+    retryAfterMs: siteError?.options.retryAfterMs,
+    cause: error,
+  };
 };
 
 export abstract class BaseCrawler implements SiteAdapter {
@@ -93,12 +76,13 @@ export abstract class BaseCrawler implements SiteAdapter {
 
   protected abstract parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null>;
 
+  /** Explains a detail page that yielded no metadata; unexplained pages count as parse errors. */
   protected classifyDetailFailure(
     _context: Context,
     _detailHtml: string,
     _$: CheerioAPI,
     _detailUrl: string,
-  ): string | null {
+  ): SiteError | null {
     return null;
   }
 
@@ -113,7 +97,7 @@ export abstract class BaseCrawler implements SiteAdapter {
     const startedAt = Date.now();
     const context = this.newContext(input);
 
-    const result = await this.runPipeline(context);
+    const result = await this.runPipeline(context, input.number);
 
     return {
       input,
@@ -122,7 +106,7 @@ export abstract class BaseCrawler implements SiteAdapter {
     };
   }
 
-  private async runPipeline(context: Context): Promise<CrawlerResult> {
+  private async runPipeline(context: Context, requestedNumber: string): Promise<CrawlerResult> {
     try {
       const detailRequest: DetailRequest =
         typeof context.options.detailUrl === "string" && context.options.detailUrl.trim().length > 0
@@ -136,50 +120,35 @@ export abstract class BaseCrawler implements SiteAdapter {
         ? (detailRequest.searchDoc ?? load(detailHtml))
         : load(detailHtml);
       const data = await this.parseDetailPage(context, detailDoc, detailRequest.detailUrl);
-
       if (!data) {
-        let classifiedMessage: string | null = null;
-        try {
-          classifiedMessage = this.classifyDetailFailure(context, detailHtml, detailDoc, detailRequest.detailUrl);
-        } catch (error) {
-          const message = toErrorMessage(error);
-          this.logger.warn(`Detail failure classifier failed for ${context.number}: ${message}`);
-        }
-
-        return {
-          success: false,
-          error: classifiedMessage ?? `Metadata parsing failed for ${context.number}`,
-          failureReason: classifiedMessage ? toFailureReason(classifiedMessage) : "parse_error",
-        };
+        throw (
+          this.classifyDetailFailure(context, detailHtml, detailDoc, detailRequest.detailUrl) ??
+          new SiteError("parse_error", `Metadata parsing failed for ${context.number}`)
+        );
       }
 
+      verifyMovieNumber(data.number, requestedNumber);
       return {
         success: true,
         data: this.normalizeCrawlerData(context, data),
       };
     } catch (error) {
-      const message = toErrorMessage(error);
-      this.logger.warn(`Crawler pipeline failed for ${context.number}: ${message}`);
-      return {
-        success: false,
-        error: message,
-        failureReason: toFailureReason(message),
-        cause: error,
-      };
+      this.logger.warn(`Crawler pipeline failed for ${context.number}: ${toErrorMessage(error)}`);
+      return toCrawlerErrorResult(error);
     }
   }
 
   private async resolveDetailRequest(context: Context): Promise<DetailRequest> {
     const searchUrl = await this.generateSearchUrl(context);
     if (!searchUrl) {
-      throw new Error(`Search URL not generated for ${context.number}`);
+      throw new SiteError("not_found", `Search URL not generated for ${context.number}`);
     }
 
     const searchHtml = await this.fetch(searchUrl, context);
     const searchDoc = load(searchHtml);
     const searchResolution = await this.parseSearchPage(context, searchDoc, searchUrl);
     if (!searchResolution) {
-      throw new Error(`Detail URL not found for ${context.number}`);
+      throw new SiteError("not_found", `Detail URL not found for ${context.number}`);
     }
 
     const detailRequest =
@@ -231,7 +200,6 @@ export abstract class BaseCrawler implements SiteAdapter {
   private normalizeCrawlerData(context: Context, data: CrawlerData): CrawlerData {
     return {
       ...data,
-      number: data.number || context.number,
       website: data.website ?? context.site,
       actors: data.actors ?? [],
       genres: data.genres ?? [],

@@ -80,6 +80,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "network.proxyType", anchor: "network" },
   { key: "network.proxy", anchor: "network" },
   { key: "network.useProxy", anchor: "network" },
+  { key: "network.directSites", anchor: "network", visibility: "hidden" },
   { key: "network.timeout", anchor: "network" },
   { key: "network.retryCount", anchor: "network" },
   { key: "network.javdbUrl", anchor: "network" },

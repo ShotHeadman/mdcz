@@ -3,6 +3,9 @@ import type { CheerioAPI } from "cheerio";
 
 import { extractList, extractText } from "../base/parser";
 
+export const pageIdentityUrl = ($: CheerioAPI): string =>
+  $("link[rel='canonical']").first().attr("href") ?? $("meta[property='og:url']").first().attr("content") ?? "";
+
 const buildLabelSelectors = (label: string): string[] => {
   return [
     `th:contains('${label}') + td`,
@@ -121,10 +124,7 @@ export const extractParentLinksByLabelSelector = ($: CheerioAPI, labelSelector: 
 export const normalizeFc2Number = (value: string): string => {
   return value
     .toUpperCase()
-    .replaceAll("FC2PPV", "")
-    .replaceAll("FC2-PPV-", "")
-    .replaceAll("FC2-", "")
-    .replaceAll("-", "")
+    .replace(/^FC2[\s_-]*(?:PPV[\s_-]*)?/u, "")
     .trim();
 };
 

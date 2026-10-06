@@ -21,7 +21,8 @@ coverage/
 test-results/
 .vitest-attachments/
 .test-fixtures/
-tests/fixtures/network/blobs/
+tests/fixtures/network/
+fixtures.tar.gz
 
 # Generated native bindings (Electron-ABI better_sqlite3.node from postinstall)
 apps/desktop/native/

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const mediaRoots = sqliteTable(
   "media_roots",
@@ -168,6 +168,27 @@ export const libraryItemAssets = sqliteTable(
   ],
 );
 
+// The latest outcome per movie and site; `data_json` keeps the last answer the site gave about the movie.
+export const siteResults = sqliteTable(
+  "site_results",
+  {
+    number: text("number").notNull(),
+    site: text("site").notNull(),
+    status: text("status").$type<"success" | "failed" | "skipped">().notNull(),
+    reason: text("reason"),
+    skipReason: text("skip_reason"),
+    detail: text("detail"),
+    httpStatus: integer("http_status"),
+    elapsedMs: integer("elapsed_ms").notNull(),
+    dataJson: text("data_json"),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.number, table.site] }),
+    check("site_results_status_check", sql`${table.status} in ('success', 'failed', 'skipped')`),
+  ],
+);
+
 export const folderWatchSnapshots = sqliteTable("folder_watch_snapshots", {
   scopeKey: text("scope_key").primaryKey(),
   fileKeysJson: text("file_keys_json").notNull(),
@@ -182,6 +203,7 @@ export const schema = {
   libraryItems,
   libraryItemFiles,
   libraryItemAssets,
+  siteResults,
   folderWatchSnapshots,
 };
 
@@ -200,4 +222,5 @@ export type InsertLibraryItemRow = typeof libraryItems.$inferInsert;
 export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
 export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
 export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
+export type SiteResultRow = typeof siteResults.$inferSelect;
 export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;

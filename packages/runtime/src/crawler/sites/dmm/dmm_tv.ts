@@ -3,11 +3,12 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { type CheerioAPI, load } from "cheerio";
 
+import { verifyMovieNumber } from "../../base/identity";
 import type { Context, CrawlerInput, CrawlerResponse, SearchPageResolution } from "../../base/types";
 import type { CrawlerRegistration } from "../../registration";
 import { toAbsoluteUrl } from "../helpers";
 import { BaseDmmCrawler } from "./BaseDmmCrawler";
-import { normalizeContentIds } from "./contentId";
+import { normalizeContentIds, toDmmMovieNumber } from "./contentId";
 import {
   buildDmmVideoDetailUrl,
   buildDmmVideoSearchPayload,
@@ -216,8 +217,9 @@ export class DmmTvCrawler extends BaseDmmCrawler {
     $: CheerioAPI,
     detailUrl: string,
   ): Promise<CrawlerData | null> {
-    const htmlResult = toDmmVideoCrawlerData(parseDigitalDetail($), context.number, Website.DMM_TV);
+    const htmlResult = toDmmVideoCrawlerData(parseDigitalDetail($), Website.DMM_TV);
     if (htmlResult) {
+      htmlResult.number = toDmmMovieNumber(htmlResult.number, context.number);
       return htmlResult;
     }
 
@@ -251,7 +253,12 @@ export class DmmTvCrawler extends BaseDmmCrawler {
     }
 
     const html = await this.gateway.fetchHtml(detailUrl, this.createFetchOptions(context));
-    return toDmmVideoCrawlerData(parseDigitalDetail(load(html)), context.number, Website.DMM_TV);
+    const result = toDmmVideoCrawlerData(parseDigitalDetail(load(html)), Website.DMM_TV);
+    if (result) {
+      result.number = toDmmMovieNumber(result.number, context.number);
+      verifyMovieNumber(result.number, context.number);
+    }
+    return result;
   }
 
   private async tryResolveDetailUrlViaSearch(context: DmmTvContext, currentDetailUrl: string): Promise<string | null> {

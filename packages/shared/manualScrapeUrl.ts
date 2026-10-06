@@ -1,5 +1,6 @@
 import { isMirrorableSite, OFFICIAL_SITE_HOSTS, resolveSiteUrl, type SiteUrlConfiguration } from "./config";
 import { Website } from "./enums";
+import { OFFICIAL_MAKERS } from "./officialSites";
 
 export type ManualScrapeUrlMode = "site" | "detail";
 
@@ -48,6 +49,34 @@ const pathMatches = (url: URL, pattern: RegExp): boolean => pattern.test(url.pat
 const hasQueryParam = (url: URL, name: string): boolean => Boolean(url.searchParams.get(name)?.trim());
 
 const SITE_RULES: readonly ManualScrapeSiteRule[] = [
+  {
+    site: Website.OFFICIAL,
+    hosts: OFFICIAL_MAKERS.flatMap(({ domain }) => [
+      domain,
+      domain.startsWith("www.") ? domain.slice(4) : `www.${domain}`,
+    ]),
+    isDetailUrl: (url) => pathMatches(url, /^\/works\/detail\/[a-z]+\d+\/?$/iu),
+  },
+  {
+    site: Website.ONEPONDO,
+    hosts: ["1pondo.tv", "www.1pondo.tv"],
+    isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/\d{6}_\d{3}\/index\.html$/iu),
+  },
+  {
+    site: Website.TENMUSUME,
+    hosts: ["10musume.com", "www.10musume.com"],
+    isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/\d{6}_\d{2}\/index\.html$/iu),
+  },
+  {
+    site: Website.CARIBBEANCOM,
+    hosts: ["caribbeancom.com", "www.caribbeancom.com"],
+    isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/\d{6}-\d{3}\/index\.html$/iu),
+  },
+  {
+    site: Website.HEYZO,
+    hosts: ["heyzo.com", "www.heyzo.com"],
+    isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/\d+\/index\.html$/iu),
+  },
   {
     site: Website.DMM_TV,
     hosts: ["video.dmm.co.jp", "tv.dmm.co.jp"],

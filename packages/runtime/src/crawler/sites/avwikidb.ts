@@ -1,10 +1,12 @@
-import type { SiteRequestConfig } from "@mdcz/runtime/network";
+import { failureReasonOf, SiteError, type SiteRequestConfig } from "@mdcz/runtime/network";
 import { runtimeLoggerService, toErrorMessage, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import { stripTrailingActorNames } from "@mdcz/shared/titleRepair";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { load } from "cheerio";
-import type { AdapterDependencies, CrawlerInput, CrawlerResponse, FailureReason, SiteAdapter } from "../base/types";
+import { toCrawlerErrorResult } from "../base/BaseCrawler";
+import { verifyMovieNumber } from "../base/identity";
+import type { AdapterDependencies, CrawlerInput, CrawlerResponse, SiteAdapter } from "../base/types";
 import type { FetchOptions } from "../FetchGateway";
 import type { CrawlerRegistration } from "../registration";
 
@@ -138,17 +140,7 @@ const parseDate = (value: unknown): string | undefined => {
 };
 
 const parseMinutesToSeconds = (value: unknown): number | undefined => {
-  const raw = asString(value);
-  if (!raw) {
-    return undefined;
-  }
-
-  const matched = raw.match(/\d+/u);
-  if (!matched) {
-    return undefined;
-  }
-
-  const minutes = Number.parseInt(matched[0], 10);
+  const minutes = typeof value === "number" ? value : Number.parseFloat(asString(value) ?? "");
   return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : undefined;
 };
 
@@ -228,7 +220,7 @@ const readTrailerUrl = (movie: JsonRecord, dmmData: JsonRecord | undefined): str
 
 const normalizeNumber = (value: string): string => value.trim().toUpperCase();
 
-const isNotFoundError = (message: string): boolean => /\bHTTP 404\b|Detail URL not found/iu.test(message);
+const isNotFoundError = (error: unknown): boolean => failureReasonOf(error) === "not_found";
 
 const readDetailNumberFromUrl = (value: string | undefined): string | null => {
   if (!value) {
@@ -242,22 +234,6 @@ const readDetailNumberFromUrl = (value: string | undefined): string | null => {
   } catch {
     return null;
   }
-};
-
-const classifyFailure = (message: string): FailureReason => {
-  if (/region blocked|forbidden|HTTP 403/iu.test(message)) {
-    return "region_blocked";
-  }
-  if (/timeout|timed out|abort/iu.test(message)) {
-    return "timeout";
-  }
-  if (isNotFoundError(message)) {
-    return "not_found";
-  }
-  if (/parse|metadata/iu.test(message)) {
-    return "parse_error";
-  }
-  return "unknown";
 };
 
 export class AvwikidbCrawler implements SiteAdapter {
@@ -287,11 +263,12 @@ export class AvwikidbCrawler implements SiteAdapter {
           result: {
             success: false,
             error: `Detail URL not found for ${input.number}`,
-            failureReason: "not_found",
+            reason: "not_found",
           },
         };
       }
 
+      verifyMovieNumber(data.number, input.number);
       return {
         input,
         elapsedMs: Date.now() - startedAt,
@@ -301,26 +278,12 @@ export class AvwikidbCrawler implements SiteAdapter {
         },
       };
     } catch (error) {
-      const message = toErrorMessage(error);
-      this.logger.warn(`Crawler failed for ${input.number}: ${message}`);
-      return {
-        input,
-        elapsedMs: Date.now() - startedAt,
-        result: {
-          success: false,
-          error: message,
-          failureReason: classifyFailure(message),
-          cause: error,
-        },
-      };
+      this.logger.warn(`Crawler failed for ${input.number}: ${toErrorMessage(error)}`);
+      return { input, elapsedMs: Date.now() - startedAt, result: toCrawlerErrorResult(error) };
     }
   }
 
   private async fetchMetadata(input: CrawlerInput): Promise<CrawlerData | null> {
-    return this.fetchMetadataWithCurrentSession(input);
-  }
-
-  private async fetchMetadataWithCurrentSession(input: CrawlerInput): Promise<CrawlerData | null> {
     const detailNumber = readDetailNumberFromUrl(input.options?.detailUrl);
     if (detailNumber) {
       return this.fetchWorkData(detailNumber, input);
@@ -377,18 +340,17 @@ export class AvwikidbCrawler implements SiteAdapter {
       await this.resolveBuildId(input);
       const url = this.buildDataUrl(`work/${encodeURIComponent(number)}.json`);
       const payload = await this.gateway.fetchJson<unknown>(url, this.createFetchOptions(input));
-      const data = this.parseWorkPayload(payload, number);
+      const data = this.parseWorkPayload(payload);
       return data;
     } catch (error) {
-      const message = toErrorMessage(error);
-      if (isNotFoundError(message)) {
+      if (isNotFoundError(error)) {
         return null;
       }
       throw error;
     }
   }
 
-  private parseWorkPayload(payload: unknown, fallbackNumber: string): CrawlerData | null {
+  private parseWorkPayload(payload: unknown): CrawlerData | null {
     const pageProps = readPageProps(payload);
     const movie = readRecord(pageProps, "movie");
     if (!movie) {
@@ -406,10 +368,29 @@ export class AvwikidbCrawler implements SiteAdapter {
 
     const genres = uniqueStrings([...extractNames(movie.genre, ["genre"]), ...readItemInfoNames(itemInfo, "genre")]);
     const imageUrl = dmmData?.imageURL;
+    const contentId = asString(movie.fanzaContentId);
+    const imageBase =
+      movie.floor === "videoa" && contentId && /^[a-z0-9]+$/iu.test(contentId)
+        ? `https://pics.dmm.co.jp/digital/video/${contentId}/${contentId}`
+        : undefined;
+    const sceneImages = readSceneImages(dmmData?.sampleImageURL);
+    const imageCount = movie.imageCount;
+    if (
+      sceneImages.length === 0 &&
+      imageBase &&
+      typeof movie.imageL === "boolean" &&
+      typeof imageCount === "number" &&
+      Number.isInteger(imageCount) &&
+      imageCount > 0
+    ) {
+      for (let index = 1; index <= Math.min(imageCount, 100); index += 1) {
+        sceneImages.push(`${imageBase}${movie.imageL === true ? "jp" : ""}-${index}.jpg`);
+      }
+    }
 
     return {
       title,
-      number: first(asString(movie.adultVideoId), asString(dmmData?.product_id), fallbackNumber) ?? fallbackNumber,
+      number: first(asString(movie.adultVideoId), asString(dmmData?.product_id)) ?? "",
       actors,
       genres,
       studio: firstName(extractNames(movie.maker, ["maker"]), readItemInfoNames(itemInfo, "maker")),
@@ -418,10 +399,10 @@ export class AvwikidbCrawler implements SiteAdapter {
       series: firstName(extractNames(movie.series, ["series"]), readItemInfoNames(itemInfo, "series")),
       plot: first(asString(itemInfo?.description), asString(movie.summary)),
       release_date: first(parseDate(movie.dateOfPublication), parseDate(dmmData?.date)),
-      durationSeconds: parseMinutesToSeconds(dmmData?.volume),
-      thumb_url: first(asString(movie.imageL), readImageUrl(imageUrl, ["large", "list", "small"])),
-      poster_url: first(readImageUrl(imageUrl, ["small", "list", "large"]), asString(movie.imageL)),
-      scene_images: readSceneImages(dmmData?.sampleImageURL),
+      durationSeconds: parseMinutesToSeconds(movie.durationMin) ?? parseMinutesToSeconds(dmmData?.volume),
+      thumb_url: readImageUrl(imageUrl, ["large", "list", "small"]) ?? (imageBase ? `${imageBase}pl.jpg` : undefined),
+      poster_url: readImageUrl(imageUrl, ["small", "list", "large"]) ?? (imageBase ? `${imageBase}ps.jpg` : undefined),
+      scene_images: sceneImages,
       trailer_url: readTrailerUrl(movie, dmmData),
       website: Website.AVWIKIDB,
     };
@@ -436,13 +417,13 @@ export class AvwikidbCrawler implements SiteAdapter {
     const $ = load(html);
     const nextDataText = $("#__NEXT_DATA__").text().trim();
     if (!nextDataText) {
-      throw new Error("avwikidb metadata build id missing");
+      throw new SiteError("parse_error", "avwikidb metadata build id missing");
     }
 
     const nextData = JSON.parse(nextDataText) as unknown;
     const buildId = isRecord(nextData) ? asString(nextData.buildId) : undefined;
     if (!buildId) {
-      throw new Error("avwikidb metadata build id missing");
+      throw new SiteError("parse_error", "avwikidb metadata build id missing");
     }
 
     this.buildId = buildId;
@@ -452,7 +433,7 @@ export class AvwikidbCrawler implements SiteAdapter {
   private buildDataUrl(path: string, query?: Record<string, string>): string {
     const buildId = this.buildId;
     if (!buildId) {
-      throw new Error("avwikidb build id not resolved");
+      throw new SiteError("parse_error", "avwikidb build id not resolved");
     }
 
     const url = new URL(`/_next/data/${encodeURIComponent(buildId)}/${path}`, AVWIKIDB_BASE_URL);

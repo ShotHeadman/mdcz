@@ -57,6 +57,7 @@ export class ScraperService {
           library: state.repositories.library,
           mediaRoots: this.mediaRoots,
         },
+        recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
         getConfiguration: async () => await configManager.getValidated(),
         networkClient: this.sharedNetworkClient,
         crawlerProvider: this.crawlerProvider,

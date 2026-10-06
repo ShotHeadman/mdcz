@@ -12,6 +12,7 @@ const H0930_SITE: H0930FamilySite = {
 };
 
 export class H0930Crawler extends BaseH0930FamilyCrawler {
+  static readonly numberPattern = /^H0930[-_]?[a-z]+\d+$/iu;
   protected readonly family = H0930_SITE;
 }
 

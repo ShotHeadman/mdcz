@@ -10,6 +10,7 @@ import {
 } from "./llm";
 import { assetRefSchema, type RootFileRef, rootFileRefSchema, wireRelativeDirectorySchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
+import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
 import type { MediaCandidate } from "./types";
 
 export const maintenancePresetIdSchema = z.enum(["import_local", "refresh_metadata", "local_organize", "rebuild_all"]);
@@ -918,6 +919,7 @@ export const crawlerSiteInfoSchema = z.object({
   name: z.string(),
   enabled: z.boolean(),
   native: z.boolean(),
+  health: siteHealthSchema.optional(),
 });
 
 export type CrawlerSiteInfoDto = z.infer<typeof crawlerSiteInfoSchema>;
@@ -943,6 +945,7 @@ export const siteConnectivityProbeResponseSchema = z.object({
   redirectedHost: z.string().optional(),
   /** Raw request error when the probe could not get an HTTP response. */
   error: z.string().optional(),
+  reason: z.enum(FAILURE_REASONS).optional(),
 });
 
 export type SiteConnectivityProbeResponse = z.infer<typeof siteConnectivityProbeResponseSchema>;

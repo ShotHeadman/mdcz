@@ -1,4 +1,6 @@
 import { atomicWriteFile } from "@mdcz/media-store";
+import type { Website } from "@mdcz/shared/enums";
+import type { FailureReason } from "@mdcz/shared/siteResults";
 
 export type RuntimeHeaderInit = ConstructorParameters<typeof Headers>[0];
 
@@ -25,6 +27,7 @@ export interface RuntimeProbeResult {
   resolvedUrl: string;
   width?: number;
   height?: number;
+  reason?: FailureReason;
 }
 
 export interface RuntimeNetworkClient {
@@ -57,8 +60,11 @@ export interface RuntimeDownloadNetworkClient extends RuntimeNetworkClient {
 
 export interface SiteRequestConfig {
   id: string;
-  matches: (url: URL) => boolean;
+  /** `site` is the crawler the request belongs to, which identifies mirrors that the host alone cannot. */
+  matches: (url: URL, site: Website | undefined) => boolean;
   headers?: RuntimeHeaderInit | ((url: URL) => RuntimeHeaderInit | undefined);
+  /** Recognizes pages this site serves in place of the requested resource. */
+  classifyBlockedPage?: (body: string) => FailureReason | null;
 }
 
 export interface SiteRequestConfigRegistrar {
@@ -190,3 +196,4 @@ export * from "./InMemoryCookieJar";
 export * from "./NetworkClient";
 export * from "./networkExecution";
 export * from "./RateLimiter";
+export * from "./siteError";

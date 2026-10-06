@@ -2,13 +2,20 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { Website } from "@mdcz/shared/enums";
+import type { FailureReason } from "@mdcz/shared/siteResults";
 import { type Browser, Impit, type RequestInit as ImpitRequestInit } from "impit";
 import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
-import { isUnrecoverableNetworkError, preserveNetworkExecutionContext } from "./networkExecution";
+import {
+  getCrawlerExecutionSource,
+  isUnrecoverableNetworkError,
+  preserveNetworkExecutionContext,
+} from "./networkExecution";
 import { RateLimiter } from "./RateLimiter";
+import { classifyBlockedPage, failureReasonForStatus, SiteError, toTransportSiteError } from "./siteError";
 
 const RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
@@ -17,6 +24,7 @@ const PROBE_FALLBACK_STATUS_CODES = new Set([403, 405, 501]);
 const PROBE_RANGE_HEADER = "bytes=0-0";
 const IMAGE_METADATA_PROBE_BYTES = 64 * 1024;
 const IMAGE_METADATA_PROBE_RETRY_BYTES = 256 * 1024;
+const ERROR_BODY_PREVIEW_BYTES = 64 * 1024;
 type HeaderInit = ConstructorParameters<typeof Headers>[0];
 export interface RawNetworkResponse {
   readonly status: number;
@@ -66,8 +74,11 @@ export interface NetworkSession {
 
 export interface SiteRequestConfig {
   id: string;
-  matches: (url: URL) => boolean;
+  /** `site` is the crawler the request belongs to, which identifies mirrors that the host alone cannot. */
+  matches: (url: URL, site: Website | undefined) => boolean;
   headers?: HeaderInit | ((url: URL) => HeaderInit | undefined);
+  /** Recognizes pages this site serves in place of the requested resource. */
+  classifyBlockedPage?: (body: string) => FailureReason | null;
 }
 
 export interface SiteRequestConfigRegistrar {
@@ -78,7 +89,8 @@ export interface SiteRequestConfigRegistrar {
 export interface NetworkClientOptions {
   timeoutMs?: number;
   browserImpersonation?: Browser;
-  getProxyUrl?: () => string | undefined;
+  /** Receives the crawler site a request belongs to, if any, so sites can opt out of the proxy. */
+  getProxyUrl?: (site?: Website) => string | undefined;
   getTimeoutMs?: () => number | undefined;
   getRetryCount?: () => number | undefined;
   rateLimiter?: RateLimiter;
@@ -93,6 +105,8 @@ export interface ProbeResult {
   resolvedUrl: string;
   width?: number;
   height?: number;
+  /** Only full GET probes read the page, so only they report why it failed. */
+  reason?: FailureReason;
 }
 
 export interface NetworkJsonResponse<T = unknown> {
@@ -110,11 +124,6 @@ interface RequestBehavior<TResult> {
   transformResponse?: (response: RawNetworkResponse) => Promise<TResult> | TResult;
 }
 
-interface ImpitClientState {
-  key: string;
-  client: Impit;
-}
-
 export class NetworkClient implements SiteRequestConfigRegistrar {
   private readonly logger = runtimeLoggerService.getLogger("NetworkClient");
 
@@ -127,7 +136,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
   private readonly rawDispatch?: RawNetworkDispatch;
 
-  private defaultClientState: ImpitClientState | null = null;
+  private readonly clientsByProxy = new Map<string, Impit>();
 
   constructor(options: NetworkClientOptions = {}) {
     this.options = {
@@ -155,21 +164,11 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   }
 
   async getText(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<string> {
-    const response = await this.request(url, {
-      ...init,
-      method: "GET",
-    });
-
-    return response.text();
+    return await this.requestText(url, { ...init, method: "GET" });
   }
 
   async getJson<T>(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<T> {
-    const response = await this.request(url, {
-      ...init,
-      method: "GET",
-    });
-
-    return response.json() as Promise<T>;
+    return this.parseJson<T>(url, await this.requestText(url, { ...init, method: "GET" }));
   }
 
   async getContent(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<Uint8Array> {
@@ -182,13 +181,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   }
 
   async postText(url: string, body: string, init: Omit<ImpitRequestInit, "method" | "body"> = {}): Promise<string> {
-    const response = await this.request(url, {
-      ...init,
-      method: "POST",
-      body,
-    });
-
-    return response.text();
+    return await this.requestText(url, { ...init, method: "POST", body });
   }
 
   async postJson<TResponse>(
@@ -198,15 +191,8 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   ): Promise<TResponse> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
-
-    const response = await this.request(url, {
-      ...init,
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    return response.json() as Promise<TResponse>;
+    const text = await this.requestText(url, { ...init, method: "POST", headers, body: JSON.stringify(payload) });
+    return this.parseJson<TResponse>(url, text);
   }
 
   async postJsonDetailed<TResponse>(
@@ -332,8 +318,11 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
         ...requestInit,
         method: "GET",
       });
-
-      return this.toProbeResult(url, response);
+      const result = this.toProbeResult(url, response);
+      const reason =
+        this.classifyBlockedPage(result.resolvedUrl, await response.text()) ??
+        (response.ok ? undefined : failureReasonForStatus(response.status));
+      return reason ? { ...result, ok: false, reason } : result;
     }
 
     const response = await this.requestForProbe(url, {
@@ -446,6 +435,27 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return this.executeRequest(url, init);
   }
 
+  private async requestText(url: string, init: ImpitRequestInit): Promise<string> {
+    return await this.executeRequest(url, init, undefined, {
+      transformResponse: async (response) => {
+        const text = await response.text();
+        const reason = this.classifyBlockedPage(response.url || url, text);
+        if (reason) {
+          throw new SiteError(reason, `${reason} page served for ${url}`, { httpStatus: response.status });
+        }
+        return text;
+      },
+    });
+  }
+
+  private parseJson<T>(url: string, text: string): T {
+    try {
+      return JSON.parse(text) as T;
+    } catch (error) {
+      throw new SiteError("parse_error", `Invalid JSON from ${url}`, { cause: error });
+    }
+  }
+
   private async requestForProbe(url: string, init: ImpitRequestInit): Promise<RawNetworkResponse> {
     return this.executeRequest(url, init, undefined, {
       allowNonOkResponse: true,
@@ -459,66 +469,89 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     client?: Impit,
     behavior: RequestBehavior<TResult> = {},
   ): Promise<TResult> {
-    return this.rateLimiter.schedule(
-      url,
-      preserveNetworkExecutionContext(async () => {
-        if (init.signal?.aborted) {
-          throw createAbortError();
-        }
+    const budget = getCrawlerExecutionSource()?.budget;
+    let dispatched = false;
+    budget?.pause();
+    try {
+      return await this.rateLimiter.schedule(
+        url,
+        preserveNetworkExecutionContext(async () => {
+          dispatched = true;
+          budget?.resume();
+          return await this.runRequest(url, init, client, behavior);
+        }),
+        init.signal,
+      );
+    } finally {
+      if (!dispatched) budget?.resume();
+    }
+  }
 
-        const maxRetries = this.resolveRetryCount();
-        let attempt = 0;
-        const transformResponse = behavior.transformResponse ?? ((response: RawNetworkResponse) => response as TResult);
-        const retryTransportError = async (error: unknown): Promise<void> => {
-          if (isAbortError(error) || isUnrecoverableNetworkError(error) || init.signal?.aborted) {
-            throw error;
-          }
-          if (attempt >= maxRetries) {
-            throw error;
-          }
+  private async runRequest<TResult>(
+    url: string,
+    init: ImpitRequestInit,
+    client: Impit | undefined,
+    behavior: RequestBehavior<TResult>,
+  ): Promise<TResult> {
+    if (init.signal?.aborted) {
+      throw createAbortError();
+    }
 
-          const delayMs = this.getRetryDelayMsForAttempt(attempt);
+    const maxRetries = this.resolveRetryCount();
+    let attempt = 0;
+    const transformResponse = behavior.transformResponse ?? ((response: RawNetworkResponse) => response as TResult);
+    const retryTransportError = async (error: unknown): Promise<void> => {
+      if (
+        isAbortError(error) ||
+        isUnrecoverableNetworkError(error) ||
+        error instanceof SiteError ||
+        init.signal?.aborted
+      ) {
+        throw error;
+      }
+      if (attempt >= maxRetries) {
+        throw toTransportSiteError(error, url);
+      }
+
+      const delayMs = this.getRetryDelayMsForAttempt(attempt);
+      attempt += 1;
+      this.logger.warn(
+        `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to transport error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      await this.waitForRetryDelay(delayMs, init.signal);
+    };
+
+    while (true) {
+      let response: RawNetworkResponse;
+      try {
+        response = await this.fetchOnce(url, init, client);
+      } catch (error) {
+        await retryTransportError(error);
+        continue;
+      }
+
+      if (!response.ok) {
+        if (this.shouldRetryResponse(response) && attempt < maxRetries) {
+          const delayMs = this.getRetryDelayMs(response, attempt);
           attempt += 1;
           this.logger.warn(
-            `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to transport error: ${error instanceof Error ? error.message : String(error)}`,
+            `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
           );
           await this.waitForRetryDelay(delayMs, init.signal);
-        };
-
-        while (true) {
-          let response: RawNetworkResponse;
-          try {
-            response = await this.fetchOnce(url, init, client);
-          } catch (error) {
-            await retryTransportError(error);
-            continue;
-          }
-
-          if (!response.ok) {
-            if (this.shouldRetryResponse(response) && attempt < maxRetries) {
-              const delayMs = this.getRetryDelayMs(response, attempt);
-              attempt += 1;
-              this.logger.warn(
-                `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
-              );
-              await this.waitForRetryDelay(delayMs, init.signal);
-              continue;
-            }
-
-            if (!behavior.allowNonOkResponse) {
-              throw this.toHttpError(url, response);
-            }
-          }
-
-          try {
-            return await transformResponse(response);
-          } catch (error) {
-            await retryTransportError(error);
-          }
+          continue;
         }
-      }),
-      init.signal,
-    );
+
+        if (!behavior.allowNonOkResponse) {
+          throw await this.toHttpError(url, response);
+        }
+      }
+
+      try {
+        return await transformResponse(response);
+      } catch (error) {
+        await retryTransportError(error);
+      }
+    }
   }
 
   private async waitForRetryDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
@@ -552,7 +585,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       throw createAbortError();
     }
 
-    const currentClient = client ?? this.getOrCreateDefaultClient();
+    const currentClient = client ?? this.getClient(getCrawlerExecutionSource()?.website);
     const headers = new Headers(init.headers);
     this.applySiteRequestConfig(url, headers);
 
@@ -565,8 +598,31 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return this.rawDispatch ? await this.rawDispatch({ url, init: finalInit }, dispatch) : await dispatch();
   }
 
-  private toHttpError(url: string, response: RawNetworkResponse): Error {
-    return new Error(`HTTP ${response.status} ${response.statusText} for ${url}`);
+  private async toHttpError(url: string, response: RawNetworkResponse): Promise<SiteError> {
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const readable = !contentType || contentType.startsWith("text/") || contentType.includes("json");
+    let body = "";
+    if (readable && response.body) {
+      // Block pages identify themselves early; reading only a preview keeps large error bodies off the wire.
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let received = 0;
+      while (received < ERROR_BODY_PREVIEW_BYTES) {
+        const chunk = await reader.read().catch(() => ({ done: true as const, value: undefined }));
+        if (chunk.done) break;
+        received += chunk.value.byteLength;
+        body += decoder.decode(chunk.value, { stream: true });
+      }
+      await reader.cancel().catch(() => undefined);
+    }
+    return new SiteError(
+      this.classifyBlockedPage(response.url || url, body) ?? failureReasonForStatus(response.status),
+      `HTTP ${response.status} ${response.statusText} for ${url}`,
+      {
+        httpStatus: response.status,
+        retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")) ?? undefined,
+      },
+    );
   }
 
   private async parseJsonResponseBody<T>(response: RawNetworkResponse): Promise<T | string | null> {
@@ -694,30 +750,26 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return Math.max(0, Math.trunc(value));
   }
 
-  private getOrCreateDefaultClient(): Impit {
-    const key = this.buildDefaultClientKey();
-    if (!this.defaultClientState || this.defaultClientState.key !== key) {
-      this.defaultClientState = {
-        key,
-        client: this.createImpitClient(),
-      };
+  private getClient(site?: Website): Impit {
+    const proxyUrl = this.options.getProxyUrl?.(site);
+    let client = this.clientsByProxy.get(proxyUrl ?? "");
+    if (!client) {
+      // Requests go either through the global proxy or direct, so any other cached proxy has been replaced.
+      const liveKeys = new Set([proxyUrl ?? "", this.options.getProxyUrl?.() ?? "", ""]);
+      for (const key of this.clientsByProxy.keys()) {
+        if (!liveKeys.has(key)) this.clientsByProxy.delete(key);
+      }
+      client = this.createImpitClient(undefined, proxyUrl);
+      this.clientsByProxy.set(proxyUrl ?? "", client);
     }
-
-    return this.defaultClientState.client;
+    return client;
   }
 
-  private buildDefaultClientKey(): string {
-    return JSON.stringify({
-      browserImpersonation: this.options.browserImpersonation,
-      proxyUrl: this.options.getProxyUrl?.() ?? "",
-    });
-  }
-
-  private createImpitClient(cookieJar?: NetworkCookieJar): Impit {
+  private createImpitClient(cookieJar?: NetworkCookieJar, proxyUrl = this.options.getProxyUrl?.()): Impit {
     return new Impit({
       browser: this.options.browserImpersonation,
       timeout: this.resolveTimeoutMs(),
-      proxyUrl: this.options.getProxyUrl?.(),
+      proxyUrl,
       followRedirects: true,
       vanillaFallback: true,
       http3: false,
@@ -739,14 +791,25 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
   }
 
+  private matchingSiteRequestConfigs(url: URL): SiteRequestConfig[] {
+    const site = getCrawlerExecutionSource()?.website;
+    return this.siteRequestConfigs.filter((config) => config.matches(url, site));
+  }
+
+  private classifyBlockedPage(url: string, body: string): FailureReason | null {
+    return (
+      classifyBlockedPage(url, body) ??
+      this.matchingSiteRequestConfigs(new URL(url))
+        .map((config) => config.classifyBlockedPage?.(body) ?? null)
+        .find((reason) => reason !== null) ??
+      null
+    );
+  }
+
   private resolveSiteHeaders(url: URL): Headers {
     const headers = new Headers();
 
-    for (const config of this.siteRequestConfigs) {
-      if (!config.matches(url)) {
-        continue;
-      }
-
+    for (const config of this.matchingSiteRequestConfigs(url)) {
       const resolvedHeaders = typeof config.headers === "function" ? config.headers(url) : config.headers;
       if (!resolvedHeaders) {
         continue;

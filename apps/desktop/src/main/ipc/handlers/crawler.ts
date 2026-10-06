@@ -65,16 +65,7 @@ export const createCrawlerHandlers = (
     }),
     [IpcChannel.Crawler_ListSites]: t.procedure.action(async () => {
       try {
-        const configuration = await configManager.getValidated();
-        const enabledSites = new Set(configuration.scrape.sites);
-        return {
-          sites: crawlerProvider.listSites().map(({ site, native }) => ({
-            site,
-            name: site,
-            enabled: enabledSites.has(site),
-            native,
-          })),
-        };
+        return { sites: crawlerProvider.listSites((await configManager.getValidated()).scrape.sites) };
       } catch (error) {
         throw asSerializableIpcError(error);
       }
@@ -88,8 +79,9 @@ export const createCrawlerHandlers = (
             throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Site is required");
           }
 
-          const configuration = await configManager.getValidated();
-          return await probeSiteConnectivity(site, configuration, networkClient);
+          const result = await probeSiteConnectivity(site, await configManager.getValidated(), networkClient);
+          if (result.ok) crawlerProvider.resetSite(site);
+          return result;
         } catch (error) {
           return { ok: false, latencyMs: 0, error: toErrorMessage(error) };
         }

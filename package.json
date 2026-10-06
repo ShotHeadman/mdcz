@@ -16,7 +16,6 @@
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "dev:webui": "concurrently -n server,web -c cyan,magenta \"pnpm --filter @mdcz/server dev\" \"pnpm --filter @mdcz/web dev\"",
-    "dev:webui:fixture": "concurrently -n server,web -c cyan,magenta \"pnpm --filter @mdcz/server dev:fixture\" \"pnpm --filter @mdcz/web dev\"",
     "dev:desktop": "pnpm --filter @mdcz/desktop dev",
     "build:desktop": "pnpm --filter @mdcz/desktop build",
     "build:server": "pnpm --filter @mdcz/server build",
@@ -33,10 +32,6 @@
     "test:integration": "vitest run --project integration --project desktop-integration --project contract --silent",
     "test:coverage": "vitest run --coverage --project unit --project integration --project desktop-integration --project contract --silent",
     "test:coverage:desktop": "vitest run --config vitest.desktop-coverage.config.ts --coverage --silent",
-    "record:webui": "node tests/recording/run.mjs record webui",
-    "record:desktop": "node tests/recording/run.mjs record desktop",
-    "replay:webui": "node tests/recording/run.mjs replay webui",
-    "replay:desktop": "node tests/recording/run.mjs replay desktop",
     "typecheck": "tsc -b --pretty false",
     "typecheck:apps": "pnpm --filter @mdcz/server --filter @mdcz/web typecheck",
     "format": "biome check --write"

@@ -21,6 +21,7 @@ import {
   LocalActorSource,
   OfficialActorSource,
 } from "@mdcz/runtime/actorSource";
+import { siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import {
@@ -49,11 +50,8 @@ export const createContainer = ({
   const fetchGateway = new FetchGateway(networkClient);
   const crawlerProvider = new CrawlerProvider({
     fetchGateway,
-    siteCooldownStore: new PersistentCooldownStore({
-      filePath: resolveDesktopDataFile("crawler-site-cooldowns.json"),
-      logger: loggerService.getLogger("CrawlerSiteCooldownStore"),
-    }),
     siteRequestConfigRegistrar: networkClient,
+    getSiteNetworkKey: (site) => siteNetworkKey(configManager.getComputed(), site),
   });
   const imageHostCooldownStore = new PersistentCooldownStore({
     filePath: resolveDesktopDataFile("image-host-cooldowns.json"),
@@ -186,7 +184,6 @@ export const createContainer = ({
       for (const shutdown of [
         async () => await scraperService.shutdown(),
         async () => await maintenanceService.shutdown(),
-        async () => await crawlerProvider.shutdown(),
       ]) {
         try {
           await shutdown();

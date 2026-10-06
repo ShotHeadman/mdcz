@@ -10,6 +10,7 @@ describe("PpvDatabankCrawler", () => {
     const html = `
       <html>
         <head>
+          <meta property="og:url" content="/article_search.php?id=4663355" />
           <title>《歴史的映像》【ゆず故障】★最後は半外半中出し</title>
           <meta name="title" content="《歴史的映像》【ゆず故障】★最後は半外半中出し" />
         </head>
@@ -92,7 +93,7 @@ describe("PpvDatabankCrawler", () => {
       throw new Error("expected failure");
     }
 
-    expect(response.result.failureReason).toBe("not_found");
+    expect(response.result.reason).toBe("not_found");
     expect(response.result.error).toContain("Detail URL not found");
   });
 });

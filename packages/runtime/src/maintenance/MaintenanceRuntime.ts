@@ -20,7 +20,6 @@ import type {
   NfoLocalState,
   PathDiff,
 } from "@mdcz/shared/types";
-import type { RuntimeCrawlerProvider } from "../crawler/types";
 import { registeredMediaLocations } from "../library/registeredMedia";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
 import type { CommittedMovie } from "../publication/committedMovie";
@@ -49,7 +48,7 @@ import {
   writePreparedNfo,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
-import { AggregationService } from "../scrape/aggregation";
+import { AggregationService, type CrawlerPort, type SiteResultSink } from "../scrape/aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { assignVersionLabels } from "../scrape/organize/versionLabels";
@@ -75,7 +74,8 @@ export interface MaintenanceRuntimeDependencies {
   actorImageService: RuntimeActorImageService;
   actorSourceProvider?: RuntimeActorSourceProvider;
   aggregationService?: Pick<AggregationService, "aggregate">;
-  crawlerProvider?: RuntimeCrawlerProvider;
+  crawlerProvider?: CrawlerPort;
+  recordSiteResults?: SiteResultSink;
   logger?: RuntimeLogger;
   config: MaintenanceRuntimeConfigProvider;
   downloadManager?: DownloadManager;
@@ -222,6 +222,7 @@ export class MaintenanceRuntime {
                 config,
                 logger: this.deps.logger,
                 signal: input.signal,
+                recordSiteResults: this.deps.recordSiteResults,
               })
             : undefined),
         config: { get: async () => config },

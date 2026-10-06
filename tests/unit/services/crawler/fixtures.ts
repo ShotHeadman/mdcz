@@ -1,6 +1,6 @@
 import type { AdapterDependencies } from "@mdcz/runtime/crawler/base/types";
 import { FetchGateway } from "@mdcz/runtime/crawler/FetchGateway";
-import { NetworkClient, type ProbeResult } from "@mdcz/runtime/network";
+import { classifyBlockedPage, NetworkClient, type ProbeResult, SiteError } from "@mdcz/runtime/network";
 
 type GetTextInit = Parameters<NetworkClient["getText"]>[1];
 
@@ -31,15 +31,18 @@ export class FixtureNetworkClient extends NetworkClient {
     });
 
     const fixture = this.getFixture(url);
+    if (fixture instanceof Error) throw fixture;
     if (!fixture) {
       throw new Error(`Missing fixture for ${url}`);
     }
 
-    if (typeof fixture === "string") {
-      return fixture;
+    // Block pages are recognized by NetworkClient, which this fixture client replaces.
+    const text = typeof fixture === "string" ? fixture : JSON.stringify(fixture);
+    const reason = classifyBlockedPage(url, text);
+    if (reason) {
+      throw new SiteError(reason, `${reason} page served for ${url}`);
     }
-
-    return JSON.stringify(fixture);
+    return text;
   }
 
   override async getContent(url: string, init: GetTextInit = {}): Promise<Uint8Array> {
@@ -54,6 +57,7 @@ export class FixtureNetworkClient extends NetworkClient {
     });
 
     const fixture = this.getFixture(url);
+    if (fixture instanceof Error) throw fixture;
     if (!fixture) {
       throw new Error(`Missing fixture for ${url}`);
     }

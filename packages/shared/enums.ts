@@ -20,6 +20,11 @@ export enum Website {
   SOKMIL = "sokmil",
   AVBASE = "avbase",
   AVWIKIDB = "avwikidb",
+  OFFICIAL = "official",
+  ONEPONDO = "1pondo",
+  TENMUSUME = "10musume",
+  CARIBBEANCOM = "caribbeancom",
+  HEYZO = "heyzo",
 }
 
 export enum ProxyType {

@@ -160,7 +160,7 @@ export const settings: Messages["settings"] = {
       official: {
         label: "厂商官网",
         description:
-          "聚合 MGStage、Prestige、Faleno、Dahlia、KM Produce 等厂商或厂牌自有站点，适合对应厂牌作品，覆盖范围较窄，成功率随站点和编号差异较大。",
+          "包含 S1、MOODYZ、IdeaPocket 等 Will/Outvision 片商，以及 MGStage、Prestige、Faleno、Dahlia、KM Produce；按番号自动选择适用站点。",
       },
       avbase: {
         label: "avbase",
@@ -186,6 +186,11 @@ export const settings: Messages["settings"] = {
       h0930_family: {
         label: "H0930 / H4610",
         description: "网络自营独立制作站。采用专属站内编号（如 H0930/H4610）",
+      },
+      uncensored_official: {
+        label: "无码片商官网",
+        description:
+          "一本道、天然むすめ、Caribbeancom、HEYZO 官方元数据；使用 1PON、10MU、CARIB、HEYZO 番号，无需登录。",
       },
       fc2: {
         label: "fc2",

@@ -12,9 +12,15 @@ const createWorkPayload = (overrides: { actorName?: string; title?: string } = {
     movie: {
       adultVideoId: "ZAKE-020",
       title: overrides.title ?? "AVWikiDB Sample Title",
-      imageL: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020pl.jpg",
+      floor: "videoa",
+      fanzaContentId: "zake00020",
+      imageL: true,
+      imageCount: 2,
+      durationMin: 125,
+      sampleVideoBestUrl: "https://cc3001.dmm.co.jp/litevideo/freepv/z/zak/zake00020/zake00020_dmb_w.mp4",
       dateOfPublication: "2026-04-03",
-      summary: "Generated fallback summary",
+      summary: "Work summary",
+      director: [{ name: "Director A" }],
       actor: [
         {
           actor: {
@@ -38,34 +44,6 @@ const createWorkPayload = (overrides: { actorName?: string; title?: string } = {
           },
         },
       ],
-    },
-    dmmData: {
-      product_id: "ZAKE-020",
-      date: "2026-04-03 10:00:00",
-      volume: "125",
-      imageURL: {
-        small: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020ps.jpg",
-        large: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020pl.jpg",
-      },
-      sampleImageURL: {
-        sample_l: {
-          image: [
-            "https://pics.dmm.co.jp/digital/video/zake00020/zake00020jp-1.jpg",
-            "https://pics.dmm.co.jp/digital/video/zake00020/zake00020jp-2.jpg",
-          ],
-        },
-      },
-      sampleMovieURL: {
-        size_720_480: "https://cc3001.dmm.co.jp/litevideo/freepv/z/zak/zake00020/zake00020_dmb_w.mp4",
-      },
-      iteminfo: {
-        description: "Official plot from FANZA",
-        director: [
-          {
-            name: "Director A",
-          },
-        ],
-      },
     },
   },
 });
@@ -119,7 +97,7 @@ describe("AvwikidbCrawler", () => {
       publisher: "FALENO",
       series: "Sample Series",
       director: "Director A",
-      plot: "Official plot from FANZA",
+      plot: "Work summary",
       release_date: "2026-04-03",
       durationSeconds: 7_500,
       thumb_url: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020pl.jpg",
@@ -239,7 +217,7 @@ describe("AvwikidbCrawler", () => {
       throw new Error("Expected AVWikiDB crawl to fail");
     }
 
-    expect(response.result.failureReason).toBe("parse_error");
+    expect(response.result.reason).toBe("parse_error");
     expect(response.result.error).toContain("metadata build id missing");
   });
 });

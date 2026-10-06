@@ -37,28 +37,26 @@ export abstract class BaseFc2Crawler extends BaseCrawler {
    * Build common FC2 CrawlerData fields.
    * Subclasses call this and spread the result, overriding only site-specific fields.
    */
-  protected buildFc2Data(
-    context: Context,
-    fields: {
-      title: string;
-      actors?: string[];
-      studio?: string;
-      genres?: string[];
-      thumbUrl?: string;
-      posterUrl?: string;
-      plot?: string;
-      releaseDate?: string;
-      durationSeconds?: number;
-      rating?: number;
-      sceneImageUrls?: string[];
-      trailerUrl?: string;
-    },
-  ): CrawlerData {
+  protected buildFc2Data(fields: {
+    number: string;
+    title: string;
+    actors?: string[];
+    studio?: string;
+    genres?: string[];
+    thumbUrl?: string;
+    posterUrl?: string;
+    plot?: string;
+    releaseDate?: string;
+    durationSeconds?: number;
+    rating?: number;
+    sceneImageUrls?: string[];
+    trailerUrl?: string;
+  }): CrawlerData {
     const studio = fields.studio || undefined;
 
     return {
       title: fields.title,
-      number: this.formatFc2Number(context.number),
+      number: fields.number ? this.formatFc2Number(normalizeFc2Number(fields.number)) : "",
       actors: fields.actors ?? [],
       genres: fields.genres ?? [],
       studio,

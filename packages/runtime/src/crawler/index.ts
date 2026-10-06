@@ -5,8 +5,3 @@ export * from "./CrawlerProvider";
 export * from "./FetchGateway";
 export * from "./registry";
 export * from "./siteConnectivity";
-export type {
-  RuntimeCrawlerInput,
-  RuntimeCrawlerProvider,
-  RuntimeCrawlerResponse,
-} from "./types";

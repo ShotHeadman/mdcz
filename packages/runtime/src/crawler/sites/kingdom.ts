@@ -142,7 +142,7 @@ export class KingdomCrawler extends BaseCrawler {
     return toAbsoluteUrl(KINGDOM_BASE_URL, links[0]) ?? null;
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     const titleRaw = extractText($, "h2.detail-title") ?? extractText($, "h1");
     if (!titleRaw) {
       return null;
@@ -150,7 +150,7 @@ export class KingdomCrawler extends BaseCrawler {
 
     const { cleanTitle, actress } = parseActressFromTitle(titleRaw);
 
-    const number = extractDetailValue($, "商品番号") ?? context.number;
+    const number = extractDetailValue($, "商品番号") ?? "";
     const releaseDateStr = extractDetailValue($, "発売日");
     const release = releaseDateStr ? (parseDate(releaseDateStr.replace(/\//gu, "-")) ?? undefined) : undefined;
 

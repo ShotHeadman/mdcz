@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { FixtureNetworkClient, withGateway } from "./fixtures";
 
 const LOOKUP_URL = "https://r18.dev/videos/vod/movies/detail/-/dvd_id=URE-013/json";
-const COMPACT_LOOKUP_URL = "https://r18.dev/videos/vod/movies/detail/-/dvd_id=ure00013/json";
 const COMBINED_URL = "https://r18.dev/videos/vod/movies/detail/-/combined=ure00013/json";
 
 const createDetailPayload = (overrides: Record<string, unknown> = {}) => ({
@@ -59,7 +58,7 @@ const createCrawler = (fixtures: Map<string, unknown>) => {
 };
 
 describe("R18DevCrawler", () => {
-  it("resolves an exact DVD code, fetches combined detail JSON, and maps Japanese metadata by default", async () => {
+  it("fetches combined JSON first and maps Japanese metadata by default", async () => {
     const { crawler, networkClient } = createCrawler(
       new Map<string, unknown>([
         [LOOKUP_URL, { content_id: "ure00013", dvd_id: "URE-013" }],
@@ -73,7 +72,7 @@ describe("R18DevCrawler", () => {
       options: { timeoutMs: 15_000 },
     });
 
-    expect(networkClient.requests.map((request) => request.url)).toEqual([LOOKUP_URL, COMBINED_URL]);
+    expect(networkClient.requests.map((request) => request.url)).toEqual([COMBINED_URL]);
     expect(response.result.success).toBe(true);
     if (!response.result.success) {
       throw new Error(response.result.error);
@@ -180,10 +179,27 @@ describe("R18DevCrawler", () => {
   });
 
   it("classifies not-found and malformed R18 JSON responses", async () => {
+    const alternateCombined = "https://r18.dev/videos/vod/movies/detail/-/combined=118ure00013/json";
+    const namespaced = createCrawler(
+      new Map<string, unknown>([
+        [COMBINED_URL, { results: [] }],
+        [LOOKUP_URL, { content_id: "118ure00013", dvd_id: "URE-013" }],
+        [alternateCombined, createDetailPayload({ content_id: "118ure00013" })],
+      ]),
+    );
+    expect((await namespaced.crawler.crawl({ number: "URE-013", site: Website.R18_DEV })).result).toMatchObject({
+      success: true,
+      data: { number: "URE-013", actors: ["北川美玖"] },
+    });
+    expect(namespaced.networkClient.requests.map((request) => request.url)).toEqual([
+      COMBINED_URL,
+      LOOKUP_URL,
+      alternateCombined,
+    ]);
     const notFound = createCrawler(
       new Map<string, unknown>([
         [LOOKUP_URL, { results: [] }],
-        [COMPACT_LOOKUP_URL, { results: [] }],
+        [COMBINED_URL, { results: [] }],
       ]),
     );
     const notFoundResponse = await notFound.crawler.crawl({
@@ -195,7 +211,7 @@ describe("R18DevCrawler", () => {
     if (notFoundResponse.result.success) {
       throw new Error("expected not-found failure");
     }
-    expect(notFoundResponse.result.failureReason).toBe("not_found");
+    expect(notFoundResponse.result.reason).toBe("not_found");
 
     const malformed = createCrawler(
       new Map<string, unknown>([
@@ -212,6 +228,20 @@ describe("R18DevCrawler", () => {
     if (malformedResponse.result.success) {
       throw new Error("expected parse failure");
     }
-    expect(malformedResponse.result.failureReason).toBe("parse_error");
+    expect(malformedResponse.result.reason).toBe("parse_error");
+    for (const payload of [
+      createDetailPayload({ content_id: "ure00012" }),
+      createDetailPayload({ dvd_id: "URE-012" }),
+      createDetailPayload({ content_id: undefined }),
+    ]) {
+      const { crawler } = createCrawler(
+        new Map([
+          [COMBINED_URL, payload],
+          [LOOKUP_URL, payload],
+        ]),
+      );
+      const response = await crawler.crawl({ number: "URE-013", site: Website.R18_DEV });
+      expect(response.result).toMatchObject({ success: false, reason: "not_found" });
+    }
   });
 });

@@ -69,6 +69,8 @@ export class MaintenanceService {
         imageHostCooldownStore: this.imageHostCooldownStore,
         networkClient: deps.networkClient,
         signalService: deps.signalService,
+        recordSiteResults: async (number, results) =>
+          (await deps.persistenceService.getState()).repositories.siteResults.record(number, results),
       });
     this.coordinator =
       deps.coordinator ??

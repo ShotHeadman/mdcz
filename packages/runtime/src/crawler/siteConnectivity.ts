@@ -1,22 +1,9 @@
 import { type Configuration, isMirrorableSite, type MirrorableSite, resolveSiteUrl } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { SiteConnectivityProbeResponse } from "@mdcz/shared/serverDtos";
+import { failureReasonOf, type RuntimeNetworkClient, runWithCrawlerSource } from "../network";
 import { buildCrawlerOptions } from "../scrape/crawlerOptions";
 import { toErrorMessage } from "../shared";
-
-interface SiteConnectivityNetworkClient {
-  probe(
-    url: string,
-    init?: {
-      headers?: Record<string, string>;
-      timeout?: number;
-    },
-  ): Promise<{
-    ok: boolean;
-    status: number;
-    resolvedUrl: string;
-  }>;
-}
 
 const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Exclude<Website, MirrorableSite>, string> = {
   [Website.DAHLIA]: "https://dahlia-av.jp",
@@ -38,6 +25,11 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Exclude<Website, MirrorableSite>, s
   [Website.SOKMIL]: "https://www.sokmil.com",
   [Website.AVBASE]: "https://www.avbase.net",
   [Website.AVWIKIDB]: "https://avwikidb.com",
+  [Website.OFFICIAL]: "https://s1s1s1.com",
+  [Website.ONEPONDO]: "https://www.1pondo.tv",
+  [Website.TENMUSUME]: "https://www.10musume.com",
+  [Website.CARIBBEANCOM]: "https://www.caribbeancom.com",
+  [Website.HEYZO]: "https://www.heyzo.com",
 };
 
 const appendCookie = (headers: Record<string, string>, cookie: string | undefined): void => {
@@ -79,7 +71,7 @@ export const buildSiteConnectivityHeaders = (site: Website, configuration: Confi
 export const probeSiteConnectivity = async (
   site: Website,
   configuration: Configuration,
-  networkClient: SiteConnectivityNetworkClient,
+  networkClient: Pick<RuntimeNetworkClient, "probe">,
 ): Promise<SiteConnectivityProbeResponse> => {
   const url = resolveSiteConnectivityTargetUrl(site, configuration);
   const headers = buildSiteConnectivityHeaders(site, configuration);
@@ -87,10 +79,11 @@ export const probeSiteConnectivity = async (
   const startedAt = Date.now();
 
   try {
-    const result = await networkClient.probe(url, {
-      timeout,
-      headers,
-    });
+    // Probing as the site gives the request the same proxy route the site's crawler takes.
+    const result = await runWithCrawlerSource(
+      site,
+      async () => await networkClient.probe(url, { method: "GET", timeout, headers }),
+    );
     // Expired mirror domains answer 200 after redirecting to an unrelated parking host.
     const resolvedHost = new URL(result.resolvedUrl).host;
     const redirectedHost = isMirrorableSite(site) && resolvedHost !== new URL(url).host ? resolvedHost : undefined;
@@ -100,8 +93,14 @@ export const probeSiteConnectivity = async (
       status: result.status,
       resolvedUrl: result.resolvedUrl,
       redirectedHost,
+      reason: result.reason,
     };
   } catch (error) {
-    return { ok: false, latencyMs: Date.now() - startedAt, error: toErrorMessage(error) };
+    return {
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      error: toErrorMessage(error),
+      reason: failureReasonOf(error),
+    };
   }
 };

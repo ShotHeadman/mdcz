@@ -10,6 +10,7 @@ import { LibraryRepository, selectRepresentativeFile } from "./libraryRepository
 import { MediaRootRepository } from "./mediaRootRepository";
 import { defaultMigrationsFolder, runMigrations } from "./migrate";
 import { ScanTaskRepository } from "./scanTaskRepository";
+import { SiteResultRepository } from "./siteResultRepository";
 import { createTestPersistenceDatabase } from "./testDatabase";
 
 let database: PersistenceDatabase | undefined;
@@ -179,7 +180,7 @@ describe("Persistence migrations", () => {
       expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_runs'").all()).toEqual([
         { name: "scrape_runs" },
       ]);
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -247,7 +248,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -306,7 +307,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 5 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 6 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
@@ -917,6 +918,42 @@ describe("LibraryRepository", () => {
         files: [expect.objectContaining({ rootRelativePath: "DEF-456/DEF-456.mp4" })],
       }),
     ]);
+  });
+});
+
+describe("SiteResultRepository", () => {
+  it("keeps the latest outcome per site and the site's last answer about the movie", () => {
+    database = createTestPersistenceDatabase();
+    const siteResults = new SiteResultRepository(database);
+    const data = { title: "DMM Title" };
+    const latest = () =>
+      siteResults
+        .list("snos-301")
+        .map(({ site, status, reason, skipReason, data }) => ({ site, status, reason, skipReason, data }));
+
+    siteResults.record(" snos-301 ", [
+      { site: "dmm", status: "success", elapsedMs: 900, data },
+      { site: "javdb", status: "success", elapsedMs: 1200, data: { title: "JavDB Title" } },
+    ]);
+    siteResults.record("SNOS-301", [
+      { site: "dmm", status: "failed", reason: "timeout", detail: "budget", elapsedMs: 20_000 },
+      { site: "javdb", status: "failed", reason: "not_found", httpStatus: 404, elapsedMs: 300 },
+    ]);
+    expect(latest()).toEqual([
+      { site: "dmm", status: "failed", reason: "timeout", skipReason: undefined, data },
+      { site: "javdb", status: "failed", reason: "not_found", skipReason: undefined, data: undefined },
+    ]);
+
+    siteResults.record("SNOS-301", [
+      { site: "dmm", status: "skipped", skipReason: "unavailable", reason: "region_blocked", elapsedMs: 0 },
+    ]);
+    expect(latest()[0]).toEqual({
+      site: "dmm",
+      status: "skipped",
+      reason: "region_blocked",
+      skipReason: "unavailable",
+      data,
+    });
   });
 });
 

@@ -11,6 +11,7 @@ import {
   runMigrations,
   ScanTaskRepository,
   ScrapeRunRepository,
+  SiteResultRepository,
 } from "@mdcz/persistence";
 import { recoverInterruptedPublications } from "@mdcz/runtime";
 import { app, dialog } from "electron";
@@ -67,6 +68,7 @@ export interface DesktopPersistenceRepositories {
   mediaRoots: MediaRootRepository;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
+  siteResults: SiteResultRepository;
 }
 
 export interface DesktopPersistenceState {
@@ -134,6 +136,7 @@ export class DesktopPersistenceService {
           mediaRoots,
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
+          siteResults: new SiteResultRepository(database),
         },
       };
       return this.state;

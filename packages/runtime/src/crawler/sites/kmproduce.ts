@@ -7,13 +7,15 @@ import { BaseCrawler } from "../base/BaseCrawler";
 import { extractAttr, extractText, parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
-import { toAbsoluteUrl } from "./helpers";
+import { extractByLabels, pageIdentityUrl, toAbsoluteUrl } from "./helpers";
 
 const KM_PRODUCE_BASE_URL = "https://www.km-produce.com";
 
 type CheerioInput = Parameters<CheerioAPI>[0];
 
 export class KMProduceCrawler extends BaseCrawler {
+  static readonly numberPattern =
+    /^(?:REAL|BAZX|MDB|MDTM|MDVR|MDS|MIST|NACR|NACX|UMD|SCOOP|HODV|HOMA|BOKD|SABA|SCOP|CRVR|VOSS)[-_]?\d+$/iu;
   site(): Website {
     return Website.KM_PRODUCE;
   }
@@ -35,7 +37,7 @@ export class KMProduceCrawler extends BaseCrawler {
     return $("h1").length > 0 ? this.reuseSearchDocument(searchUrl) : null;
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI): Promise<CrawlerData | null> {
     const title = extractText($, "h1");
     if (!title) {
       return null;
@@ -68,7 +70,7 @@ export class KMProduceCrawler extends BaseCrawler {
 
     return {
       title,
-      number: context.number,
+      number: extractByLabels($, ["品番", "商品番号"]) ?? pageIdentityUrl($).match(/\/works\/([^/?#]+)/u)?.[1] ?? "",
       actors,
       genres,
       content_type: undefined,

@@ -5,6 +5,7 @@ import {
   R18_METADATA_LANGUAGE_OPTIONS,
   type R18MetadataLanguage,
 } from "@mdcz/shared/r18";
+import type { SiteHealth } from "@mdcz/shared/siteResults";
 import {
   Button,
   cn,
@@ -15,16 +16,19 @@ import {
   DialogHeader,
   DialogTitle,
   FormItem,
+  Switch,
 } from "@mdcz/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { OrderedSiteFieldEditor, type OrderedSiteFieldRow } from "../config-form/OrderedSiteField";
 import { useT } from "../i18n";
+import { describeSiteHealth } from "../overview/SiteHealthCard";
 import { normalizeEnabledSites } from "./orderedSite";
 import { ResetToDefaultButton } from "./ResetToDefaultButton";
 import { SettingRow } from "./SettingRow";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
+import { useSettingsServices } from "./SettingsServices";
 import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import {
   buildGroupedSitePrioritySummary,
@@ -41,6 +45,7 @@ interface SitePriorityEditorFieldProps {
 }
 
 const SITE_PRIORITY_FIELD_NAME = "scrape.sites";
+const DIRECT_SITES_FIELD_NAME = "network.directSites";
 
 function valuesEqual(a: string[], b: string[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -107,6 +112,21 @@ export function SitePriorityEditorField({ options }: SitePriorityEditorFieldProp
     javdbUrl: mirrorUrlSchema.safeParse(javdbUrl).data ?? "",
     javbusUrl: mirrorUrlSchema.safeParse(javbusUrl).data ?? "",
   };
+  const [useProxy, directSites = []] =
+    (useWatch({ control: form.control, name: ["network.useProxy", DIRECT_SITES_FIELD_NAME] }) as
+      | [boolean | undefined, Website[] | undefined]
+      | undefined) ?? [];
+  useAutoSaveField(DIRECT_SITES_FIELD_NAME, { mode: "immediate" });
+  const services = useSettingsServices();
+  const [siteHealth, setSiteHealth] = useState<Partial<Record<Website, SiteHealth>>>({});
+  const refreshSiteHealth = useCallback(async () => {
+    const { sites } = await services.listCrawlerSites();
+    setSiteHealth(Object.fromEntries(sites.flatMap(({ site, health }) => (health ? [[site, health]] : []))));
+  }, [services]);
+  const setSiteProxy = (site: Website, proxied: boolean) => {
+    const next = proxied ? directSites.filter((entry) => entry !== site) : [...directSites, site];
+    form.setValue(DIRECT_SITES_FIELD_NAME, next, { shouldDirty: true, shouldTouch: true });
+  };
   const fieldFormState = useFormState({ control: form.control, name });
   const normalizedValue = useMemo(() => normalizeEnabledSites(value), [value]);
   const availableOptions = useMemo(
@@ -169,8 +189,10 @@ export function SitePriorityEditorField({ options }: SitePriorityEditorFieldProp
   useEffect(() => {
     if (!open) {
       setDraftValue(normalizedValue);
+      return;
     }
-  }, [normalizedValue, open]);
+    void refreshSiteHealth();
+  }, [normalizedValue, open, refreshSiteHealth]);
 
   const visible = search ? search.isFieldVisible(name) : true;
   const highlighted = search ? search.isFieldHighlighted(name) : false;
@@ -267,20 +289,44 @@ export function SitePriorityEditorField({ options }: SitePriorityEditorFieldProp
                     </p>
                   </div>
                   <div className="divide-y overflow-hidden rounded-[var(--radius-quiet-lg)] border border-border/60 bg-surface">
-                    {connectivitySites.map((site) => (
-                      <div key={site} className="flex items-center gap-3 px-3 py-2.5 text-sm">
-                        <span className="mr-auto font-mono text-xs text-foreground/85">
-                          {site}
-                          {isMirrorableSite(site) && (
-                            <span className="text-muted-foreground">
-                              {" · "}
-                              {new URL(resolveSiteUrl(siteUrls, site)).host}
+                    {connectivitySites.map((site) => {
+                      const health = siteHealth[site];
+                      const description = health && describeSiteHealth(t, site, health);
+                      return (
+                        <div key={site} className="px-3 py-2.5 text-sm">
+                          <div className="flex items-center gap-3">
+                            <span className="mr-auto font-mono text-xs text-foreground/85">
+                              {site}
+                              {isMirrorableSite(site) && (
+                                <span className="text-muted-foreground">
+                                  {" · "}
+                                  {new URL(resolveSiteUrl(siteUrls, site)).host}
+                                </span>
+                              )}
                             </span>
+                            <span
+                              className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                              title={useProxy ? undefined : t.domain.siteHealth.proxyOff}
+                            >
+                              {t.domain.siteHealth.useProxy}
+                              <Switch
+                                size="sm"
+                                aria-label={`${site} ${t.domain.siteHealth.useProxy}`}
+                                checked={Boolean(useProxy) && !directSites.includes(site)}
+                                disabled={!useProxy}
+                                onCheckedChange={(checked) => setSiteProxy(site, checked)}
+                              />
+                            </span>
+                            <SiteConnectivityPill site={site} onChecked={() => void refreshSiteHealth()} />
+                          </div>
+                          {description && (
+                            <p className="mt-1.5 text-xs leading-5 text-amber-700">
+                              {description.summary} {description.remedy}
+                            </p>
                           )}
-                        </span>
-                        <SiteConnectivityPill site={site} />
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
               )}

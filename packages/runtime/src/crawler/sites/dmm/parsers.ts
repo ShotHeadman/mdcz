@@ -57,22 +57,6 @@ const extractDmmTableLinks = ($: CheerioAPI, labels: readonly string[]): string[
   );
 };
 
-const extractRelatedTags = ($: CheerioAPI): string[] => {
-  const texts = [...extractDmmTableLinks($, ["関連タグ"])];
-
-  return uniqueStrings(
-    texts.flatMap((text) => {
-      const normalized = text.replace(/\u3000/gu, " ").trim();
-      if (!normalized) {
-        return [];
-      }
-
-      const rawParts = normalized.includes("#") ? normalized.split(/\s+/u) : [normalized];
-      return rawParts.map((part) => part.replace(/^#+/u, "").trim()).filter((part) => part.length > 0);
-    }),
-  );
-};
-
 const normalizeDmmGenres = (values: Array<string | undefined>): string[] =>
   uniqueStrings(values).filter((value) => !DMM_NOISE_GENRES.has(value));
 
@@ -176,7 +160,7 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
     ...extractDmmTableLinks($, ["出演者"]),
   ]);
 
-  const genres = normalizeDmmGenres([...extractDmmTableLinks($, ["ジャンル"]), ...extractRelatedTags($)]);
+  const genres = normalizeDmmGenres(extractDmmTableLinks($, ["ジャンル"]));
 
   const thumb = extractDmmPrimaryImage($);
   const thumbUrl = thumb?.replace("ps.jpg", "pl.jpg");
@@ -202,6 +186,7 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
 
   return {
     title,
+    number: extractDmmTableValue($, ["メーカー品番", "品番", "商品番号"]),
     actors,
     genres,
     studio,

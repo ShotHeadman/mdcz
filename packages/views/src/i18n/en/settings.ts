@@ -175,7 +175,7 @@ export const settings = {
       official: {
         label: "Official studio sites",
         description:
-          "Studio and label sites such as MGStage, Prestige, Faleno, Dahlia and KM Produce. Good for their own titles, with narrow coverage; success varies widely by site and code.",
+          "Official sources including S1, MOODYZ, IdeaPocket and other Will/Outvision makers, plus MGStage, Prestige, Faleno, Dahlia and KM Produce. Codes select eligible studios automatically.",
       },
       [Website.AVBASE]: {
         label: "avbase",
@@ -206,6 +206,11 @@ export const settings = {
       h0930_family: {
         label: "H0930 / H4610",
         description: "Self-run independent production sites that use their own codes (e.g. H0930/H4610).",
+      },
+      uncensored_official: {
+        label: "Uncensored studio sites",
+        description:
+          "1pondo, 10musume, Caribbeancom and HEYZO official metadata. Uses 1PON, 10MU, CARIB and HEYZO codes without a login.",
       },
       [Website.FC2]: {
         label: "fc2",

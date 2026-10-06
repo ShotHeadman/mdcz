@@ -1,10 +1,8 @@
-import type { SiteRequestConfig } from "@mdcz/runtime/network";
+import { failureReasonOf, SiteError, type SiteRequestConfig } from "@mdcz/runtime/network";
 import {
   classifyJavbusPage,
   JAVBUS_OFFICIAL_REQUEST_HEADERS,
   JAVBUS_PAGE_HEADERS,
-  javbusBlockedPageMessage,
-  normalizeCode,
   normalizeText,
 } from "@mdcz/runtime/shared";
 import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
@@ -12,8 +10,9 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 import { BaseCrawler } from "../base/BaseCrawler";
+import { movieNumbersMatch, toDateSequenceLabel } from "../base/identity";
 import { extractText, parseDate } from "../base/parser";
-import type { Context } from "../base/types";
+import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { extractParentTextByLabelSelector, toAbsoluteUrl } from "./helpers";
 
@@ -26,7 +25,6 @@ const JAVBUS_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
 ];
 
 type CheerioInput = Parameters<CheerioAPI>[0];
-type JavbusSearchResult = { detailUrl: string; matched: boolean };
 
 const buildPosterUrl = (thumbUrl: string | undefined): string | undefined => {
   if (!thumbUrl) {
@@ -44,22 +42,20 @@ const buildPosterUrl = (thumbUrl: string | undefined): string | undefined => {
   return undefined;
 };
 
-const normalizeSearchResultPath = (href: string): string => {
-  return normalizeCode(href.split(/[?#]/u)[0] ?? href);
-};
+const javbusNumber = (number: string): string => toDateSequenceLabel(number) ?? number.toUpperCase();
 
-const pickJavbusSearchResult = (
-  searchUrl: string,
-  candidateHrefs: string[],
-  expectedNumber: string,
-): JavbusSearchResult => {
-  const expected = normalizeCode(expectedNumber);
-  const fallbackDetailUrl = new URL(`/${encodeURIComponent(expectedNumber.toUpperCase())}`, searchUrl).href;
-  const href = candidateHrefs.find((candidate) => normalizeSearchResultPath(candidate).endsWith(`/${expected}`));
-
-  return href
-    ? { detailUrl: new URL(href, searchUrl).href, matched: true }
-    : { detailUrl: fallbackDetailUrl, matched: false };
+const javbusBlockedPageError = (html: string): SiteError | null => {
+  const page = classifyJavbusPage(html);
+  if (page === "verification_required") {
+    return new SiteError(
+      "login_wall",
+      "JavBus requires age/region verification. Complete it in your browser and copy the cookies; forum registration does not resolve this.",
+    );
+  }
+  if (page === "login_wall") {
+    return new SiteError("login_wall", "JavBus login wall; the current cookie cannot access film content.");
+  }
+  return null;
 };
 
 export class JavbusCrawler extends BaseCrawler {
@@ -79,37 +75,55 @@ export class JavbusCrawler extends BaseCrawler {
       return null;
     }
 
-    return `${context.options.baseUrl ?? OFFICIAL_SITE_URLS[Website.JAVBUS]}/search/${encodeURIComponent(number)}`;
+    return `${context.options.baseUrl ?? OFFICIAL_SITE_URLS[Website.JAVBUS]}/${encodeURIComponent(javbusNumber(number))}`;
   }
 
-  protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
-    const blockedMessage = javbusBlockedPageMessage(classifyJavbusPage($.html()));
-    if (blockedMessage) {
-      throw new Error(blockedMessage);
+  protected override async fetch(url: string, context: Context): Promise<string> {
+    try {
+      return await super.fetch(url, context);
+    } catch (error) {
+      if (
+        failureReasonOf(error) !== "not_found" ||
+        context.options.detailUrl ||
+        url !== (await this.generateSearchUrl(context))
+      ) {
+        throw error;
+      }
+      return super.fetch(new URL(`/search/${encodeURIComponent(javbusNumber(context.number))}`, url).href, context);
+    }
+  }
+
+  protected async parseSearchPage(
+    context: Context,
+    $: CheerioAPI,
+    searchUrl: string,
+  ): Promise<string | SearchPageResolution | null> {
+    const blocked = javbusBlockedPageError($.html());
+    if (blocked) {
+      throw blocked;
     }
 
+    if ($("h3").length > 0) {
+      return this.reuseSearchDocument(searchUrl);
+    }
     const candidates = $("a.movie-box")
       .toArray()
       .map((element: CheerioInput) => $(element).attr("href"))
       .filter((href: string | undefined): href is string => typeof href === "string" && href.length > 0);
 
-    const result = pickJavbusSearchResult(searchUrl, candidates, context.number);
-    if (!result.matched) {
-      this.logger.debug(
-        `No javbus search match for ${context.number} via ${searchUrl}, fallback to ${result.detailUrl}`,
-      );
-    }
-
-    return result.detailUrl;
+    const href = candidates.find((candidate) =>
+      movieNumbersMatch(new URL(candidate, searchUrl).pathname.split("/").filter(Boolean).at(-1) ?? "", context.number),
+    );
+    return href ? new URL(href, searchUrl).href : null;
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const titleRaw = extractText($, "h3");
     if (!titleRaw) {
       return null;
     }
 
-    const number = extractParentTextByLabelSelector($, "span.header", ["識別碼", "识别码", "ID"]) ?? context.number;
+    const number = extractParentTextByLabelSelector($, "span.header", ["識別碼", "识别码", "ID"]) ?? "";
     const release =
       parseDate(extractParentTextByLabelSelector($, "span.header", ["發行日期", "发行日期", "Released"])) ?? undefined;
 
@@ -163,8 +177,8 @@ export class JavbusCrawler extends BaseCrawler {
     };
   }
 
-  protected override classifyDetailFailure(_context: Context, detailHtml: string): string | null {
-    return javbusBlockedPageMessage(classifyJavbusPage(detailHtml));
+  protected override classifyDetailFailure(_context: Context, detailHtml: string): SiteError | null {
+    return javbusBlockedPageError(detailHtml);
   }
 }
 

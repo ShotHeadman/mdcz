@@ -170,6 +170,7 @@ const fields: Record<FieldKey, FieldText> = {
   "network.proxyType": { label: "Proxy type" },
   "network.proxy": { label: "Proxy address" },
   "network.useProxy": { label: "Use proxy" },
+  "network.directSites": { label: "Sites that bypass the proxy" },
   "network.timeout": { label: "Timeout (s)" },
   "network.retryCount": { label: "Retry count" },
   "network.javdbUrl": {

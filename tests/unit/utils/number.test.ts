@@ -13,6 +13,14 @@ describe("extractNumber", () => {
       { input: "H4610-ori696", expected: "H4610-ORI696" },
       { input: "h4610_ori641", expected: "H4610-ORI641" },
       { input: "h4610 ori641", expected: "H4610-ORI641" },
+      { input: "1pondo-100524_001", expected: "1PON-100524_001" },
+      { input: "1PON-100524_001-C-CD2", expected: "1PON-100524_001" },
+      { input: "10musume-100524_01", expected: "10MU-100524_01" },
+      { input: "caribbeancom-100524-001", expected: "CARIB-100524-001" },
+      { input: "carib-100524_001", expected: "CARIB-100524-001" },
+      { input: "100524_001-1pon", expected: "1PON-100524_001" },
+      { input: "100524_001", expected: "100524_001" },
+      { input: "100524-001", expected: "100524-001" },
     ];
 
     for (const { input, expected } of cases) {
@@ -59,6 +67,10 @@ describe("parseFileInfo", () => {
   });
 
   it("parses multipart suffixes and preserves their raw text", () => {
+    expect(parseFileInfo("/tmp/1PON-100524_001-2.mp4")).toMatchObject({
+      number: "1PON-100524_001",
+      part: { number: 2, suffix: "-2" },
+    });
     expect(parseFileInfo("/tmp/ABC-123-C-CD1.mkv")).toMatchObject({
       number: "ABC-123",
       isSubtitled: true,

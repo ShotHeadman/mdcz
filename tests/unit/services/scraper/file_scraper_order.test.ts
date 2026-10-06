@@ -34,6 +34,7 @@ class OrderedStubCrawlerProvider extends CrawlerProvider {
       result: {
         success: false,
         error: `stub miss: ${input.site}`,
+        reason: "not_found",
       },
     };
   }

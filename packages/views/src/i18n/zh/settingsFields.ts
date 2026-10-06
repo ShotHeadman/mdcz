@@ -97,6 +97,7 @@ export const settingsFields: Messages["settingsFields"] = {
     "network.proxyType": { label: "代理类型" },
     "network.proxy": { label: "代理地址" },
     "network.useProxy": { label: "启用代理" },
+    "network.directSites": { label: "不走代理的站点" },
     "network.timeout": { label: "超时时间(秒)" },
     "network.retryCount": { label: "重试次数" },
     "network.javdbUrl": {

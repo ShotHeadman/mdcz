@@ -14,6 +14,7 @@ export const queryKeys = {
   overview: {
     all: ["overview"] as const,
     summary: ["overview", "summary"] as const,
+    sites: ["overview", "sites"] as const,
   },
   library: {
     all: ["library"] as const,

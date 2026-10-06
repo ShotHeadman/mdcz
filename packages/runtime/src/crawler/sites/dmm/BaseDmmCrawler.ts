@@ -1,12 +1,14 @@
+import type { SiteError } from "@mdcz/runtime/network";
 import { toErrorMessage } from "@mdcz/runtime/shared";
 import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 
 import { BaseCrawler } from "../../base/BaseCrawler";
+import { verifyMovieNumber } from "../../base/identity";
 import type { Context, CrawlerInput } from "../../base/types";
 import type { FetchOptions } from "../../FetchGateway";
-
+import { toDmmMovieNumber } from "./contentId";
 import {
   buildDmmVideoGraphQlFetchOptions,
   buildDmmVideoPayload,
@@ -19,6 +21,9 @@ import { classifyDmmDetailFailure } from "./failureClassifier";
 import { buildDmmHttpOptions, normalizeDmmCookieHeader } from "./SessionVault";
 
 type DmmFamilyWebsite = Website.DMM | Website.DMM_TV;
+
+export const dmmPageTitle = ($: CheerioAPI): string | undefined =>
+  `${$("title").first().text().trim()} ${$("h1#title, h1").first().text().trim()}`.trim() || undefined;
 
 /**
  * Shared base for DMM and DMM_TV crawlers.
@@ -34,22 +39,8 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
     return context;
   }
 
-  protected override classifyDetailFailure(
-    _context: Context,
-    detailHtml: string,
-    $: CheerioAPI,
-    detailUrl: string,
-  ): string | null {
-    const titleText = $("title").first().text().trim();
-    const h1Text = $("h1#title, h1").first().text().trim();
-    const mergedTitle = `${titleText} ${h1Text}`.trim() || undefined;
-
-    return classifyDmmDetailFailure({
-      html: detailHtml,
-      title: mergedTitle,
-      detailUrl,
-      siteLabel: this.dmmSiteLabel(),
-    });
+  protected override classifyDetailFailure(_context: Context, detailHtml: string, $: CheerioAPI): SiteError | null {
+    return classifyDmmDetailFailure(detailHtml, dmmPageTitle($), this.dmmSiteLabel());
   }
 
   protected createFetchOptions(context: Context): FetchOptions {
@@ -72,17 +63,13 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
     return buildDmmVideoGraphQlFetchOptions(this.createFetchOptions(context));
   }
 
-  protected async fetchDmmVideoData(
-    context: Context,
-    contentId: string,
-    fallbackNumber: string = context.number,
-  ): Promise<Partial<CrawlerData> | null> {
+  protected async fetchDmmVideoData(context: Context, contentId: string): Promise<Partial<CrawlerData> | null> {
     const videoResponse = await this.gateway.fetchGraphQL<unknown>(
       DMM_VIDEO_GRAPHQL_ENDPOINT,
       buildDmmVideoPayload(contentId),
       this.createDmmVideoGraphQlFetchOptions(context),
     );
-    return parseDmmVideoData(videoResponse, fallbackNumber);
+    return parseDmmVideoData(videoResponse);
   }
 
   protected async tryDmmVideoContentIds(
@@ -95,8 +82,10 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
 
     for (const contentId of uniqueContentIds) {
       try {
-        const result = toDmmVideoCrawlerData(await this.fetchDmmVideoData(context, contentId), context.number, website);
+        const result = toDmmVideoCrawlerData(await this.fetchDmmVideoData(context, contentId), website);
         if (result) {
+          result.number = toDmmMovieNumber(result.number, context.number);
+          verifyMovieNumber(result.number, context.number);
           return result;
         }
       } catch (error) {

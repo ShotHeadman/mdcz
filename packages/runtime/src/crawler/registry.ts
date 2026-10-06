@@ -3,6 +3,7 @@ import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerConstructor, CrawlerRegistration } from "./registration";
 import { crawlerRegistration as avbaseRegistration } from "./sites/avbase";
 import { crawlerRegistration as avwikidbRegistration } from "./sites/avwikidb";
+import { crawlerRegistration as caribbeancomRegistration } from "./sites/caribbeancom";
 import { crawlerRegistration as dahliaRegistration } from "./sites/dahlia";
 import { crawlerRegistration as dmmRegistration } from "./sites/dmm";
 import { crawlerRegistration as dmmTvRegistration } from "./sites/dmm/dmm_tv";
@@ -12,16 +13,20 @@ import { crawlerRegistration as fc2Registration } from "./sites/fc2";
 import { crawlerRegistration as fc2hubRegistration } from "./sites/fc2hub";
 import { crawlerRegistration as h0930Registration } from "./sites/h0930";
 import { crawlerRegistration as h4610Registration } from "./sites/h4610";
+import { crawlerRegistration as heyzoRegistration } from "./sites/heyzo";
 import { crawlerRegistration as jav321Registration } from "./sites/jav321";
 import { crawlerRegistration as javbusRegistration } from "./sites/javbus";
 import { crawlerRegistration as javdbRegistration } from "./sites/javdb";
 import { crawlerRegistration as kingdomRegistration } from "./sites/kingdom";
 import { crawlerRegistration as kmProduceRegistration } from "./sites/kmproduce";
 import { crawlerRegistration as mgstageRegistration } from "./sites/mgstage";
+import { crawlerRegistration as officialRegistration } from "./sites/official";
+import { crawlerRegistration as onePondoRegistration } from "./sites/onepondo";
 import { crawlerRegistration as ppvdatabankRegistration } from "./sites/ppvdatabank";
 import { crawlerRegistration as prestigeRegistration } from "./sites/prestige";
 import { crawlerRegistration as r18Registration } from "./sites/r18";
 import { crawlerRegistration as sokmilRegistration } from "./sites/sokmil";
+import { crawlerRegistration as tenMusumeRegistration } from "./sites/tenmusume";
 
 const crawlerConstructors = new Map<Website, CrawlerConstructor>();
 
@@ -67,6 +72,11 @@ const crawlerRegistrations: CrawlerRegistration[] = [
   prestigeRegistration,
   r18Registration,
   sokmilRegistration,
+  officialRegistration,
+  onePondoRegistration,
+  tenMusumeRegistration,
+  caribbeancomRegistration,
+  heyzoRegistration,
 ];
 
 for (const registration of crawlerRegistrations) {

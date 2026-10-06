@@ -1,0 +1,53 @@
+// Will/Outvision makers use the same works CMS. Keep each prefix with its publishing domain.
+export const OFFICIAL_MAKERS = [
+  {
+    studio: "S1 NO.1 STYLE",
+    domain: "s1s1s1.com",
+    prefixes: "snos sone spone sivr ssis ssni snis soe oned one onsd ofje sps tksoe",
+  },
+  {
+    studio: "MOODYZ",
+    domain: "moodyz.com",
+    prefixes:
+      "mida mdvr midv mide midd mibd mimk miid migd mifd miae miad miaa mdl mdj mdi mdg mdf mde mdld mded mizd mird mdjd rmid mdid mdmd mimu mdpd mivd mdud mdgd mdvd mias miqd mint rmpd mdrd tkmide tkmidd kmide tkmigd mdfd rmwd miab",
+  },
+  {
+    studio: "マドンナ",
+    domain: "www.madonna-av.com",
+    prefixes: "juvr jusd juq juy jux jul juk juc jukd oba roeb roe ure mdon obe jums",
+  },
+  { studio: "ワンズファクトリー", domain: "www.wanz-factory.com", prefixes: "wavr waaa bmw wanz" },
+  {
+    studio: "アイデアポケット",
+    domain: "ideapocket.com",
+    prefixes: "ipvr ipx ipz iptd ipsd idbd supd ipit and hpd tkipz ipzz cosd anpd dan alad kipx",
+  },
+  { studio: "kira☆kira", domain: "kirakira-av.com", prefixes: "kivr blk kibd kifd kird kisd set" },
+  { studio: "E-BODY", domain: "www.av-e-body.com", prefixes: "ebvr ebod mkck eyan" },
+  { studio: "痴女ヘブン", domain: "bi-av.com", prefixes: "cjvr cjod bbi bib cjob beb bid bist bwb" },
+  { studio: "プレミアム", domain: "premium-beauty.com", prefixes: "prvr pgd pred pbd pjd prtd pxd pid ptv" },
+  { studio: "未満", domain: "miman.jp", prefixes: "mmvr mmnd mmxd aom" },
+  { studio: "溜池ゴロー", domain: "tameikegoro.jp", prefixes: "mevr meyd mbyd mdyd mnyd" },
+  { studio: "Fitch", domain: "fitch-av.com", prefixes: "fcvr jufe jufd jfb juny nyb finh gcf nima" },
+  { studio: "kawaii*", domain: "kawaiikawaii.jp", prefixes: "kavr cawd kwbd kawd kwsr kwsd kane" },
+  { studio: "BeFree", domain: "befreebe.com", prefixes: "bf" },
+  { studio: "無垢", domain: "muku.tv", prefixes: "mucd mudr mukd smcd mukc" },
+  {
+    studio: "アタッカーズ",
+    domain: "attackers.net",
+    prefixes: "atvr rbk rbd same shkd atid adn atkd jbd sspd atad azsd",
+  },
+  { studio: "えむっ娘ラボ", domain: "mko-labo.net", prefixes: "mvr mism emlb" },
+  { studio: "ダスッ！", domain: "dasdas.jp", prefixes: "dsvr dass dazd dasd pla" },
+  { studio: "エムズ・ビデオ・グループ", domain: "mvg.jp", prefixes: "mvbd mvsd" },
+  { studio: "OPERA", domain: "av-opera.jp", prefixes: "opvr opbd opud" },
+  { studio: "OPPAI", domain: "oppai-av.com", prefixes: "ppvr pppe ppbd pppd ppsd ppfd" },
+  { studio: "ヴィ", domain: "v-av.com", prefixes: "vvvd vicd vizd vspd" },
+  { studio: "変態紳士倶楽部", domain: "to-satsu.com", prefixes: "clvr stol club" },
+  { studio: "ビビアン", domain: "bibian-av.com", prefixes: "bbvr bban" },
+  { studio: "本中", domain: "honnaka.jp", prefixes: "hnvr hmn hndb hnd krnd hnky hnjc hnse" },
+  { studio: "Rookie", domain: "rookie-av.jp", prefixes: "rvr rbb rki" },
+  { studio: "ナンパJAPAN", domain: "nanpa-japan.jp", prefixes: "njvr nnpj npjb" },
+  { studio: "はじめ企画", domain: "hajimekikaku.com", prefixes: "hjbb hjmo avgl" },
+  { studio: "Hunter", domain: "hhh-av.com", prefixes: "huntb hunta hunt hunbl royd tysf" },
+] as const;

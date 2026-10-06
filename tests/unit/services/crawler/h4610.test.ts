@@ -80,7 +80,7 @@ describe("H4610Crawler", () => {
     const crawler = new H4610Crawler(withGateway(networkClient));
 
     const response = await crawler.crawl({
-      number: "ignored",
+      number: "H4610-ORI641",
       site: Website.H4610,
       options: { detailUrl },
     });

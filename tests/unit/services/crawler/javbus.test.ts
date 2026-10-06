@@ -1,11 +1,12 @@
 import { JavbusCrawler } from "@mdcz/runtime/crawler/sites/javbus";
+import { SiteError } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
 import { FixtureNetworkClient, withGateway } from "./fixtures";
 
 describe("JavbusCrawler", () => {
-  it("parses detail pages and matches underscore code variants from search results", async () => {
+  it("requests details first and searches only on not_found, matching exact number variants", async () => {
     const cases = [
       {
         number: "ABP-123",
@@ -88,6 +89,22 @@ describe("JavbusCrawler", () => {
         },
       },
       {
+        number: "1PON-091026_001",
+        directUrl: "https://www.javbus.com/091026_001",
+        searchUrl: "https://www.javbus.com/search/091026_001",
+        detailUrl: "https://www.javbus.com/091026_001",
+        searchHtml: "",
+        detailHtml: `
+          <html><body>
+            <h3>091026_001 1pondo Title</h3>
+            <p><span class="header">識別碼:</span> <span>091026_001</span></p>
+          </body></html>
+        `,
+        assert: (data: Awaited<ReturnType<JavbusCrawler["crawl"]>>) => {
+          expect(data.result).toMatchObject({ success: true, data: { number: "091026_001", title: "1pondo Title" } });
+        },
+      },
+      {
         number: "MIRR-002",
         baseUrl: "https://javbus-mirror.example",
         searchUrl: "https://javbus-mirror.example/search/MIRR-002",
@@ -100,6 +117,7 @@ describe("JavbusCrawler", () => {
         detailHtml: `
           <html><body>
             <h3>MIRR-002 Mirror Title</h3>
+            <p><span class="header">ID:</span> MIRR-002</p>
             <a class="bigImage" href="/pics/cover/mirror_b.jpg">cover</a>
           </body></html>
         `,
@@ -112,12 +130,24 @@ describe("JavbusCrawler", () => {
       },
     ];
 
-    for (const { number, searchUrl, detailUrl, searchHtml, detailHtml, baseUrl, assert } of cases) {
-      const fixtures = new Map<string, string>([
+    for (const {
+      number,
+      directUrl: caseDirectUrl,
+      searchUrl,
+      detailUrl,
+      searchHtml,
+      detailHtml,
+      baseUrl,
+      assert,
+    } of cases) {
+      const directUrl = caseDirectUrl ?? `${baseUrl ?? "https://www.javbus.com"}/${number}`;
+      const fixtures = new Map<string, unknown>([
+        [directUrl, new SiteError("not_found", "HTTP 404")],
         [searchUrl, searchHtml],
         [detailUrl, detailHtml],
       ]);
-      const crawler = new JavbusCrawler(withGateway(new FixtureNetworkClient(fixtures)));
+      const network = new FixtureNetworkClient(fixtures);
+      const crawler = new JavbusCrawler(withGateway(network));
 
       const response = await crawler.crawl({
         number,
@@ -127,12 +157,15 @@ describe("JavbusCrawler", () => {
 
       expect(response.result.success).toBe(true);
       assert(response as Awaited<ReturnType<JavbusCrawler["crawl"]>>);
+      expect(network.requests.map((request) => request.url)).toEqual(
+        directUrl === detailUrl ? [directUrl] : [directUrl, searchUrl, detailUrl],
+      );
     }
   });
 
   it("returns an explicit error when Javbus serves the age verification page", async () => {
     const number = "ABP-075";
-    const searchUrl = "https://www.javbus.com/search/ABP-075";
+    const searchUrl = "https://www.javbus.com/ABP-075";
 
     const searchHtml = `
       <html>
@@ -158,7 +191,15 @@ describe("JavbusCrawler", () => {
     }
 
     expect(response.result.error).toContain("age/region verification");
-    expect(response.result.error).toContain("Forum account registration does not resolve this");
-    expect(response.result.failureReason).toBe("region_blocked");
+    expect(response.result.error).toContain("forum registration does not resolve this");
+    expect(response.result.reason).toBe("login_wall");
+    for (const actual of ["ABP-0750", "ABP-076", ""]) {
+      const network = new FixtureNetworkClient(
+        new Map([[searchUrl, `<h3>Other title</h3><p><span class="header">ID:</span>${actual}</p>`]]),
+      );
+      const result = await new JavbusCrawler(withGateway(network)).crawl({ number, site: Website.JAVBUS });
+      expect(result.result).toMatchObject({ success: false, reason: "not_found" });
+      expect(network.requests).toHaveLength(1);
+    }
   });
 });

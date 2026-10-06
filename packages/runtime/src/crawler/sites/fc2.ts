@@ -1,3 +1,4 @@
+import { SiteError } from "@mdcz/runtime/network";
 import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -7,7 +8,7 @@ import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { BaseFc2Crawler } from "./BaseFc2Crawler";
-import { parseClockDurationToSeconds, toAbsoluteUrl } from "./helpers";
+import { pageIdentityUrl, parseClockDurationToSeconds, toAbsoluteUrl } from "./helpers";
 
 const FC2_NOT_FOUND_MARKERS = [
   "お探しの商品が見つかりません",
@@ -85,7 +86,7 @@ export class Fc2Crawler extends BaseFc2Crawler {
     return this.reuseSearchDocument(searchUrl);
   }
 
-  protected async parseDetailPage(context: Context, $: CheerioAPI): Promise<CrawlerData | null> {
+  protected async parseDetailPage(_context: Context, $: CheerioAPI): Promise<CrawlerData | null> {
     // FC2 hides a scraper watermark inside the title with an inline-styled element; seller titles are plain text.
     const heading = $("div[data-section='userInfo'] h3").first();
     heading.find("[style]").remove();
@@ -101,7 +102,14 @@ export class Fc2Crawler extends BaseFc2Crawler {
 
     const studio = extractSellerName($);
 
-    return this.buildFc2Data(context, {
+    const number =
+      $(".items_article_softDevice")
+        .text()
+        .match(/FC2[\s-]*(?:PPV[\s-]*)?(\d+)/iu)?.[1] ??
+      pageIdentityUrl($).match(/\/article\/(\d+)\//u)?.[1] ??
+      "";
+    return this.buildFc2Data({
+      number,
       title,
       studio,
       genres,
@@ -119,9 +127,9 @@ export class Fc2Crawler extends BaseFc2Crawler {
     });
   }
 
-  protected override classifyDetailFailure(_context: Context, _detailHtml: string, $: CheerioAPI): string | null {
+  protected override classifyDetailFailure(_context: Context, _detailHtml: string, $: CheerioAPI): SiteError | null {
     if (isFc2NotFoundPage($)) {
-      return "Product not found on FC2 official site";
+      return new SiteError("not_found", "Product not found on FC2 official site");
     }
 
     return null;

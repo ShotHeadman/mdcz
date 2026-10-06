@@ -1,9 +1,10 @@
 import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
 
 export const UNCENSORED_NUMBER_PATTERNS = [
-  /^FC2-\d+/iu,
+  /^FC2[-_\s]*(?:PPV[-_\s]*)?\d+/iu,
   /^HEYZO-\d+/iu,
-  /^(?:1PON|10MU|CARIB|PACO|MURA|KIN8)[-_]?\d+/iu,
+  /^(?:1PON(?:DO)?|10MU(?:SUME)?|CARIB(?:BEANCOM)?|PACO|MURA|KIN8)[-_]?\d+/iu,
+  /^\d{6}[-_]\d{2,3}$/u,
 ];
 
 export const UMR_HINTS = ["umr", "破解", "universal media record"];

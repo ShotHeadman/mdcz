@@ -3,13 +3,14 @@ import type { ServiceContainer } from "@main/container";
 import { createContainer } from "@main/createContainer";
 import { registerIpcHandlers } from "@main/ipc";
 import { registerLocalFileHandler, registerLocalFileScheme } from "@main/localFileProtocol";
-import { createAppNetworkClient, finalizeAppNetwork, prepareAppScrapeItem } from "@main/networkComposition";
+import { createAppNetworkClient, prepareAppScrapeItem } from "@main/networkComposition";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import { ShortcutService } from "@main/services/ShortcutService";
 import { SignalService } from "@main/services/SignalService";
 import { TrayService } from "@main/services/TrayService";
 import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
+import { resolveSiteProxyUrl } from "@mdcz/runtime/config";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { app, BrowserWindow } from "electron";
 
@@ -19,7 +20,7 @@ runtimeLoggerService.setFactory((name) => loggerService.getLogger(name));
 
 const signalService = new SignalService();
 const sharedNetworkClient = createAppNetworkClient({
-  getProxyUrl: () => configManager.getComputed().proxyUrl,
+  getProxyUrl: (site) => resolveSiteProxyUrl(configManager.getComputed(), site),
   getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
   getRetryCount: () => configManager.getComputed().networkRetryCount,
 });
@@ -102,13 +103,6 @@ const cleanupResources = async (): Promise<void> => {
     } catch (error) {
       const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
       logger.error(`Failed to shutdown services cleanly: ${message}`);
-      process.exitCode = 1;
-    }
-    try {
-      await finalizeAppNetwork();
-    } catch (error) {
-      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      logger.error(`Failed to finalize network resources: ${message}`);
       process.exitCode = 1;
     }
     try {

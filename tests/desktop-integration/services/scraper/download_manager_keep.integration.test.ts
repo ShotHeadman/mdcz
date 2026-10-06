@@ -1,4 +1,5 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
@@ -14,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../harness/tempDirectory";
 
 const tempDirs: TempDirectoryHarness[] = [];
+const sharp = createRequire(new URL("../../../../packages/runtime/package.json", import.meta.url))("sharp");
 const createTempDir = async (): Promise<string> => {
   const directory = await createTempDirectory("download-manager");
   tempDirs.push(directory);
@@ -672,11 +674,14 @@ describe("DownloadManager keep flags", () => {
     await expect(readFile(join(root, "fanart.jpg"), "utf8")).resolves.toBe("old-fanart");
   });
 
-  it("derives a missing poster from landscape thumb artwork and records the thumb source", async () => {
+  it("derives a missing poster from WebP artwork and releases its source for publication", async () => {
     const { root, manager, networkClient } = await createSubject();
+    const webp = await sharp({ create: { width: 800, height: 439, channels: 3, background: "#4a8bd6" } })
+      .webp()
+      .toBuffer();
     networkClient.download.mockImplementation(async (url, outputPath) => {
       if (url.includes("thumb")) {
-        await writeSvgImage(outputPath, { width: 800, height: 439, color: "#4a8bd6" });
+        await writeFile(outputPath, webp);
         return outputPath;
       }
       return writeDownloadedFile(outputPath, url);
@@ -685,7 +690,7 @@ describe("DownloadManager keep flags", () => {
       valid: true,
       width: 800,
       height: 439,
-      format: "jpeg",
+      format: "webp",
     });
     const data = createCrawlerData({
       thumb_url: "https://example.com/thumb.jpg",
@@ -709,9 +714,9 @@ describe("DownloadManager keep flags", () => {
     validateSpy.mockRestore();
     const cropRegion = resolveThumbToPosterCropRegion(800, 439);
     expect(cropRegion).not.toBeNull();
-    expect(assets.thumb).toBe(join(root, "thumb.jpg"));
+    expect(assets.thumb).toBe(join(root, "thumb.webp"));
     expect(assets.poster).toBe(join(root, "poster.jpg"));
-    expect(assets.downloaded).toEqual([join(root, "thumb.jpg"), join(root, "poster.jpg")]);
+    expect(assets.downloaded).toEqual([join(root, "thumb.webp"), join(root, "poster.jpg")]);
     expect(data.poster_source_url).toBeUndefined();
     expect(onDerivedPosterSource).toHaveBeenCalledWith("https://source.example.com/thumb.jpg");
     expect(await imageUtils.validateImage(join(root, "poster.jpg"), 1)).toMatchObject({
@@ -720,6 +725,8 @@ describe("DownloadManager keep flags", () => {
       height: cropRegion?.height,
     });
     expect(networkClient.download).toHaveBeenCalledTimes(1);
+    await rename(join(root, "thumb.webp"), join(root, "published-thumb.webp"));
+    expect(await readFile(join(root, "published-thumb.webp"))).toEqual(webp);
   });
 
   it("replaces tiny poster downloads from thumb artwork", async () => {

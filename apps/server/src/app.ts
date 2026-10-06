@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -91,7 +92,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const networkClient =
     options.resources?.networkClient ??
     new NetworkClient({
-      getProxyUrl: () => config.getComputed().proxyUrl,
+      getProxyUrl: (site) => resolveSiteProxyUrl(config.getComputed(), site),
       getTimeoutMs: () => config.getComputed().networkTimeoutMs,
       getRetryCount: () => config.getComputed().networkRetryCount,
     });
@@ -101,6 +102,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     new CrawlerProvider({
       fetchGateway,
       siteRequestConfigRegistrar: networkClient,
+      getSiteNetworkKey: (site) => siteNetworkKey(config.getComputed(), site),
     });
   const imageHostCooldownStore =
     options.resources?.imageHostCooldownStore ??
@@ -144,6 +146,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         actorImageService,
         actorSourceProvider,
         mappingStore,
+        recordSiteResults: async (number, results) =>
+          (await persistence.getState()).repositories.siteResults.record(number, results),
       }),
     );
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents, config);
@@ -210,7 +214,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     results.push(
       ...(await Promise.allSettled([services.scans.close(), services.scrape.close(), services.maintenance.close()])),
     );
-    results.push(...(await Promise.allSettled([crawlerProvider.shutdown(), imageHostCooldownStore.flush()])));
+    results.push(...(await Promise.allSettled([imageHostCooldownStore.flush()])));
     results.push(...(await Promise.allSettled([services.persistence.close()])));
     const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
     if (errors.length) throw new AggregateError(errors, "Server shutdown failed");

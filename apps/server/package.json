@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "dev:fixture": "tsx watch src/networkFixtureEntry.ts",
+    "dev": "tsx watch src/devEntry.ts",
     "build": "pnpm run build:node",
     "build:node": "vite build --config vite.config.ts",
     "build:web": "pnpm --filter @mdcz/web build --outDir ../server/dist/web --emptyOutDir=true",

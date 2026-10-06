@@ -1,3 +1,11 @@
+export const toDmmMovieNumber = (value: string, requestedNumber: string): string => {
+  const match = value.trim().match(/^(\d*)([a-z]+)[-_]?(\d+)$/iu);
+  if (!match) return value;
+  // DMM adds a numeric supplier namespace (e.g. 118abf075); amateur codes retain their own numeric prefix.
+  const prefix = /^\d/u.test(requestedNumber.trim()) ? match[1] : "";
+  return `${prefix}${match[2].toUpperCase()}-${BigInt(match[3]).toString().padStart(3, "0")}`;
+};
+
 export const normalizeContentIds = (value: string): string[] => {
   const normalized = value.trim().toLowerCase();
   const matched = normalized.match(/(\d*[a-z]+)-?(\d+)/u);

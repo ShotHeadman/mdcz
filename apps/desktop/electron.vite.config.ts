@@ -19,9 +19,6 @@ const workspacePackages = [
 const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
-const networkComposition = process.env.MDCZ_NETWORK_FIXTURE_MODE
-  ? appResolve("src/main/networkFixtureComposition.ts")
-  : appResolve("src/main/networkComposition.ts");
 
 const desktopDistributionAssets = (): Plugin => ({
   name: "mdcz-desktop-distribution-assets",
@@ -60,12 +57,15 @@ const isIgnorableUseClientSourcemapWarning = (message: string): boolean =>
   message.includes("Error when using sourcemap for reporting an error") &&
   message.includes("Can't resolve original location of error");
 
-export default defineConfig({
+// The dev app records every scrape for replay; packaged builds use the plain network client.
+export default defineConfig(({ command }) => ({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: workspacePackages }), desktopDistributionAssets()],
     resolve: {
       alias: {
-        "@main/networkComposition": networkComposition,
+        "@main/networkComposition": appResolve(
+          command === "serve" ? "src/main/networkFixtureComposition.ts" : "src/main/networkComposition.ts",
+        ),
         "@main": appResolve("src/main"),
         "@mdcz/persistence": workspaceResolve("packages/persistence/src/index.ts"),
         "@mdcz/runtime": workspaceResolve("packages/runtime/src"),
@@ -130,4 +130,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
