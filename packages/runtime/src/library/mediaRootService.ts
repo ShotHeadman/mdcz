@@ -10,7 +10,6 @@ import {
   resolveRootRelativePath,
   toRootRelativePath,
 } from "@mdcz/media-store";
-import type { Configuration } from "@mdcz/shared/config";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import {
   type MediaRootAvailabilityDto,
@@ -39,11 +38,6 @@ export const toMediaRootDto = (root: MediaRoot & { availability?: MediaRootAvail
   createdAt: root.createdAt.toISOString(),
   updatedAt: root.updatedAt.toISOString(),
 });
-
-const configuredMediaPath = (configuration: Configuration): string | null => {
-  const value = configuration.paths.mediaPath.trim();
-  return value || null;
-};
 
 export class ConfiguredMediaRootService {
   constructor(private readonly registry: MediaRootRegistryPort) {}
@@ -149,34 +143,6 @@ export class ConfiguredMediaRootService {
         }),
       );
     };
-  }
-
-  async assertConfiguredMediaPath(
-    configuration: Configuration,
-    onUnavailable?: (hostPath: string, error: unknown) => void,
-  ): Promise<void> {
-    const hostPath = configuredMediaPath(configuration);
-    if (!hostPath) return;
-    try {
-      await this.validateMountedFilesystemPath(hostPath);
-    } catch (error) {
-      if (!onUnavailable) throw error;
-      onUnavailable(hostPath, error);
-    }
-  }
-
-  async registerConfiguredMediaPath(
-    configuration: Configuration,
-    onUnavailable?: (hostPath: string, error: unknown) => void,
-  ): Promise<void> {
-    const hostPath = configuredMediaPath(configuration);
-    if (!hostPath) return;
-    try {
-      await this.ensurePathRecord({ hostPath });
-    } catch (error) {
-      if (!onUnavailable) throw error;
-      onUnavailable(hostPath, error);
-    }
   }
 
   private async validateMountedFilesystemPath(inputPath: string): Promise<string> {

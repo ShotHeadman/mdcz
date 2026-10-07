@@ -2,7 +2,12 @@ import { SiteError, type SiteRequestConfigRegistrar } from "@mdcz/runtime/networ
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerSiteInfoDto } from "@mdcz/shared/serverDtos";
-import { type FailureReason, type SiteHealth, UNAVAILABLE_FAILURE_REASONS } from "@mdcz/shared/siteResults";
+import {
+  type FailureReason,
+  MOVIE_FACT_FAILURE_REASONS,
+  type SiteHealth,
+  UNAVAILABLE_FAILURE_REASONS,
+} from "@mdcz/shared/siteResults";
 import { toCrawlerErrorResult } from "./base/BaseCrawler";
 import type { AdapterDependencies, CrawlerInput, CrawlerResponse, CrawlerResult, SiteAdapter } from "./base/types";
 import type { FetchGateway } from "./FetchGateway";
@@ -130,7 +135,7 @@ export class CrawlerProvider {
   }
 
   private recordOutcome(site: Website, result: CrawlerResult): void {
-    if (result.success || result.reason === "not_found" || result.reason === "parse_error") {
+    if (result.success || MOVIE_FACT_FAILURE_REASONS.has(result.reason)) {
       // A login wall may cover only some titles (JavDB's FC2 and uncensored pages), so an answer for another title
       // doesn't prove the credential works.
       if (this.pauses.get(site)?.reason === "login_wall") {

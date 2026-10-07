@@ -1,9 +1,9 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { getNetworkRequestExecutionContext, runWithNetworkChannel } from "./network/networkExecution";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
-import { ScrapeTargetConflictError } from "./scrape/preflightScrapeTask";
 import { type ScrapeRunExecution, type ScrapeRunItem, ScrapeRunSession, TaskExecutor } from "./tasks";
 
 const deferred = () => {
@@ -163,27 +163,29 @@ describe("scrape movie groups", () => {
     expect(executedIn).toBe(preparedIn);
   });
 
-  it.each([
-    "preparation-failure",
-    "target-conflict",
-  ] as const)("fails an entire movie on %s while publishing independent movies", async (scenario) => {
+  it("keeps a failed preparation's structured pending outcome while publishing independent movies", async () => {
     const execution = executionFor();
-    if (scenario === "preparation-failure") {
-      execution.prepareGroup = async (group) =>
-        group.members.some((item) => item.id === "one")
-          ? { status: "failed", result: resultFor(group.members[0], "failed") }
-          : { status: "prepared", prepared: group.members.map((item) => item.id).join(",") };
-    } else {
-      execution.checkTargets = async () => {
-        throw new ScrapeTargetConflictError([
-          { itemId: "one", sourcePath: "/media/one.mp4", targetPath: "/target/one.mp4", message: "conflict" },
-        ]);
-      };
-    }
+    const pendingOutcome = {
+      kind: "ambiguous" as const,
+      candidates: [
+        { site: Website.AVBASE, detailUrl: "https://avbase.test/SW-130", title: "SWITCH SW-130" },
+        { site: Website.AVBASE, detailUrl: "https://avbase.test/SW-130-plum", title: "Plum SW-130" },
+      ],
+    };
+    const committed: ScrapeResult[] = [];
+    const commit = execution.commitItems;
+    execution.commitItems = async (entries) => {
+      for (const entry of entries) if (entry.result) committed.push(entry.result);
+      return await commit(entries);
+    };
+    execution.prepareGroup = async (group) =>
+      group.members.some((item) => item.id === "one")
+        ? { status: "failed", result: { ...resultFor(group.members[0], "failed"), pending: pendingOutcome } }
+        : { status: "prepared", prepared: group.members.map((item) => item.id).join(",") };
     const execute = vi.fn(execution.executePreparedGroup);
     execution.executePreparedGroup = execute;
     const session = new ScrapeRunSession({
-      runId: `${scenario}-run`,
+      runId: "preparation-failure-run",
       totalItems: 3,
       prepare: async () => execution,
       onSnapshot: () => undefined,
@@ -192,6 +194,32 @@ describe("scrape movie groups", () => {
     await session.waitForIdle();
     expect(execute.mock.calls.map(([entry]) => entry.group.members.map((item) => item.id))).toEqual([["independent"]]);
     expect(session.snapshot().items.map((item) => item.status)).toEqual(["failed", "failed", "success"]);
+    // The pending list needs the kind and candidates to offer a repair instead of a generic failure.
+    expect(committed.find((result) => result.fileId === "one")?.pending).toEqual(pendingOutcome);
+    expect(committed.find((result) => result.fileId === "two")?.pending).toEqual(pendingOutcome);
+  });
+
+  it("files a publish failure as failed items and keeps publishing sibling movies", async () => {
+    const execution = executionFor();
+    let publishAttempts = 0;
+    const commit = execution.commitItems;
+    execution.commitItems = async (entries) => {
+      const movie = entries.filter((entry) => entry.item.id === "one" || entry.item.id === "two");
+      if (movie.length > 0 && movie.every((entry) => entry.result?.status === "success") && publishAttempts++ === 0)
+        throw new Error("Hardlinks need the library output on the same volume as the source");
+      return await commit(entries);
+    };
+    const session = new ScrapeRunSession({
+      runId: "publish-failure-run",
+      totalItems: 3,
+      prepare: async () => execution,
+      onSnapshot: () => undefined,
+    });
+    await session.start();
+    await session.waitForIdle();
+    // The failing movie's files end failed, never skipped, so the pending list can still offer a repair.
+    expect(session.snapshot().items.map((item) => item.status)).toEqual(["failed", "failed", "success"]);
+    expect(session.snapshot().error).toContain("same volume");
   });
 
   it.each(["stop", "interrupt"] as const)("settles every member when a preparing movie is %s", async (action) => {

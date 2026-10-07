@@ -170,6 +170,8 @@ export default defineConfig({
             headless: true,
             screenshotDirectory: ".tmp/vitest-screenshots",
             provider: playwright({
+              // The component tests assert Chinese UI text; the app picks its locale from navigator.language.
+              contextOptions: { locale: "zh-CN" },
               launchOptions: browserExecutablePath ? { executablePath: browserExecutablePath } : undefined,
             }),
             instances: [{ browser: "chromium" }],

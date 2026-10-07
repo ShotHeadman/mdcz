@@ -40,6 +40,7 @@ export const toCrawlerErrorResult = (error: unknown): CrawlerErrorResult => {
     reason: siteError?.reason ?? "unknown",
     httpStatus: siteError?.options.httpStatus,
     retryAfterMs: siteError?.options.retryAfterMs,
+    candidates: siteError?.options.candidates,
     cause: error,
   };
 };

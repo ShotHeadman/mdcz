@@ -41,5 +41,5 @@ export const publishMetadata = async (input: {
     }
   }
 
-  return await input.translateService.translateCrawlerData(data, input.configuration, input.signal, settled);
+  return await input.translateService.translateCrawlerData(data, input.configuration, input.signal, settled, kept);
 };

@@ -6,8 +6,10 @@ export * from "./availability";
 export * from "./desktopInputRoot";
 export * from "./desktopOutputRoot";
 export * from "./entryDto";
+export * from "./mediaLibraryService";
 export * from "./mediaPathOwnership";
 export * from "./mediaRootService";
+export * from "./pendingService";
 export * from "./registeredMedia";
 export * from "./relink";
 

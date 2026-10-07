@@ -39,16 +39,12 @@ export const resumeScrape = async () => {
   return { data };
 };
 
-export const startSelectedScrape = async (
-  refs: RootFileRef[],
-  outputRootId: string,
-  outputRelativeDirectory?: string,
-) => {
+export const startSelectedScrape = async (refs: RootFileRef[], libraryId: string) => {
   if (refs.length === 0) {
     throw new Error("No files selected");
   }
 
-  const data = await ipc.scraper.start({ mode: "selection", refs, outputRootId, outputRelativeDirectory });
+  const data = await ipc.scraper.start({ executionMode: "batch", libraryId, refs });
   return { data };
 };
 

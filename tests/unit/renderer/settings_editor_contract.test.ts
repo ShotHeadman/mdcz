@@ -27,11 +27,15 @@ describe("settings editor metadata and filtering", () => {
 
     const keys = new Set<string>(FIELD_REGISTRY.map((candidate) => candidate.key));
     expect(keys.has("behavior.updateCheck")).toBe(false);
-    expect(FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.defaultScanExcludeDirs")).toBe(
-      FIELD_REGISTRY.findIndex((candidate) => candidate.key === "paths.mediaPath") + 1,
-    );
-    expect(entry("paths.successOutputFolder")).toMatchObject({ anchor: "paths", visibility: "public" });
-    expect(entry("behavior.metadataOnly")).toMatchObject({ anchor: "paths", visibility: "public" });
+    // Directories, templates and placement belong to libraries, not to settings.
+    for (const key of [
+      "paths.mediaPath",
+      "paths.successOutputFolder",
+      "behavior.metadataOnly",
+      "naming.folderTemplate",
+    ])
+      expect(keys.has(key)).toBe(false);
+    expect(entry("automation.pathMappings")).toMatchObject({ anchor: "automation", visibility: "public" });
   });
 
   it("round-trips registered settings, including scrape order and aggregation paths", () => {
@@ -78,7 +82,7 @@ describe("settings editor metadata and filtering", () => {
 
   it("applies PRD visibility rules for normal, advanced, modified, group, and deep-link browsing", () => {
     const normal = buildSettingsBrowseState({ query: "", showAdvanced: false, modifiedKeys: new Set<string>() });
-    expect(normal.visibleKeySet.has("paths.mediaPath")).toBe(true);
+    expect(normal.visibleKeySet.has("paths.actorPhotoFolder")).toBe(true);
     expect(normal.visibleKeySet.has("download.sceneImageConcurrency")).toBe(false);
     expect(normal.visibleKeySet.has("jellyfin.url")).toBe(true);
 
@@ -89,9 +93,9 @@ describe("settings editor metadata and filtering", () => {
     const modified = buildSettingsBrowseState({
       query: "@modified",
       showAdvanced: false,
-      modifiedKeys: new Set(["download.sceneImageConcurrency", "paths.mediaPath"]),
+      modifiedKeys: new Set(["download.sceneImageConcurrency", "paths.actorPhotoFolder"]),
     });
-    expect(modified.visibleEntries.map((candidate) => candidate.key)).toEqual(["paths.mediaPath"]);
+    expect(modified.visibleEntries.map((candidate) => candidate.key)).toEqual(["paths.actorPhotoFolder"]);
 
     const grouped = buildSettingsBrowseState({
       query: "@group:系统 日志面板",
@@ -204,13 +208,13 @@ describe("settings editor save and content helpers", () => {
   });
 
   it("finalizes stale autosave revisions without running superseded work", async () => {
-    const revisions = new Map([["paths.mediaPath", 2]]);
+    const revisions = new Map([["paths.actorPhotoFolder", 2]]);
     const run = vi.fn(async () => {});
     const finalize = vi.fn();
 
     await runLatestRevisionTask({
       revisions,
-      path: "paths.mediaPath",
+      path: "paths.actorPhotoFolder",
       revision: 1,
       run,
       finalize,
@@ -221,7 +225,7 @@ describe("settings editor save and content helpers", () => {
 
     await runLatestRevisionTask({
       revisions,
-      path: "paths.mediaPath",
+      path: "paths.actorPhotoFolder",
       revision: 2,
       run,
       finalize,

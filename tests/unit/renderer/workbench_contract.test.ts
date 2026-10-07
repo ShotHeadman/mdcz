@@ -7,17 +7,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
 const successDir = process.platform === "win32" ? "D:\\media\\JAV_output" : "/media/JAV_output";
 
-const createConfig = (overrides?: Partial<ConfigOutput>): ConfigOutput =>
-  ({
-    paths: {
-      mediaPath: rootDir,
-      successOutputFolder: "JAV_output",
-      defaultScanExcludeDirs: ["JAV_output"],
-      outputSummaryPath: "",
-    },
-    behavior: {},
-    ...overrides,
-  }) as unknown as ConfigOutput;
+const createConfig = (defaultScanExcludeDirs = ["JAV_output"]): ConfigOutput =>
+  ({ paths: { defaultScanExcludeDirs } }) as unknown as ConfigOutput;
 
 const createCandidate = (path: string): MediaCandidate => ({
   path,
@@ -34,7 +25,6 @@ const resetWorkbenchSetupStore = () => {
     recursive: false,
     committedPlanKey: null,
     warnings: { count: 0, paths: [] },
-    targetDir: "",
     candidates: [],
     selectedPaths: [],
     scanStatus: "idle",
@@ -48,50 +38,19 @@ describe("workbench setup contract", () => {
     resetWorkbenchSetupStore();
   });
 
-  it("plans normal scrape scans from configured paths and excludes output folders", () => {
+  it("plans scrape scans that skip only the configured exclude directories", () => {
     const plan = resolveMediaCandidateScanPlan("scrape", rootDir, false, createConfig());
+    const thumbnailsDir = process.platform === "win32" ? "D:\\media\\thumbnails" : "/media/thumbnails";
 
     expect(plan.excludeDirPaths).toEqual([successDir]);
     expect(plan.recursive).toBe(false);
     expect(resolveMediaCandidateScanPlan("scrape", rootDir, true, createConfig()).scanKey).not.toBe(plan.scanKey);
     expect(resolveMediaCandidateScanPlan("maintenance", rootDir, false, createConfig()).scanKey).not.toBe(plan.scanKey);
-  });
-
-  it("uses only configured scan exclude directories", () => {
-    const plan = resolveMediaCandidateScanPlan(
-      "scrape",
-      rootDir,
-      false,
-      createConfig({
-        paths: {
-          mediaPath: rootDir,
-          successOutputFolder: "JAV_output",
-          outputSummaryPath: "",
-          defaultScanExcludeDirs: ["JAV_output", "thumbnails"],
-        },
-      } as Partial<ConfigOutput>),
-    );
-
-    const thumbnailsDir = process.platform === "win32" ? "D:\\media\\thumbnails" : "/media/thumbnails";
-    expect(plan.excludeDirPaths).toEqual([successDir, thumbnailsDir]);
-  });
-
-  it("does not hide the active success target when it is removed from configured exclusions", () => {
-    const plan = resolveMediaCandidateScanPlan(
-      "scrape",
-      rootDir,
-      false,
-      createConfig({
-        paths: {
-          mediaPath: rootDir,
-          successOutputFolder: "JAV_output",
-          outputSummaryPath: "",
-          defaultScanExcludeDirs: [],
-        } as unknown as ConfigOutput["paths"],
-      }),
-    );
-
-    expect(plan.excludeDirPaths).toEqual([]);
+    expect(
+      resolveMediaCandidateScanPlan("scrape", rootDir, false, createConfig(["JAV_output", "thumbnails"]))
+        .excludeDirPaths,
+    ).toEqual([successDir, thumbnailsDir]);
+    expect(resolveMediaCandidateScanPlan("scrape", rootDir, false, createConfig([])).excludeDirPaths).toEqual([]);
   });
 
   it("keeps the current file list visible while a rescan is pending", () => {

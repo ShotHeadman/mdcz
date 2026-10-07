@@ -18,6 +18,7 @@ import type { ServerConfigService } from "./services/configService";
 
 export interface ServerMaintenanceRuntimeDependencies {
   config: ServerConfigService;
+  prepareScrapeItem?: MaintenanceRuntimeDependencies["prepareScrapeItem"];
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
   imageHostCooldownStore: PersistentCooldownStore;
@@ -37,6 +38,7 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
     recordSiteResults: deps.recordSiteResults,
     loadSiteResults: deps.loadSiteResults,
     logger,
+    prepareScrapeItem: deps.prepareScrapeItem,
     config: deps.config,
     downloadManager: new DownloadManager(deps.networkClient, {
       imageHostCooldownStore: deps.imageHostCooldownStore,

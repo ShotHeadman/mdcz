@@ -17,6 +17,8 @@ export interface LocalActorImageResolver {
 
 export interface LocalActorSourceDependencies {
   actorImageService?: LocalActorImageResolver;
+  /** Library source and output directories, whose NFOs name the actors already in the collection. */
+  listLibraryDirectories?: () => Promise<string[]>;
 }
 
 const INDEX_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -113,13 +115,13 @@ const resolveActorPhotoUrl = async (
   return absolutePath;
 };
 
-const buildLocalActorRecordIndex = async (configuration: Configuration): Promise<Map<string, IndexedActorRecord>> => {
-  const mediaPath = (configuration.paths.mediaPath ?? "").trim();
-  const outputPath = (configuration.paths.successOutputFolder ?? "").trim();
-  const roots = mediaPath ? [resolve(mediaPath)] : [];
-  if (outputPath && (mediaPath || isAbsolute(outputPath))) {
-    const outputRoot = resolve(mediaPath, outputPath);
-    if (!roots.some((root) => isPathInside(root, outputRoot))) roots.push(outputRoot);
+const buildLocalActorRecordIndex = async (
+  configuration: Configuration,
+  directories: readonly string[],
+): Promise<Map<string, IndexedActorRecord>> => {
+  const roots: string[] = [];
+  for (const directory of directories.map((value) => resolve(value))) {
+    if (!roots.some((root) => isPathInside(root, directory))) roots.push(directory);
   }
 
   const files: string[] = [];
@@ -184,8 +186,11 @@ const buildLocalActorRecordIndex = async (configuration: Configuration): Promise
   return index;
 };
 
-export const buildLocalActorIndex = async (configuration: Configuration): Promise<Map<string, IndexedActorProfile>> => {
-  const recordIndex = await buildLocalActorRecordIndex(configuration);
+export const buildLocalActorIndex = async (
+  configuration: Configuration,
+  directories: readonly string[],
+): Promise<Map<string, IndexedActorProfile>> => {
+  const recordIndex = await buildLocalActorRecordIndex(configuration, directories);
   return new Map(Array.from(recordIndex.entries(), ([key, value]) => [key, value.profile]));
 };
 
@@ -196,10 +201,13 @@ export class LocalActorSource implements BaseActorSource {
 
   private readonly actorImageService?: LocalActorImageResolver;
 
+  private readonly listLibraryDirectories: () => Promise<string[]>;
+
   private indexBucket = "";
 
   constructor(deps: LocalActorSourceDependencies = {}) {
     this.actorImageService = deps.actorImageService;
+    this.listLibraryDirectories = deps.listLibraryDirectories ?? (async () => []);
   }
 
   async lookup(configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult> {
@@ -241,12 +249,12 @@ export class LocalActorSource implements BaseActorSource {
       this.indexBucket = bucket;
     }
 
+    const directories = await this.listLibraryDirectories();
     const cacheKey = JSON.stringify({
-      mediaPath: (configuration.paths.mediaPath ?? "").trim(),
-      successOutputFolder: (configuration.paths.successOutputFolder ?? "").trim(),
+      directories,
       actorPhotoFolder: (configuration.paths.actorPhotoFolder ?? "").trim(),
     });
 
-    return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(configuration));
+    return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(configuration, directories));
   }
 }

@@ -65,6 +65,7 @@ export const scrape: Messages["scrape"] = {
   copyPath: "复制路径",
   rescrape: "重新刮削",
   rescrapeByUrl: "按 URL 重新刮削",
+  rescrapeByNumber: "按番号重新刮削（移除固定详情页）",
   removeFromLibrary: "从媒体库移除",
   openSourceFolder: "打开源目录",
   openMetadataFolder: "打开元数据目录",

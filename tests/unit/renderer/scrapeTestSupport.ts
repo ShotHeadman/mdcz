@@ -17,7 +17,6 @@ export const buildScrapeLiveItem = (overrides: Partial<ScrapeLiveItemDto> = {}):
   outputRelativePath: null,
   assets: [],
   manualUrl: null,
-  uncensoredAmbiguous: false,
   ...overrides,
 });
 
@@ -25,6 +24,7 @@ export const buildScrapeSnapshot = (overrides: Partial<ScrapeRunSnapshotDto> = {
   task: {
     id: "task-1",
     kind: "scrape",
+    libraryId: "library-1",
     rootId: "root-1",
     rootDisplayName: "Media",
     status: "completed",
@@ -47,7 +47,6 @@ export const buildScrapeSnapshot = (overrides: Partial<ScrapeRunSnapshotDto> = {
   items: [buildScrapeLiveItem()],
   latestStage: null,
   logs: [],
-  ambiguousUncensoredItems: [],
   ...overrides,
 });
 

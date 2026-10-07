@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
-import { ASSET_NAMING_MODES, isSharedDirectoryMode } from "./assetNaming";
+import { ASSET_NAMING_MODES } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import {
   DEFAULT_LLM_BASE_URL,
@@ -66,8 +66,6 @@ export const NFO_FIELD_OPTIONS = [
 ] as const;
 export type NfoField = (typeof NFO_FIELD_OPTIONS)[number];
 
-const OPTIONAL_GROUP_WITH_PATH_SEPARATOR = /\[[^[\]]*[\\/][^[\]]*\]/u;
-
 export const BAIDU_SERVICE_OPTIONS = ["general", "llm"] as const;
 export const TRANSLATION_FIELD_OPTIONS = ["title", "plot", "genres"] as const;
 export type TranslationField = (typeof TRANSLATION_FIELD_OPTIONS)[number];
@@ -102,11 +100,11 @@ const scrapeSchema = z.object({
   javdbDelaySeconds: z.number().int().min(0).max(120).default(3),
   restAfterCount: z.number().int().min(1).max(500).default(20),
   restDuration: z.number().int().min(0).default(60),
+  /** Filename keyword -> number, for files whose names no parser rule can read; saved from repairs. */
+  numberMappings: z.record(z.string(), z.string().trim().min(1)).default({}),
 });
 
 const namingSchema = z.object({
-  folderTemplate: z.string().default("{actor}/{number}"),
-  fileTemplate: z.string().default("{number}"),
   assetNamingMode: z.enum(ASSET_NAMING_MODES).default("fixed"),
   nfoTitleTemplate: z.string().default("{title}"),
   actorNameMax: z.number().int().min(1).max(20).default(3),
@@ -171,7 +169,6 @@ const downloadSchema = z.object({
   keepFanart: z.boolean().default(true),
   keepSceneImages: z.boolean().default(true),
   keepTrailer: z.boolean().default(true),
-  keepNfo: z.boolean().default(true),
 });
 
 /** Custom issue messages are codes so the UI can localize them. */
@@ -182,11 +179,7 @@ export type ConfigIssueCode =
   | "actorAliasEmpty"
   | "actorAliasConflict"
   | "globalTimeoutNotGreater"
-  | "metadataPathNotAbsolute"
-  | "sharedDirectoryAssetNaming"
-  | "sharedDirectoryNfoNaming"
-  | "sharedDirectorySceneImages"
-  | "optionalSegmentPathSeparator"
+  | "actorPhotoFolderNotAbsolute"
   | "jellyfinUserIdNotUuid";
 
 const actorAliasesSchema = z
@@ -258,6 +251,8 @@ const jellyfinSchema = z.object({
   userId: z.string().default(""),
   refreshPersonAfterSync: z.boolean().default(true),
   lockOverviewAfterSync: z.boolean().default(false),
+  /** Asks the server to scan only the published directory, so new movies show up without a library refresh. */
+  notifyAfterPublish: z.boolean().default(true),
 });
 
 const embySchema = z.object({
@@ -265,6 +260,7 @@ const embySchema = z.object({
   apiKey: z.string().default(""),
   userId: z.string().default(""),
   refreshPersonAfterSync: z.boolean().default(true),
+  notifyAfterPublish: z.boolean().default(true),
 });
 
 const shortcutsSchema = z.object({
@@ -285,21 +281,51 @@ const uiSchema = z.object({
 });
 
 const pathsSchema = z.object({
-  mediaPath: z.string().default(""),
-  metadataPath: z.string().default(""),
   actorPhotoFolder: z.string().default(""),
-  successOutputFolder: z.string().default("JAV_output"),
-  defaultScanExcludeDirs: z.array(z.string()).default(["JAV_output"]),
+  defaultScanExcludeDirs: z.array(z.string()).default([]),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
   outputSummaryPath: z.string().default(""),
 });
 
 const behaviorSchema = z.object({
-  metadataOnly: z.boolean().default(false),
-  successFileMove: z.boolean().default(true),
-  successFileRename: z.boolean().default(true),
   updateCheck: z.boolean().default(true),
+});
+
+/** Downloader paths are translated before matching library roots, as with *arr remote path mappings. */
+const pathMappingSchema = z.object({
+  from: z.string().trim().min(1),
+  to: z.string().trim().min(1),
+});
+
+const automationSchema = z.object({
+  pathMappings: z.array(pathMappingSchema).default([]),
+});
+
+export const NOTIFICATION_CHANNELS = ["telegram", "bark", "ntfy"] as const;
+
+const notificationsSchema = z.object({
+  /** Receives every task start and finish as JSON. */
+  webhookUrl: z
+    .url({ protocol: /^https?$/u })
+    .or(z.literal(""))
+    .default(""),
+  webhookSecret: z.string().default(""),
+  /** Human-readable messages when an unattended scrape finishes, plus the optional daily digest. */
+  channels: z.array(z.enum(NOTIFICATION_CHANNELS)).default([]),
+  telegramBotToken: z.string().default(""),
+  telegramChatId: z.string().default(""),
+  barkUrl: z
+    .url({ protocol: /^https?$/u })
+    .or(z.literal(""))
+    .default(""),
+  ntfyUrl: z
+    .url({ protocol: /^https?$/u })
+    .or(z.literal(""))
+    .default(""),
+  ntfyToken: z.string().default(""),
+  dailyDigest: z.boolean().default(false),
+  digestHour: z.number().int().min(0).max(23).default(9),
 });
 
 const titleRepairSchema = z.object({
@@ -479,69 +505,19 @@ export const configurationSchema = z
     shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
     ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),
-    watch: z
-      .object({
-        enabled: z.boolean().default(false),
-        intervalMinutes: z.number().int().min(1).max(1440).default(5),
-      })
-      .default(() => ({ enabled: false, intervalMinutes: 5 })),
     behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
+    automation: automationSchema.default(() => automationSchema.parse({})),
+    notifications: notificationsSchema.default(() => notificationsSchema.parse({})),
     titleRepair: titleRepairSchema.default(() => titleRepairSchema.parse({})),
     aggregation: aggregationSchema.default(() => aggregationSchema.parse({})),
   })
   .superRefine((data, ctx) => {
-    const sharedDirectoryMode = isSharedDirectoryMode({
-      metadataOnly: data.behavior.metadataOnly,
-      successFileMove: data.behavior.successFileMove,
-      metadataPath: data.paths.metadataPath,
-      folderTemplate: data.naming.folderTemplate,
-    });
-
-    if (data.paths.metadataPath.trim() && !localPathStyle(data.paths.metadataPath.trim()))
+    if (data.paths.actorPhotoFolder.trim() && !localPathStyle(data.paths.actorPhotoFolder.trim()))
       ctx.addIssue({
         code: "custom",
-        path: ["paths", "metadataPath"],
-        message: "metadataPathNotAbsolute" satisfies ConfigIssueCode,
+        path: ["paths", "actorPhotoFolder"],
+        message: "actorPhotoFolderNotAbsolute" satisfies ConfigIssueCode,
       });
-
-    if (sharedDirectoryMode && data.naming.assetNamingMode !== "followVideo") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["naming", "assetNamingMode"],
-        message: "sharedDirectoryAssetNaming" satisfies ConfigIssueCode,
-      });
-    }
-
-    if (sharedDirectoryMode && data.download.nfoNaming !== "filename") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["download", "nfoNaming"],
-        message: "sharedDirectoryNfoNaming" satisfies ConfigIssueCode,
-      });
-    }
-
-    if (sharedDirectoryMode && data.download.downloadSceneImages) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["download", "downloadSceneImages"],
-        message: "sharedDirectorySceneImages" satisfies ConfigIssueCode,
-      });
-    }
-
-    for (const [field, template] of [
-      ["folderTemplate", data.naming.folderTemplate],
-      ["fileTemplate", data.naming.fileTemplate],
-    ] as const) {
-      if (!OPTIONAL_GROUP_WITH_PATH_SEPARATOR.test(template)) {
-        continue;
-      }
-
-      ctx.addIssue({
-        code: "custom",
-        path: ["naming", field],
-        message: "optionalSegmentPathSeparator" satisfies ConfigIssueCode,
-      });
-    }
 
     if (
       data.jellyfin.userId.trim().length > 0 &&

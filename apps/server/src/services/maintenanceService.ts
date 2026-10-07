@@ -2,6 +2,7 @@ import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
   MaintenanceSessionCoordinator,
+  resolveMaintenanceTarget,
 } from "@mdcz/runtime/maintenance";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
@@ -67,24 +68,27 @@ export class MaintenanceService {
       return { sessionId: handle.session.id };
     }
     const configuration = await this.runtime.getConfiguration();
+    const { repositories } = await this.persistence.getState();
+    const output = await resolveMaintenanceTarget(
+      input.presetId,
+      input.libraryId ? repositories.mediaLibraries.get(input.libraryId) : undefined,
+      this.mediaRoots,
+    );
     if ("source" in input) {
       const directoryScope = createDirectoryScope(
         input.source,
-        input.targetDir ?? input.source.scanDir,
+        output?.target.outputPath ?? input.source.scanDir,
         configuration,
         "maintenance",
       );
       const scan = await this.mediaRoots.admitDirectory({ hostPath: directoryScope.scanDir });
-      const output =
-        directoryScope.targetDir === directoryScope.scanDir
-          ? { id: scan.root.id, relativeDirectory: scan.relativeDirectory }
-          : await this.mediaRoots.prepareOutputDirectory({ hostPath: directoryScope.targetDir });
       const handle = await this.coordinator.startPreview({
         rootId: scan.root.id,
         presetId: input.presetId,
         refs: [],
-        outputRootId: output.id,
-        outputRelativeDirectory: output.relativeDirectory,
+        outputRootId: output?.outputRootId ?? scan.root.id,
+        outputRelativeDirectory: output?.outputRelativeDirectory ?? scan.relativeDirectory,
+        target: output?.target,
         directoryScope,
         configuration,
       });
@@ -92,7 +96,15 @@ export class MaintenanceService {
       return { sessionId: handle.session.id };
     }
     const root = await this.mediaRoots.get(input.rootId);
-    const handle = await this.coordinator.startPreview({ ...input, rootId: root.id, configuration });
+    const handle = await this.coordinator.startPreview({
+      rootId: root.id,
+      presetId: input.presetId,
+      refs: input.refs,
+      outputRootId: output?.outputRootId,
+      outputRelativeDirectory: output?.outputRelativeDirectory,
+      target: output?.target,
+      configuration,
+    });
     void handle.completion.catch(() => undefined);
     return { sessionId: handle.session.id };
   }

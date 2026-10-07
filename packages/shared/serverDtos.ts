@@ -8,7 +8,7 @@ import {
   LLM_REASONING_OPTIONS,
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
-import { assetRefSchema, type RootFileRef, rootFileRefSchema, wireRelativeDirectorySchema } from "./mediaRef";
+import { assetRefSchema, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
 import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
 import type { MediaCandidate } from "./types";
@@ -233,6 +233,8 @@ export const scrapeRunTaskSchema = z.object({
   revision: z.number().int().nonnegative(),
   continuity: z.enum(["live", "final", "interrupted"]),
   previousTaskId: z.string().nullable(),
+  /** The library the run publishes into; re-scrapes of its items go there too. */
+  libraryId: z.string().nullable(),
 });
 
 export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;
@@ -276,42 +278,18 @@ export const scrapeFileRefSchema = rootFileRefSchema;
 
 export type ScrapeFileRefDto = RootFileRef;
 
-export const ambiguousUncensoredItemSchema = z.object({
-  id: z.string(),
-  ref: scrapeFileRefSchema,
-  fileId: z.string(),
-  fileName: z.string(),
-  number: z.string(),
-  title: z.string().nullable(),
-  nfoRelativePath: z.string().nullable(),
-});
-
-export type AmbiguousUncensoredItemDto = z.infer<typeof ambiguousUncensoredItemSchema>;
-
-const scrapeBatchStartInputSchema = z.object({
-  executionMode: z.literal("batch"),
-  outputRootId: z.string().trim().min(1),
-  outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
-  refs: z.array(scrapeFileRefSchema).min(1),
-  maintenancePreset: maintenancePresetIdSchema.optional(),
-  uncensoredConfirmed: z.boolean().optional(),
-  manualUrl: z.string().trim().min(1).optional(),
-});
-
-const scrapeSingleStartInputSchema = z.object({
-  executionMode: z.literal("single"),
-  outputRootId: z.string().trim().min(1).optional(),
-  outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
-  refs: z.array(scrapeFileRefSchema).length(1),
-  maintenancePreset: maintenancePresetIdSchema.optional(),
-  uncensoredConfirmed: z.boolean().optional(),
-  manualUrl: z.string().trim().min(1).optional(),
-});
-
 export const scrapeStartInputSchema = z.union([
-  z.object({ executionMode: z.literal("batch"), source: directorySourceSchema, targetDir: z.string().trim().min(1) }),
-  scrapeBatchStartInputSchema,
-  scrapeSingleStartInputSchema,
+  z.object({ executionMode: z.literal("batch"), libraryId: z.string().trim().min(1), source: directorySourceSchema }),
+  z.object({
+    executionMode: z.enum(["batch", "single"]),
+    libraryId: z.string().trim().min(1),
+    refs: z.array(scrapeFileRefSchema).min(1),
+    manualUrl: z.string().trim().min(1).optional(),
+    /** Replaces the number parsed from the file name. */
+    number: z.string().trim().min(1).optional(),
+    /** Search by number even where an NFO pins a detail page, and drop that pin. */
+    unpin: z.boolean().optional(),
+  }),
 ]);
 
 export type ScrapeStartInput = z.output<typeof scrapeStartInputSchema>;
@@ -325,12 +303,6 @@ export type ScrapeTaskControlInput = z.infer<typeof scrapeTaskControlInputSchema
 
 export const scrapeRerunDirectoryInputSchema = z.object({ taskId: z.string().trim().min(1) });
 export type ScrapeRerunDirectoryInput = z.infer<typeof scrapeRerunDirectoryInputSchema>;
-
-export const scrapeConfirmUncensoredInputSchema = z.object({
-  items: z.array(z.object({ fileId: z.string().trim().min(1), choice: z.enum(["umr", "leak", "uncensored"]) })).min(1),
-});
-
-export type ScrapeConfirmUncensoredInput = z.infer<typeof scrapeConfirmUncensoredInputSchema>;
 
 export const scrapeResultIdInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -409,7 +381,6 @@ export const scrapeResultSchema = z.object({
   outputRelativePath: z.string().nullable(),
   assets: z.array(assetRefSchema),
   manualUrl: z.string().nullable(),
-  uncensoredAmbiguous: z.boolean().optional(),
   persistenceState: z.enum(["terminal", "interrupted"]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -450,7 +421,6 @@ export const scrapeLiveItemSchema = z.object({
   outputRelativePath: z.string().nullable(),
   assets: z.array(assetRefSchema),
   manualUrl: z.string().nullable(),
-  uncensoredAmbiguous: z.boolean(),
 });
 
 export type ScrapeLiveItemDto = z.infer<typeof scrapeLiveItemSchema>;
@@ -528,19 +498,19 @@ export const fileActionResponseSchema = z.object({
 
 export type FileActionResponse = z.infer<typeof fileActionResponseSchema>;
 
+/** Presets that move files organize them into `libraryId`'s output with its templates. */
 export const maintenanceStartInputSchema = z.union([
   z.object({ rerunSessionId: z.string().min(1) }),
   z.object({
     source: directorySourceSchema,
-    targetDir: z.string().trim().min(1).optional(),
+    libraryId: z.string().trim().min(1).optional(),
     presetId: maintenancePresetIdSchema,
   }),
   z.object({
     rootId: z.string().trim().min(1),
     presetId: maintenancePresetIdSchema,
     refs: z.array(scrapeFileRefSchema).min(1),
-    outputRootId: z.string().trim().min(1).optional(),
-    outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
+    libraryId: z.string().trim().min(1).optional(),
   }),
 ]);
 
@@ -627,7 +597,6 @@ export const scrapeRunSnapshotSchema = z.object({
     })
     .nullable(),
   logs: z.array(logEntrySchema),
-  ambiguousUncensoredItems: z.array(ambiguousUncensoredItemSchema),
 });
 
 export type ScrapeRunSnapshotDto = z.infer<typeof scrapeRunSnapshotSchema>;
@@ -644,24 +613,10 @@ export const scrapeMutationAckSchema = z.object({
 
 export type ScrapeMutationAckDto = z.infer<typeof scrapeMutationAckSchema>;
 
-export const scrapePendingUncensoredConfirmationItemSchema = ambiguousUncensoredItemSchema;
-
-export type ScrapePendingUncensoredConfirmationItemDto = z.infer<typeof scrapePendingUncensoredConfirmationItemSchema>;
-
-export const scrapePendingUncensoredConfirmationResponseSchema = z.object({
-  items: z.array(scrapePendingUncensoredConfirmationItemSchema),
-});
-
-export type ScrapePendingUncensoredConfirmationResponse = z.infer<
-  typeof scrapePendingUncensoredConfirmationResponseSchema
->;
-
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
-    resources: z.array(
-      z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending-confirmation"]),
-    ),
+    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending"])),
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),
 ]);
@@ -885,31 +840,67 @@ export const automationWebhookDeliveryStatusResponseSchema = z.object({
 
 export type AutomationWebhookDeliveryStatusResponse = z.infer<typeof automationWebhookDeliveryStatusResponseSchema>;
 
-export const automationScrapeStartInputSchema = z
-  .object({
-    refs: z.array(scrapeFileRefSchema).min(1).optional(),
-    rootId: z.string().trim().min(1).optional(),
-    outputRootId: z.string().trim().min(1).optional(),
-    outputRelativeDirectory: wireRelativeDirectorySchema.optional(),
-    executionMode: z.enum(["single", "batch"]).default("batch"),
-    manualUrl: z.string().trim().min(1).optional(),
-    uncensoredConfirmed: z.boolean().optional(),
-  })
-  .superRefine((value, context) => {
-    if (value.refs?.length && value.executionMode === "batch" && !value.outputRootId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["outputRootId"],
-        message: "Batch scrapes require outputRootId",
-      });
-    }
-  });
+export const apiKeyCreateInputSchema = z.object({ name: z.string().trim().min(1).max(80) });
+export type ApiKeyCreateInput = z.infer<typeof apiKeyCreateInputSchema>;
+
+export const apiKeySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  prefix: z.string(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type ApiKeyDto = z.infer<typeof apiKeySchema>;
+
+export const apiKeyListResponseSchema = z.object({ keys: z.array(apiKeySchema) });
+export type ApiKeyListResponse = z.infer<typeof apiKeyListResponseSchema>;
+
+/** The key itself is shown only here; the server keeps a hash. */
+export const apiKeyCreateResponseSchema = z.object({ key: apiKeySchema, secret: z.string() });
+export type ApiKeyCreateResponse = z.infer<typeof apiKeyCreateResponseSchema>;
+
+/** CloudDrive2's file_system_watcher payload; unknown fields are ignored and booleans may arrive as strings. */
+export const cloudDriveNotifySchema = z.object({
+  data: z
+    .array(
+      z
+        .object({
+          action: z
+            .string()
+            .transform((value) => value.trim().toLowerCase())
+            .pipe(z.enum(["create", "delete", "rename"])),
+          is_dir: z
+            .union([z.boolean(), z.string()])
+            .transform((value) =>
+              typeof value === "boolean" ? value : ["true", "1", "yes"].includes(value.trim().toLowerCase()),
+            ),
+          source_file: z.string().default(""),
+          destination_file: z.string().nullish(),
+        })
+        .transform((change) => ({
+          action: change.action,
+          isDir: change.is_dir,
+          sourceFile: change.source_file,
+          destinationFile: change.destination_file ?? "",
+        })),
+    )
+    .default([]),
+});
+
+/** A downloader callback: an absolute path as the downloader sees it, a file or a directory. */
+export const automationScrapeStartInputSchema = z.object({
+  path: z.string().trim().min(1),
+  /** Scrape into this library instead of the one whose source directory holds the path. */
+  libraryId: z.string().trim().min(1).optional(),
+});
 
 export type AutomationScrapeStartInput = z.infer<typeof automationScrapeStartInputSchema>;
 
 export const automationScrapeStartResponseSchema = z.object({
-  task: z.union([scanTaskSchema, scrapeRunTaskSchema]),
-  webhook: automationWebhookEventSchema,
+  task: z.union([scanTaskSchema, scrapeRunTaskSchema]).nullable(),
+  webhook: automationWebhookEventSchema.nullable(),
+  /** True when the callback named a file the watcher or library already accepted; nothing was queued. */
+  duplicate: z.boolean(),
 });
 
 export type AutomationScrapeStartResponse = z.infer<typeof automationScrapeStartResponseSchema>;
@@ -1050,10 +1041,6 @@ export const configPathInputSchema = z
 
 export type ConfigPathInput = z.infer<typeof configPathInputSchema>;
 
-export const configPreviewInputSchema = z.record(z.string(), z.any());
-
-export type ConfigPreviewInput = DeepPartial<Configuration>;
-
 export const configUpdateInputSchema = z.record(z.string(), z.any());
 
 export type ConfigUpdateInput = DeepPartial<Configuration>;
@@ -1127,9 +1114,11 @@ export type ToolCatalogResponse = z.infer<typeof toolCatalogResponseSchema>;
 export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
   z.object({
     toolId: z.literal("single-file-scraper"),
+    libraryId: z.string().trim().min(1),
     rootId: z.string().trim().min(1),
     relativePath: z.string().trim().min(1),
     manualUrl: z.string().trim().min(1).optional(),
+    unpin: z.boolean().optional(),
   }),
   z.object({
     toolId: z.literal("crawler-tester"),

@@ -42,8 +42,11 @@ export const workbench: Messages["workbench"] = {
   includeSubdirs: "包含子目录",
   scanDirPlaceholder: "请选择需要扫描的媒体目录",
   loadingConfig: "正在读取配置...",
-  outputDirLabel: "输出目录",
-  outputDirPlaceholder: "请选择输出目录",
+  libraryLabel: "库",
+  libraryPlaceholder: "请选择库",
+  manageLibraries: "管理库",
+  noLibraries: "请先创建一个库：它决定整理好的影片放到哪里，以及视频如何放置。",
+  createLibrary: "创建库",
   inaccessiblePathsWarning: (count: number) => `部分路径无法访问，已跳过 ${count} 项`,
   selectVisibleFilesAriaLabel: "选择当前可见文件",
   refreshFiles: "刷新文件",
@@ -67,10 +70,7 @@ export const workbench: Messages["workbench"] = {
   // Setup adapter
   cancelScanFailed: (error: string) => `取消扫描失败: ${error}`,
   selectScanDirFailed: (error: string) => `选择扫描目录失败: ${error}`,
-  selectOutputDirFailed: (error: string) => `选择目标目录失败: ${error}`,
   enterFullPath: "请输入完整路径",
 
   // Ports
-  selectFilesToScrape: "请选择要刮削的文件",
-  multiUrlSameDirOnly: "多文件按 URL 刮削仅支持同一媒体根目录下的同一目录",
 };

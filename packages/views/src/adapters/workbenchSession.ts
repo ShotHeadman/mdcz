@@ -1,5 +1,4 @@
-import type { AmbiguousUncensoredItemDto } from "@mdcz/shared/serverDtos";
-import type { MaintenancePresetId, MediaCandidate, UncensoredChoice } from "@mdcz/shared/types";
+import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   changeMaintenancePreset,
   selectMaintenanceHasWork,
@@ -115,22 +114,6 @@ export const activateNewScrapeTask = (): void => {
   useUIStore.getState().setSelectedResultId(null);
 };
 
-export interface UncensoredConfirmationSelection {
-  id: string;
-  choice: UncensoredChoice;
-}
-
-export const buildUncensoredConfirmationItems = (
-  ambiguousItems: AmbiguousUncensoredItemDto[],
-  selections: UncensoredConfirmationSelection[],
-): Array<{ fileId: string; choice: UncensoredChoice }> => {
-  const choicesById = new Map(selections.map((selection) => [selection.id, selection.choice]));
-  return ambiguousItems.map((item) => ({
-    fileId: item.fileId,
-    choice: choicesById.get(item.id) ?? "uncensored",
-  }));
-};
-
 export const resetScrapeWorkbenchToSetup = (): void => {
   useUIStore.getState().setSelectedResultId(null);
   useWorkbenchTaskStore.getState().reset();
@@ -140,7 +123,7 @@ export const resetScrapeWorkbenchToSetup = (): void => {
 export interface StartMaintenanceFlowOptions {
   candidates: MediaCandidate[];
   presetId: MaintenancePresetId;
-  targetDir?: string;
+  libraryId?: string;
   port: MaintenanceActionPort;
   isScraping: boolean;
   setWorkbenchMode?: (mode: WorkbenchMode) => void;
@@ -176,7 +159,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
       return;
     }
 
-    await options.port.preview(refs, options.presetId, options.targetDir);
+    await options.port.preview(refs, options.presetId, options.libraryId);
     await options.onRefreshConfig?.();
     options.toast.success(
       options.presetId === "import_local"

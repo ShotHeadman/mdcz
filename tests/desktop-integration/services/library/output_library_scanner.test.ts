@@ -49,6 +49,7 @@ const createCompletedRun = async (
 ) => {
   const manifest = await scrapeRuns.create({
     id: input.id,
+    libraryId: "library-1",
     rootId: "root-1",
     outputRootId: "root-1",
     executionMode: "single",

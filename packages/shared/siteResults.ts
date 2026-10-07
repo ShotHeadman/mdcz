@@ -10,6 +10,8 @@ export const FAILURE_REASONS = [
   "timeout",
   "empty_shell",
   "not_found",
+  /** The search lists different works under the number; a fact about the movie, not the network. */
+  "ambiguous",
   "parse_error",
   "http_error",
   "network_error",
@@ -35,6 +37,8 @@ export const SKIP_REASONS = [
   "cooldown",
   "early_stop",
   "global_timeout",
+  /** Another site listed different works under the number, so the rest were cancelled. */
+  "ambiguous",
 ] as const;
 
 export type SkipReason = (typeof SKIP_REASONS)[number];
@@ -49,6 +53,13 @@ export const siteResultSchema = z.object({
   httpStatus: z.int().optional(),
   elapsedMs: z.int().nonnegative(),
 });
+
+/** Outcomes that hold for the movie whatever network asked: a site that answers them works. */
+export const MOVIE_FACT_FAILURE_REASONS: ReadonlySet<FailureReason> = new Set([
+  "not_found",
+  "ambiguous",
+  "parse_error",
+]);
 
 export type SiteResult = z.infer<typeof siteResultSchema>;
 

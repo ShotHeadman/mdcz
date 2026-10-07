@@ -1,11 +1,21 @@
-import { MediaDirectoryUnavailableError } from "@mdcz/runtime/library";
+import { MediaDirectoryUnavailableError, toMediaLibraryDto } from "@mdcz/runtime/library";
+import {
+  mediaLibraryIdInputSchema,
+  mediaLibrarySettingsSchema,
+  mediaLibraryUpdateInputSchema,
+} from "@mdcz/shared/mediaLibrary";
+import {
+  pendingConfirmUncensoredInputSchema,
+  pendingIdInputSchema,
+  pendingRetryInputSchema,
+} from "@mdcz/shared/pending";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
+  apiKeyCreateInputSchema,
   authLoginInputSchema,
   cancelCandidatesInputSchema,
   configImportInputSchema,
   configPathInputSchema,
-  configPreviewInputSchema,
   configProfileImportInputSchema,
   configProfileNameInputSchema,
   configUpdateInputSchema,
@@ -30,7 +40,6 @@ import {
   scanCandidatesInputSchema,
   scanStartInputSchema,
   scanTaskIdInputSchema,
-  scrapeConfirmUncensoredInputSchema,
   scrapeRerunDirectoryInputSchema,
   scrapeResultIdInputSchema,
   scrapeStartInputSchema,
@@ -55,7 +64,7 @@ export const appRouter = t.router({
     login: t.procedure
       .input(authLoginInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.auth.login(input.password)),
-    logout: t.procedure.mutation(({ ctx }) => ctx.services.auth.logout(ctx.token)),
+    logout: t.procedure.mutation(async ({ ctx }) => await ctx.services.auth.logout(ctx.token)),
     status: t.procedure.query(async ({ ctx }) => {
       return await ctx.services.auth.status(ctx.token);
     }),
@@ -96,13 +105,6 @@ export const appRouter = t.router({
     import: protectedProcedure.input(configImportInputSchema).mutation(async ({ ctx, input }) => {
       try {
         return await ctx.services.config.import(input.content);
-      } catch (error) {
-        return mapConfigError(error);
-      }
-    }),
-    previewNaming: protectedProcedure.input(configPreviewInputSchema).mutation(async ({ ctx, input }) => {
-      try {
-        return await ctx.services.config.previewNaming(input);
       } catch (error) {
         return mapConfigError(error);
       }
@@ -214,13 +216,68 @@ export const appRouter = t.router({
       .input(toolExecuteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.tools.execute(input)),
   }),
+  libraries: t.router({
+    list: protectedProcedure.query(async ({ ctx }) => ({
+      libraries: (await ctx.services.libraries.list()).map(toMediaLibraryDto),
+    })),
+    create: protectedProcedure.input(mediaLibrarySettingsSchema).mutation(async ({ ctx, input }) => {
+      const library = toMediaLibraryDto(await ctx.services.libraries.create(input));
+      await ctx.services.libraryWatch.refresh();
+      return library;
+    }),
+    update: protectedProcedure.input(mediaLibraryUpdateInputSchema).mutation(async ({ ctx, input }) => {
+      const library = toMediaLibraryDto(await ctx.services.libraries.update(input.id, input.settings));
+      await ctx.services.libraryWatch.refresh();
+      return library;
+    }),
+    delete: protectedProcedure.input(mediaLibraryIdInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.libraries.delete(input.id);
+      await ctx.services.libraryWatch.refresh();
+      return { success: true as const };
+    }),
+    previewNaming: protectedProcedure
+      .input(mediaLibrarySettingsSchema)
+      .mutation(async ({ ctx, input }) => ({ items: await ctx.services.libraries.previewNaming(input) })),
+  }),
+  pending: t.router({
+    list: protectedProcedure.query(async ({ ctx }) => await ctx.services.pending.list()),
+    detail: protectedProcedure
+      .input(pendingIdInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.pending.detail(input.id)),
+    retry: protectedProcedure
+      .input(pendingRetryInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.retry(input)),
+    confirmUncensored: protectedProcedure
+      .input(pendingConfirmUncensoredInputSchema)
+      .mutation(async ({ ctx, input }) => {
+        await ctx.services.pending.confirmUncensored(input);
+        return { success: true as const };
+      }),
+    ignore: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.pending.ignore(input.id);
+      return { success: true as const };
+    }),
+  }),
+  apiKeys: t.router({
+    list: protectedProcedure.query(async ({ ctx }) => await ctx.services.auth.listApiKeys()),
+    create: protectedProcedure
+      .input(apiKeyCreateInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.auth.createApiKey(input)),
+    delete: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.auth.deleteApiKey(input.id);
+      return { success: true as const };
+    }),
+  }),
+  notifications: t.router({
+    test: protectedProcedure.mutation(async ({ ctx }) => {
+      await ctx.services.automation.testNotification();
+      return { success: true as const };
+    }),
+  }),
   mediaRoots: t.router({
     ensurePath: protectedProcedure
       .input(mediaRootEnsurePathInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.ensurePath(input)),
-    prepareOutputDirectory: protectedProcedure
-      .input(mediaRootEnsurePathInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.mediaRoots.prepareOutputDirectory(input)),
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.mediaRoots.list()),
   }),
   maintenance: t.router({
@@ -292,9 +349,6 @@ export const appRouter = t.router({
     snapshot: protectedProcedure
       .input(scrapeTaskControlInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.snapshot(input)),
-    pendingUncensoredConfirmation: protectedProcedure.query(
-      async ({ ctx }) => await ctx.services.scrape.pendingUncensoredConfirmation(),
-    ),
     nfoRead: protectedProcedure
       .input(nfoReadInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.scrape.nfoRead(input)),
@@ -322,17 +376,6 @@ export const appRouter = t.router({
     rerunDirectory: scrapeLaunchProcedure
       .input(scrapeRerunDirectoryInputSchema)
       .mutation(async ({ ctx, input }) => ({ runId: (await ctx.services.scrape.rerunDirectory(input)).task.id })),
-    confirmUncensored: protectedProcedure.input(scrapeConfirmUncensoredInputSchema).mutation(async ({ ctx, input }) => {
-      try {
-        return await ctx.services.scrape.confirmUncensored(input);
-      } catch (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error instanceof Error ? error.message : "Invalid uncensored confirmation request",
-          cause: error,
-        });
-      }
-    }),
     start: scrapeLaunchProcedure.input(scrapeStartInputSchema).mutation(async ({ ctx, input }) => {
       try {
         return { runId: (await ctx.services.scrape.start(input)).task.id };

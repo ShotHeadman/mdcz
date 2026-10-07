@@ -35,7 +35,8 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     tags.length === 0 &&
     lockedFields.length === 0 &&
     !published &&
-    !localState.fileinfo
+    !localState.fileinfo &&
+    !localState.sourcePin
   )
     return undefined;
   return {
@@ -45,6 +46,7 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     published,
     edits,
     fileinfo: localState.fileinfo,
+    sourcePin: localState.sourcePin,
   };
 };
 

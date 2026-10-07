@@ -213,8 +213,11 @@ export const extractNumber = (fileName: string, escapeStrings: string[] = []): s
 
   const normalized = normalizeRawName(fileName, escapeStrings);
   const rule = ORDERED_NUMBER_EXTRACTION_RULES.find(({ pattern }) => pattern.test(normalized));
-  const match = rule && normalized.match(rule.pattern);
-  const number = normalizeNumber(match ? (rule.format?.(match) ?? match[1] ?? match[0]) : normalized);
+  const match = rule ? normalized.match(rule.pattern) : null;
+  // A name no rule matches has no number; returning the whole name would become a pseudo-number that queries every
+  // site instead of parking the file as `no_number`.
+  if (!rule || !match) return "";
+  const number = normalizeNumber(rule.format?.(match) ?? match[1] ?? match[0]);
 
   // Name normalization turns every separator into "-", but in a bare date-sequence number "_" and "-" name
   // different studios, so the separator is read back from the original name.
@@ -352,11 +355,19 @@ const detectAlphabeticPart = (
   };
 };
 
-export const parseFileInfo = (filePath: string, escapeStrings: string[] = []): FileInfo => {
+/** `numberMappings` (file name keyword -> number) wins over parsing, for names no rule can read. */
+export const parseFileInfo = (
+  filePath: string,
+  escapeStrings: readonly string[] = [],
+  numberMappings: Readonly<Record<string, string>> = {},
+): FileInfo => {
   const extension = extname(filePath);
   const stem = basename(filePath, extension);
   const normalizedStem = stem.normalize("NFC");
   const normalizedUpper = normalizedStem.toUpperCase();
+  const mapped = Object.entries(numberMappings).find(([match]) =>
+    normalizedUpper.includes(match.normalize("NFC").toUpperCase()),
+  )?.[1];
 
   const crackedCuMatch = normalizedUpper.match(CRACKED_CU_PATTERN);
   const subtitleTag = detectChineseSubtitleTagInFileName(
@@ -365,12 +376,13 @@ export const parseFileInfo = (filePath: string, escapeStrings: string[] = []): F
   const uncensoredMatch = normalizedUpper.match(UNCENSORED_PATTERN);
   const umrMatch = normalizedStem.match(UMR_PATTERN);
   const resolutionMatch = RESOLUTION_PATTERNS.map((pattern) => normalizedUpper.match(pattern)).find(Boolean);
-  const number = extractNumber(normalizedStem, escapeStrings);
+  const tokens = [...escapeStrings];
+  const number = mapped?.trim().toUpperCase() ?? extractNumber(normalizedStem, tokens);
   const part =
     detectNamedPart(normalizedStem, number) ??
-    detectBareNumericPart(normalizedStem, number, escapeStrings) ??
-    detectAlphabeticPart(normalizedStem, number, escapeStrings) ??
-    detectCircledPart(normalizedStem, number, escapeStrings);
+    detectBareNumericPart(normalizedStem, number, tokens) ??
+    detectAlphabeticPart(normalizedStem, number, tokens) ??
+    detectCircledPart(normalizedStem, number, tokens);
 
   return {
     filePath,

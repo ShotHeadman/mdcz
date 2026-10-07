@@ -1,9 +1,11 @@
 import {
+  CredentialRepository,
   createPersistenceDatabase,
-  FolderWatchRepository,
   isSchemaMigrationFailure,
   LibraryRepository,
+  MediaLibraryRepository,
   MediaRootRepository,
+  PendingRepository,
   type PersistenceDatabase,
   runMigrations,
   ScanTaskRepository,
@@ -17,9 +19,11 @@ import { acquireDatabaseLease } from "../databaseFiles";
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
-  folderWatch: FolderWatchRepository;
+  credentials: CredentialRepository;
   library: LibraryRepository;
+  mediaLibraries: MediaLibraryRepository;
   mediaRoots: MediaRootRepository;
+  pending: PendingRepository;
   scrapeRuns: ScrapeRunRepository;
   scanTasks: ScanTaskRepository;
   siteResults: SiteResultRepository;
@@ -76,9 +80,11 @@ export class ServerPersistenceService {
       this.state = {
         database,
         repositories: {
-          folderWatch: new FolderWatchRepository(database),
+          credentials: new CredentialRepository(database),
           library: new LibraryRepository(database),
+          mediaLibraries: new MediaLibraryRepository(database),
           mediaRoots,
+          pending: new PendingRepository(database),
           scrapeRuns,
           scanTasks: new ScanTaskRepository(database),
           siteResults: new SiteResultRepository(database),
@@ -91,7 +97,7 @@ export class ServerPersistenceService {
       this.lease = null;
       if (isSchemaMigrationFailure(error)) {
         throw new Error(
-          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept.`,
+          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept, libraries and API keys must be created again.`,
           { cause: error },
         );
       }

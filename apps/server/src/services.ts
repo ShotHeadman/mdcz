@@ -1,9 +1,10 @@
+import type { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type { AuthService } from "./services/authService";
-import type { AutomationService, AutomationWebhookOptions } from "./services/automationService";
+import type { AutomationService } from "./services/automationService";
 import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
-import type { FolderWatchService } from "./services/folderWatchService";
 import type { LibraryService } from "./services/libraryService";
+import type { LibraryWatchService } from "./services/libraryWatchService";
 import type { MaintenanceService } from "./services/maintenanceService";
 import type { MediaRootService } from "./services/mediaRootService";
 import type { ServerPersistenceService } from "./services/persistenceService";
@@ -21,10 +22,12 @@ export interface ServerServices {
   auth: AuthService;
   browser: BrowserService;
   config: ServerConfigService;
-  folderWatch: FolderWatchService;
+  libraries: MediaLibraryService;
+  libraryWatch: LibraryWatchService;
   library: LibraryService;
   maintenance: MaintenanceService;
   mediaRoots: MediaRootService;
+  pending: PendingService;
   persistence: ServerPersistenceService;
   runtimeLogs: RuntimeLogService;
   runtimeActions: RuntimeActionService;
@@ -34,8 +37,4 @@ export interface ServerServices {
   system: SystemService;
   taskEvents: TaskEventBus;
   tools: ToolsService;
-}
-
-export interface ServerServiceOptions {
-  automationWebhook?: AutomationWebhookOptions;
 }

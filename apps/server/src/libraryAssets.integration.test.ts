@@ -2,13 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  closeTestServers,
-  createTempRoot,
-  createTestServer,
-  loginAsAdmin,
-  syncMediaRootFromConfig,
-} from "./app.testSupport";
+import { closeTestServers, createTempRoot, createTestLibrary, createTestServer, loginAsAdmin } from "./app.testSupport";
 
 afterEach(async () => {
   await closeTestServers();
@@ -35,7 +29,7 @@ const createAssetFixture = async () => {
   await writeFile(sourcePath, source);
   const { fastify } = await createTestServer();
   const token = await loginAsAdmin(fastify);
-  const rootId = await syncMediaRootFromConfig(fastify, token, root);
+  const { rootId } = await createTestLibrary(fastify, token, root);
   const url = `/api/library/assets/${encodeURIComponent(rootId)}/${relativePath}`;
   return { fastify, relativePath, rootId, source, sourcePath, token, url };
 };

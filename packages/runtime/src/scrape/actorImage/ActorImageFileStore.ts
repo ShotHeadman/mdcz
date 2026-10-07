@@ -34,7 +34,6 @@ export interface ActorImageFileStoreDependencies {
 }
 
 export type ActorImageLookupOptions = {
-  fallbackBaseDir?: string;
   expectedRemoteUrl?: string;
 };
 
@@ -88,7 +87,7 @@ export class ActorImageFileStore {
     }
 
     const libraryRoot = usesLocalActorImageSource(configuration)
-      ? resolveActorPhotoFolderPath(configuration, options)
+      ? resolveActorPhotoFolderPath(configuration)
       : undefined;
     const manualImagePath =
       libraryRoot && (await pathExists(libraryRoot)) ? await this.findManualImage(libraryRoot, uniqueNames) : undefined;

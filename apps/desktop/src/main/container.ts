@@ -8,7 +8,7 @@ import type { UpdateService } from "@main/services/UpdateService";
 import type { WindowService } from "@main/services/WindowService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
+import type { ConfiguredMediaRootService, MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type {
   EmbyActorInfoService,
   EmbyActorPhotoService,
@@ -35,6 +35,8 @@ export interface ServiceContainer {
   desktopLibraryService: DesktopLibraryService;
   persistenceService: DesktopPersistenceService;
   mediaRoots: ConfiguredMediaRootService;
+  libraries: MediaLibraryService;
+  pendingService: PendingService;
   scraperService: ScraperService;
   maintenanceService: MaintenanceService;
   crawlerProvider: CrawlerProvider;

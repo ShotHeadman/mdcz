@@ -89,8 +89,6 @@ export const createFileHandlers = (
             }
 
             const configuration = await configManager.getValidated();
-            const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
-            if (metadataPath) excludeDirPaths.push(metadataPath);
             const admitted = await mediaRoots.admitDirectory({ hostPath: dirPath });
             const registeredRoots = await mediaRoots.listRoots();
 

@@ -1,8 +1,7 @@
 import { extname } from "node:path";
 import type { ServiceContainer } from "@main/container";
-import { ConfigValidationError, configManager, configurationSchema, defaultConfiguration } from "@main/services/config";
+import { ConfigValidationError, configManager, defaultConfiguration } from "@main/services/config";
 import { toErrorMessage } from "@main/utils/common";
-import { FileOrganizer } from "@mdcz/runtime/scrape";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { dialog } from "electron";
@@ -10,14 +9,11 @@ import { createIpcError, IpcErrorCode } from "../errors";
 import {
   configImportProfileInputSchema,
   configPathInputSchema,
-  configPreviewNamingInputSchema,
   configProfileNameInputSchema,
   configResetInputSchema,
   configSaveInputSchema,
 } from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
-
-const fileOrganizer = new FileOrganizer();
 
 export const createConfigHandlers = (
   context: ServiceContainer,
@@ -28,7 +24,6 @@ export const createConfigHandlers = (
   | typeof IpcChannel.Config_Save
   | typeof IpcChannel.Config_List
   | typeof IpcChannel.Config_Reset
-  | typeof IpcChannel.Config_PreviewNaming
   | typeof IpcChannel.Config_ListProfiles
   | typeof IpcChannel.Config_CreateProfile
   | typeof IpcChannel.Config_SwitchProfile
@@ -91,16 +86,6 @@ export const createConfigHandlers = (
         return { success: true as const };
       } catch (error) {
         throw asSerializableIpcError(createIpcError(IpcErrorCode.CONFIG_SAVE_ERROR, toErrorMessage(error)));
-      }
-    }),
-    [IpcChannel.Config_PreviewNaming]: t.procedure.input(configPreviewNamingInputSchema).action(async ({ input }) => {
-      try {
-        const config = configurationSchema.parse(input?.config ?? {});
-        return {
-          items: fileOrganizer.buildNamingPreview(config),
-        };
-      } catch (error) {
-        throw asSerializableIpcError(error);
       }
     }),
     [IpcChannel.Config_ListProfiles]: t.procedure.action(async () => {

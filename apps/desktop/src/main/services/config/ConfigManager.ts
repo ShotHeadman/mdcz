@@ -7,7 +7,7 @@ import { IpcErrorCode } from "@main/ipc/errors";
 import { loggerService } from "@main/services/LoggerService";
 import { toErrorMessage } from "@main/utils/common";
 import {
-  type RuntimeConfigChangeSource,
+  type LegacyConfigurationConversion,
   RuntimeConfigProfileStore,
   RuntimeConfigService,
   RuntimeConfigValidationError,
@@ -36,7 +36,6 @@ export class ConfigManager extends EventEmitter {
   private readonly computedConfig = new ComputedConfig(() => this.configuration);
 
   private initializePromise: Promise<void> | null = null;
-  private skipActiveConfigurationCommit = false;
 
   private configDirectory = DEFAULT_CONFIG_DIRECTORY;
   private saveSnapshot: {
@@ -47,14 +46,6 @@ export class ConfigManager extends EventEmitter {
 
   private readonly config = new RuntimeConfigService({
     store: this.createStore(),
-    onBeforeCommit: (configuration, context) => {
-      if (this.skipActiveConfigurationCommit) return;
-      return this.beforeActiveConfigurationCommit?.(configuration, context);
-    },
-    onAfterCommit: (configuration, context) => {
-      if (this.skipActiveConfigurationCommit) return;
-      return this.afterActiveConfigurationCommit?.(configuration, context);
-    },
     onBeforeSave: (configuration) => {
       this.saveSnapshot = {
         configuration: this.configuration,
@@ -91,18 +82,6 @@ export class ConfigManager extends EventEmitter {
   });
 
   private activeProfileName: string | undefined;
-  private beforeActiveConfigurationCommit:
-    | ((
-        configuration: Configuration,
-        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
-      ) => Promise<void> | void)
-    | undefined;
-  private afterActiveConfigurationCommit:
-    | ((
-        configuration: Configuration,
-        context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
-      ) => Promise<void> | void)
-    | undefined;
 
   constructor() {
     super();
@@ -117,28 +96,16 @@ export class ConfigManager extends EventEmitter {
     });
   }
 
-  setBeforeActiveConfigurationCommit(
-    callback: (
-      configuration: Configuration,
-      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
-    ) => Promise<void> | void,
-  ): void {
-    this.beforeActiveConfigurationCommit = callback;
-  }
-
-  setAfterActiveConfigurationCommit(
-    callback: (
-      configuration: Configuration,
-      context: { source: RuntimeConfigChangeSource; previous: Configuration | null },
-    ) => Promise<void> | void,
-  ): void {
-    this.afterActiveConfigurationCommit = callback;
-  }
-
-  async synchronizeConfiguredRoots(): Promise<void> {
+  /** Settings that moved into libraries, read from the active profile; returned once. */
+  async takeLegacyConversion(): Promise<LegacyConfigurationConversion | undefined> {
     await this.ensureLoaded();
-    await this.beforeActiveConfigurationCommit?.(this.configuration, { source: "load", previous: null });
-    await this.afterActiveConfigurationCommit?.(this.configuration, { source: "load", previous: null });
+    return this.config.takeLegacyConversion();
+  }
+
+  /** Writes the active profile back in the current schema. */
+  async saveCurrent(): Promise<void> {
+    await this.ensureLoaded();
+    await this.config.saveFull(this.configuration);
   }
 
   async ensureLoaded(): Promise<void> {
@@ -332,12 +299,8 @@ export class ConfigManager extends EventEmitter {
       await this.config.load();
       this.syncConfigDirectoryFromConfiguration();
       this.config.replaceStore(this.createStore());
-      this.skipActiveConfigurationCommit = true;
-      try {
-        await this.config.saveFull(this.configuration);
-      } finally {
-        this.skipActiveConfigurationCommit = false;
-      }
+      // Settings that moved into libraries stay in the file until the library they describe exists.
+      if (!this.config.hasLegacyConversion) await this.config.saveFull(this.configuration);
     } catch (error) {
       const message = toErrorMessage(error);
       this.logger.warn(`Failed to load config; using in-memory defaults: ${message}`);

@@ -42,6 +42,8 @@ describe("extractNumber", () => {
       { input: "IDBD-905-A", expected: "IDBD-905" },
       { input: "IDBD-905-H", expected: "IDBD-905" },
       { input: "123-456", expected: "123-456" },
+      { input: "甘えたいカラダ 真田まこと", expected: "" },
+      { input: "sample", expected: "" },
     ];
 
     for (const { input, expected } of cases) {

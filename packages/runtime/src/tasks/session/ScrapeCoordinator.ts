@@ -108,10 +108,6 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
     entry.session.recordLog(log);
   }
 
-  updateLibraryFiles(updates: ReadonlyMap<string, Partial<import("@mdcz/shared/types").ScrapeResult>>): void {
-    for (const entry of this.entries.values()) entry.session.updateLibraryFiles(updates);
-  }
-
   async pause(runId: string): Promise<ScrapeRunSnapshot<TItem>> {
     const entry = this.requireLive(runId);
     this.removeReady(runId);

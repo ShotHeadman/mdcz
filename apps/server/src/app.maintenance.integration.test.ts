@@ -13,11 +13,11 @@ import {
   closeTestServers,
   createTempRoot,
   createTestAggregation,
+  createTestLibrary,
   createTestPngBytes,
   createTestServer,
   loginAsAdmin,
   startTestImageServer,
-  syncMediaRootFromConfig,
 } from "./app.testSupport";
 import type { ServerConfigService } from "./services/configService";
 
@@ -38,32 +38,14 @@ const writeMaintenanceInput = async (root: string, number: string, title: string
   );
 };
 
-const configureOrganizedOutput = async (
-  fastify: TestFastify,
-  token: string,
-  root: string,
-  extra: Record<string, unknown> = {},
-): Promise<void> => {
-  await fastify.inject({
-    method: "POST",
-    url: "/trpc/config.update",
-    headers: { authorization: `Bearer ${token}` },
-    payload: {
-      paths: { mediaPath: root, successOutputFolder: "JAV_output" },
-      behavior: { successFileMove: true, successFileRename: true },
-      naming: { folderTemplate: "{number}", fileTemplate: "{number}" },
-      ...extra,
-    },
-  });
-};
+const organizedLibrary = { folderTemplate: "{number}", fileTemplate: "{number}" };
 
 const startMaintenancePreview = async (
   fastify: TestFastify,
   token: string,
-  rootId: string,
+  { rootId, libraryId }: { rootId: string; libraryId: string },
   presetId: MaintenancePresetId,
   relativePaths: string[],
-  outputRelativeDirectory = "JAV_output",
 ) => {
   const startResponse = await fastify.inject({
     method: "POST",
@@ -72,12 +54,11 @@ const startMaintenancePreview = async (
     payload: {
       rootId,
       presetId,
-      outputRootId: rootId,
-      outputRelativeDirectory,
+      libraryId,
       refs: relativePaths.map((relativePath) => ({ rootId, relativePath })),
     },
   });
-  expect(startResponse.statusCode).toBe(200);
+  expect(startResponse.statusCode, startResponse.body).toBe(200);
   const sessionId = startResponse.json().result.data.sessionId as string;
   const session = await waitForMaintenanceSession(fastify, token, sessionId, "preview", "completed");
   return { session, sessionId };
@@ -192,12 +173,12 @@ describe("buildServer maintenance integration", () => {
     await writeMaintenanceInput(root, "ABC-203", "Local Title ABC-203");
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
     const emptySelection = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.start",
       headers: { authorization: `Bearer ${token}` },
-      payload: { rootId, presetId: "local_organize", refs: [] },
+      payload: { rootId, presetId: "local_organize", libraryId, refs: [] },
     });
     const startResponse = await fastify.inject({
       method: "POST",
@@ -206,6 +187,7 @@ describe("buildServer maintenance integration", () => {
       payload: {
         rootId,
         presetId: "local_organize",
+        libraryId,
         refs: ["ABC-201.mp4", "ABC-203.mp4"].map((relativePath) => ({ rootId, relativePath })),
       },
     });
@@ -220,8 +202,8 @@ describe("buildServer maintenance integration", () => {
     await writeMaintenanceInput(root, "ABC-500", "Local Title ABC-500");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-    await configureOrganizedOutput(fastify, token, root, {
+    const library = await createTestLibrary(fastify, token, root);
+    await services.config.update({
       translate: { enableTranslation: false },
       aggregation: { fieldPriorities: { title: [Website.OFFICIAL, Website.DMM] } },
     });
@@ -240,7 +222,7 @@ describe("buildServer maintenance integration", () => {
     ]);
     const crawl = vi.spyOn(CrawlerProvider.prototype, "crawl");
 
-    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "remerge", ["ABC-500.mp4"]);
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "remerge", ["ABC-500.mp4"]);
     expect(session.previews[0].fieldDiffs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ field: "title", oldValue: "Local Title ABC-500", newValue: "Official Title" }),
@@ -295,7 +277,7 @@ describe("buildServer maintenance integration", () => {
       },
     });
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.start",
@@ -303,6 +285,7 @@ describe("buildServer maintenance integration", () => {
       payload: {
         rootId,
         presetId: "local_organize",
+        libraryId,
         refs: ["ABC-211.mp4", "ABC-212.mp4"].map((relativePath) => ({ rootId, relativePath })),
       },
     });
@@ -343,12 +326,17 @@ describe("buildServer maintenance integration", () => {
     }
     const snapshotFiles = async () =>
       Promise.all(
-        (await readdir(root)).sort().map(async (name) => [name, await readFile(join(root, name), "utf8")] as const),
+        (await readdir(root, { withFileTypes: true }))
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name)
+          .sort()
+          .map(async (name) => [name, await readFile(join(root, name), "utf8")] as const),
       );
     const before = await snapshotFiles();
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    const library = await createTestLibrary(fastify, token, root, organizedLibrary);
+    const { rootId } = library;
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -396,11 +384,10 @@ describe("buildServer maintenance integration", () => {
     ]);
     expect(await snapshotFiles()).toEqual(before);
 
-    await configureOrganizedOutput(fastify, token, root);
     const organize = await startMaintenancePreview(
       fastify,
       token,
-      rootId,
+      library,
       "local_organize",
       parts.map((part) => `${part}.mp4`),
     );
@@ -427,16 +414,13 @@ describe("buildServer maintenance integration", () => {
     const sourceRelative =
       location === "incoming" ? "" : location === "organized" ? "JAV_output/Old/ABC-125" : "Old/ABC-125";
     const sourceDir = join(root, sourceRelative);
-    const metadataRoot = location === "nested-root" ? await createTempRoot("maintenance-metadata") : undefined;
-    const sourceMetadataDir = sourceDir;
-    const outputRelative = location === "nested-root" ? "" : "JAV_output";
+    const outputPath = location === "nested-root" ? root : join(root, "JAV_output");
     await mkdir(sourceDir, { recursive: true });
-    await mkdir(sourceMetadataDir, { recursive: true });
     await writeFile(join(sourceDir, "ABC-125.mp4"), "video");
     await writeFile(join(sourceDir, "ABC-125.en.srt"), "subtitle");
-    await writeFile(join(sourceMetadataDir, "ABC-125-poster.jpg"), "original poster");
+    await writeFile(join(sourceDir, "ABC-125-poster.jpg"), "original poster");
     await writeFile(
-      join(sourceMetadataDir, "ABC-125.nfo"),
+      join(sourceDir, "ABC-125.nfo"),
       new NfoGenerator().buildXml(
         {
           number: "ABC-125",
@@ -450,30 +434,24 @@ describe("buildServer maintenance integration", () => {
         { assets: { poster: "ABC-125-poster.jpg", sceneImages: [], downloaded: [] } },
       ),
     );
-    const { fastify } = await createTestServer();
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-
-    await configureOrganizedOutput(fastify, token, root, {
-      paths: { mediaPath: root, metadataPath: metadataRoot ?? "", successOutputFolder: "ignored-output" },
-      naming: { folderTemplate: "{studio}/{number}", fileTemplate: "{number}_new", assetNamingMode: "followVideo" },
-      download: { nfoNaming: "filename" },
-    });
+    const librarySettings = {
+      name: "Library",
+      sourcePath: root,
+      outputPath,
+      placement: "move",
+      folderTemplate: "{studio}/{number}",
+      fileTemplate: "{number}_new",
+    } as const;
+    const library = await createTestLibrary(fastify, token, root, librarySettings);
+    await services.config.update({ naming: { assetNamingMode: "followVideo" }, download: { nfoNaming: "filename" } });
     const relativePath = join(sourceRelative, "ABC-125.mp4").replaceAll("\\", "/");
-    const { session, sessionId } = await startMaintenancePreview(
-      fastify,
-      token,
-      rootId,
-      "local_organize",
-      [relativePath],
-      outputRelative,
-    );
-    await fastify.inject({
-      method: "POST",
-      url: "/trpc/config.update",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { naming: { fileTemplate: "{number}_unexpected" } },
-    });
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "local_organize", [
+      relativePath,
+    ]);
+    // The approved preview fixed the target, so later template edits must not change where it publishes.
+    await services.libraries.update(library.libraryId, { ...librarySettings, fileTemplate: "{number}_unexpected" });
     const applyResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.execute",
@@ -500,19 +478,18 @@ describe("buildServer maintenance integration", () => {
       number: "ABC-125",
       title: "Local Title ABC-125",
     });
-    const targetDir = join(root, outputRelative, "S", "ABC-125");
-    const targetMetadataDir = targetDir;
+    const targetDir = join(outputPath, "S", "ABC-125");
     const organizedVideo = join(targetDir, "ABC-125_new.mp4");
-    const organizedNfo = join(targetMetadataDir, "ABC-125_new.nfo");
+    const organizedNfo = join(targetDir, "ABC-125_new.nfo");
     await expect(access(organizedVideo)).resolves.toBeUndefined();
     await expect(access(organizedNfo)).resolves.toBeUndefined();
     await expect(readFile(join(targetDir, "ABC-125_new.en.srt"), "utf8")).resolves.toBe("subtitle");
-    await expect(readFile(join(targetMetadataDir, "ABC-125_new-poster.jpg"), "utf8")).resolves.toBe("original poster");
+    await expect(readFile(join(targetDir, "ABC-125_new-poster.jpg"), "utf8")).resolves.toBe("original poster");
     expect(await readFile(organizedNfo, "utf8")).toContain("ABC-125_new-poster.jpg");
     await expect(access(join(sourceDir, "ABC-125.en.srt"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(sourceDir, "ABC-125.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(access(join(sourceMetadataDir, "ABC-125-poster.jpg"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(access(join(sourceMetadataDir, "ABC-125.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(sourceDir, "ABC-125-poster.jpg"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(sourceDir, "ABC-125.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it.each([
@@ -546,14 +523,10 @@ describe("buildServer maintenance integration", () => {
       createMaintenanceRuntime: (config) => createMaintenanceRuntime(config, aggregation, downloadAll),
     });
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-
-    await configureOrganizedOutput(fastify, token, root, {
-      download: {
-        generateNfo: true,
-        downloadSceneImages: false,
-        downloadTrailer: false,
-      },
+    const library = await createTestLibrary(fastify, token, root, organizedLibrary);
+    const { rootId } = library;
+    await services.config.update({
+      download: { generateNfo: true, downloadSceneImages: false, downloadTrailer: false },
       translate: { enableTranslation: false },
     });
     const state = await services.persistence.getState();
@@ -571,7 +544,7 @@ describe("buildServer maintenance integration", () => {
     const { session, sessionId } = await startMaintenancePreview(
       fastify,
       token,
-      rootId,
+      library,
       "rebuild_all",
       sourceNames.slice(-1),
     );
@@ -716,11 +689,14 @@ describe("buildServer maintenance integration", () => {
         createMaintenanceRuntime(config, aggregation, manager.downloadAll.bind(manager)),
     });
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, root);
-
-    await configureOrganizedOutput(fastify, token, root, {
-      paths: { mediaPath: root, metadataPath: metadataRoot },
-      naming: { folderTemplate: "{number}", fileTemplate: "{number}_Changed", assetNamingMode: "followVideo" },
+    const library = await createTestLibrary(fastify, token, root, {
+      placement: "metadataOnly",
+      outputPath: metadataRoot,
+      fileTemplate: "{number}_Changed",
+    });
+    const { rootId } = library;
+    await services.config.update({
+      naming: { assetNamingMode: "followVideo" },
       translate: { enableTranslation: false },
       download: {
         downloadThumb: false,
@@ -761,7 +737,7 @@ describe("buildServer maintenance integration", () => {
         },
       ],
     });
-    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "refresh_metadata", [
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "refresh_metadata", [
       `${baseName}.mp4`,
     ]);
     expect(session.previews[0].pathDiff).toBeFalsy();

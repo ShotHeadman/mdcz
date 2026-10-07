@@ -2,7 +2,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import type { Website } from "@mdcz/shared/enums";
-import type { FailureReason, SiteResult } from "@mdcz/shared/siteResults";
+import { type FailureReason, MOVIE_FACT_FAILURE_REASONS, type SiteResult } from "@mdcz/shared/siteResults";
 import sharp from "sharp";
 import { parseImageDimensions } from "../scrape/utils/image";
 import {
@@ -93,7 +93,7 @@ const isSameRequest = (recorded: NetworkFixtureRequest, actual: NetworkFixtureRe
 /** The reason a site's outcome depended on the network it was recorded from, if it did. */
 const networkDependentReason = (result: SiteResult): FailureReason | undefined => {
   if (result.status === "failed") {
-    return result.reason === "not_found" || result.reason === "parse_error" ? undefined : result.reason;
+    return result.reason && MOVIE_FACT_FAILURE_REASONS.has(result.reason) ? undefined : result.reason;
   }
   if (result.status === "skipped" && (result.skipReason === "unavailable" || result.skipReason === "cooldown")) {
     return result.reason;

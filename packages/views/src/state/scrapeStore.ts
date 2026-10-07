@@ -94,7 +94,6 @@ const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
     ? { nfo: { rootId: item.nfoRootId, relativePath: item.nfoRelativePath } }
     : {}),
   assets: item.assets,
-  uncensoredAmbiguous: item.uncensoredAmbiguous,
 });
 
 const EMPTY_SCRAPE_RESULTS: ScrapeResult[] = [];

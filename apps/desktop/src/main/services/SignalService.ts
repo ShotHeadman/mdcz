@@ -32,7 +32,7 @@ export class SignalService extends EventEmitter {
     });
   }
 
-  invalidate(...resources: Array<"scrape" | "maintenance" | "overview">): void {
+  invalidate(...resources: Array<"scrape" | "maintenance" | "overview" | "pending">): void {
     this.send(IpcChannel.Event_Invalidate, { resources: [...new Set(resources)] });
   }
 

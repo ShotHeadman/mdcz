@@ -114,9 +114,15 @@ export interface ScrapeResult {
   assets: AssetRef[];
   /** Maps each CrawlerData field to the Website that provided the value. */
   sources?: Partial<Record<keyof CrawlerData, Website>>;
-  /** True when the video is classified as uncensored but the specific type (破解/流出) is unknown. */
-  uncensoredAmbiguous?: boolean;
+  /** Set when the file needs a person: a failure that the pending list explains, or an uncensored type to confirm. */
+  pending?: ScrapePendingOutcome;
   part?: FileInfo["part"];
+}
+
+export interface ScrapePendingOutcome {
+  kind: import("./pending").PendingKindDto;
+  number?: string;
+  candidates?: import("./pending").AmbiguousCandidate[];
 }
 
 export type UncensoredChoice = "umr" | "leak" | "uncensored";
@@ -146,6 +152,8 @@ export interface NfoLocalState {
   edits?: Partial<Record<NfoEditableField, string>>;
   /** `<fileinfo>` as MDCz or the media server measured it; maintenance never reads the video, so it writes this back. */
   fileinfo?: Record<string, unknown>;
+  /** The detail page someone chose for this movie; scrapes and refreshes use it instead of searching by number. */
+  sourcePin?: { site: Website; url: string };
 }
 
 export interface UncensoredConfirmResultItem {

@@ -343,7 +343,9 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   }
 
   createSession(options: { cookieJar?: NetworkCookieJar } = {}): NetworkSession {
-    const client = options.cookieJar ? this.createImpitClient(options.cookieJar) : undefined;
+    const client = options.cookieJar
+      ? this.createImpitClient(options.cookieJar, this.options.getProxyUrl?.())
+      : undefined;
 
     return {
       getText: async (url: string, init: Omit<ImpitRequestInit, "method"> = {}) => {
@@ -765,7 +767,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return client;
   }
 
-  private createImpitClient(cookieJar?: NetworkCookieJar, proxyUrl = this.options.getProxyUrl?.()): Impit {
+  private createImpitClient(cookieJar: NetworkCookieJar | undefined, proxyUrl: string | undefined): Impit {
     return new Impit({
       browser: this.options.browserImpersonation,
       timeout: this.resolveTimeoutMs(),

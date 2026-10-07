@@ -14,6 +14,8 @@ import type { WriteArtifact } from "./WriteOutput";
 export interface PreparedMovieFile {
   entryIdentity: string;
   sourceEntryIdentity: string;
+  /** The source of a hardlink or copy, which stays on disk. */
+  retainedSourceIdentity?: string;
   fileId: string;
   source: RootFileRef;
   target: RootFileRef;
@@ -60,7 +62,16 @@ interface MovieOutputMember {
   scrape?: PreparedMovieFile["scrape"];
 }
 
-export const MANAGED_MOVIE_ASSET_KINDS = new Set(["nfo", "poster", "fanart", "thumb", "trailer", "scene", "actor"]);
+export const MANAGED_MOVIE_ASSET_KINDS = new Set([
+  "nfo",
+  "poster",
+  "fanart",
+  "thumb",
+  "trailer",
+  "scene",
+  "actor",
+  "link",
+]);
 
 export const retainedRegisteredFeatures = (
   members: readonly { layout: { sidecars: readonly { kind: string }[] } }[],
@@ -135,19 +146,23 @@ export const prepareMovieArtifacts = async (input: {
     return resolveRootRelativePath(root, file.source.relativePath);
   };
   const mediaSources = new Set(input.members.map((file) => resolve(sourcePathOf(file))));
+  const linkAssets = new Map<string, AssetRef>();
 
   for (const file of input.members) {
     const { layout } = file;
+    const transfer = layout.transfer ?? "move";
     const sourcePath = sourcePathOf(file);
     const source = await input.inventory.stats(sourcePath);
     if (!source.isFile()) throw new Error("Publication source is not a file");
     const fileAssets: AssetRef[] = [];
     let size = source.size;
     let modifiedAt = source.mtime;
-    if (layout.mode === "move" && resolve(sourcePath) !== resolve(layout.targetVideoPath)) {
+    const placed = layout.mode === "move" && resolve(sourcePath) !== resolve(layout.targetVideoPath);
+    if (placed) {
       const target = toRef(layout.targetVideoPath);
       const mediaContent = layout.mediaContent;
       const move: SourceMove = {
+        transfer,
         source: file.source,
         target,
         sourcePath,
@@ -165,6 +180,17 @@ export const prepareMovieArtifacts = async (input: {
       moves.push(move);
       publishedTargets.push(target);
     }
+    if (layout.link && !linkAssets.has(resolve(layout.link.path))) {
+      const target = toRef(layout.link.path);
+      artifacts.push(
+        layout.link.kind === "symlink"
+          ? { targetPath: layout.link.path, symlinkTo: sourcePath }
+          : { targetPath: layout.link.path, data: `${sourcePath}\n` },
+      );
+      publishedTargets.push(target);
+      linkAssets.set(resolve(layout.link.path), { type: "local", kind: "link", file: target });
+    }
+    const keepsSource = layout.link !== undefined || transfer !== "move";
     for (const sidecar of layout.sidecars) {
       const sidecarSource = await input.inventory.stats(sidecar.sourcePath);
       if (!sidecarSource.isFile()) throw new Error("Publication sidecar source is not a file");
@@ -177,7 +203,7 @@ export const prepareMovieArtifacts = async (input: {
             sourcePath: sidecar.sourcePath,
             targetPath: sidecar.targetPath,
             size: sidecarSource.size,
-            removeSourcesAfterCommit: layout.mode === "move" ? [sidecar.sourcePath] : undefined,
+            removeSourcesAfterCommit: layout.mode === "move" && !keepsSource ? [sidecar.sourcePath] : undefined,
           });
           publishedTargets.push(target);
         }
@@ -191,6 +217,7 @@ export const prepareMovieArtifacts = async (input: {
         if (moving) {
           const target = toRef(sidecar.targetPath);
           moves.push({
+            transfer,
             source: toRef(sidecar.sourcePath),
             target,
             sourcePath: sidecar.sourcePath,
@@ -210,6 +237,9 @@ export const prepareMovieArtifacts = async (input: {
       target: toRef(layout.targetVideoPath),
       entryIdentity: filesystemPathKey(await input.inventory.entryPath(layout.targetVideoPath)),
       sourceEntryIdentity: filesystemPathKey(await input.inventory.entryPath(sourcePath)),
+      ...(placed && transfer !== "move"
+        ? { retainedSourceIdentity: filesystemPathKey(await input.inventory.entryPath(sourcePath)) }
+        : {}),
       size,
       modifiedAt,
       assets: fileAssets,
@@ -390,7 +420,7 @@ export const prepareMovieArtifacts = async (input: {
       artifact.removeSourcesAfterCommit = [...(artifact.removeSourcesAfterCommit ?? []), ...obsolete];
   }
 
-  const movieAssets: AssetRef[] = [...locationAssets.values(), ...featureAssets.values()];
+  const movieAssets: AssetRef[] = [...locationAssets.values(), ...featureAssets.values(), ...linkAssets.values()];
   for (const kind of ["thumb", "poster", "fanart", "trailer"] as const) {
     const targetPath = assets[kind];
     const url = input.remoteData?.[`${kind}_source_url`] ?? input.remoteData?.[`${kind}_url`];

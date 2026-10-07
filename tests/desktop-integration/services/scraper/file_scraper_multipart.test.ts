@@ -32,6 +32,7 @@ import {
   mockConfigManager,
   preparedPublicationFiles,
   prepareFilePublication,
+  testPublicationTarget,
 } from "../../../helpers/scraper";
 
 const installTestOutput = async (input: { output: PreparedMovieOutput; library: LibraryRepository }) => {
@@ -126,6 +127,7 @@ const createPublicationContext = async (root: string, names: string[]) => {
   const library = new LibraryRepository(database);
   const scrapeRuns = new ScrapeRunRepository(database);
   const run = await scrapeRuns.create({
+    libraryId: "library-1",
     rootId: "root",
     outputRootId: "root",
     executionMode: "batch",
@@ -279,6 +281,7 @@ describe("FileScraper movie groups", () => {
       options: {
         roots: [context.mediaRoot],
         source: { rootId: "root", relativePath: names[index] },
+        target: testPublicationTarget(filePath),
       },
     }));
     const preparation = await scraper.prepareGroup(inputs);
@@ -331,6 +334,7 @@ describe("FileScraper movie groups", () => {
             { id: "test-root", hostPath: tmpdir() },
             { id: "output-root", hostPath: "/output" },
           ],
+          target: testPublicationTarget(filePath),
         },
       })),
     );
@@ -368,6 +372,7 @@ describe("FileScraper movie groups", () => {
       options: {
         roots: [context.mediaRoot],
         source: { rootId: "root", relativePath: names[index] },
+        target: testPublicationTarget(filePath),
       },
     }));
     const preparation = await scraper.prepareGroup(inputs);
@@ -403,6 +408,7 @@ describe("FileScraper movie groups", () => {
     const versionPath = join(root, versionName);
     await writeFile(versionPath, versionPath);
     const versionRun = await context.scrapeRuns.create({
+      libraryId: "library-1",
       rootId: "root",
       outputRootId: "root",
       executionMode: "batch",

@@ -195,20 +195,23 @@ describe("web detail action port", () => {
 });
 
 describe("web scrape action port", () => {
-  it.each([1, 2])("starts a new manual URL run for exactly the %s selected targets", async (count) => {
+  it.each([
+    [1, { manualUrl: "https://javdb.com/v/abc123" }],
+    [2, { unpin: true }],
+  ] as const)("starts a new run in the task's library for exactly the %s selected targets", async (count, source) => {
     const start = vi.spyOn(api.scrape, "start").mockResolvedValue({ runId: "manual-run" });
     const retry = vi.spyOn(api.scrape, "retry");
+    useScrapeStore.getState().setSnapshot(buildFailedScrapeSnapshot());
     const targets = ["ABC-001.mp4", "ABC-001-CD2.mp4"].slice(0, count).map((relativePath) => ({
       filePath: relativePath,
       ref: { rootId: "root-1", relativePath },
     }));
-    const manualUrl = "https://javdb.com/v/abc123";
-    await createWebScrapeActionPort().rescrapeByUrl(targets, manualUrl);
+    await createWebScrapeActionPort().rescrape(targets, source);
     expect(start).toHaveBeenCalledWith({
       executionMode: count === 1 ? "single" : "batch",
+      libraryId: "library-1",
       refs: targets.map((target) => target.ref),
-      manualUrl,
-      ...(count === 2 ? { outputRootId: "root-1", outputRelativeDirectory: "" } : {}),
+      ...source,
     });
     expect(retry).not.toHaveBeenCalled();
   });

@@ -16,6 +16,8 @@ export interface ScrapeRunManifestItem {
   relativePath: string;
   manualUrl?: string | null;
   uncensoredChoice?: ScrapeUncensoredChoice | null;
+  /** Replaces the number parsed from the file name. */
+  number?: string | null;
 }
 
 export type ScrapeRunItemRecord = ScrapeRunManifestItem;
@@ -23,6 +25,7 @@ export type ScrapeRunItemRecord = ScrapeRunManifestItem;
 export interface ScrapeRunRecord {
   id: string;
   previousRunId: string | null;
+  libraryId: string | null;
   rootId: string;
   requestedOutputRootId: string | null;
   requestedOutputRelativeDirectory: string | null;
@@ -66,6 +69,7 @@ export interface ScrapeRunSummaryRecord {
 export interface CreateScrapeRunInput {
   id?: string;
   previousRunId?: string | null;
+  libraryId: string;
   rootId: string;
   outputRootId?: string | null;
   outputRelativeDirectory?: string | null;
@@ -79,6 +83,7 @@ export interface CreateScrapeRunInput {
     relativePath: string;
     manualUrl?: string | null;
     uncensoredChoice?: ScrapeUncensoredChoice | null;
+    number?: string | null;
   }>;
 }
 
@@ -114,6 +119,7 @@ export class ScrapeRunRepository {
       relativePath: item.relativePath,
       manualUrl: item.manualUrl ?? null,
       uncensoredChoice: item.uncensoredChoice ?? null,
+      number: item.number ?? null,
     }));
 
     this.database.db
@@ -121,6 +127,7 @@ export class ScrapeRunRepository {
       .values({
         id,
         previousRunId: input.previousRunId ?? null,
+        libraryId: input.libraryId,
         rootId: input.rootId,
         outputRootId: input.outputRootId ?? null,
         outputRelativeDirectory: input.outputRelativeDirectory || null,
@@ -145,6 +152,7 @@ export class ScrapeRunRepository {
     return {
       id: run.id,
       previousRunId: run.previousRunId,
+      libraryId: run.libraryId,
       rootId: run.rootId,
       requestedOutputRootId: run.outputRootId,
       requestedOutputRelativeDirectory: run.outputRelativeDirectory,
@@ -184,6 +192,7 @@ export class ScrapeRunRepository {
       relativePath: item.relativePath,
       manualUrl: item.manualUrl ?? null,
       uncensoredChoice: item.uncensoredChoice ?? null,
+      number: item.number ?? null,
     }));
 
     this.database.db
@@ -293,11 +302,12 @@ export class ScrapeRunRepository {
 
   async rerunDirectory(runId: string): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
-    if (!run.disposition || !run.directoryScopeJson) {
+    if (!run.disposition || !run.directoryScopeJson || !run.libraryId) {
       throw new Error(`Directory run cannot be rerun: ${runId}`);
     }
     return await this.create({
       previousRunId: run.id,
+      libraryId: run.libraryId,
       rootId: run.rootId,
       outputRootId: run.requestedOutputRootId,
       outputRelativeDirectory: run.requestedOutputRelativeDirectory,

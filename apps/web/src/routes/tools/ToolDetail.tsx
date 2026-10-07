@@ -81,6 +81,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const [embyCheckResult, setEmbyCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
   const [lastPersonSync, setLastPersonSync] = useState<{ server: PersonServer; result: PersonSyncResult } | null>(null);
   const rootsQ = useQuery({ queryKey: queryKeys.mediaRoots.list, queryFn: () => api.mediaRoots.list(), retry: false });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
   const browserQ = useQuery({
     queryKey: queryKeys.browser.list(singleFileRootId),
     queryFn: () => api.browser.list({ rootId: singleFileRootId, relativePath: "" }),
@@ -120,6 +121,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
           <SingleFileScraperDetail
             browserEntries={browserEntries}
             roots={roots}
+            libraries={librariesQ.data?.libraries ?? []}
             state={state}
             workbenchLink={
               <AppLink className="text-sm font-medium underline-offset-4 hover:underline" to="/workbench">

@@ -8,12 +8,12 @@ import type { SignalService } from "@main/services/SignalService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
+import type { ConfiguredMediaRootService, MediaLibraryService } from "@mdcz/runtime/library";
+import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { type ActorImageService, type PrepareScrapeItem, ScrapeRunner } from "@mdcz/runtime/scrape";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
-import type { ScrapeConfirmUncensoredInput, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
-import type { UncensoredConfirmResponse } from "@mdcz/shared/types";
+import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { app } from "electron";
 import { applyDesktopPosterTagBadges } from "./output";
 import { resolveSingleFilePaths } from "./pathResolver";
@@ -39,6 +39,7 @@ export class ScraperService {
     private readonly actorImageService: ActorImageService,
     private readonly actorSourceProvider: ActorSourceProvider | undefined,
     private readonly imageHostCooldownStore: PersistentCooldownStore,
+    private readonly libraries: Pick<MediaLibraryService, "findBySourcePath" | "list">,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
@@ -55,8 +56,13 @@ export class ScraperService {
         persistence: {
           scrapeRuns: state.repositories.scrapeRuns,
           library: state.repositories.library,
+          libraries: state.repositories.mediaLibraries,
+          pending: state.repositories.pending,
           mediaRoots: this.mediaRoots,
         },
+        onPublished: (directories, configuration) =>
+          void notifyMediaServersOfPublish(this.sharedNetworkClient, configuration, directories, this.logger),
+        onPending: () => this.signalService.invalidate("pending", "overview"),
         recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
         getConfiguration: async () => await configManager.getValidated(),
         networkClient: this.sharedNetworkClient,
@@ -115,17 +121,6 @@ export class ScraperService {
     return await (await this.runner()).getSnapshot(taskId);
   }
 
-  async confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<UncensoredConfirmResponse> {
-    try {
-      return await (await this.runner()).confirmUncensored(input);
-    } finally {
-      const snapshot = await (await this.runner()).getSnapshot();
-      if (snapshot) this.signalService.publishTaskSnapshot({ resource: "scrape", snapshot });
-      this.outputLibraryScanner.invalidate();
-      this.signalService.invalidate("scrape", "overview");
-    }
-  }
-
   async start(input: ScraperStartInput): Promise<StartScrapeResult> {
     try {
       const runner = await this.runner();
@@ -140,17 +135,23 @@ export class ScraperService {
     }
   }
 
+  /** A file opened with MDCz goes to the library that holds it, else the first library. */
   async startFromNativePath(nativePath: string): Promise<StartScrapeResult> {
     const files = await resolveSingleFilePaths([nativePath]);
     const filePath = files[0];
     if (!filePath) throw new ScraperServiceError("NO_FILES", "No files selected");
+    const library = (await this.libraries.findBySourcePath(filePath)) ?? (await this.libraries.list())[0];
+    if (!library) throw new ScraperServiceError("NO_LIBRARY", "Create a library before scraping");
     const admitted = await this.mediaRoots.admitDirectory({ hostPath: dirname(filePath) });
     return await this.start({
-      mode: "single",
-      ref: {
-        rootId: admitted.root.id,
-        relativePath: [admitted.relativeDirectory, basename(filePath)].filter(Boolean).join("/"),
-      },
+      executionMode: "single",
+      libraryId: library.id,
+      refs: [
+        {
+          rootId: admitted.root.id,
+          relativePath: [admitted.relativeDirectory, basename(filePath)].filter(Boolean).join("/"),
+        },
+      ],
     });
   }
 

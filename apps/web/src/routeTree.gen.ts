@@ -8,10 +8,12 @@
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AboutRouteImport } from "./routes/about";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as LibrariesRouteImport } from "./routes/libraries";
 import { Route as LibraryRouteImport } from "./routes/library";
 import { Route as LoginRouteImport } from "./routes/login";
 import { Route as LogsRouteImport } from "./routes/logs";
 import { Route as OverviewRouteImport } from "./routes/overview";
+import { Route as PendingRouteImport } from "./routes/pending";
 import { Route as ScrapeResultIdRouteImport } from "./routes/scrape.$resultId";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as SetupRouteImport } from "./routes/setup";
@@ -31,6 +33,16 @@ const AboutRoute = AboutRouteImport.update({
 const LibraryRoute = LibraryRouteImport.update({
   id: "/library",
   path: "/library",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const PendingRoute = PendingRouteImport.update({
+  id: "/pending",
+  path: "/pending",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const LibrariesRoute = LibrariesRouteImport.update({
+  id: "/libraries",
+  path: "/libraries",
   getParentRoute: () => rootRouteImport,
 } as any);
 const LoginRoute = LoginRouteImport.update({
@@ -77,6 +89,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AboutRoute: typeof AboutRoute;
   LibraryRoute: typeof LibraryRoute;
+  PendingRoute: typeof PendingRoute;
+  LibrariesRoute: typeof LibrariesRoute;
   LoginRoute: typeof LoginRoute;
   LogsRoute: typeof LogsRoute;
   OverviewRoute: typeof OverviewRoute;
@@ -91,6 +105,8 @@ export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
   "/library": typeof LibraryRoute;
+  "/pending": typeof PendingRoute;
+  "/libraries": typeof LibrariesRoute;
   "/login": typeof LoginRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
@@ -105,6 +121,8 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
   "/library": typeof LibraryRoute;
+  "/pending": typeof PendingRoute;
+  "/libraries": typeof LibrariesRoute;
   "/login": typeof LoginRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
@@ -120,6 +138,8 @@ export interface FileRoutesById {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
   "/library": typeof LibraryRoute;
+  "/pending": typeof PendingRoute;
+  "/libraries": typeof LibrariesRoute;
   "/login": typeof LoginRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
@@ -136,6 +156,8 @@ export interface FileRouteTypes {
     | "/"
     | "/about"
     | "/library"
+    | "/pending"
+    | "/libraries"
     | "/login"
     | "/logs"
     | "/overview"
@@ -149,6 +171,8 @@ export interface FileRouteTypes {
     | "/"
     | "/about"
     | "/library"
+    | "/pending"
+    | "/libraries"
     | "/login"
     | "/logs"
     | "/overview"
@@ -162,6 +186,8 @@ export interface FileRouteTypes {
     | "/"
     | "/about"
     | "/library"
+    | "/pending"
+    | "/libraries"
     | "/login"
     | "/logs"
     | "/overview"
@@ -194,6 +220,20 @@ declare module "@tanstack/react-router" {
       path: "/library";
       fullPath: "/library";
       preLoaderRoute: typeof LibraryRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/pending": {
+      id: "/pending";
+      path: "/pending";
+      fullPath: "/pending";
+      preLoaderRoute: typeof PendingRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/libraries": {
+      id: "/libraries";
+      path: "/libraries";
+      fullPath: "/libraries";
+      preLoaderRoute: typeof LibrariesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/login": {
@@ -259,6 +299,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute,
   AboutRoute,
   LibraryRoute,
+  PendingRoute,
+  LibrariesRoute,
   LoginRoute,
   LogsRoute,
   OverviewRoute,

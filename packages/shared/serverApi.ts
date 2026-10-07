@@ -1,12 +1,29 @@
 import type { Configuration } from "./config";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
+  MediaLibraryDto,
+  MediaLibraryIdInput,
+  MediaLibraryListResponse,
+  MediaLibrarySettingsInput,
+  MediaLibraryUpdateInput,
+} from "./mediaLibrary";
+import type {
+  PendingConfirmUncensoredInput,
+  PendingDetailResponse,
+  PendingIdInput,
+  PendingListResponse,
+  PendingRetryInput,
+  PendingRetryResponse,
+} from "./pending";
+import type {
+  ApiKeyCreateInput,
+  ApiKeyCreateResponse,
+  ApiKeyListResponse,
   AppEnsureWatermarkDirectoryResponse,
   AuthLoginInput,
   AuthSessionDto,
   ConfigImportInput,
   ConfigPathInput,
-  ConfigPreviewInput,
   ConfigProfileExportResponse,
   ConfigProfileImportInput,
   ConfigProfileImportResponse,
@@ -55,11 +72,9 @@ import type {
   ScanTaskDto,
   ScanTaskIdInput,
   ScanTaskListResponse,
-  ScrapeConfirmUncensoredInput,
   ScrapeHistoryResponse,
   ScrapeLiveRunsResponse,
   ScrapeMutationAckDto,
-  ScrapePendingUncensoredConfirmationResponse,
   ScrapeRerunDirectoryInput,
   ScrapeResultDetailResponse,
   ScrapeResultIdInput,
@@ -112,7 +127,6 @@ export interface ServerApiContract {
     export(): Promise<string>;
     import(input: ConfigImportInput): Promise<Configuration>;
     read(): Promise<Configuration>;
-    previewNaming(input: ConfigPreviewInput): Promise<{ items: NamingPreviewItem[] }>;
     reset(input?: Exclude<ConfigPathInput, undefined>): Promise<Configuration>;
     update(input: ConfigUpdateInput): Promise<Configuration>;
     profiles: {
@@ -158,9 +172,30 @@ export interface ServerApiContract {
     summary(): Promise<OverviewSummaryResponse>;
     removeRecentAcquisition(input: LibraryDetailInput): Promise<{ success: true }>;
   };
+  libraries: {
+    list(): Promise<MediaLibraryListResponse>;
+    create(input: MediaLibrarySettingsInput): Promise<MediaLibraryDto>;
+    update(input: MediaLibraryUpdateInput): Promise<MediaLibraryDto>;
+    delete(input: MediaLibraryIdInput): Promise<{ success: true }>;
+    previewNaming(input: MediaLibrarySettingsInput): Promise<{ items: NamingPreviewItem[] }>;
+  };
+  pending: {
+    list(): Promise<PendingListResponse>;
+    detail(input: PendingIdInput): Promise<PendingDetailResponse>;
+    retry(input: PendingRetryInput): Promise<PendingRetryResponse>;
+    confirmUncensored(input: PendingConfirmUncensoredInput): Promise<{ success: true }>;
+    ignore(input: PendingIdInput): Promise<{ success: true }>;
+  };
+  apiKeys: {
+    list(): Promise<ApiKeyListResponse>;
+    create(input: ApiKeyCreateInput): Promise<ApiKeyCreateResponse>;
+    delete(input: { id: string }): Promise<{ success: true }>;
+  };
+  notifications: {
+    test(): Promise<{ success: true }>;
+  };
   mediaRoots: {
     ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
-    prepareOutputDirectory(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
     list(): Promise<MediaRootListResponse>;
   };
   persistence: {
@@ -182,7 +217,6 @@ export interface ServerApiContract {
   scrape: {
     liveRuns(): Promise<ScrapeLiveRunsResponse>;
     snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto>;
-    pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse>;
     removeRecord(input: FileActionInput): Promise<FileActionResponse>;
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
@@ -194,7 +228,6 @@ export interface ServerApiContract {
     resume(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     retry(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     rerunDirectory(input: ScrapeRerunDirectoryInput): Promise<ScrapeMutationAckDto>;
-    confirmUncensored(input: ScrapeConfirmUncensoredInput): Promise<import("./types").UncensoredConfirmResponse>;
     start(input: ScrapeStartInput): Promise<ScrapeMutationAckDto>;
     stop(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
   };

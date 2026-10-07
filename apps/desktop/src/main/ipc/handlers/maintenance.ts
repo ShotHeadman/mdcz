@@ -37,7 +37,7 @@ export const createMaintenanceHandlers = (
             return { sessionId: handle.session.id, snapshot: handle.session };
           }
           if ("source" in input) {
-            const handle = await maintenanceService.startDirectory(input.source, input.presetId, input.targetDir);
+            const handle = await maintenanceService.startDirectory(input.source, input.presetId, input.libraryId);
             void handle.completion.catch(() => undefined);
             return { sessionId: handle.session.id, snapshot: handle.session };
           }
@@ -50,7 +50,7 @@ export const createMaintenanceHandlers = (
             throw new Error("presetId is required");
           }
 
-          const handle = await maintenanceService.startPreview(refs, presetId, input);
+          const handle = await maintenanceService.startPreview(refs, presetId, input.libraryId);
           void handle.completion.catch(() => undefined);
           return { sessionId: handle.session.id, snapshot: handle.session };
         } catch (error) {

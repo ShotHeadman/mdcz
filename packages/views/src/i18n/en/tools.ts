@@ -80,6 +80,8 @@ export const tools = {
   taskProgress: "Task progress",
 
   targetDirectory: "Target directory",
+  library: "Library",
+  unpin: "Search by number, dropping a pinned detail page",
   targetDirectoryPlaceholder: "Enter scraped output directory",
   amazonPosterScanNote: "After scanning, a batch processing dialog will open to review and select posters to replace.",
   startScan: "Start scan",

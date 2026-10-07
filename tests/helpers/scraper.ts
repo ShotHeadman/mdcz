@@ -1,3 +1,4 @@
+import { dirname, join } from "node:path";
 import { type Configuration, configManager } from "@main/services/config";
 import {
   ActorImageService,
@@ -8,6 +9,7 @@ import {
   type FileScraperDependencies,
   type ScrapeGroupResult,
 } from "@mdcz/runtime/scrape";
+import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import { vi } from "vitest";
 import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
 
@@ -91,19 +93,34 @@ export const preparedPublicationFiles = (group: ScrapeGroupResult) => [
       output: file.target,
       assets: [...(group.output?.movieAssets ?? []), ...file.assets],
       error: file.scrape?.error,
-      uncensoredAmbiguous: file.scrape?.uncensoredAmbiguous,
     };
   }) ?? []),
   ...group.results,
 ];
+
+/** The default library layout: move into `JAV_output/{actor}/{number}` beside the source. */
+export const testPublicationTarget = (
+  filePath: string,
+  overrides: Partial<PublicationTarget> = {},
+): PublicationTarget => ({
+  placement: "move",
+  outputPath: join(dirname(filePath), "JAV_output"),
+  folderTemplate: "{actor}/{number}",
+  fileTemplate: "{number}",
+  ...overrides,
+});
 
 export const prepareFile = async (
   scraper: FileScraper,
   filePath: string,
   progress?: FileScrapeProgress,
   signal?: AbortSignal,
-  options: FileScrapeOptions = {},
-) => scraper.prepareGroup([{ filePath, progress, options }], signal);
+  options: Partial<FileScrapeOptions> = {},
+) =>
+  scraper.prepareGroup(
+    [{ filePath, progress, options: { ...options, target: options.target ?? testPublicationTarget(filePath) } }],
+    signal,
+  );
 
 export const prepareFilePublication = async (
   scraper: FileScraper,

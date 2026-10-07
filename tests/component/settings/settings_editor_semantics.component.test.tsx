@@ -36,7 +36,6 @@ const baseSettingsServices = {
   incrementInFlightSaves: vi.fn(),
   listCrawlerSites: vi.fn(async () => ({ sites: [] })),
   openWatermarkDirectory: vi.fn(async () => undefined),
-  previewNaming: vi.fn(async () => ({ items: [] })),
   probeSiteConnectivity: vi.fn(async () => ({ ok: true, latencyMs: 0, status: 200 })),
   relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
@@ -91,14 +90,6 @@ function SettingsSurfaceHarness({
     () => ({
       ...defaultConfiguration,
       translate: { ...defaultConfiguration.translate, engine, baiduService },
-      behavior: {
-        ...defaultConfiguration.behavior,
-        metadataOnly: true,
-      },
-      paths: {
-        ...defaultConfiguration.paths,
-        metadataPath: "/metadata",
-      },
       download: {
         ...defaultConfiguration.download,
         downloadPoster: true,
@@ -280,13 +271,9 @@ test("server path fields keep autocomplete suggestions without browse buttons", 
   expect(screen.container.querySelector("datalist")).toBeNull();
 });
 
-test.each([
-  false,
-  true,
-])("paths section surfaces exclusions and server-only monitoring (server=%s)", async (isServer) => {
+test("paths section surfaces scan exclusions", async () => {
   const screen = await render(
     <FormHarness
-      services={createSettingsServices({ isServer })}
       values={{
         paths: {
           defaultScanExcludeDirs: ["E:/Output", "failed_22"],
@@ -304,8 +291,6 @@ test.each([
   expect(pathInputs.some((input) => input.value === "E:/Output")).toBe(true);
   expect(pathInputs.some((input) => input.value === "failed_22")).toBe(true);
   expect(pathInputs.length).toBeGreaterThanOrEqual(2);
-  expect(screen.container.querySelector('[data-field-name="watch.enabled"]') !== null).toBe(isServer);
-  expect(screen.container.querySelector('[data-field-name="watch.intervalMinutes"] input') !== null).toBe(isServer);
 });
 
 test.each(["deepl", "baidu"] as const)("translation verification sends edited %s credentials", async (engine) => {
@@ -336,7 +321,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
   );
 });
 
-test("settings sections expose public labels and naming placeholder help", async () => {
+test("settings sections expose public labels and the library template notice", async () => {
   const network = await render(
     <FormHarness
       values={{
@@ -375,34 +360,20 @@ test("settings sections expose public labels and naming placeholder help", async
   await expect.element(translate.getByText("翻译引擎")).toBeVisible();
   await expect.element(translate.getByRole("button", { name: "验证元数据翻译" })).toBeVisible();
 
-  const behavior = await render(
-    <FormHarness
-      values={{
-        behavior: {
-          successFileMove: false,
-          successFileRename: false,
-        },
-      }}
-    >
+  const paths = await render(
+    <FormHarness values={{ paths: { defaultScanExcludeDirs: [] } }}>
       <PathsTopLevelSection forceOpen />
     </FormHarness>,
   );
-  await expect.element(behavior.getByText("媒体库与输出")).toBeVisible();
-  await expect.element(behavior.getByText("移动视频与字幕", { exact: true })).toBeVisible();
-  await expect.element(behavior.getByText("重命名视频与字幕", { exact: true })).toBeVisible();
-  await expect.element(behavior.getByText("仅输出元数据", { exact: true })).toBeVisible();
-  expect(
-    behavior.container.querySelector('[data-field-name="paths.successOutputFolder"] input')?.matches(":disabled"),
-  ).toBe(true);
+  await expect.element(paths.getByText("路径", { exact: true })).toBeVisible();
 
   const naming = await render(
-    <FormHarness values={{ naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number}" } }}>
+    <FormHarness values={{ naming: { assetNamingMode: "fixed" } }}>
       <NamingSection />
     </FormHarness>,
   );
-  await expect.element(naming.getByRole("button", { name: "查看文件夹模板占位符" })).toBeVisible();
-  await expect.element(naming.getByRole("button", { name: "查看文件名模板占位符" })).toBeVisible();
-  await expect.element(naming.getByText("可用占位符：{actor}")).not.toBeInTheDocument();
+  // Folder and file templates are per library now, so the naming section points there instead.
+  await expect.element(naming.getByText("文件夹与文件名模板按库设置", { exact: false })).toBeVisible();
 
   const advancedDownload = await render(
     <FormHarness values={{ download: { downloadPoster: true, sceneImageConcurrency: 4 } }}>
@@ -413,25 +384,6 @@ test("settings sections expose public labels and naming placeholder help", async
   );
   await expect.element(advancedDownload.getByText("剧照下载并发")).toBeVisible();
   await expect.element(advancedDownload.getByText("下载海报")).not.toBeInTheDocument();
-});
-
-test("output settings show preview failures", async () => {
-  const screen = await render(
-    <FormHarness
-      values={defaultConfiguration}
-      services={createSettingsServices({
-        isServer: true,
-        previewNaming: vi.fn(async () => {
-          throw new Error("模板结果越出输出根目录");
-        }),
-      })}
-    >
-      <PathsTopLevelSection forceOpen />
-      <NamingSection />
-    </FormHarness>,
-  );
-  await screen.getByRole("switch", { name: "仅输出元数据" }).click();
-  await expect.element(screen.getByText("模板结果越出输出根目录")).toBeVisible();
 });
 
 test("NFO settings render the configured enum list only while NFO generation is enabled", async () => {
@@ -447,7 +399,6 @@ test("NFO settings render the configured enum list only while NFO generation is 
       values={{
         download: {
           generateNfo: true,
-          keepNfo: true,
           nfoIgnoreFields: ["num", "director", "trailer"],
           nfoNaming: "both",
         },
@@ -508,32 +459,4 @@ test("poster badge controls follow download and badge visibility gates", async (
   await expect.element(badgeOn.getByText("覆盖角标图片", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("中字")).toBeVisible();
   await expect.element(badgeOn.getByText("流出")).toBeVisible();
-});
-
-test("metadata-only mode disables media organization and shows lock guidance", async () => {
-  const normal = await render(
-    <FormHarness values={{ behavior: { metadataOnly: false, successFileMove: true, successFileRename: true } }}>
-      <PathsTopLevelSection forceOpen />
-    </FormHarness>,
-  );
-  expect(
-    normal.container.querySelector('[data-field-name="behavior.successFileMove"] button')?.matches(":disabled"),
-  ).toBe(false);
-  expect(
-    normal.container.querySelector('[data-field-name="behavior.successFileRename"] button')?.matches(":disabled"),
-  ).toBe(false);
-  await expect.element(normal.getByText("已开启「仅输出元数据」模式")).not.toBeInTheDocument();
-
-  const metadataOnly = await render(
-    <FormHarness values={{ behavior: { metadataOnly: true, successFileMove: true, successFileRename: true } }}>
-      <PathsTopLevelSection forceOpen />
-    </FormHarness>,
-  );
-  expect(
-    metadataOnly.container.querySelector('[data-field-name="behavior.successFileMove"] button')?.matches(":disabled"),
-  ).toBe(true);
-  expect(
-    metadataOnly.container.querySelector('[data-field-name="behavior.successFileRename"] button')?.matches(":disabled"),
-  ).toBe(true);
-  await expect.element(metadataOnly.getByText("已开启「仅输出元数据」模式")).toBeVisible();
 });

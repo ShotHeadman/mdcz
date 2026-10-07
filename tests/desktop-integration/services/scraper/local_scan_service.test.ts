@@ -76,8 +76,6 @@ describe("LocalScanService", () => {
       updatedAt: new Date(),
     };
     const locations = {
-      mediaPath: "/changed",
-      metadataPath: "/changed-metadata",
       registeredOutputs: new Map([
         [
           video,

@@ -61,13 +61,6 @@ describe("title repair", () => {
 
   it("keeps the original title available to NFO and naming", () => {
     const data = applyTextRepair(crawlerData("催●课程"), titleRepair);
-    const configuration = {
-      ...defaultConfiguration,
-      naming: {
-        ...defaultConfiguration.naming,
-        fileTemplate: "{originaltitle}",
-      },
-    };
 
     expect(new NfoGenerator().buildXml(data)).toContain("<originaltitle>催●课程</originaltitle>");
     expect(
@@ -80,7 +73,8 @@ describe("title repair", () => {
           isSubtitled: false,
         },
         data,
-        configuration,
+        defaultConfiguration,
+        { placement: "move", folderTemplate: "{number}", fileTemplate: "{originaltitle}" },
       ).targetVideoFileName,
     ).toBe("催●课程.mp4");
   });

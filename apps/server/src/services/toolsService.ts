@@ -84,8 +84,9 @@ export class ToolsService {
         const task = await this.scrape.start({
           refs: [{ rootId: input.rootId, relativePath: input.relativePath }],
           executionMode: "single",
+          libraryId: input.libraryId,
           manualUrl: input.manualUrl,
-          uncensoredConfirmed: true,
+          unpin: input.unpin,
         });
         return { toolId: input.toolId, ok: true, data: task };
       }

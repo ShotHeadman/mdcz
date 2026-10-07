@@ -74,6 +74,8 @@ export const tools: Messages["tools"] = {
   taskProgress: "任务进度",
 
   targetDirectory: "目标目录",
+  library: "库",
+  unpin: "按番号搜索，并移除固定的详情页",
   targetDirectoryPlaceholder: "输入已刮削完成的输出目录",
   amazonPosterScanNote: "扫描完成后会打开批量处理弹窗，便于集中确认需要替换的海报条目。",
   startScan: "开始扫描",

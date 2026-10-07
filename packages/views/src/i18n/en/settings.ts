@@ -153,9 +153,16 @@ export const settings = {
       ],
     },
   },
-  sharedDirectoryNotice: {
-    lead: "This folder template doesn't create a separate folder per movie, so shared directory mode applies. The recommended default is ",
-    tail: "; if you do want a shared directory, the related naming rules are validated on save.",
+  templatesMovedNotice:
+    "Folder and file name templates are set per library, together with the output directory and how videos are placed.",
+  notificationChannels: { telegram: "Telegram", bark: "Bark", ntfy: "ntfy" },
+  pathMappings: {
+    from: "Downloader path",
+    to: "MDCz path",
+    fromPlaceholder: "/downloads",
+    toPlaceholder: "/mnt/media/downloads",
+    add: "Add mapping",
+    remove: "Remove mapping",
   },
   testFailed: (error: string) => `Test failed: ${error}`,
   verifying: "Verifying…",
@@ -163,8 +170,6 @@ export const settings = {
   waitForAutosave: "Wait for autosave to finish before restarting the app",
   relaunchFailed: (error: string) => `Restart failed: ${error}`,
   relaunchApp: "Restart app",
-  metadataOnlyNotice: "Metadata only mode is on; moving and renaming videos is disabled.",
-  metadataPathRequired: "A metadata output directory is required when metadata only mode is on",
   sitePriority: {
     options: {
       dmm_family: {
@@ -289,13 +294,7 @@ export const settings = {
       actorAliasEmpty: "Actor alias cannot be empty",
       actorAliasConflict: "Actor name conflicts with another alias group",
       globalTimeoutNotGreater: "Global timeout must be greater than per-crawler timeout",
-      metadataPathNotAbsolute: "Metadata output directory must be an absolute path",
-      sharedDirectoryAssetNaming: "In shared directory mode, asset naming must follow movie filename",
-      sharedDirectoryNfoNaming: 'In shared directory mode, NFO naming must be "<filename>.nfo only"',
-      sharedDirectorySceneImages:
-        "Downloading scene images is not supported in shared directory mode; please disable scene image downloads",
-      optionalSegmentPathSeparator:
-        "Optional segments [] cannot contain path separators; use optional segments only within a single path component",
+      actorPhotoFolderNotAbsolute: "The actor photo directory must be an absolute path",
       jellyfinUserIdNotUuid: "Jellyfin user ID must be a UUID, or leave empty for server default",
     } satisfies Record<ConfigIssueCode, string> as Record<string, string | undefined>,
   },

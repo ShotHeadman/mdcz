@@ -14,6 +14,7 @@ const root = createMediaRoot({ id: "root-1", displayName: "Media", hostPath: "/m
 const manifest: ScrapeRunRecord = {
   id: "unsubmitted-run",
   previousRunId: null,
+  libraryId: "library-1",
   rootId: root.id,
   requestedOutputRootId: null,
   requestedOutputRelativeDirectory: null,
@@ -81,7 +82,11 @@ describe("ScrapeService queue admission", () => {
     await service.close();
 
     await expect(
-      service.start({ executionMode: "single", refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }] }),
+      service.start({
+        executionMode: "single",
+        libraryId: "library-1",
+        refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }],
+      }),
     ).rejects.toThrow("Scrape queue is closing");
 
     expect(scrapeRuns.create).not.toHaveBeenCalled();

@@ -52,6 +52,9 @@ export const useIpcSync = (queryClient: QueryClient) => {
         if (payload.resources.includes("overview")) {
           void queryClient.invalidateQueries({ queryKey: overviewKeys.all });
         }
+        if (payload.resources.includes("pending")) {
+          void queryClient.invalidateQueries({ queryKey: ["pending"] });
+        }
       }),
     ];
 

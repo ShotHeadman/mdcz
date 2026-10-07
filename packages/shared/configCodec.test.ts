@@ -3,19 +3,6 @@ import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoF
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
-  it("defaults separated metadata storage off and round-trips an explicit path", () => {
-    expect(parseConfigurationContent("[paths]\n", "toml").paths.metadataPath).toBe("");
-
-    const configuration = {
-      ...defaultConfiguration,
-      paths: { ...defaultConfiguration.paths, metadataPath: "/local/metadata" },
-    };
-
-    expect(parseConfigurationContent(serializeConfiguration(configuration, "toml"), "toml").paths.metadataPath).toBe(
-      "/local/metadata",
-    );
-  });
-
   it("round-trips actor alias maps through TOML and validates alias groups", () => {
     const parsed = parseConfigurationContent(
       '[personSync.actorAliases]\n"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]\n',

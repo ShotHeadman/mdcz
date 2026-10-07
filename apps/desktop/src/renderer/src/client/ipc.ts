@@ -13,14 +13,11 @@ import type {
   TranslateTestInput,
 } from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
+import type { PendingConfirmUncensoredInput, PendingRetryInput } from "@mdcz/shared/pending";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type {
-  LibraryListInput,
-  MediaRootEnsurePathInput,
-  ScrapeConfirmUncensoredInput,
-  ScrapeRunSnapshotDto,
-} from "@mdcz/shared/serverDtos";
+import type { LibraryListInput, MediaRootEnsurePathInput, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { runScrapeRequest, useScrapeStore } from "@mdcz/views/state/scrapeStore";
@@ -71,10 +68,22 @@ export const ipc = {
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
     delete: (input: { id: string }) => client[IpcChannel.Library_Delete](input),
   },
+  libraries: {
+    list: () => client[IpcChannel.Libraries_List](undefined),
+    create: (settings: MediaLibrarySettingsInput) => client[IpcChannel.Libraries_Create](settings),
+    update: (id: string, settings: MediaLibrarySettingsInput) => client[IpcChannel.Libraries_Update]({ id, settings }),
+    delete: (id: string) => client[IpcChannel.Libraries_Delete]({ id }),
+    previewNaming: (settings: MediaLibrarySettingsInput) => client[IpcChannel.Libraries_PreviewNaming](settings),
+  },
+  pending: {
+    list: () => client[IpcChannel.Pending_List](undefined),
+    detail: (id: string) => client[IpcChannel.Pending_Detail]({ id }),
+    retry: (input: PendingRetryInput) => client[IpcChannel.Pending_Retry](input),
+    confirmUncensored: (input: PendingConfirmUncensoredInput) => client[IpcChannel.Pending_ConfirmUncensored](input),
+    ignore: (id: string) => client[IpcChannel.Pending_Ignore]({ id }),
+  },
   mediaRoots: {
     ensurePath: (input: MediaRootEnsurePathInput) => client[IpcChannel.MediaRoots_EnsurePath](input),
-    prepareOutputDirectory: (input: MediaRootEnsurePathInput) =>
-      client[IpcChannel.MediaRoots_PrepareOutputDirectory](input),
   },
   config: {
     get: (path?: string) => client[IpcChannel.Config_Get]({ path }),
@@ -82,7 +91,6 @@ export const ipc = {
     save: (config?: Partial<Configuration>) => client[IpcChannel.Config_Save]({ config }),
     list: () => client[IpcChannel.Config_List](undefined),
     reset: (path?: string) => client[IpcChannel.Config_Reset]({ path }),
-    previewNaming: (config?: Partial<Configuration>) => client[IpcChannel.Config_PreviewNaming]({ config }),
     listProfiles: () => client[IpcChannel.Config_ListProfiles](undefined),
     createProfile: (name: string) => client[IpcChannel.Config_CreateProfile]({ name }),
     switchProfile: (name: string) => client[IpcChannel.Config_SwitchProfile]({ name }),
@@ -104,7 +112,6 @@ export const ipc = {
         () => client[IpcChannel.Scraper_Retry]({ runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
         runId,
       ),
-    confirmUncensored: (input: ScrapeConfirmUncensoredInput) => client[IpcChannel.Scraper_ConfirmUncensored](input),
   },
   crawler: {
     test: (site: Website, number: string) => client[IpcChannel.Crawler_Test]({ site, number }),
@@ -161,20 +168,16 @@ export const ipc = {
       const response = await client[IpcChannel.Maintenance_StartPreview]({ rerunSessionId });
       useMaintenanceStore.getState().setSnapshot(response.snapshot);
     },
-    directory: async (source: DirectorySource, presetId: MaintenancePresetId, targetDir: string) => {
+    directory: async (source: DirectorySource, presetId: MaintenancePresetId, libraryId: string | undefined) => {
       const previous = useMaintenanceStore.getState().snapshot;
-      const response = await client[IpcChannel.Maintenance_StartPreview]({ source, presetId, targetDir });
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ source, presetId, libraryId });
       if (useMaintenanceStore.getState().snapshot === previous)
         useMaintenanceStore.getState().setSnapshot(response.snapshot);
       return response;
     },
-    preview: async (
-      refs: RootFileRef[],
-      presetId: MaintenancePresetId,
-      output?: { outputRootId: string; outputRelativeDirectory: string },
-    ) => {
+    preview: async (refs: RootFileRef[], presetId: MaintenancePresetId, libraryId?: string) => {
       const previous = useMaintenanceStore.getState().snapshot;
-      const response = await client[IpcChannel.Maintenance_StartPreview]({ refs, presetId, ...output });
+      const response = await client[IpcChannel.Maintenance_StartPreview]({ refs, presetId, libraryId });
       if (useMaintenanceStore.getState().snapshot === previous)
         useMaintenanceStore.getState().setSnapshot(response.snapshot);
       return response;

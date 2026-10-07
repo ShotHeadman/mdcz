@@ -46,7 +46,6 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
       unsupported: true,
     };
   },
-  previewNaming: async (config) => await api.config.previewNaming(config ?? {}),
   probeSiteConnectivity: async (site) => await api.crawler.probeSiteConnectivity({ site }),
   relaunchApp: async () => window.location.reload(),
   resetConfig: async (path) => await api.config.reset(path ? { path } : undefined),

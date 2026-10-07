@@ -58,7 +58,7 @@ describe("publishMetadata", () => {
       published: movie({ title_zh: "手改标题", genres: ["User"] }),
       localState: { edits: { title: "edited", genre: "edited" } },
       keepEdits: false,
-      expected: { title: "Source Title", title_zh: "译:Source Title", genres: ["Site"] },
+      expected: { title: "Source Title", title_zh: "译:Source Title", genres: ["译:Site"] },
       translated: ["Source Title"],
     },
     {
@@ -98,7 +98,7 @@ describe("publishMetadata", () => {
     const translateMetadata = vi.spyOn(translateService, "translateMetadata").mockImplementation(async (input) => ({
       title: input.title && `译:${input.title}`,
       plot: input.plot && `译:${input.plot}`,
-      genres: [],
+      genres: input.genres.map((genre) => `译:${genre}`),
     }));
 
     const result = await publishMetadata({

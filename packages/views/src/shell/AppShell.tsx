@@ -7,6 +7,8 @@ import {
 import { Button, cn, NavButton, Separator, Tooltip, TooltipContent, TooltipTrigger } from "@mdcz/ui";
 import {
   FileText,
+  FolderCog,
+  Inbox,
   Info,
   Languages,
   LayoutDashboard,
@@ -52,9 +54,11 @@ export interface AppShellProps {
 
 const SHELL_ROUTE_ICONS: Record<DesktopRouteId, LucideIcon> = {
   about: Info,
+  libraries: FolderCog,
   library: Library,
   logs: FileText,
   overview: LayoutDashboard,
+  pending: Inbox,
   settings: Settings,
   tools: Wrench,
   workbench: PlaySquare,

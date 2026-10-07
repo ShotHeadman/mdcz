@@ -7,9 +7,9 @@ import type {
   ScrapeActionPort,
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
-import { resolveBatchRescrapeOutput } from "@mdcz/views/adapters";
 import { type DetailViewItem, getDetailLocalAssetRef } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
+import { selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { getImageSrc, getLocalImagePath, resolveImagePath } from "@/utils/image";
@@ -116,15 +116,12 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
 });
 
 export const createDesktopScrapeActionPort = (): ScrapeActionPort => ({
-  rescrapeByUrl: async (targets, manualUrl) => {
+  rescrape: async (targets, source) => {
     const refs = targets.map((target) => target.ref);
-    const first = refs[0];
-    if (!first) throw new Error(getT().desktop.selectFileToScrape);
-    await ipc.scraper.start(
-      refs.length === 1
-        ? { mode: "single", ref: first, manualUrl }
-        : { mode: "selection", refs, ...resolveBatchRescrapeOutput(targets), manualUrl },
-    );
+    if (!refs[0]) throw new Error(getT().desktop.selectFileToScrape);
+    const libraryId = selectScrapeSnapshot(useScrapeStore.getState())?.task.libraryId;
+    if (!libraryId) throw new Error(getT().workbench.noLibraries);
+    await ipc.scraper.start({ executionMode: refs.length === 1 ? "single" : "batch", libraryId, refs, ...source });
   },
   rerunDirectory: async (runId) => {
     await ipc.scraper.rerunDirectory(runId);
@@ -157,14 +154,7 @@ export const createDesktopMaintenanceActionPort = (): MaintenanceActionPort => (
   discardSession: async () => {
     await ipc.maintenance.discardSession();
   },
-  preview: async (refs, presetId, targetDir) => {
-    const output = targetDir ? await ipc.mediaRoots.prepareOutputDirectory({ hostPath: targetDir }) : undefined;
-    return await ipc.maintenance.preview(
-      refs,
-      presetId,
-      output ? { outputRootId: output.id, outputRelativeDirectory: output.relativeDirectory } : undefined,
-    );
-  },
+  preview: async (refs, presetId, libraryId) => await ipc.maintenance.preview(refs, presetId, libraryId),
   execute: async (selections: MaintenanceApplySelection[], presetId: MaintenancePresetId) => {
     await ipc.maintenance.execute(selections, presetId);
   },

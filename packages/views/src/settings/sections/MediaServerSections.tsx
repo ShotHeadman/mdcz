@@ -19,12 +19,14 @@ export function MediaServerSection() {
         <TextField name="jellyfin.userId" />
         <BoolField name="jellyfin.refreshPersonAfterSync" />
         <BoolField name="jellyfin.lockOverviewAfterSync" />
+        <BoolField name="jellyfin.notifyAfterPublish" />
       </Subsection>
       <Subsection title="Emby" className="mb-6 last:mb-0">
         <UrlField name="emby.url" />
         <CookieFieldWrapper name="emby.apiKey" />
         <TextField name="emby.userId" />
         <BoolField name="emby.refreshPersonAfterSync" />
+        <BoolField name="emby.notifyAfterPublish" />
       </Subsection>
       <Subsection
         title={t.settings.subsections.sharedPersonSources}

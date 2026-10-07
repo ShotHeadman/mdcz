@@ -9,6 +9,8 @@ export interface TaskLifecycleEvent {
   startedAt: string | null;
   completedAt: string | null;
   error: string | null;
+  /** Item outcomes of a finished scrape. */
+  counts?: { success: number; failed: number; skipped: number };
 }
 
 export type TaskResource = Extract<TaskNotificationDto, { kind: "invalidate" }>["resources"][number];

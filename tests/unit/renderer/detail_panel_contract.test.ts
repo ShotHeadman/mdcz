@@ -98,7 +98,6 @@ describe("detail panel adapter contract", () => {
       ],
       output: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.mp4" },
       nfo: { rootId: "output", relativePath: "organized/ABC-123/ABC-123.nfo" },
-      uncensoredAmbiguous: true,
     };
 
     expect(toDetailViewItemFromScrapeResult(payload)).toMatchObject({

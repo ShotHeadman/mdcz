@@ -21,6 +21,7 @@ import type {
   MaintenanceSessionSnapshot,
   MaintenanceSessionStatus,
 } from "@mdcz/shared/maintenanceTasks";
+import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { writeCommittedMovie } from "../publication/committedMovie";
@@ -49,6 +50,7 @@ interface MaintenanceDirectoryDefinition {
   rootId: string;
   outputRootId: string;
   outputRelativeDirectory: string;
+  target?: PublicationTarget;
   presetId: MaintenancePresetId;
 }
 
@@ -236,8 +238,7 @@ export class MaintenanceSessionCoordinator {
   private previewSelections = new Map<string, MaintenanceMovieSelection>();
   private pendingPreviewSetup: {
     root: MediaRoot;
-    outputRoot: MediaRoot;
-    outputRelativeDirectory: string;
+    target?: PublicationTarget;
     configuration?: Configuration;
     inventory: DirectoryInventory;
   } | null = null;
@@ -269,6 +270,8 @@ export class MaintenanceSessionCoordinator {
     refs: readonly MaintenanceSessionRef[];
     outputRootId?: string;
     outputRelativeDirectory?: string;
+    /** The library that moving presets organize into. */
+    target?: PublicationTarget;
   }): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     this.assertOpen();
     if (input.refs.length === 0 && !input.directoryScope) throw new Error("Maintenance files cannot be empty");
@@ -281,9 +284,6 @@ export class MaintenanceSessionCoordinator {
     try {
       const currentConfiguration = await this.deps.runtime.getConfiguration();
       const configuration = input.configuration ?? currentConfiguration;
-      if (configuration.behavior.metadataOnly) {
-        throw new Error("Maintenance mode does not support metadata-only output; please disable it in settings first");
-      }
       this.inventory = new DirectoryInventory();
       this.sessionController.abort();
       this.sessionController = new AbortController();
@@ -321,8 +321,7 @@ export class MaintenanceSessionCoordinator {
       const outputRelativeDirectory = input.outputRelativeDirectory ?? "";
       this.pendingPreviewSetup = {
         root,
-        outputRoot,
-        outputRelativeDirectory,
+        target: input.target,
         configuration,
         inventory: this.inventory,
       };
@@ -336,6 +335,7 @@ export class MaintenanceSessionCoordinator {
             rootId: input.rootId,
             outputRootId: outputRoot.id,
             outputRelativeDirectory,
+            target: input.target,
             presetId: input.presetId,
           }
         : null;

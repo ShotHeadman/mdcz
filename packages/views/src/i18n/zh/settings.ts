@@ -138,9 +138,15 @@ export const settings: Messages["settings"] = {
       ],
     },
   },
-  sharedDirectoryNotice: {
-    lead: "当前文件夹模板不会为每部影片创建独立目录，属于共享目录模式。推荐默认使用 ",
-    tail: "；如需共享目录，保存时会校验相关命名规则。",
+  templatesMovedNotice: "文件夹与文件名模板按库设置，与输出目录和视频放置方式放在一起。",
+  notificationChannels: { telegram: "Telegram", bark: "Bark", ntfy: "ntfy" },
+  pathMappings: {
+    from: "下载器路径",
+    to: "MDCz 路径",
+    fromPlaceholder: "/downloads",
+    toPlaceholder: "/mnt/media/downloads",
+    add: "添加映射",
+    remove: "删除映射",
   },
   testFailed: (error) => `测试失败: ${error}`,
   verifying: "验证中...",
@@ -148,8 +154,6 @@ export const settings: Messages["settings"] = {
   waitForAutosave: "请等待自动保存完成，再重启应用",
   relaunchFailed: (error) => `重启失败: ${error}`,
   relaunchApp: "重启应用",
-  metadataOnlyNotice: "已开启「仅输出元数据」模式，已停用视频移动与重命名。",
-  metadataPathRequired: "启用仅输出元数据时，必须指定元数据输出目录",
   sitePriority: {
     options: {
       dmm_family: {
@@ -257,11 +261,7 @@ export const settings: Messages["settings"] = {
       actorAliasEmpty: "演员别名不能为空",
       actorAliasConflict: "演员名称与其他别名组冲突",
       globalTimeoutNotGreater: "全局超时必须大于单爬虫超时",
-      metadataPathNotAbsolute: "元数据输出目录必须使用绝对路径",
-      sharedDirectoryAssetNaming: "共享目录模式下，附属文件命名必须使用“跟随影片文件名”",
-      sharedDirectoryNfoNaming: "共享目录模式下，NFO 文件命名必须使用“仅 文件名.nfo”",
-      sharedDirectorySceneImages: "共享目录模式下不支持下载剧照，请关闭“下载剧照”",
-      optionalSegmentPathSeparator: "[] 可选段不能包含路径分隔符，请仅在单个路径片段内使用可选内容",
+      actorPhotoFolderNotAbsolute: "本地演员照片目录必须使用绝对路径",
       jellyfinUserIdNotUuid: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
     } satisfies Record<ConfigIssueCode, string>,
   },

@@ -178,6 +178,9 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const mdczNode = toRecord(movieNode.mdcz);
   const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
   const published = parseFingerprints(mdczNode?.published);
+  const sourceUrlNode = toRecord(mdczNode?.source_url);
+  const pinnedSite = parseWebsite(sourceUrlNode?.["@_site"]);
+  const pinnedUrl = toStringValue(sourceUrlNode?.["#text"]);
   const edits = detectNfoEdits(movieNode, published);
   // raw_title is the untemplated title MDCz wrote; once the title was edited, only the edited text counts.
   const shownTitle = (!edits.title && toStringValue(mdczNode?.raw_title)) || title;
@@ -224,6 +227,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       published,
       edits,
       fileinfo: toRecord(movieNode.fileinfo),
+      sourcePin: pinnedSite && pinnedUrl ? { site: pinnedSite, url: pinnedUrl } : undefined,
     }),
   };
 };

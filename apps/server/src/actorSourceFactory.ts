@@ -19,11 +19,12 @@ export const serverActorImageCacheRoot = (config: ServerConfigService): string =
 export const createServerActorSourceProvider = (
   networkClient: NetworkClient,
   actorImageService: ActorImageService,
+  listLibraryDirectories?: () => Promise<string[]>,
 ): ActorSourceProvider =>
   new ActorSourceProvider({
     logger: runtimeLoggerService.getLogger("ActorSource"),
     registry: new ActorSourceRegistry([
-      new LocalActorSource({ actorImageService }),
+      new LocalActorSource({ actorImageService, listLibraryDirectories }),
       new OfficialActorSource({ networkClient }),
       new GfriendsActorSource({ networkClient }),
       // Headless host: no Electron cookie window. Avjoho still has its session challenge path.

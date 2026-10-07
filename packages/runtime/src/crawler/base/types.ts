@@ -1,5 +1,6 @@
 import type { SiteRequestConfig } from "@mdcz/runtime/network";
 import type { Website } from "@mdcz/shared/enums";
+import type { AmbiguousCandidate } from "@mdcz/shared/pending";
 import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -41,6 +42,7 @@ export interface CrawlerErrorResult {
   reason: FailureReason;
   httpStatus?: number;
   retryAfterMs?: number;
+  candidates?: AmbiguousCandidate[];
   cause?: unknown;
 }
 

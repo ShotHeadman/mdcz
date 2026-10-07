@@ -20,7 +20,6 @@ type PrepareActorProfilesInput = {
   movieDir: string;
   actors: string[];
   actorProfiles?: ActorProfile[];
-  actorPhotoBaseDir?: string;
   actorSourceProvider?: RuntimeActorSourceProvider;
   sourceHints?: RuntimeActorSourceHint[];
   signal?: AbortSignal;
@@ -144,7 +143,7 @@ export class ActorImageService implements RuntimeActorImageService {
   ): Promise<ResolvedActorImage> {
     let state = this.createResolutionState(actorName, seedProfile);
 
-    state = await this.lookupStoredActorImage(configuration, input, state);
+    state = await this.lookupStoredActorImage(configuration, state);
     if (state.imagePath) {
       return this.toResolvedActorImage(state);
     }
@@ -193,14 +192,13 @@ export class ActorImageService implements RuntimeActorImageService {
 
   private async lookupStoredActorImage(
     configuration: Configuration,
-    input: PrepareActorProfilesInput,
     state: ActorImageResolutionState,
   ): Promise<ActorImageResolutionState> {
     if (state.imagePath) {
       return state;
     }
 
-    const imagePath = await this.resolveStoredImage(configuration, state.lookupNames, input, state.profile?.photo_url);
+    const imagePath = await this.resolveStoredImage(configuration, state.lookupNames, state.profile?.photo_url);
     return {
       ...state,
       imagePath,
@@ -223,7 +221,7 @@ export class ActorImageService implements RuntimeActorImageService {
       input.signal,
     );
     const nextState = this.createResolutionState(actorName, profile, state.imagePath);
-    return await this.lookupStoredActorImage(configuration, input, nextState);
+    return await this.lookupStoredActorImage(configuration, nextState);
   }
 
   private async cacheProfilePhoto(
@@ -263,17 +261,15 @@ export class ActorImageService implements RuntimeActorImageService {
     }
 
     const refreshedState = this.createResolutionState(actorName, refreshedProfile, state.imagePath);
-    return await this.lookupStoredActorImage(configuration, input, refreshedState);
+    return await this.lookupStoredActorImage(configuration, refreshedState);
   }
 
   private async resolveStoredImage(
     configuration: Configuration,
     lookupNames: string[],
-    input: PrepareActorProfilesInput,
     photoUrl: string | undefined,
   ): Promise<string | undefined> {
     return await this.fileStore.resolveLocalImage(configuration, lookupNames, {
-      fallbackBaseDir: input.actorPhotoBaseDir,
       expectedRemoteUrl: this.toExpectedRemoteUrl(photoUrl),
     });
   }

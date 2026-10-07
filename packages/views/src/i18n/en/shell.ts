@@ -4,6 +4,8 @@ export const shell = {
     workbench: "Workbench",
     tools: "Tools",
     library: "Library",
+    libraries: "Libraries",
+    pending: "Pending",
     settings: "Settings",
     logs: "Logs",
     about: "About",

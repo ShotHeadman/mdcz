@@ -48,13 +48,16 @@ export const serializeConfiguration = (
     : `${annotateTomlConfiguration(stringify(parsed), parsed)}\n`;
 };
 
+/** The file's document before schema validation. */
+export const parseConfigurationDocument = (
+  content: string,
+  format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
+): unknown => (format === "json" ? JSON.parse(content) : parse(content));
+
 export const parseConfigurationContent = (
   content: string,
   format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
-): Configuration => {
-  const raw = format === "json" ? JSON.parse(content) : parse(content);
-  return configurationSchema.parse(raw);
-};
+): Configuration => configurationSchema.parse(parseConfigurationDocument(content, format));
 
 export const readConfigurationText = (content: string, filePath: string): Configuration =>
   parseConfigurationContent(content, inferConfigurationFileFormat(filePath));

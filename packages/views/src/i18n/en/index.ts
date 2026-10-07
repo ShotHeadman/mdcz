@@ -4,6 +4,7 @@ import { configForm } from "./configForm";
 import { desktop } from "./desktop";
 import { detail } from "./detail";
 import { domain } from "./domain";
+import { libraries } from "./libraries";
 import { library } from "./library";
 import { logs } from "./logs";
 import { maintenance } from "./maintenance";
@@ -11,6 +12,7 @@ import { media } from "./media";
 import { nfo } from "./nfo";
 import { overview } from "./overview";
 import { path } from "./path";
+import { pending } from "./pending";
 import { scrape } from "./scrape";
 import { settings } from "./settings";
 import { settingsFields } from "./settingsFields";
@@ -29,6 +31,8 @@ export const en = {
   settings,
   configForm,
   library,
+  libraries,
+  pending,
   detail,
   nfo,
   overview,

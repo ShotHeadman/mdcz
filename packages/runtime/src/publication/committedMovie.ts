@@ -13,6 +13,7 @@ export interface CommittedMovieFile {
   readonly resolution?: string | null;
   readonly entryIdentity: string;
   readonly sourceEntryIdentity: string;
+  readonly retainedSourceIdentity?: string;
 }
 
 export interface CommittedMovieAsset extends PublicationLibraryAsset {
@@ -76,6 +77,7 @@ export const toCommittedMovie = (
       resolution: facts?.resolution ?? null,
       entryIdentity: video.entryIdentity,
       sourceEntryIdentity: video.sourceEntryIdentity,
+      retainedSourceIdentity: video.retainedSourceIdentity,
     });
   });
 
@@ -107,6 +109,7 @@ export const committedMovieRows = (movie: CommittedMovie) => ({
     fileId: file.fileId,
     entryIdentity: file.entryIdentity,
     sourceEntryIdentity: file.sourceEntryIdentity,
+    retainedSourceIdentity: file.retainedSourceIdentity,
     rootId: file.rootId,
     rootRelativePath: file.rootRelativePath,
     size: file.size,

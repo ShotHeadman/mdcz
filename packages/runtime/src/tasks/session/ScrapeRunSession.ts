@@ -1,12 +1,13 @@
 import { basename } from "node:path";
 import type { DiscoveryProgress } from "@mdcz/shared/directoryTasks";
+import { toErrorMessage } from "@mdcz/shared/error";
 import type { ScrapeRunStage } from "@mdcz/shared/serverDtos";
 import type { ScrapeResult, ScrapeResultStatus } from "@mdcz/shared/types";
 import { runWithScrapeItem } from "../../network/networkExecution";
-import { PublicationConflictError } from "../../publication/conflicts";
 import type { PreparedMovieOutput } from "../../publication/movieArtifacts";
 import type { MovieGroup } from "../../scrape/movieGroups";
 import { ScrapeTargetConflictError } from "../../scrape/preflightScrapeTask";
+import { isAbortError } from "../../scrape/utils/abort";
 import { TaskExecutor } from "../executor";
 
 export const MAX_LIVE_SCRAPE_LOGS = 200;
@@ -149,6 +150,21 @@ const createFailedResult = <TItem extends ScrapeRunItem>(
   status: "failed",
   error,
   assets: [],
+});
+
+/**
+ * A failed or skipped preparation carries the pending outcome (kind and candidates) the pending list needs; rebuilding
+ * it from the message alone would drop that and file every failure as a generic one.
+ */
+const retargetPreparedResult = <TItem extends ScrapeRunItem>(
+  result: ScrapeResult,
+  item: MutableScrapeRunItem<TItem>,
+): ScrapeResult => ({
+  ...result,
+  fileId: item.id,
+  rootId: item.rootId,
+  relativePath: item.relativePath,
+  fileName: basename(item.sourcePath),
 });
 
 export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrepared = unknown> {
@@ -323,17 +339,6 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     this.emitSnapshot();
   }
 
-  updateLibraryFiles(updates: ReadonlyMap<string, Partial<ScrapeResult>>): void {
-    let changed = false;
-    for (const item of this.items) {
-      const update = item.result?.resultId ? updates.get(item.result.resultId) : undefined;
-      if (!update || !item.result) continue;
-      item.result = { ...item.result, ...update };
-      changed = true;
-    }
-    if (changed) this.emitSnapshot();
-  }
-
   /**
    * The session is the sole progress authority; hosts must not maintain a
    * second counter with different units.
@@ -445,10 +450,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       if (!preparation || preparation.status === "prepared") continue;
       for (const item of group.members) {
         if (item.status !== "pending") continue;
-        const result =
-          preparation.status === "skipped"
-            ? createSkippedResult(item, preparation.result.error ?? "Movie preparation skipped")
-            : createFailedResult(item, preparation.result.error ?? "Movie preparation failed");
+        const result = retargetPreparedResult(preparation.result, item);
         const committed = await this.execution.commitItems([{ item, result }]);
         this.assertActive(["running", "paused", "stopping"]);
         this.applyCommittedResults([item], committed);
@@ -597,14 +599,14 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         try {
           committed = await this.execution.commitItems(execution.results, execution.output);
         } catch (error) {
-          if (!(error instanceof PublicationConflictError)) throw error;
+          // A publish failure belongs to this group: file it as a failed item so the pending list can explain and
+          // repair it, instead of aborting the run and leaving the file only as skipped.
+          if (isAbortError(error) || this.shutdownController.signal.aborted) throw error;
           this.assertActive(["running", "paused", "stopping"]);
-          this.error = [this.error, error.message].filter(Boolean).join("\n\n");
+          const message = toErrorMessage(error);
+          this.error = [this.error, message].filter(Boolean).join("\n\n");
           committed = await this.execution.commitItems(
-            execution.results.map(({ item }) => ({
-              item,
-              result: createFailedResult(item, error.message),
-            })),
+            execution.results.map(({ item }) => ({ item, result: createFailedResult(item, message) })),
           );
         }
         this.assertActive(["running", "paused", "stopping"]);
@@ -652,10 +654,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
             ? result
             : {
                 status: result.status,
-                result:
-                  result.status === "skipped"
-                    ? createSkippedResult(group.members[0], result.result.error ?? "Movie preparation skipped")
-                    : createFailedResult(group.members[0], result.result.error ?? "Movie preparation failed"),
+                result: retargetPreparedResult(result.result, group.members[0]),
               };
         for (const item of group.members) item.status = "pending";
         this.emitSnapshot();

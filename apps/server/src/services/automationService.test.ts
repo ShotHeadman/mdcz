@@ -1,10 +1,8 @@
+import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScanTaskDto } from "@mdcz/shared/serverDtos";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TaskEventBus } from "../taskEvents";
-import { AutomationService } from "./automationService";
-import type { MaintenanceService } from "./maintenanceService";
-import type { ScanQueueService } from "./scanQueueService";
-import type { ScrapeService } from "./scrapeService";
+import { TaskEventBus, type TaskLifecycleEvent } from "../taskEvents";
+import { AutomationService, applyPathMappings } from "./automationService";
 
 const makeTask = (id: string, status: ScanTaskDto["status"]): ScanTaskDto => ({
   id,
@@ -21,18 +19,36 @@ const makeTask = (id: string, status: ScanTaskDto["status"]): ScanTaskDto => ({
   error: status === "failed" ? "failed" : null,
 });
 
-const createAutomationService = (taskEvents: TaskEventBus): AutomationService =>
-  new AutomationService({} as ScanQueueService, {} as ScrapeService, {} as MaintenanceService, taskEvents, {
-    secret: "test-secret",
-    url: "http://webhook.test/events",
-  });
+const WEBHOOK_URL = "http://webhook.test/events";
 
-const publishTask = (taskEvents: TaskEventBus, task: ScanTaskDto): void => {
+const createAutomationService = (taskEvents: TaskEventBus, channels: Array<"ntfy"> = []): AutomationService => {
+  const configuration = {
+    ...defaultConfiguration,
+    notifications: {
+      ...defaultConfiguration.notifications,
+      webhookUrl: WEBHOOK_URL,
+      webhookSecret: "test-secret",
+      channels,
+      ntfyUrl: "http://ntfy.test/mdcz",
+    },
+  };
+  return new AutomationService({
+    config: { get: async () => configuration },
+    taskEvents,
+    logger: { warn: vi.fn() },
+  } as unknown as ConstructorParameters<typeof AutomationService>[0]);
+};
+
+const publishTask = (taskEvents: TaskEventBus, task: TaskLifecycleEvent): void => {
   taskEvents.lifecycle(task);
 };
 
+const delivered = async (service: AutomationService) => (await service.deliveryStatus()).webhook.delivered;
+
 const requestBodies = (fetchMock: ReturnType<typeof vi.fn>): Array<Record<string, unknown>> =>
-  fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit | undefined)?.body)));
+  fetchMock.mock.calls
+    .filter(([url]) => url === WEBHOOK_URL)
+    .map(([, init]) => JSON.parse(String((init as RequestInit | undefined)?.body)));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -40,21 +56,27 @@ afterEach(() => {
 });
 
 describe("AutomationService webhook delivery", () => {
-  it("delivers only the first running and terminal transitions for each task", async () => {
+  it("delivers only the first running and terminal transitions for each task, and notifies channels once", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
     const taskEvents = new TaskEventBus();
-    const service = createAutomationService(taskEvents);
+    const service = createAutomationService(taskEvents, ["ntfy"]);
+    service.notePending(2);
 
     publishTask(taskEvents, makeTask("task-1", "queued"));
     publishTask(taskEvents, makeTask("task-1", "running"));
     publishTask(taskEvents, makeTask("task-1", "paused"));
     publishTask(taskEvents, makeTask("task-1", "running"));
     publishTask(taskEvents, makeTask("task-1", "stopping"));
-    publishTask(taskEvents, makeTask("task-1", "completed"));
-    publishTask(taskEvents, makeTask("task-1", "completed"));
+    const completed = { ...makeTask("task-1", "completed"), counts: { success: 3, failed: 1, skipped: 0 } };
+    publishTask(taskEvents, completed);
+    publishTask(taskEvents, completed);
 
-    await expect.poll(() => service.deliveryStatus().webhook.delivered).toBe(2);
+    await expect.poll(() => delivered(service)).toBe(2);
+    await expect.poll(() => fetchMock.mock.calls.filter(([url]) => url !== WEBHOOK_URL).length).toBe(2);
+    expect(fetchMock.mock.calls.find(([url]) => url === "http://ntfy.test/mdcz")?.[1]).toMatchObject({
+      body: "Scrape finished: 3 succeeded, 1 failed; 2 new in the pending list",
+    });
 
     expect(requestBodies(fetchMock)).toEqual([
       expect.objectContaining({ taskId: "task-1", kind: "scrape", status: "running" }),
@@ -63,7 +85,7 @@ describe("AutomationService webhook delivery", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: expect.objectContaining({ "x-mdcz-webhook-secret": "test-secret" }),
     });
-    expect(service.deliveryStatus().webhook).toMatchObject({ delivered: 2, failed: 0, lastError: null });
+    expect((await service.deliveryStatus()).webhook).toMatchObject({ delivered: 2, failed: 0, lastError: null });
   });
 
   it("keeps deliveries FIFO and continues after an earlier HTTP failure", async () => {
@@ -88,13 +110,13 @@ describe("AutomationService webhook delivery", () => {
 
     resolveFirst?.(new Response(null, { status: 503 }));
     await expect.poll(() => fetchMock.mock.calls.length).toBe(2);
-    await expect.poll(() => service.deliveryStatus().webhook.delivered).toBe(1);
+    await expect.poll(() => delivered(service)).toBe(1);
 
     expect(requestBodies(fetchMock)).toEqual([
       expect.objectContaining({ taskId: "task-1", status: "running" }),
       expect.objectContaining({ taskId: "task-1", status: "completed" }),
     ]);
-    expect(service.deliveryStatus().webhook).toMatchObject({ delivered: 1, failed: 1, lastError: null });
+    expect((await service.deliveryStatus()).webhook).toMatchObject({ delivered: 1, failed: 1, lastError: null });
   });
 
   it("uses a ten-second timeout and lets the next queued delivery proceed", async () => {
@@ -127,10 +149,10 @@ describe("AutomationService webhook delivery", () => {
 
     timeoutController.abort(new Error("Webhook delivery timed out"));
     await expect.poll(() => fetchMock.mock.calls.length).toBe(2);
-    await expect.poll(() => service.deliveryStatus().webhook.delivered).toBe(1);
+    await expect.poll(() => delivered(service)).toBe(1);
 
     expect(requestBodies(fetchMock).map((body) => body.taskId)).toEqual(["task-1", "task-2"]);
-    expect(service.deliveryStatus().webhook).toMatchObject({ delivered: 1, failed: 1, lastError: null });
+    expect((await service.deliveryStatus()).webhook).toMatchObject({ delivered: 1, failed: 1, lastError: null });
   });
   it("rejects new deliveries when the one-thousand-entry queue is full", async () => {
     const fetchMock = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
@@ -143,10 +165,19 @@ describe("AutomationService webhook delivery", () => {
       publishTask(taskEvents, makeTask(`queued-${index}`, "running"));
     }
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(service.deliveryStatus().webhook).toMatchObject({
-      failed: 1,
-      lastError: "Webhook delivery queue is full",
-    });
+    await expect.poll(() => fetchMock.mock.calls.length).toBe(1);
+    expect((await service.deliveryStatus()).webhook).toMatchObject({ lastError: "Notification queue is full" });
+  });
+});
+
+describe("applyPathMappings", () => {
+  it("rewrites a downloader path by its longest matching prefix", () => {
+    const mappings = [
+      { from: "/downloads", to: "/data" },
+      { from: "/downloads/complete", to: "D:\\Media" },
+    ];
+    expect(applyPathMappings("/downloads/complete/ABC-123.mp4", mappings, "win32")).toBe("D:\\Media\\ABC-123.mp4");
+    expect(applyPathMappings("/downloads/other/x.mkv", mappings, "linux")).toBe("/data/other/x.mkv");
+    expect(applyPathMappings("/downloadsX/x.mkv", mappings, "linux")).toBe("/downloadsX/x.mkv");
   });
 });

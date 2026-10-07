@@ -65,6 +65,7 @@ export const scrape = {
   copyPath: "Copy path",
   rescrape: "Rescrape",
   rescrapeByUrl: "Rescrape by URL",
+  rescrapeByNumber: "Rescrape by number (drop pinned page)",
   removeFromLibrary: "Remove from library",
   openSourceFolder: "Open source directory",
   openMetadataFolder: "Open metadata directory",

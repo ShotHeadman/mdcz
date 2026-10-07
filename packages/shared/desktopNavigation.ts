@@ -1,4 +1,13 @@
-export type DesktopRouteId = "overview" | "workbench" | "tools" | "library" | "settings" | "logs" | "about";
+export type DesktopRouteId =
+  | "overview"
+  | "workbench"
+  | "pending"
+  | "tools"
+  | "library"
+  | "libraries"
+  | "settings"
+  | "logs"
+  | "about";
 
 export interface DesktopRouteDefinition {
   id: DesktopRouteId;
@@ -9,8 +18,10 @@ export interface DesktopRouteDefinition {
 export const DESKTOP_ROUTE_DEFINITIONS: DesktopRouteDefinition[] = [
   { id: "overview", path: "/overview", group: "primary" },
   { id: "workbench", path: "/workbench", group: "primary" },
-  { id: "tools", path: "/tools", group: "primary" },
+  { id: "pending", path: "/pending", group: "primary" },
   { id: "library", path: "/library", group: "primary" },
+  { id: "libraries", path: "/libraries", group: "primary" },
+  { id: "tools", path: "/tools", group: "primary" },
   { id: "settings", path: "/settings", group: "system" },
   { id: "logs", path: "/logs", group: "system" },
   { id: "about", path: "/about", group: "system" },

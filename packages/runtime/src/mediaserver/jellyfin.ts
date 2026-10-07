@@ -1,7 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import type { RuntimeNetworkClient } from "../network";
-import { resolveActorPhotoFolderPath, usesLocalActorImageSource } from "../scrape/actorImage/actorPhotoPath";
 import type { RuntimeLogger } from "../shared";
 import {
   buildMediaServerHeaders,
@@ -60,12 +59,6 @@ export interface JellyfinActorServiceDependencies {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-const assertLocalActorImageSourceReady = (configuration: Configuration): void => {
-  if (usesLocalActorImageSource(configuration)) {
-    resolveActorPhotoFolderPath(configuration, { requireBase: true });
-  }
-};
 
 export const normalizeJellyfinBaseUrl = normalizeMediaServerBaseUrl;
 export const parseJellyfinMode = parseMediaServerMode;
@@ -521,7 +514,6 @@ export class JellyfinActorPhotoService {
   }
 
   async run(configuration: Configuration, mode: JellyfinMode): Promise<JellyfinBatchResult> {
-    assertLocalActorImageSourceReady(configuration);
     return await runMediaServerPhotoSync({
       configuration,
       mode,

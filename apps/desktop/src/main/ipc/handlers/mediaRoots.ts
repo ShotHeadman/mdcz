@@ -7,10 +7,7 @@ import { asSerializableIpcError, t } from "../shared";
 
 export const createMediaRootHandlers = (
   context: ServiceContainer,
-): Pick<
-  IpcRouterContract,
-  typeof IpcChannel.MediaRoots_EnsurePath | typeof IpcChannel.MediaRoots_PrepareOutputDirectory
-> => {
+): Pick<IpcRouterContract, typeof IpcChannel.MediaRoots_EnsurePath> => {
   const mediaRoots = context.mediaRoots ?? createDesktopMediaRootService(context.persistenceService);
 
   return {
@@ -21,14 +18,5 @@ export const createMediaRootHandlers = (
         throw asSerializableIpcError(error);
       }
     }),
-    [IpcChannel.MediaRoots_PrepareOutputDirectory]: t.procedure
-      .input(mediaRootEnsurePathInputSchema)
-      .action(async ({ input }) => {
-        try {
-          return await mediaRoots.prepareOutputDirectory(input);
-        } catch (error) {
-          throw asSerializableIpcError(error);
-        }
-      }),
   };
 };

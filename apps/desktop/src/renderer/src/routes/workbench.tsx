@@ -19,8 +19,8 @@ import {
 } from "@mdcz/views/state/maintenanceStore";
 import { runScrapeRequest, selectIsScraping, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
-import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
@@ -28,7 +28,6 @@ import { createDesktopWorkbenchPorts } from "@/adapters/ports";
 import { pauseScrape, resumeScrape, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
 import { ipc } from "@/client/ipc";
 import { isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
-import ScrapeCompletionDialog from "@/components/workbench/ScrapeCompletionDialog";
 import WorkbenchSetup from "@/components/workbench/WorkbenchSetup";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/configQueries";
 
@@ -43,7 +42,9 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const t = useT();
   const queryClient = useQueryClient();
   const [startError, setStartError] = useState<unknown>(null);
+  const navigate = useNavigate();
   const configQ = useCurrentConfig();
+  const librariesQ = useQuery({ queryKey: ["libraries"], queryFn: () => ipc.libraries.list() });
   const workbenchPorts = useMemo(() => createDesktopWorkbenchPorts(), []);
 
   const { isScraping, results } = useScrapeStore(
@@ -83,17 +84,22 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     await queryClient.invalidateQueries({ queryKey: CURRENT_CONFIG_QUERY_KEY });
   };
 
-  const handleStartDirectory = async (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => {
+  const handleStartDirectory = async (
+    source: DirectorySource,
+    libraryId: string | undefined,
+    presetId: MaintenancePresetId,
+  ) => {
     try {
       if (workbenchMode === "maintenance") {
         if (isScraping) throw new Error(t.desktop.stopScrapeFirst);
         changeMaintenancePreset(presetId);
         useMaintenanceStore.getState().setPending(true);
-        await ipc.maintenance.directory(source, presetId, targetDir);
+        await ipc.maintenance.directory(source, presetId, libraryId);
       } else {
         if (maintenanceBusy) throw new Error(t.desktop.stopMaintenanceFirst);
+        if (!libraryId) throw new Error(t.workbench.noLibraries);
         activateNewScrapeTask();
-        await ipc.scraper.start({ mode: "directory", source, targetDir });
+        await ipc.scraper.start({ executionMode: "batch", libraryId, source });
       }
       toast.success(t.desktop.taskSubmitted);
     } catch (error) {
@@ -102,19 +108,17 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
   };
 
-  const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], libraryId: string) => {
     if (maintenanceBusy) {
       toast.warning(t.desktop.maintenanceRunningWarning);
       return;
     }
 
     try {
-      const outputRoot = await ipc.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
       activateNewScrapeTask();
       await startSelectedScrape(
         candidates.map((candidate) => candidate.ref),
-        outputRoot.id,
-        outputRoot.relativeDirectory,
+        libraryId,
       );
       toast.success(t.scrape.launch.selection);
     } catch (error) {
@@ -136,7 +140,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleStartSelectedMaintenance = async (
     candidates: MediaCandidate[],
     presetId: MaintenancePresetId,
-    targetDir?: string,
+    libraryId?: string,
   ) => {
     if (isScraping) {
       toast.warning(t.desktop.scrapeRunningWarning);
@@ -146,7 +150,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     await startMaintenanceFlow({
       candidates,
       presetId,
-      targetDir,
+      libraryId,
       port: workbenchPorts.maintenance,
       isScraping,
       setWorkbenchMode,
@@ -221,24 +225,23 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
             <WorkbenchSetup
               mode={workbenchMode}
               config={configQ.data}
-              configLoading={configQ.isLoading}
+              configLoading={configQ.isLoading || librariesQ.isLoading}
+              libraries={librariesQ.data?.libraries}
+              onManageLibraries={() => void navigate({ to: "/libraries" })}
               onStartDirectory={handleStartDirectory}
               onStartScrape={handleStartSelectedScrape}
               onStartMaintenance={handleStartSelectedMaintenance}
             />
           ) : workbenchMode === "scrape" ? (
-            <>
-              <ScrapeWorkbenchAdapter
-                ports={workbenchPorts}
-                siteUrls={configQ.data?.network}
-                onPauseScrape={handlePauseScrape}
-                onResumeScrape={handleResumeScrape}
-                onStopScrape={handleStopScrape}
-                onRetryFailed={handleRetryFailed}
-                failedCount={failedPaths.length}
-              />
-              <ScrapeCompletionDialog />
-            </>
+            <ScrapeWorkbenchAdapter
+              ports={workbenchPorts}
+              siteUrls={configQ.data?.network}
+              onPauseScrape={handlePauseScrape}
+              onResumeScrape={handleResumeScrape}
+              onStopScrape={handleStopScrape}
+              onRetryFailed={handleRetryFailed}
+              failedCount={failedPaths.length}
+            />
           ) : (
             <MaintenanceWorkbenchAdapter ports={workbenchPorts} />
           )}

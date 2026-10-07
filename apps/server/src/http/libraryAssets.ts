@@ -223,7 +223,7 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
   scheduleCacheCleanup(cacheDirectory);
   fastify.get("/api/library/assets/:rootId/*", async (request: FastifyRequest, reply) => {
     try {
-      services.auth.assertAuthenticated(getBearerToken(request));
+      await services.auth.assertAuthenticated(getBearerToken(request));
     } catch (error) {
       return sendError(reply, 401, error instanceof Error ? error.message : "Authentication required");
     }

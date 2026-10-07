@@ -100,7 +100,7 @@ describe("ConfigManager configDirectory", () => {
     const manager = new ConfigManager();
     await manager.save({
       naming: {
-        fileTemplate: "{number}-{title}",
+        nfoTitleTemplate: "{number}-{title}",
       },
       ui: {
         hideMenu: true,
@@ -114,7 +114,7 @@ describe("ConfigManager configDirectory", () => {
     await manager.exportProfile("default", exportPath);
 
     const exported = parseConfigurationContent(await readFile(exportPath, "utf8"), "toml");
-    expect(exported.naming.fileTemplate).toBe("{number}-{title}");
+    expect(exported.naming.nfoTitleTemplate).toBe("{number}-{title}");
     expect(exported.ui.hideMenu).toBe(true);
   });
 
@@ -132,7 +132,7 @@ describe("ConfigManager configDirectory", () => {
           ...current,
           naming: {
             ...current.naming,
-            fileTemplate: "{number}-imported",
+            nfoTitleTemplate: "{number}-imported",
           },
           ui: {
             ...current.ui,
@@ -153,7 +153,7 @@ describe("ConfigManager configDirectory", () => {
       overwritten: true,
       active: true,
     });
-    expect(reloaded.naming.fileTemplate).toBe("{number}-imported");
+    expect(reloaded.naming.nfoTitleTemplate).toBe("{number}-imported");
     expect(reloaded.ui.hideMenu).toBe(true);
   });
 

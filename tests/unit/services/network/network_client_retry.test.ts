@@ -18,7 +18,8 @@ vi.mock("node:timers/promises", () => {
 
 import { CrawlerProvider } from "@mdcz/runtime/crawler/CrawlerProvider";
 import { FetchGateway } from "@mdcz/runtime/crawler/FetchGateway";
-import { NetworkClient } from "@mdcz/runtime/network";
+import { NetworkClient, runWithCrawlerSource } from "@mdcz/runtime/network";
+import { Website } from "@mdcz/shared/enums";
 
 const createProbeResponse = (
   body: Uint8Array,
@@ -323,11 +324,11 @@ describe("NetworkClient retry policy", () => {
     }
   });
 
-  it("reuses a shared Impit client until proxy settings change", async () => {
+  it("reuses a shared Impit client until proxy settings change, and keeps direct sites off the proxy", async () => {
     let proxyUrl = "http://proxy-a";
     fetchMock.mockImplementation(async () => new Response("ok", { status: 200 }));
     const client = new NetworkClient({
-      getProxyUrl: () => proxyUrl,
+      getProxyUrl: (site) => (site === Website.DMM ? undefined : proxyUrl),
     });
 
     await expect(client.getText("https://example.com/one")).resolves.toBe("ok");
@@ -345,6 +346,10 @@ describe("NetworkClient retry policy", () => {
     expect(impitConstructorMock.mock.calls[1]?.[0]).toMatchObject({
       proxyUrl: "http://proxy-b",
     });
+
+    await runWithCrawlerSource(Website.DMM, () => client.getText("https://example.com/direct"));
+    expect(impitConstructorMock).toHaveBeenCalledTimes(3);
+    expect(impitConstructorMock.mock.calls[2]?.[0].proxyUrl).toBeUndefined();
   });
 
   it("applies crawler-registered site request defaults without overriding explicit headers", async () => {

@@ -5,7 +5,6 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import { serializeConfiguration } from "@mdcz/shared/configCodec";
 import { describe, expect, it } from "vitest";
 import {
-  buildRuntimeNamingPreview,
   mergeRuntimeConfig,
   parseRuntimeConfiguration,
   RuntimeConfigProfileStore,
@@ -99,49 +98,56 @@ describe("RuntimeConfigProfileStore", () => {
 });
 
 describe("runtime config helpers", () => {
-  it("merges patches, reports field errors, and builds naming previews", () => {
+  it("merges patches, reports field errors, and converts single-directory settings into a library once", async () => {
     const merged = mergeRuntimeConfig(defaultConfiguration, { network: { timeout: 33 } });
 
     expect(parseRuntimeConfiguration(merged).network.timeout).toBe(33);
-    for (const successFileMove of [false, true]) {
-      expect(() =>
-        parseRuntimeConfiguration({
-          behavior: { metadataOnly: true, successFileMove },
-          paths: { metadataPath: "/metadata" },
-          naming: { folderTemplate: "{actor}", assetNamingMode: "fixed" },
-          download: { nfoNaming: "movie" },
-        }),
-      ).toThrow(RuntimeConfigValidationError);
-    }
+    expect(() => parseRuntimeConfiguration({ paths: { actorPhotoFolder: "actors" } })).toThrow(
+      RuntimeConfigValidationError,
+    );
     expect(() => parseRuntimeConfiguration({ download: { nfoNaming: "invalid" } })).toThrow(
       RuntimeConfigValidationError,
     );
-    expect(
-      buildRuntimeNamingPreview(defaultConfiguration, {
-        naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number} {title}" },
-      }).items[0],
-    ).toMatchObject({
-      sample: "standard",
-      file: "ABC-123 示例中文标题.mp4",
-    });
-    expect(
-      buildRuntimeNamingPreview(defaultConfiguration, {
-        naming: { folderTemplate: "{actor}/{number}", fileTemplate: "{number} {title}" },
-      }).items[0]?.folder,
-    ).toContain("演员A");
 
-    const expandedPreview = buildRuntimeNamingPreview(defaultConfiguration, {
-      naming: {
-        folderTemplate: "{firstLetter}-{number}",
-        fileTemplate: "{rawNumber}-{4K}{cnword}-{title}",
-        cnwordStyle: "-SUB",
+    const configDir = await createTempDir();
+    const mediaPath = join(configDir, "media");
+    await writeFile(
+      join(configDir, "default.toml"),
+      [
+        "[paths]",
+        `mediaPath = ${JSON.stringify(mediaPath)}`,
+        'successOutputFolder = "out"',
+        'actorPhotoFolder = "actors"',
+        "[behavior]",
+        "successFileRename = false",
+        "[naming]",
+        'folderTemplate = "{number}"',
+        "[watch]",
+        "enabled = true",
+        "intervalMinutes = 30",
+      ].join("\n"),
+      "utf8",
+    );
+    const service = new RuntimeConfigService({ store: new RuntimeConfigProfileStore({ configDir }) });
+    const loaded = await service.load();
+
+    expect(loaded.paths.actorPhotoFolder).toBe(join(mediaPath, "actors"));
+    expect(loaded).not.toHaveProperty("watch");
+    expect(service.takeLegacyConversion()).toEqual({
+      library: {
+        name: "media",
+        sourcePath: mediaPath,
+        outputPath: join(mediaPath, "out"),
+        folderTemplate: "{number}",
+        fileTemplate: "{filename}",
+        placement: "move",
+        automation: "scrape",
+        discovery: "events",
+        cloudPath: "",
+        scanIntervalMinutes: 30,
       },
-    }).items.find((item) => item.sample === "subtitled");
-
-    expect(expandedPreview).toMatchObject({
-      folder: "A-ABC-456-SUB",
-      file: "ABC-456-4K-SUB-中文字幕示例.mp4",
     });
+    expect(service.takeLegacyConversion()).toBeUndefined();
   });
 });
 
@@ -154,7 +160,7 @@ describe("RuntimeConfigService profile watcher", () => {
     const service = new RuntimeConfigService({
       store: new RuntimeConfigProfileStore({ configDir }),
       onBeforeCommit: (configuration) => {
-        if (configuration.paths.mediaPath) throw new Error("media path unavailable");
+        if (configuration.paths.actorPhotoFolder) throw new Error("actor folder unavailable");
       },
       onAfterCommit: (_configuration, { source }) => {
         if (source === "save") afterCommit += 1;
@@ -166,16 +172,16 @@ describe("RuntimeConfigService profile watcher", () => {
       sourcePath,
       serializeConfiguration({
         ...defaultConfiguration,
-        paths: { ...defaultConfiguration.paths, mediaPath: "/offline/media" },
+        paths: { ...defaultConfiguration.paths, actorPhotoFolder: "/offline/actors" },
       }),
       "utf8",
     );
 
     await expect(service.importProfileFromFile({ sourcePath, name: "default", overwrite: true })).rejects.toThrow(
-      "media path unavailable",
+      "actor folder unavailable",
     );
     await expect(readFile(profilePath, "utf8")).resolves.toBe(original);
-    await expect(service.get()).resolves.toMatchObject({ paths: { mediaPath: "" } });
+    await expect(service.get()).resolves.toMatchObject({ paths: { actorPhotoFolder: "" } });
     expect(afterCommit).toBe(0);
   });
 
@@ -199,16 +205,16 @@ describe("RuntimeConfigService profile watcher", () => {
 
   it("rejects a switched profile before applying loaded configuration", async () => {
     const configDir = await createTempDir();
-    const appliedMediaPaths: string[] = [];
+    const appliedActorFolders: string[] = [];
     const store = new RuntimeConfigProfileStore({ configDir });
     const service = new RuntimeConfigService({
       store,
       onAfterLoad: (configuration) => {
-        appliedMediaPaths.push(configuration.paths.mediaPath);
+        appliedActorFolders.push(configuration.paths.actorPhotoFolder);
         return configuration;
       },
       onBeforeCommit: (configuration, { source }) => {
-        if (source === "switch" && configuration.paths.mediaPath) throw new Error("media path unavailable");
+        if (source === "switch" && configuration.paths.actorPhotoFolder) throw new Error("actor folder unavailable");
       },
     });
     await service.load();
@@ -217,14 +223,14 @@ describe("RuntimeConfigService profile watcher", () => {
       join(configDir, "offline.toml"),
       serializeConfiguration({
         ...defaultConfiguration,
-        paths: { ...defaultConfiguration.paths, mediaPath: "/offline/media" },
+        paths: { ...defaultConfiguration.paths, actorPhotoFolder: "/offline/actors" },
       }),
       "utf8",
     );
 
-    await expect(service.switchProfile("offline")).rejects.toThrow("media path unavailable");
-    expect(appliedMediaPaths).toEqual([""]);
-    await expect(service.get()).resolves.toMatchObject({ paths: { mediaPath: "" } });
+    await expect(service.switchProfile("offline")).rejects.toThrow("actor folder unavailable");
+    expect(appliedActorFolders).toEqual([""]);
+    await expect(service.get()).resolves.toMatchObject({ paths: { actorPhotoFolder: "" } });
     expect((await store.listProfiles()).active).toBe("default");
   });
 });

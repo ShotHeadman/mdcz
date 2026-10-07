@@ -27,6 +27,7 @@ const createHarness = async () => {
     new ActorImageService({ cacheRoot: join(directory, "actors"), networkClient }),
     undefined,
     new PersistentCooldownStore({ filePath: join(directory, "image-host-cooldowns.json") }),
+    { list: async () => [], findBySourcePath: async () => undefined },
     undefined,
     persistence,
   );
@@ -41,6 +42,7 @@ const seedFailedFinalizedRun = async (directory: string, persistence: DesktopPer
   await state.repositories.mediaRoots.upsert(root);
   const completedAt = new Date("2026-08-28T00:05:00.000Z");
   const run = await state.repositories.scrapeRuns.create({
+    libraryId: "library-1",
     rootId: root.id,
     executionMode: "single",
     createdAt: new Date("2026-08-28T00:00:00.000Z"),

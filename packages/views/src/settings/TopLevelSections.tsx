@@ -12,6 +12,7 @@ import {
   AggregationPrioritySection,
   AggregationScrapeSection,
   AssetDownloadsSection,
+  AutomationSection,
   FilenameFilteringSection,
   NamingSection,
   NetworkConnectionSection,
@@ -151,6 +152,24 @@ export function MediaServerTopLevelSection({ forceOpen = false }: { forceOpen?: 
       forceOpen={forceOpen}
     >
       <MediaServerSection />
+    </SectionAnchor>
+  );
+}
+
+/** Downloader path mappings and notifications; only the server receives callbacks and sends messages. */
+export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
+  const services = useSettingsServices();
+  if ((services.settingsTarget ?? (services.isServer ? "server" : "desktop")) !== "server") return null;
+
+  return (
+    <SectionAnchor
+      id="automation"
+      label={t.settingsFields.sections.automation.label}
+      title={t.settingsFields.sections.automation.label}
+      forceOpen={forceOpen}
+    >
+      <AutomationSection />
     </SectionAnchor>
   );
 }

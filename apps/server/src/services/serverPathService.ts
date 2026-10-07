@@ -1,6 +1,7 @@
 import { constants, type Dirent, type Stats } from "node:fs";
 import { access, lstat, readdir } from "node:fs/promises";
 import path from "node:path";
+import type { MediaLibraryService } from "@mdcz/runtime/library";
 import type { Configuration } from "@mdcz/shared/config";
 import type {
   ServerPathSuggestInput,
@@ -52,6 +53,7 @@ export class ServerPathService {
   constructor(
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
+    private readonly libraries: Pick<MediaLibraryService, "list">,
     options: ServerPathServiceOptions = {},
   ) {
     this.fs = options.fs ?? nodeFs;
@@ -135,11 +137,15 @@ export class ServerPathService {
   }
 
   private async discoverConfiguredRoots(): Promise<string[]> {
-    const [mediaRootList, configuration] = await Promise.all([
+    const [mediaRootList, configuration, libraries] = await Promise.all([
       this.mediaRoots.list().catch(() => ({ roots: [] })),
       this.config.get().catch(() => null),
+      this.libraries.list().catch(() => []),
     ]);
-    const configuredPathValues = configuration ? this.collectConfigPathValues(configuration) : [];
+    const configuredPathValues = [
+      ...(configuration ? this.collectConfigPathValues(configuration) : []),
+      ...libraries.flatMap((library) => [library.sourcePath, library.outputPath]),
+    ];
     const candidates = [...mediaRootList.roots.map((root) => root.hostPath), ...configuredPathValues];
     const checked = await Promise.all(
       candidates.map(async (candidate) => {
@@ -155,10 +161,7 @@ export class ServerPathService {
 
   private collectConfigPathValues(configuration: Configuration): string[] {
     return [
-      configuration.paths.mediaPath,
       configuration.paths.actorPhotoFolder,
-      configuration.paths.successOutputFolder,
-      configuration.paths.metadataPath ?? "",
       configuration.paths.outputSummaryPath,
       configuration.paths.configDirectory,
     ].map((value) => value.trim());

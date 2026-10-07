@@ -101,14 +101,7 @@ describe("Actor source local and gfriends", () => {
       const movieDir = join(root, "Actor A", "ABC-123");
       await setup(movieDir);
 
-      const sources = await buildLocalActorIndex(
-        createConfig({
-          paths: {
-            ...defaultConfiguration.paths,
-            mediaPath: root,
-          },
-        }),
-      );
+      const sources = await buildLocalActorIndex(createConfig(), [root]);
 
       expect(sources.get("actora")).toMatchObject({
         name: "Actor A",
@@ -154,7 +147,7 @@ describe("Actor source local and gfriends", () => {
 
     const provider = new ActorSourceProvider({
       registry: new ActorSourceRegistry([
-        new LocalActorSource(),
+        new LocalActorSource({ listLibraryDirectories: async () => [root] }),
         new GfriendsActorSource({
           networkClient: networkClient as unknown as NetworkClient,
           actorMapUrl: "https://example.com/Filetree.json",
@@ -164,11 +157,6 @@ describe("Actor source local and gfriends", () => {
 
     const result = await provider.lookup(
       createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: "",
-          successOutputFolder: root,
-        },
         personSync: {
           ...defaultConfiguration.personSync,
           personImageSources: first === "local" ? ["local", "gfriends"] : ["gfriends", "local"],

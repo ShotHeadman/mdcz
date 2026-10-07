@@ -1,11 +1,6 @@
 import path from "node:path";
 import { type DiscoveryProgress, directoryTaskScopeSchema } from "@mdcz/shared/directoryTasks";
-import type {
-  AmbiguousUncensoredItemDto,
-  LogEntryDto,
-  ScrapeLiveItemDto,
-  ScrapeRunSnapshotDto,
-} from "@mdcz/shared/serverDtos";
+import type { LogEntryDto, ScrapeLiveItemDto, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import type { ScrapeRunItemSnapshot, ScrapeRunSnapshot } from "./ScrapeRunSession";
 
 export interface ScrapeSnapshotManifest {
@@ -15,6 +10,7 @@ export interface ScrapeSnapshotManifest {
   id: string;
   rootId: string;
   previousRunId: string | null;
+  libraryId: string | null;
   createdAt: Date;
   items: Array<{ id: string; rootId: string; relativePath: string; manualUrl?: string | null }>;
 }
@@ -41,7 +37,6 @@ const liveItemToDto = (manifest: ScrapeSnapshotManifest, item: ScrapeRunItemSnap
     outputRelativePath: result?.output?.relativePath ?? null,
     assets: result?.assets ?? [],
     manualUrl: manifestItem.manualUrl ?? null,
-    uncensoredAmbiguous: result?.uncensoredAmbiguous === true,
   };
 };
 
@@ -57,25 +52,6 @@ const liveLogToDto = (runId: string, log: ScrapeRunSnapshot["logs"][number], ind
     level: log.level === "error" ? "ERR" : log.level === "warn" ? "WARN" : "INFO",
   };
 };
-
-const liveAmbiguousUncensoredItems = (snapshot: ScrapeRunSnapshot): AmbiguousUncensoredItemDto[] =>
-  snapshot.items.flatMap((item) => {
-    if (item.status !== "success" || !item.result?.uncensoredAmbiguous || !item.result.resultId || !item.result.output)
-      return [];
-    return [
-      {
-        id: item.result.resultId,
-        ref: item.result.output,
-        fileId: item.result.resultId,
-        fileName: path.posix.basename(item.relativePath),
-        number:
-          item.result.crawlerData?.number ??
-          path.posix.basename(item.relativePath, path.posix.extname(item.relativePath)),
-        title: item.result.crawlerData?.title_zh ?? item.result.crawlerData?.title ?? null,
-        nfoRelativePath: item.result.nfo?.relativePath ?? null,
-      },
-    ];
-  });
 
 export const toScrapeRunSnapshotDto = (input: {
   manifest: ScrapeSnapshotManifest;
@@ -109,6 +85,7 @@ export const toScrapeRunSnapshotDto = (input: {
       error: input.snapshot.error,
       continuity: input.snapshot.status === "interrupted" ? "interrupted" : terminal ? "final" : "live",
       previousTaskId: input.manifest.previousRunId,
+      libraryId: input.manifest.libraryId,
     },
     directorySource: input.manifest.directoryScopeJson
       ? directoryTaskScopeSchema.parse(JSON.parse(input.manifest.directoryScopeJson))
@@ -128,6 +105,5 @@ export const toScrapeRunSnapshotDto = (input: {
         }
       : null,
     logs: input.snapshot.logs.map((log, index) => liveLogToDto(input.snapshot.runId, log, index)),
-    ambiguousUncensoredItems: liveAmbiguousUncensoredItems(input.snapshot),
   };
 };

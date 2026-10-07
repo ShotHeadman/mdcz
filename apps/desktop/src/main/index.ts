@@ -70,7 +70,12 @@ const ensureServiceContainer = async (): Promise<ServiceContainer> => {
   });
   // Recovery must finish before IPC and renderer load; getState() can otherwise race the first window requests.
   await container.persistenceService.initialize();
-  await configManager.synchronizeConfiguredRoots();
+  // Settings that moved into libraries become the first library before the profile is saved without them.
+  const legacy = await configManager.takeLegacyConversion();
+  if (legacy) {
+    await container.libraries.adoptLegacyConfiguration(legacy);
+    await configManager.saveCurrent();
+  }
   registerLocalFileHandler({
     getRoot: async (rootId) => {
       const state = await container.persistenceService.getState();

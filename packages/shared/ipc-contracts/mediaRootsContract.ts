@@ -4,5 +4,4 @@ import type { MediaRootEnsurePathInput, MediaRootEnsurePathResponse } from "../s
 
 export type MediaRootsIpcContract = {
   [IpcChannel.MediaRoots_EnsurePath]: IpcProcedure<MediaRootEnsurePathInput, MediaRootEnsurePathResponse>;
-  [IpcChannel.MediaRoots_PrepareOutputDirectory]: IpcProcedure<MediaRootEnsurePathInput, MediaRootEnsurePathResponse>;
 };

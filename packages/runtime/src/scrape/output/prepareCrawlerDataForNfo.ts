@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
 import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
 import {
@@ -75,7 +75,6 @@ export const prepareCrawlerDataForNfo = async (
     movieDir: options.movieDir,
     actors: crawlerData.actors,
     actorProfiles: crawlerData.actor_profiles,
-    actorPhotoBaseDir: dirname(options.sourceVideoPath),
     actorSourceProvider: options.actorSourceProvider,
     signal: options.signal,
     sourceHints: mergeRuntimeActorSourceHints(options.sourceHints, [

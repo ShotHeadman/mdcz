@@ -4,6 +4,8 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 
 export interface PublicationFileSystem {
   copyFile(source: string, target: string): Promise<void>;
+  link(existingPath: string, newPath: string): Promise<void>;
+  symlink(target: string, path: string): Promise<void>;
   mkdir(path: string, options: { recursive: true }): Promise<unknown>;
   readdir(path: string, options: { withFileTypes: true }): Promise<Dirent[]>;
   rename(source: string, target: string): Promise<void>;

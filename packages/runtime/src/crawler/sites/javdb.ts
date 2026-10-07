@@ -57,13 +57,31 @@ export class JavdbCrawler extends BaseCrawler {
 
   protected async parseSearchPage(context: Context, $: CheerioAPI, searchUrl: string): Promise<string | null> {
     // Search results include similar numbers, such as another studio's title from the same day.
-    const result = $("a.box")
-      .toArray()
-      .find((element: CheerioInput) =>
-        movieNumbersMatch($(element).find("div.video-title strong").text(), context.number),
-      );
-    const href = result && $(result).attr("href");
-    return href ? (toAbsoluteUrl(searchUrl, href) ?? null) : null;
+    const matches = new Map<string, CheerioInput>();
+    for (const element of $("a.box").toArray()) {
+      if (!movieNumbersMatch($(element).find("div.video-title strong").text(), context.number)) continue;
+      const url = toAbsoluteUrl(searchUrl, $(element).attr("href"));
+      if (url && !matches.has(url)) matches.set(url, element);
+    }
+    // Two works under one number are different movies (SW-133 is a 2012 SWITCH and a 2022 Plum title).
+    if (matches.size > 1) {
+      throw new SiteError("ambiguous", `JavDB lists ${matches.size} works under ${context.number}`, {
+        candidates: [...matches].map(([detailUrl, element]) => {
+          const title = $(element).find("div.video-title").clone();
+          title.find("strong").remove();
+          const meta = normalizeText($(element).find("div.meta").text());
+          const usDate = meta.match(/^(\d{2})\/(\d{2})\/(\d{4})$/u);
+          return {
+            site: Website.JAVDB,
+            detailUrl,
+            title: normalizeText(title.text()) || context.number,
+            releaseDate: usDate ? `${usDate[3]}-${usDate[1]}-${usDate[2]}` : parseDate(meta),
+            coverUrl: toAbsoluteUrl(searchUrl, $(element).find("div.cover img").attr("src")),
+          };
+        }),
+      });
+    }
+    return matches.keys().next().value ?? null;
   }
 
   // JavDB redirects FC2 and uncensored titles to its sign-in page unless the cookie belongs to a signed-in account.

@@ -7,6 +7,7 @@ import type { PublicationFileSystem } from "./types";
 export type WriteArtifact = { targetPath: string; removeSourcesAfterCommit?: readonly string[] } & (
   | { data: Buffer | string }
   | { sourcePath: string; size: number; consume?: boolean }
+  | { symlinkTo: string }
 );
 
 export class WriteOutput {
@@ -24,7 +25,7 @@ export class WriteOutput {
       protectedMediaFiles?: readonly string[];
     },
   ): Promise<TResult> {
-    const staged: Array<{ targetPath: string; temporaryPath: string; size: number }> = [];
+    const staged: Array<{ targetPath: string; temporaryPath: string; size?: number }> = [];
     const temporaryPaths = new Set<string>();
     const stagingId = randomUUID();
     const pathKey = (value: string) =>
@@ -57,6 +58,11 @@ export class WriteOutput {
         if (consuming && !(await this.fileSystem.lstat(temporaryPath)).isFile())
           throw new Error(`Consumed staging must be a regular file: ${temporaryPath}`);
         temporaryPaths.add(temporaryPath);
+        if ("symlinkTo" in artifact) {
+          await this.fileSystem.symlink(artifact.symlinkTo, temporaryPath);
+          staged.push({ targetPath: artifact.targetPath, temporaryPath });
+          continue;
+        }
         const expectedSize =
           "data" in artifact
             ? typeof artifact.data === "string"
@@ -90,7 +96,7 @@ export class WriteOutput {
           await this.fileSystem.rename(artifact.temporaryPath, artifact.targetPath);
           temporaryPaths.delete(artifact.temporaryPath);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+          if ((error as NodeJS.ErrnoException).code !== "EXDEV" || artifact.size === undefined) throw error;
           const localStaging = `${artifact.targetPath}.mdcz-staging-${stagingId}.part`;
           temporaryPaths.add(localStaging);
           await this.fileSystem.copyFile(artifact.temporaryPath, localStaging);

@@ -145,8 +145,6 @@ export class ScanQueueService {
     if (this.closing) throw new Error("Scan queue is closing");
     const configuration = await this.config.get();
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
-    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
-    if (metadataPath) excludeDirPaths.push(metadataPath);
     const admitted = await this.mediaRoots.admitDirectory({ hostPath: input.scanDir });
     const root = admitted.root;
     const hostPath = admitted.hostPath;
@@ -212,11 +210,8 @@ export class ScanQueueService {
   }
 
   private async scanDirectory(root: MediaRoot, signal?: AbortSignal): Promise<ScanDirectoryResult> {
-    const configuration = await this.config.get();
-    const metadataPath = configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "";
     const files = excludeGeneratedStrmPaths(
       await listRootFiles(root, "", true, signal, {
-        excludeDirectoryPaths: metadataPath ? [metadataPath] : [],
         filterFile: isPrimaryVideoFile,
       }),
       (file) => file.absolutePath,

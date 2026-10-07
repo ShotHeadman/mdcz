@@ -94,7 +94,7 @@ const mergeGroupedScrapeResult = (existing: ScrapeResult, incoming: ScrapeResult
     nfo: incoming.nfo ?? existing.nfo,
     assets: mergeAssets(existing.assets, incoming.assets),
     sources: incoming.sources ? { ...existing.sources, ...incoming.sources } : existing.sources,
-    uncensoredAmbiguous: incoming.uncensoredAmbiguous ?? existing.uncensoredAmbiguous,
+    pending: incoming.pending ?? existing.pending,
   };
 };
 

@@ -15,6 +15,8 @@ export const PARKED_SOURCE_PREFIX = ".mdcz-relocation-";
 
 export type MediaFileFacts = { dev: number; ino: number; size: number; mtimeMs: number };
 export interface SourceMove extends MediaFileFacts {
+  /** `hardlink` and `copy` leave the source in place. */
+  transfer: "move" | "hardlink" | "copy";
   source: RootFileRef;
   target: RootFileRef;
   sourcePath: string;
@@ -131,7 +133,25 @@ export class MoveOutput {
               throw new Error(`Cannot move a relative file symlink to another directory: ${sourcePath}`);
             await assertSource(move, sourcePath, link.isSymbolicLink() ? undefined : link);
             await assertTarget(move, sourcePath);
-            let copied = move.rewrittenContent !== undefined;
+            if (move.transfer === "hardlink" && move.rewrittenContent === undefined) {
+              try {
+                await fs.link(sourcePath, move.targetPath);
+              } catch (error) {
+                if ((error as NodeJS.ErrnoException).code === "EXDEV")
+                  throw new Error(
+                    `Hardlinks need the library output on the same volume as the source: ${sourcePath} -> ${move.targetPath}`,
+                    { cause: error },
+                  );
+                throw error;
+              }
+              relocations.push({ from: sourcePath, to: move.targetPath, kind: "copied" });
+              if (isPrimaryVideoFile(move.targetPath))
+                targetEntries
+                  .get(filesystemPathKey(path.dirname(move.targetPath)))
+                  ?.add(filesystemPathKey(move.targetPath));
+              continue;
+            }
+            let copied = move.rewrittenContent !== undefined || move.transfer !== "move";
             if (!copied) {
               try {
                 await fs.rename(sourcePath, move.targetPath);
@@ -159,7 +179,7 @@ export class MoveOutput {
               await fs.rename(staging, move.targetPath);
               temporaryPaths.delete(staging);
               relocations.push({ from: sourcePath, to: move.targetPath, kind: "copied" });
-              retainedSources.set(sourcePath, move);
+              if (move.transfer === "move") retainedSources.set(sourcePath, move);
             } else {
               targetEntries.get(filesystemPathKey(path.dirname(sourcePath)))?.delete(filesystemPathKey(sourcePath));
             }

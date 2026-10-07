@@ -1,7 +1,9 @@
 import { buildComputedConfiguration } from "@main/services/config/computed";
 import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
+import { assertTargetLayout } from "@mdcz/runtime/scrape/FileOrganizer";
 import { configurationSchema } from "@mdcz/shared/config";
 import { ProxyType, Website } from "@mdcz/shared/enums";
+import { mediaLibrarySettingsSchema } from "@mdcz/shared/mediaLibrary";
 import { DEFAULT_R18_METADATA_LANGUAGE } from "@mdcz/shared/r18";
 import { describe, expect, it } from "vitest";
 
@@ -61,59 +63,27 @@ describe("buildComputedConfiguration", () => {
     ).toBeUndefined();
   });
 
-  it("enforces shared-directory rules, overview sources, and Jellyfin userId", () => {
+  it("enforces shared-directory library layouts, overview sources, and Jellyfin userId", () => {
+    const sharedDirectory = {
+      placement: "move",
+      outputPath: "/out",
+      folderTemplate: "{actor}",
+      fileTemplate: "{number}",
+    } as const;
+    const valid = { assetNamingMode: "followVideo", nfoNaming: "filename", downloadSceneImages: false };
+    for (const [override, message] of [
+      [{}, undefined],
+      [{ assetNamingMode: "fixed" }, "asset naming"],
+      [{ nfoNaming: "movie" }, "NFO naming"],
+      [{ downloadSceneImages: true }, "scene images"],
+    ] as const) {
+      const { assetNamingMode, ...download } = { ...valid, ...override };
+      const configuration = configurationSchema.parse({ naming: { assetNamingMode }, download });
+      if (message) expect(() => assertTargetLayout(configuration, sharedDirectory)).toThrow(message);
+      else expect(() => assertTargetLayout(configuration, sharedDirectory)).not.toThrow();
+    }
+
     const cases = [
-      {
-        result: configurationSchema.safeParse({
-          naming: {
-            folderTemplate: "{actor}",
-            assetNamingMode: "fixed",
-          },
-          behavior: {
-            successFileMove: true,
-          },
-          download: {
-            nfoNaming: "filename",
-            downloadSceneImages: false,
-          },
-        }),
-        path: ["naming", "assetNamingMode"],
-        message: "sharedDirectoryAssetNaming",
-      },
-      {
-        result: configurationSchema.safeParse({
-          naming: {
-            folderTemplate: "{actor}",
-            assetNamingMode: "followVideo",
-          },
-          behavior: {
-            successFileMove: true,
-          },
-          download: {
-            nfoNaming: "movie",
-            downloadSceneImages: false,
-          },
-        }),
-        path: ["download", "nfoNaming"],
-        message: "sharedDirectoryNfoNaming",
-      },
-      {
-        result: configurationSchema.safeParse({
-          naming: {
-            folderTemplate: "{actor}",
-            assetNamingMode: "followVideo",
-          },
-          behavior: {
-            successFileMove: true,
-          },
-          download: {
-            nfoNaming: "filename",
-            downloadSceneImages: true,
-          },
-        }),
-        path: ["download", "downloadSceneImages"],
-        message: "sharedDirectorySceneImages",
-      },
       {
         result: configurationSchema.safeParse({
           personSync: {
@@ -153,58 +123,23 @@ describe("buildComputedConfiguration", () => {
     }
   });
 
-  it("allows shared-directory templates when companion naming rules are satisfied", () => {
-    const result = configurationSchema.safeParse({
-      naming: {
-        folderTemplate: "{actor}",
-        assetNamingMode: "followVideo",
-      },
-      behavior: {
-        successFileMove: true,
-      },
-      download: {
-        nfoNaming: "filename",
-        downloadSceneImages: false,
-      },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects optional groups that try to span multiple path segments", () => {
-    const cases = [
-      {
-        result: configurationSchema.safeParse({
-          naming: {
-            folderTemplate: "{actor}[/{series}]/{number}",
-          },
-        }),
-        path: ["naming", "folderTemplate"],
-      },
-      {
-        result: configurationSchema.safeParse({
-          naming: {
-            fileTemplate: "[\\{series}]{number}",
-          },
-        }),
-        path: ["naming", "fileTemplate"],
-      },
-    ];
-
-    for (const { result, path } of cases) {
-      expect(result.success).toBe(false);
-      if (result.success) {
-        continue;
-      }
-
-      expect(result.error.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path,
-            message: "optionalSegmentPathSeparator",
-          }),
-        ]),
-      );
+  it("validates library settings: output placement, overlap, path-spanning optional groups, and cloud paths", () => {
+    const library = {
+      name: "Library",
+      sourcePath: "/media/downloads",
+      outputPath: "/media/library",
+      placement: "hardlink",
+    };
+    expect(mediaLibrarySettingsSchema.safeParse(library).success).toBe(true);
+    for (const [override, path, message] of [
+      [{ outputPath: "" }, "outputPath", "libraryOutputRequired"],
+      [{ placement: "symlink", outputPath: "/media/downloads/library" }, "outputPath", "libraryOutputOverlapsSource"],
+      [{ folderTemplate: "{actor}[/{series}]/{number}" }, "folderTemplate", "optionalSegmentPathSeparator"],
+      [{ fileTemplate: "[\\{series}]{number}" }, "fileTemplate", "optionalSegmentPathSeparator"],
+      [{ discovery: "clouddrive", cloudPath: "/" }, "cloudPath", "libraryCloudPathInvalid"],
+    ] as const) {
+      const result = mediaLibrarySettingsSchema.safeParse({ ...library, ...override });
+      expect(result.error?.issues).toEqual([expect.objectContaining({ path: [path], message })]);
     }
   });
 });

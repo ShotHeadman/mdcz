@@ -12,7 +12,6 @@ export const fixtureCaseIdFromNumber = (number: string): string => {
   return caseId;
 };
 
-export const attachNetworkFixtureCaseId: PrepareScrapeItem = (item) => ({
-  ...item,
-  caseId: fixtureCaseIdFromNumber(item.fileInfo.number),
-});
+// A numberless file fails before any request, so it needs no recording and must not abort the batch it is in.
+export const attachNetworkFixtureCaseId: PrepareScrapeItem = (item) =>
+  item.fileInfo.number.trim() ? { ...item, caseId: fixtureCaseIdFromNumber(item.fileInfo.number) } : item;

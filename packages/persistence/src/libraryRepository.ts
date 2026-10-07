@@ -28,7 +28,6 @@ export interface LibraryEntryRecord {
   createdAt: Date;
   lastRefreshedAt: Date | null;
   hiddenFromRecentAt: Date | null;
-  uncensoredAmbiguous: boolean;
   files: LibraryItemFileRecord[];
   assets: LibraryItemAssetRecord[];
 }
@@ -40,7 +39,6 @@ export interface LibraryMovieInput {
   number?: string | null;
   actors?: string[];
   crawlerDataJson?: string | null;
-  uncensoredAmbiguous?: boolean;
   createdAt?: Date;
   lastRefreshedAt?: Date | null;
   assets?: LibraryAssetInput[];
@@ -58,6 +56,8 @@ export interface LibraryFileInput {
   fileId?: string;
   entryIdentity?: string;
   sourceEntryIdentity?: string;
+  /** A hardlinked or copied file's source, which stays on disk. */
+  retainedSourceIdentity?: string | null;
   rootId: string;
   rootRelativePath: string;
   size?: number;
@@ -249,7 +249,6 @@ const toLibraryEntryRecord = (
     createdAt: item.createdAt,
     lastRefreshedAt: item.lastRefreshedAt,
     hiddenFromRecentAt: item.hiddenFromRecentAt,
-    uncensoredAmbiguous: item.uncensoredAmbiguous,
     files,
     assets,
   };
@@ -323,6 +322,33 @@ export class LibraryRepository {
             : [],
         ),
     };
+  }
+
+  countCreatedSince(since: Date): number {
+    return (
+      this.database.db
+        .select({ count: sql<number>`count(*)` })
+        .from(libraryItems)
+        .where(sql`${libraryItems.createdAt} >= ${since.getTime()}`)
+        .get()?.count ?? 0
+    );
+  }
+
+  /** Entry identities among `identities` that a library file is, or was hardlinked or copied from. */
+  knownMediaIdentities(identities: readonly string[]): Set<string> {
+    if (!identities.length) return new Set();
+    const values = JSON.stringify(identities);
+    return new Set(
+      this.database.sqlite
+        .prepare<[string, string], { identity: string }>(`
+          SELECT entry_identity AS identity FROM library_item_files WHERE entry_identity IN (SELECT value FROM json_each(?))
+          UNION
+          SELECT retained_source_identity AS identity FROM library_item_files
+          WHERE retained_source_identity IN (SELECT value FROM json_each(?))
+        `)
+        .all(values, values)
+        .map((row) => row.identity),
+    );
   }
 
   inventoryOwnership(refs?: readonly { rootId: string; relativePath: string; entryIdentity?: string }[]) {
@@ -505,16 +531,6 @@ export class LibraryRepository {
     }
     const [files, assets] = await Promise.all([this.listFilesForItems([id]), this.listAssetsForItems([id])]);
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
-  }
-
-  async listPendingUncensored(): Promise<LibraryEntryRecord[]> {
-    const rows = this.database.db
-      .select({ id: libraryItems.id })
-      .from(libraryItems)
-      .where(eq(libraryItems.uncensoredAmbiguous, true))
-      .all();
-    if (rows.length === 0) return [];
-    return await this.getEntriesByIds(rows.map((row) => row.id));
   }
 
   async getEntriesByIds(ids: string[]): Promise<LibraryEntryRecord[]> {

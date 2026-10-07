@@ -9,7 +9,9 @@ import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
   type MaintenanceRuntime,
+  type MaintenanceRuntimeDependencies,
   MaintenanceSessionCoordinator,
+  resolveMaintenanceTarget,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
@@ -34,6 +36,7 @@ export interface MaintenanceServiceDependencies {
   actorSourceProvider?: ActorSourceProvider;
   imageHostCooldownStore: PersistentCooldownStore;
   mediaRoots?: ConfiguredMediaRootService;
+  prepareScrapeItem?: MaintenanceRuntimeDependencies["prepareScrapeItem"];
   runtime?: MaintenanceRuntime;
   coordinator?: MaintenanceSessionCoordinator;
 }
@@ -69,6 +72,7 @@ export class MaintenanceService {
         imageHostCooldownStore: this.imageHostCooldownStore,
         networkClient: deps.networkClient,
         signalService: deps.signalService,
+        prepareScrapeItem: deps.prepareScrapeItem,
         recordSiteResults: async (number, results) =>
           (await deps.persistenceService.getState()).repositories.siteResults.record(number, results),
         loadSiteResults: async (number) =>
@@ -131,6 +135,11 @@ export class MaintenanceService {
     };
   }
 
+  /** The runtime moving presets and the pending list's uncensored confirmation share. */
+  get maintenanceRuntime(): MaintenanceRuntime {
+    return this.runtime;
+  }
+
   async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     return await this.coordinator.rerunDirectory(sessionId);
   }
@@ -138,21 +147,24 @@ export class MaintenanceService {
   async startDirectory(
     source: DirectorySource,
     presetId: MaintenancePresetId,
-    targetDir?: string,
+    libraryId?: string,
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     const configuration = await this.runtime.getConfiguration();
-    const directoryScope = createDirectoryScope(source, targetDir ?? source.scanDir, configuration, "maintenance");
+    const output = await this.libraryTarget(presetId, libraryId);
+    const directoryScope = createDirectoryScope(
+      source,
+      output?.target.outputPath ?? source.scanDir,
+      configuration,
+      "maintenance",
+    );
     const scan = await this.mediaRoots.admitDirectory({ hostPath: directoryScope.scanDir });
-    const output =
-      directoryScope.targetDir === directoryScope.scanDir
-        ? { id: scan.root.id, relativeDirectory: scan.relativeDirectory }
-        : await this.mediaRoots.prepareOutputDirectory({ hostPath: directoryScope.targetDir });
     return await this.coordinator.startPreview({
       rootId: scan.root.id,
       presetId,
       refs: [],
-      outputRootId: output.id,
-      outputRelativeDirectory: output.relativeDirectory,
+      outputRootId: output?.outputRootId ?? scan.root.id,
+      outputRelativeDirectory: output?.outputRelativeDirectory ?? scan.relativeDirectory,
+      target: output?.target,
       directoryScope,
       configuration,
     });
@@ -161,19 +173,31 @@ export class MaintenanceService {
   async startPreview(
     refs: RootFileRef[],
     presetId: MaintenancePresetId,
-    output?: { outputRootId?: string; outputRelativeDirectory?: string },
+    libraryId?: string,
   ): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (refs.length === 0) throw new Error("No files selected");
     const rootId = refs[0]?.rootId;
     if (!rootId) throw new Error("Maintenance file is missing a media directory");
+    const output = await this.libraryTarget(presetId, libraryId);
     this.signalService.invalidate("maintenance");
     return await this.coordinator.startPreview({
       rootId,
       presetId,
       refs,
-      ...output,
+      outputRootId: output?.outputRootId,
+      outputRelativeDirectory: output?.outputRelativeDirectory,
+      target: output?.target,
       configuration: await this.runtime.getConfiguration(),
     });
+  }
+
+  private async libraryTarget(presetId: MaintenancePresetId, libraryId: string | undefined) {
+    const { repositories } = await this.persistenceService.getState();
+    return await resolveMaintenanceTarget(
+      presetId,
+      libraryId ? repositories.mediaLibraries.get(libraryId) : undefined,
+      this.mediaRoots,
+    );
   }
 
   async execute(

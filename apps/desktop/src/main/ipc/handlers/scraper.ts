@@ -2,7 +2,6 @@ import type { ServiceContainer } from "@main/container";
 import { ScraperServiceError } from "@main/services/scraper";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
-import { scrapeConfirmUncensoredInputSchema } from "@mdcz/shared/serverDtos";
 import { withIpcErrorHandling } from "../errorHandling";
 import { createIpcError } from "../errors";
 import {
@@ -34,7 +33,6 @@ export const createScraperHandlers = (
   | typeof IpcChannel.Scraper_Resume
   | typeof IpcChannel.Scraper_RerunDirectory
   | typeof IpcChannel.Scraper_Retry
-  | typeof IpcChannel.Scraper_ConfirmUncensored
 > => {
   const { scraperService } = context;
 
@@ -83,11 +81,6 @@ export const createScraperHandlers = (
     ),
     [IpcChannel.Scraper_Retry]: t.procedure.input(scraperRetryInputSchema).action(({ input }) =>
       withIpcErrorHandling("retry files", async () => await scraperService.retry(input.runId, input.itemIds), {
-        mapError: toScraperServiceIpcError,
-      }),
-    ),
-    [IpcChannel.Scraper_ConfirmUncensored]: t.procedure.input(scrapeConfirmUncensoredInputSchema).action(({ input }) =>
-      withIpcErrorHandling("confirm uncensored items", async () => await scraperService.confirmUncensored(input), {
         mapError: toScraperServiceIpcError,
       }),
     ),

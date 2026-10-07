@@ -17,16 +17,16 @@ export const t = initTRPC.context<RouterContext>().create({
   }),
 });
 
-export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   try {
-    ctx.services.auth.assertAuthenticated(ctx.token);
-    return next({ ctx });
+    await ctx.services.auth.assertAuthenticated(ctx.token);
   } catch (error) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
       message: error instanceof Error ? error.message : "Authentication required",
     });
   }
+  return next({ ctx });
 });
 
 export const mapConfigError = (error: unknown): never => {

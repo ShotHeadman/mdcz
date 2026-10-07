@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getActorImageCacheDirectory } from "@main/appIdentity";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
-import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
 import { checkConnection, isUuid } from "@main/services/mediaServer/jellyfin";
 import {
   type ActorLookupResult,
@@ -552,38 +551,5 @@ describe("Jellyfin services", () => {
     expect(refreshUrl).toContain("/Items/person-1/Refresh");
     expect(firstBody).toBe(Buffer.from(await readFile(photoPath)).toString("base64"));
     expect(secondBody).toBe(firstBody);
-  });
-
-  it("fails fast when local actor photos use a relative path without mediaPath", async () => {
-    const networkClient = new FakeNetworkClient();
-    const service = new JellyfinActorPhotoService({
-      signalService: createSignalService(),
-      networkClient: networkClient as unknown as NetworkClient,
-      actorSourceProvider: createActorSourceProvider(networkClient),
-      logger: { debug() {}, info() {}, warn() {}, error() {} },
-    });
-
-    await expect(
-      service.run(
-        createConfig({
-          paths: {
-            ...defaultConfiguration.paths,
-            mediaPath: "",
-            actorPhotoFolder: "actor-library",
-          },
-          personSync: {
-            ...defaultConfiguration.personSync,
-            personImageSources: ["local", "gfriends"],
-          },
-          jellyfin: {
-            ...defaultConfiguration.jellyfin,
-            url: "http://127.0.0.1:8096",
-            apiKey: "token",
-          },
-        }),
-        "all",
-      ),
-    ).rejects.toBeInstanceOf(ActorPhotoFolderConfigurationError);
-    expect(networkClient.getJson).not.toHaveBeenCalled();
   });
 });

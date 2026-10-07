@@ -20,6 +20,14 @@ export const queryKeys = {
     all: ["library"] as const,
     list: (query: string) => ["library", "list", query] as const,
   },
+  libraries: {
+    all: ["libraries"] as const,
+    apiKeys: ["libraries", "apiKeys"] as const,
+  },
+  pending: {
+    all: ["pending"] as const,
+    detail: (id: string) => ["pending", "detail", id] as const,
+  },
   logs: {
     all: ["logs"] as const,
     list: (taskIds: readonly string[]) => ["logs", "list", ...taskIds] as const,

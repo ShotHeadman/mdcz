@@ -1,4 +1,4 @@
-import type { ScrapePendingUncensoredConfirmationResponse, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
+import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import {
   selectIsScraping,
   selectScrapeResults,
@@ -6,10 +6,7 @@ import {
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
-import type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 import { api } from "./client";
-
-export type { TaskHydrationState } from "@mdcz/views/state/workbenchTaskStore";
 
 export const selectActiveLiveScrapeRun = (
   runs: ScrapeRunSnapshotDto[],
@@ -49,15 +46,4 @@ export const applyScrapeLiveRunsSnapshot = (runs: ScrapeRunSnapshotDto[]): void 
   if (uiStore.selectedResultId && !results.some((result) => result.fileId === uiStore.selectedResultId)) {
     uiStore.setSelectedResultId(null);
   }
-};
-
-export const applyPendingUncensoredConfirmation = (
-  response: ScrapePendingUncensoredConfirmationResponse,
-  previous: TaskHydrationState,
-): TaskHydrationState => {
-  return {
-    ...previous,
-    shouldOpenUncensoredDialog: response.items.length > 0,
-    ambiguousUncensoredItems: response.items,
-  };
 };

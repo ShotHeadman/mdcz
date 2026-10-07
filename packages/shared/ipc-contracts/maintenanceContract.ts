@@ -8,8 +8,8 @@ import type { MaintenancePresetId } from "../types";
 export type MaintenanceIpcContract = {
   [IpcChannel.Maintenance_StartPreview]: IpcProcedure<
     | { rerunSessionId: string }
-    | { source: DirectorySource; targetDir?: string; presetId: MaintenancePresetId }
-    | { refs?: RootFileRef[]; presetId?: MaintenancePresetId; outputRootId?: string; outputRelativeDirectory?: string },
+    | { source: DirectorySource; libraryId?: string; presetId: MaintenancePresetId }
+    | { refs?: RootFileRef[]; presetId?: MaintenancePresetId; libraryId?: string },
     { sessionId: string; snapshot: MaintenanceActiveSessionSnapshot }
   >;
   [IpcChannel.Maintenance_Apply]: IpcProcedure<

@@ -10,6 +10,8 @@
     "./overview": "./src/overview/index.ts",
     "./workbench": "./src/workbench/index.ts",
     "./library": "./src/library/index.ts",
+    "./libraries": "./src/libraries/index.ts",
+    "./pending": "./src/pending/index.ts",
     "./maintenance": "./src/maintenance/index.ts",
     "./nfo": "./src/nfo/index.ts",
     "./path": "./src/path/index.ts",

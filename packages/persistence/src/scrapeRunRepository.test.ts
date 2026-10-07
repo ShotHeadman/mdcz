@@ -26,6 +26,7 @@ const createRepository = () => {
 const createRun = async (repository: ScrapeRunRepository, id = "run-1") =>
   await repository.create({
     id,
+    libraryId: "library-1",
     rootId: "root-1",
     outputRootId: "requested-output",
     executionMode: "batch",
@@ -58,6 +59,7 @@ describe("ScrapeRunRepository", () => {
       excludeDirPaths: [],
     };
     const run = await repository.create({
+      libraryId: "library-1",
       rootId: "root-1",
       outputRootId: "requested-output",
       executionMode: "batch",
@@ -107,6 +109,7 @@ describe("ScrapeRunRepository", () => {
     expect(rerun.id).not.toBe(run.id);
     expect(rerun).toMatchObject({
       previousRunId: run.id,
+      libraryId: "library-1",
       directoryScopeJson: JSON.stringify(scope),
       manifestFixedAt: null,
       items: [],
@@ -138,6 +141,7 @@ describe("ScrapeRunRepository", () => {
     const create = async (id: string, createdAt: Date) =>
       await repository.create({
         id,
+        libraryId: "library-1",
         rootId: "root-1",
         outputRootId: "requested-output",
         executionMode: "batch",

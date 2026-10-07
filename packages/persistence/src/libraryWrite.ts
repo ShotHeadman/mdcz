@@ -108,7 +108,6 @@ export const writeLibraryRows = (
       title: movie.title ?? null,
       number: movie.number ?? null,
       actorsJson,
-      uncensoredAmbiguous: movie.uncensoredAmbiguous ?? false,
       createdAt,
       lastRefreshedAt: movie.lastRefreshedAt ?? null,
       hiddenFromRecentAt: null,
@@ -123,7 +122,6 @@ export const writeLibraryRows = (
         number: movie.number,
         actorsJson: movie.actors === undefined ? undefined : actorsJson,
         lastRefreshedAt: movie.lastRefreshedAt,
-        uncensoredAmbiguous: movie.uncensoredAmbiguous === undefined ? undefined : movie.uncensoredAmbiguous,
       },
     })
     .run();
@@ -153,6 +151,7 @@ export const writeLibraryRows = (
         rootId: input.rootId,
         rootRelativePath: input.rootRelativePath,
         entryIdentity: input.entryIdentity,
+        retainedSourceIdentity: input.retainedSourceIdentity ?? null,
         fileName: path.posix.basename(input.rootRelativePath),
         directory: directory === "." ? "" : directory,
         size: input.size ?? 0,
@@ -170,6 +169,7 @@ export const writeLibraryRows = (
           rootId: input.rootId,
           rootRelativePath: input.rootRelativePath,
           entryIdentity: input.entryIdentity,
+          retainedSourceIdentity: input.retainedSourceIdentity,
           fileName: path.posix.basename(input.rootRelativePath),
           directory: directory === "." ? "" : directory,
           size: input.size,

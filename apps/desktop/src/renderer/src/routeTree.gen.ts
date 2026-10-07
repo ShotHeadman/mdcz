@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AboutRouteImport } from "./routes/about";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as LibrariesRouteImport } from "./routes/libraries";
 import { Route as LibraryRouteImport } from "./routes/library";
 import { Route as LogsRouteImport } from "./routes/logs";
 import { Route as OverviewRouteImport } from "./routes/overview";
+import { Route as PendingRouteImport } from "./routes/pending";
 import { Route as SettingsRouteImport } from "./routes/settings";
 import { Route as ToolsRouteImport } from "./routes/tools";
 import { Route as WorkbenchRouteImport } from "./routes/workbench";
@@ -36,6 +38,16 @@ const WorkbenchRoute = WorkbenchRouteImport.update({
 const LibraryRoute = LibraryRouteImport.update({
   id: "/library",
   path: "/library",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const PendingRoute = PendingRouteImport.update({
+  id: "/pending",
+  path: "/pending",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const LibrariesRoute = LibrariesRouteImport.update({
+  id: "/libraries",
+  path: "/libraries",
   getParentRoute: () => rootRouteImport,
 } as any);
 const SettingsRoute = SettingsRouteImport.update({
@@ -63,6 +75,8 @@ export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
   "/library": typeof LibraryRoute;
+  "/pending": typeof PendingRoute;
+  "/libraries": typeof LibrariesRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
   "/settings": typeof SettingsRoute;
@@ -73,6 +87,8 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
   "/library": typeof LibraryRoute;
+  "/pending": typeof PendingRoute;
+  "/libraries": typeof LibrariesRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
   "/settings": typeof SettingsRoute;
@@ -84,6 +100,8 @@ export interface FileRoutesById {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
   "/library": typeof LibraryRoute;
+  "/pending": typeof PendingRoute;
+  "/libraries": typeof LibrariesRoute;
   "/logs": typeof LogsRoute;
   "/overview": typeof OverviewRoute;
   "/settings": typeof SettingsRoute;
@@ -92,16 +110,49 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/about" | "/library" | "/logs" | "/overview" | "/settings" | "/tools" | "/workbench";
+  fullPaths:
+    | "/"
+    | "/about"
+    | "/libraries"
+    | "/library"
+    | "/logs"
+    | "/overview"
+    | "/pending"
+    | "/settings"
+    | "/tools"
+    | "/workbench";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/about" | "/library" | "/logs" | "/overview" | "/settings" | "/tools" | "/workbench";
-  id: "__root__" | "/" | "/about" | "/library" | "/logs" | "/overview" | "/settings" | "/tools" | "/workbench";
+  to:
+    | "/"
+    | "/about"
+    | "/libraries"
+    | "/library"
+    | "/logs"
+    | "/overview"
+    | "/pending"
+    | "/settings"
+    | "/tools"
+    | "/workbench";
+  id:
+    | "__root__"
+    | "/"
+    | "/about"
+    | "/libraries"
+    | "/library"
+    | "/logs"
+    | "/overview"
+    | "/pending"
+    | "/settings"
+    | "/tools"
+    | "/workbench";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AboutRoute: typeof AboutRoute;
   LibraryRoute: typeof LibraryRoute;
+  PendingRoute: typeof PendingRoute;
+  LibrariesRoute: typeof LibrariesRoute;
   LogsRoute: typeof LogsRoute;
   OverviewRoute: typeof OverviewRoute;
   SettingsRoute: typeof SettingsRoute;
@@ -123,6 +174,20 @@ declare module "@tanstack/react-router" {
       path: "/library";
       fullPath: "/library";
       preLoaderRoute: typeof LibraryRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/pending": {
+      id: "/pending";
+      path: "/pending";
+      fullPath: "/pending";
+      preLoaderRoute: typeof PendingRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/libraries": {
+      id: "/libraries";
+      path: "/libraries";
+      fullPath: "/libraries";
+      preLoaderRoute: typeof LibrariesRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/workbench": {
@@ -174,6 +239,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   LibraryRoute: LibraryRoute,
+  PendingRoute: PendingRoute,
+  LibrariesRoute: LibrariesRoute,
   LogsRoute: LogsRoute,
   OverviewRoute: OverviewRoute,
   SettingsRoute: SettingsRoute,

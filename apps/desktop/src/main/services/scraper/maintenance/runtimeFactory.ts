@@ -18,6 +18,7 @@ export interface DesktopMaintenanceRuntimeOptions {
   imageHostCooldownStore: PersistentCooldownStore;
   networkClient: NetworkClient;
   signalService: SignalService;
+  prepareScrapeItem?: MaintenanceRuntimeDependencies["prepareScrapeItem"];
   recordSiteResults: SiteResultSink;
   loadSiteResults: MaintenanceRuntimeDependencies["loadSiteResults"];
 }
@@ -31,6 +32,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
     recordSiteResults: options.recordSiteResults,
     loadSiteResults: options.loadSiteResults,
     logger,
+    prepareScrapeItem: options.prepareScrapeItem,
     config: {
       get: async () => await configManager.getValidated(),
     },

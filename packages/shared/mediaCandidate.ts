@@ -15,17 +15,6 @@ export const joinHostPath = (base: string, child: string): string => {
   return `${base.replace(/[\\/]+$/u, "")}${separator}${child.replace(/^[\\/]+/u, "")}`;
 };
 
-export const resolveSuccessTargetDir = (scanDir: string, successOutputFolder: string | undefined): string => {
-  const target = successOutputFolder?.trim() ?? "";
-  if (!target) {
-    return "";
-  }
-  if (isAbsoluteHostPath(target) || !scanDir.trim()) {
-    return target;
-  }
-  return joinHostPath(scanDir, target);
-};
-
 const resolveConfiguredDir = (scanDir: string, configuredPath: string | undefined): string | undefined => {
   const trimmedPath = configuredPath?.trim() ?? "";
   if (!trimmedPath) {

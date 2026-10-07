@@ -120,13 +120,13 @@ describe("FileScraper .strm support", () => {
     );
   });
 
-  it("reuses kept NFO files according to the configured naming mode", async () => {
+  it("carries the existing NFO along according to the naming mode when NFO generation is off", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "ABC-123.nfo");
     const movieNfoPath = join(root, "movie.nfo");
     await writeFile(nfoPath, "<movie><title>Kept Title</title></movie>", "utf8");
 
-    const config = createConfig({ generateNfo: true, keepNfo: true, nfoNaming: "both" });
+    const config = createConfig({ generateNfo: false, nfoNaming: "both" });
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
       outputDir: root,
@@ -161,14 +161,13 @@ describe("FileScraper .strm support", () => {
     await expect(readFile(movieNfoPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("reuses kept NFO local state for planning and uncensored confirmation state", async () => {
+  it("reads the existing NFO local state for planning and uncensored confirmation state", async () => {
     const root = await createTempDir();
     const nfoPath = join(root, "ABC-123-U.nfo");
     await writeFile(nfoPath, "<movie />", "utf8");
 
     const config = createConfig({
       generateNfo: true,
-      keepNfo: true,
     });
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
@@ -221,23 +220,16 @@ describe("FileScraper .strm support", () => {
       },
     );
     onTestFinished(async () => await group.release?.());
-    const [result] = preparedPublicationFiles(group);
 
     expect(fileOrganizer.plan).toHaveBeenCalledWith(
-      expect.objectContaining({
-        number: "ABC-123",
-      }),
+      expect.objectContaining({ number: "ABC-123" }),
       crawlerData,
       expect.any(Object),
-      {
-        uncensoredChoice: "umr",
-      },
-      {
-        executionMode: "batch",
-      },
+      expect.objectContaining({ placement: "move" }),
+      { uncensoredChoice: "umr" },
+      { versionLabel: undefined },
     );
-    expect(writeNfo).not.toHaveBeenCalled();
-    expect(result.uncensoredAmbiguous).toBe(false);
+    expect(group.output?.files[0].scrape?.uncensoredAmbiguous).toBe(false);
   });
 
   it("passes preserved local state when regenerating an NFO", async () => {
@@ -245,7 +237,6 @@ describe("FileScraper .strm support", () => {
     const outputDir = join(root, "output");
     const config = createConfig({
       generateNfo: true,
-      keepNfo: true,
       nfoIgnoreFields: ["director"],
     });
     const crawlerData = createCrawlerData();

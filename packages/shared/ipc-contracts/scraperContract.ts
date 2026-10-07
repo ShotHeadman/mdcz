@@ -1,20 +1,8 @@
-import type { DirectorySource } from "../directoryTasks";
 import { IpcChannel } from "../IpcChannel";
 import type { IpcProcedure } from "../ipcTypes";
-import type { RootFileRef } from "../mediaRef";
-import type { ScrapeConfirmUncensoredInput, ScrapeRunSnapshotDto } from "../serverDtos";
-import type { UncensoredConfirmResponse } from "../types";
+import type { ScrapeRunSnapshotDto, ScrapeStartInput } from "../serverDtos";
 
-export type ScraperStartInput =
-  | { mode: "directory"; source: DirectorySource; targetDir: string }
-  | {
-      mode: "selection";
-      refs: RootFileRef[];
-      outputRootId: string;
-      outputRelativeDirectory?: string;
-      manualUrl?: string;
-    }
-  | { mode: "single"; ref: RootFileRef; manualUrl?: string };
+export type ScraperStartInput = ScrapeStartInput;
 
 export type ScraperIpcContract = {
   [IpcChannel.Scraper_Start]: IpcProcedure<
@@ -37,5 +25,4 @@ export type ScraperIpcContract = {
     { runId: string; itemIds?: string[] },
     { taskId: string; totalFiles: number | null; snapshot: ScrapeRunSnapshotDto }
   >;
-  [IpcChannel.Scraper_ConfirmUncensored]: IpcProcedure<ScrapeConfirmUncensoredInput, UncensoredConfirmResponse>;
 };

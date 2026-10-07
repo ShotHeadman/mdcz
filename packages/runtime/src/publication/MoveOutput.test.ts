@@ -32,6 +32,7 @@ const fixture = async () => {
     sourcePath,
     targetPath,
     move: {
+      transfer: "move" as "move" | "hardlink" | "copy",
       source: { rootId: "root", relativePath: "source.mp4" },
       target: { rootId: "root", relativePath: "library/target.mp4" },
       sourcePath,
@@ -171,7 +172,8 @@ describe("MoveOutput", () => {
   });
 
   it("rejects occupied destinations and changes after initial observation before mutation", async () => {
-    for (const transfer of ["rename", "copy", "rewrite"] as const) {
+    // "copy" is a cross-device move; "duplicate" and "hardlink" are library placements that keep the source.
+    for (const transfer of ["rename", "copy", "rewrite", "duplicate", "hardlink"] as const) {
       const local = await fixture();
       const targetPath = path.join(local.directory, "source.mkv");
       const conflictPath = path.join(local.directory, "source.avi");
@@ -179,8 +181,9 @@ describe("MoveOutput", () => {
         ...local.move,
         target: { rootId: "root", relativePath: "source.mkv" },
         targetPath,
+        transfer: transfer === "hardlink" ? "hardlink" : transfer === "duplicate" ? "copy" : "move",
         rewrittenContent: transfer === "rewrite" ? "rewritten" : undefined,
-      };
+      } as const;
       const flush = vi.fn(async (path: string) => await outputFileSystem.flush?.(path));
       const output = new MoveOutput({
         ...outputFileSystem,
@@ -206,10 +209,26 @@ describe("MoveOutput", () => {
         "committed",
       );
       expect(commit).toHaveBeenCalledOnce();
-      expect(flush).toHaveBeenCalledTimes(transfer === "copy" ? 1 : 0);
+      expect(flush).toHaveBeenCalledTimes(transfer === "copy" || transfer === "duplicate" ? 1 : 0);
       await expect(readFile(targetPath, "utf8")).resolves.toBe(transfer === "rewrite" ? "rewritten" : "video");
-      await expect(readFile(local.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+      if (transfer === "duplicate" || transfer === "hardlink") {
+        await expect(readFile(local.sourcePath, "utf8")).resolves.toBe("video");
+        expect((await fs.stat(targetPath)).ino === (await fs.stat(local.sourcePath)).ino).toBe(transfer === "hardlink");
+      } else {
+        await expect(readFile(local.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+      }
     }
+    const crossVolume = await fixture();
+    await expect(
+      new MoveOutput({
+        ...outputFileSystem,
+        link: async () => {
+          throw Object.assign(new Error("cross device"), { code: "EXDEV" });
+        },
+      }).install({ moves: [{ ...crossVolume.move, transfer: "hardlink" }], artifacts: [], commit: () => undefined }),
+    ).rejects.toThrow("same volume");
+    await expect(readFile(crossVolume.sourcePath, "utf8")).resolves.toBe("video");
+    await expect(readFile(crossVolume.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     const test = await fixture();
     await fs.mkdir(path.dirname(test.targetPath), { recursive: true });
     await writeFile(test.targetPath, "existing");

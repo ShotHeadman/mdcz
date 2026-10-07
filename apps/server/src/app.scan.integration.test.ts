@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
-import { closeTestServers, createTestServer, loginAsAdmin, syncMediaRootFromConfig } from "./app.testSupport";
+import { closeTestServers, createTestLibrary, createTestServer, loginAsAdmin } from "./app.testSupport";
 
 let mediaDirectory: TempDirectoryHarness | undefined;
 
@@ -23,7 +23,7 @@ describe("buildServer scan integration", () => {
 
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const rootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
+    const { rootId } = await createTestLibrary(fastify, token, mediaDirectory.path);
 
     const startResponse = await fastify.inject({
       method: "POST",
@@ -224,7 +224,7 @@ describe("buildServer scan integration", () => {
 
     const { fastify } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const parentRootId = await syncMediaRootFromConfig(fastify, token, mediaDirectory.path);
+    const { rootId: parentRootId } = await createTestLibrary(fastify, token, mediaDirectory.path);
     const response = await fastify.inject({
       method: "GET",
       url: `/trpc/scans.candidates?input=${encodeURIComponent(JSON.stringify({ recursive: true, scanDir: selectedDirectory }))}`,

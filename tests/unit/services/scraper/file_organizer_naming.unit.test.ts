@@ -2,6 +2,7 @@ import { join, parse, resolve } from "node:path";
 import { buildGeneratedVideoSidecarTargetPath, FileOrganizer, isPrimaryVideoFile } from "@mdcz/runtime/scrape";
 import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { Website } from "@mdcz/shared/enums";
+import type { PlacementMode } from "@mdcz/shared/mediaLibrary";
 import { describe, expect, it } from "vitest";
 import {
   createOrganizerConfig as createConfig,
@@ -56,9 +57,8 @@ describe("FileOrganizer naming rules", () => {
       },
       {
         config: createConfig({
+          target: { folderTemplate: "{date}-{number}", fileTemplate: "{date}-{number}" },
           naming: {
-            folderTemplate: "{date}-{number}",
-            fileTemplate: "{date}-{number}",
             releaseRule: "YYYY.MM.DD",
             folderNameMax: 12,
             fileNameMax: 12,
@@ -80,10 +80,7 @@ describe("FileOrganizer naming rules", () => {
       },
       {
         config: createConfig({
-          naming: {
-            folderTemplate: "{studio}/{number}",
-            fileTemplate: "{studio} - {number}",
-          },
+          target: { folderTemplate: "{studio}/{number}", fileTemplate: "{studio} - {number}" },
         }),
         fileInfo: createFileInfo({
           filePath: "/input/source.mp4",
@@ -103,7 +100,7 @@ describe("FileOrganizer naming rules", () => {
     const organizer = new FileOrganizer();
 
     for (const { config, fileInfo, crawlerData, assert } of cases) {
-      assert(organizer.plan(fileInfo, crawlerData, config));
+      assert(organizer.plan(fileInfo, crawlerData, ...config));
     }
   });
 
@@ -120,10 +117,9 @@ describe("FileOrganizer naming rules", () => {
         title_zh:
           "【初撮り／中出し】-sznjzpjo- しょ\\う動物系ペットショップ店員。彼氏にプレゼントを買うため、おか\\ねを稼ぐ。",
       }),
-      createConfig({
+      ...createConfig({
+        target: { folderTemplate: "{actor}[{series}][{number}] {title}", fileTemplate: "[{series}]{number} {title}" },
         naming: {
-          folderTemplate: "{actor}[{series}][{number}] {title}",
-          fileTemplate: "[{series}]{number} {title}",
           folderNameMax: 255,
           fileNameMax: 255,
           censoredStyle: "",
@@ -144,9 +140,8 @@ describe("FileOrganizer naming rules", () => {
   it("renders actor fallback prefixes only when the actor value falls back", () => {
     const organizer = new FileOrganizer();
     const config = createConfig({
+      target: { folderTemplate: "{actorFallbackPrefix}{actor}/{number}", fileTemplate: "{number}" },
       naming: {
-        folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
-        fileTemplate: "{number}",
         actorFallbackToStudio: true,
         censoredStyle: "",
       },
@@ -158,7 +153,7 @@ describe("FileOrganizer naming rules", () => {
         actors: ["Actor A"],
         studio: "Studio A",
       }),
-      config,
+      ...config,
     );
     expect(explicitActorPlan.outputDir).toBe(expectedOutputPath("Actor A", "ABC-123"));
 
@@ -168,7 +163,7 @@ describe("FileOrganizer naming rules", () => {
         actors: [],
         studio: "Studio A",
       }),
-      config,
+      ...config,
     );
     expect(studioFallbackPlan.outputDir).toBe(expectedOutputPath("片商：Studio A", "ABC-123"));
 
@@ -185,7 +180,7 @@ describe("FileOrganizer naming rules", () => {
         publisher: "Seller A",
         website: Website.FC2,
       }),
-      config,
+      ...config,
     );
     expect(sellerFallbackPlan.outputDir).toBe(expectedOutputPath("卖家：Seller A", "FC2-123456"));
 
@@ -201,7 +196,7 @@ describe("FileOrganizer naming rules", () => {
         studio: "PPV Seller",
         website: Website.FC2,
       }),
-      config,
+      ...config,
     );
     expect(fc2PpvFallbackPlan.outputDir).toBe(expectedOutputPath("卖家：PPV Seller", "FC2-PPV-789012"));
 
@@ -211,7 +206,7 @@ describe("FileOrganizer naming rules", () => {
         actors: [],
         publisher: "Publisher Only",
       }),
-      config,
+      ...config,
     );
     expect(publisherOnlyPlan.outputDir).toBe(expectedOutputPath("Unknown", "ABC-123"));
 
@@ -221,9 +216,9 @@ describe("FileOrganizer naming rules", () => {
         actors: [],
         studio: "Studio A",
       }),
-      createConfig({
+      ...createConfig({
+        target: { folderTemplate: "{actorFallbackPrefix}{actor}/{number}" },
         naming: {
-          folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
           actorFallbackToStudio: false,
           censoredStyle: "",
         },
@@ -246,10 +241,9 @@ describe("FileOrganizer naming rules", () => {
         actors: ["Actor A"],
         release_date: "2026-04-08",
       }),
-      createConfig({
+      ...createConfig({
+        target: { folderTemplate: "{actor}/[{date}][{number}] {title}", fileTemplate: "{number} {actor} {title}" },
         naming: {
-          folderTemplate: "{actor}/[{date}][{number}] {title}",
-          fileTemplate: "{number} {actor} {title}",
           folderNameMax: 255,
           fileNameMax: 255,
           censoredStyle: "",
@@ -275,9 +269,9 @@ describe("FileOrganizer naming rules", () => {
       createCrawlerData({
         number: "XYZ-999",
       }),
-      createConfig({
+      ...createConfig({
+        target: { fileTemplate: "{number}" },
         naming: {
-          fileTemplate: "{number}",
           partStyle: "DISC",
         },
       }),
@@ -298,9 +292,9 @@ describe("FileOrganizer naming rules", () => {
       createCrawlerData({
         number: "XYZ-999",
       }),
-      createConfig({
+      ...createConfig({
+        target: { fileTemplate: "{number}" },
         naming: {
-          fileTemplate: "{number}",
           partStyle: "DISC",
         },
       }),
@@ -313,7 +307,7 @@ describe("FileOrganizer naming rules", () => {
   it("builds preview rows from the shared naming logic", () => {
     const organizer = new FileOrganizer();
     const previews = organizer.buildNamingPreview(
-      createConfig({
+      ...createConfig({
         naming: {
           cnwordStyle: "-SUB",
           umrStyle: "-UMR",
@@ -327,10 +321,9 @@ describe("FileOrganizer naming rules", () => {
     expect(previews.find((item) => item.sample === "multiActor")?.folder).toContain("等演员");
 
     const fallbackPreviews = organizer.buildNamingPreview(
-      createConfig({
+      ...createConfig({
+        target: { folderTemplate: "{actorFallbackPrefix}{actor}/{number}", fileTemplate: "{number}{originaltitle}" },
         naming: {
-          folderTemplate: "{actorFallbackPrefix}{actor}/{number}",
-          fileTemplate: "{number}{originaltitle}",
           actorFallbackToStudio: true,
           censoredStyle: "",
         },
@@ -340,12 +333,14 @@ describe("FileOrganizer naming rules", () => {
     expect(fallbackPreviews.find((item) => item.sample === "standard")?.file).toBe("ABC-123Sample Original Title.mp4");
 
     const expandedPreviews = organizer.buildNamingPreview(
-      createConfig({
-        naming: {
+      ...createConfig({
+        target: {
           folderTemplate:
             "{letters}/{number}/{firstActor}/{series}/{year} {director} {runtime} {definition} {filename}",
           fileTemplate:
             "{rawNumber} {allActors} {release} {firstLetter} {4K} {cnword} {censorshipType} {score} {outline} {publisher} {website}",
+        },
+        naming: {
           cnwordStyle: "-SUB",
           censoredStyle: "",
           folderNameMax: 255,
@@ -375,10 +370,8 @@ describe("FileOrganizer naming rules", () => {
       createCrawlerData({
         number: "XYZ-999",
       }),
-      createConfig({
-        naming: {
-          fileTemplate: "{number}",
-        },
+      ...createConfig({
+        target: { fileTemplate: "{number}" },
       }),
     );
 
@@ -393,9 +386,9 @@ describe("FileOrganizer naming rules", () => {
       createCrawlerData({
         number: "ABF-252",
       }),
-      createConfig({
+      ...createConfig({
+        target: { fileTemplate: "{number}" },
         naming: {
-          fileTemplate: "{number}",
           censoredStyle: "",
         },
       }),
@@ -404,86 +397,26 @@ describe("FileOrganizer naming rules", () => {
     expect(parse(plan.targetVideoPath).base).toBe("ABF-252-C.mp4");
   });
 
-  it("keeps video and NFO basenames aligned across move and rename modes", () => {
-    const cases = [
-      {
-        config: createConfig({
-          naming: {
-            folderTemplate: "{number}",
-            fileTemplate: "{number}",
-          },
-          behavior: {
-            successFileMove: true,
-            successFileRename: false,
-          },
-        }),
-        fileInfo: createFileInfo({
-          filePath: "/input/raw-source.mp4",
-          fileName: "raw-source",
-        }),
-        crawlerData: createCrawlerData({
-          number: "XYZ-999",
-        }),
-        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
-          expect(parse(plan.targetVideoPath).base).toBe("raw-source.mp4");
-          expect(parse(plan.nfoPath).base).toBe("raw-source.nfo");
-        },
-      },
-      {
-        config: createConfig({
-          naming: {
-            folderTemplate: "{number}",
-            fileTemplate: "{number}",
-          },
-          behavior: {
-            successFileMove: false,
-            successFileRename: false,
-          },
-        }),
-        fileInfo: createFileInfo({
-          filePath: join(resolve("/input"), "original-name.mp4"),
-          fileName: "original-name",
-        }),
-        crawlerData: createCrawlerData({
-          number: "XYZ-999",
-        }),
-        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
-          expect(plan.outputDir).toBe(resolve("/input"));
-          expect(plan.targetVideoPath).toBe(join(resolve("/input"), "original-name.mp4"));
-          expect(plan.nfoPath).toBe(join(resolve("/input"), "original-name.nfo"));
-        },
-      },
-      {
-        config: createConfig({
-          naming: {
-            folderTemplate: "{number}",
-            fileTemplate: "{number}",
-          },
-          behavior: {
-            successFileMove: false,
-            successFileRename: true,
-          },
-        }),
-        fileInfo: createFileInfo({
-          filePath: join(resolve("/input"), "original-name.mp4"),
-          fileName: "original-name",
-        }),
-        crawlerData: createCrawlerData({
-          number: "XYZ-999",
-        }),
-        assert: (plan: ReturnType<FileOrganizer["plan"]>) => {
-          expect(plan.outputDir).toBe(resolve("/input"));
-          expect(plan.targetVideoPath).toBe(join(resolve("/input"), "XYZ-999-CEN.mp4"));
-          expect(plan.nfoPath).toBe(join(resolve("/input"), "XYZ-999-CEN.nfo"));
-        },
-      },
-    ];
-
+  it("keeps video and NFO basenames aligned for moved and in-place libraries", () => {
     const organizer = new FileOrganizer();
+    const source = createFileInfo({ filePath: join(resolve("/input"), "raw-source.mp4"), fileName: "raw-source" });
+    const data = createCrawlerData({ number: "XYZ-999" });
 
-    for (const { config, fileInfo, crawlerData, assert } of cases) {
-      assert(organizer.plan(fileInfo, crawlerData, config));
-    }
+    const kept = organizer.plan(
+      source,
+      data,
+      ...createConfig({ target: { folderTemplate: "{number}", fileTemplate: "{filename}" } }),
+    );
+    expect(kept.targetVideoPath).toBe(expectedOutputPath("XYZ-999-CEN", "raw-source.mp4"));
+    expect(parse(kept.nfoPath).base).toBe("raw-source.nfo");
+
+    const inPlace = organizer.plan(source, data, ...createConfig({ target: { placement: "inPlace", outputPath: "" } }));
+    expect(inPlace).toMatchObject({
+      mode: "preserve",
+      outputDir: resolve("/input"),
+      targetVideoPath: source.filePath,
+      nfoPath: join(resolve("/input"), "raw-source.nfo"),
+    });
   });
 
   it("identifies generated FC2 sidecars and builds paths from the shared movie base name", () => {
@@ -534,10 +467,9 @@ describe("FileOrganizer naming rules", () => {
         title_zh: "中文标题",
         actors: ["Actor A"],
       }),
-      createConfig({
+      ...createConfig({
+        target: { folderTemplate: "{actor}/{originaltitle}", fileTemplate: "{number} {originaltitle}" },
         naming: {
-          folderTemplate: "{actor}/{originaltitle}",
-          fileTemplate: "{number} {originaltitle}",
           censoredStyle: "",
         },
       }),
@@ -572,11 +504,13 @@ describe("FileOrganizer naming rules", () => {
         plot: "Original plot",
         plot_zh: "中文简介",
       }),
-      createConfig({
-        naming: {
+      ...createConfig({
+        target: {
           folderTemplate:
             "{letters}/{number}/{firstActor}/{series}/{year} {director} {runtime} {definition} {filename}",
           fileTemplate: "{number} {allActors} {release} {firstLetter} {4K} {cnword} {censorshipType} {score} {outline}",
+        },
+        naming: {
           cnwordStyle: "-SUB",
           censoredStyle: "",
           folderNameMax: 255,
@@ -591,28 +525,39 @@ describe("FileOrganizer naming rules", () => {
     expect(parse(plan.targetVideoPath).name).toBe("ABC-123-SUB Actor A Actor B 2024-01-02 A 4K -SUB 有码 4.5 中文简介");
   });
 
-  it("does not nest a folder template when the output directory is the source directory", () => {
+  it("places media by the library's placement: transfers, links, or metadata beside the untouched source", () => {
     const organizer = new FileOrganizer();
-    const sourceDir = resolve("/media/Actor/Movie");
-    const plan = organizer.plan(
-      createFileInfo({
-        filePath: join(sourceDir, "ABC-123.mp4"),
-        fileName: "ABC-123",
-      }),
-      createCrawlerData({
-        number: "ABC-123",
-        actors: ["Actor"],
-        title: "Movie",
-      }),
-      createConfig({
-        behavior: { successFileMove: true },
-        naming: { folderTemplate: "{actor}/{title}", fileTemplate: "{number}", censoredStyle: "" },
-      }),
-      undefined,
-      { outputDirectory: sourceDir },
-    );
+    const source = createFileInfo({ filePath: join(resolve("/input"), "raw-source.mp4"), fileName: "raw-source" });
+    const data = createCrawlerData({ number: "XYZ-999", actors: ["Actor"] });
+    const folder = expectedOutputPath("Actor", "XYZ-999-CEN");
+    const plan = (placement: PlacementMode) => organizer.plan(source, data, ...createConfig({ target: { placement } }));
 
-    expect(plan.outputDir).toBe(sourceDir);
-    expect(plan.targetVideoPath).toBe(join(sourceDir, "ABC-123.mp4"));
+    for (const transfer of ["move", "hardlink", "copy"] as const) {
+      expect(plan(transfer)).toMatchObject({
+        mode: "move",
+        transfer,
+        targetVideoPath: join(folder, "XYZ-999-CEN.mp4"),
+      });
+    }
+    expect(plan("symlink")).toMatchObject({
+      mode: "preserve",
+      targetVideoPath: source.filePath,
+      link: { kind: "symlink", path: join(folder, "XYZ-999-CEN.mp4") },
+      nfoPath: join(folder, "XYZ-999-CEN.nfo"),
+    });
+    expect(plan("strm").link).toEqual({ kind: "strm", path: join(folder, "XYZ-999-CEN.strm") });
+    expect(plan("metadataOnly")).toMatchObject({
+      mode: "preserve",
+      targetVideoPath: source.filePath,
+      metadataDir: folder,
+    });
+    expect(plan("metadataOnly").link).toBeUndefined();
+    expect(() =>
+      organizer.plan(
+        source,
+        data,
+        ...createConfig({ target: { placement: "symlink", outputPath: resolve("/input") } }),
+      ),
+    ).toThrow("cannot be the same as or contain");
   });
 });

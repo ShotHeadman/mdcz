@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
+import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   type ActorImageService,
@@ -25,10 +26,8 @@ import type {
   NfoWriteResponse,
   PosterCropSaveInput,
   PosterCropSessionResponse,
-  ScrapeConfirmUncensoredInput,
   ScrapeHistoryResponse,
   ScrapeLiveRunsResponse,
-  ScrapePendingUncensoredConfirmationResponse,
   ScrapeRerunDirectoryInput,
   ScrapeResultDetailResponse,
   ScrapeRunSnapshotDto,
@@ -55,6 +54,8 @@ export interface ScrapeServiceResources {
 }
 
 export class ScrapeService {
+  /** Set by the automation service so new pending entries reach the next notification. */
+  onPending?: (count: number) => void;
   private readonly nfoAdapter: ServerNfoAdapter;
   private readonly posterCropAdapter: ServerPosterCropAdapter;
   private readonly networkClient: NetworkClient;
@@ -107,7 +108,20 @@ export class ScrapeService {
         persistence: {
           scrapeRuns: state.repositories.scrapeRuns,
           library: state.repositories.library,
+          libraries: state.repositories.mediaLibraries,
+          pending: state.repositories.pending,
           mediaRoots: this.mediaRoots,
+        },
+        onPublished: (directories, configuration) =>
+          void notifyMediaServersOfPublish(
+            this.networkClient,
+            configuration,
+            directories,
+            runtimeLoggerService.getLogger("MediaServerNotify"),
+          ),
+        onPending: (count) => {
+          this.onPending?.(count);
+          this.taskEvents.invalidate("pending");
         },
         recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
         getConfiguration: async () => await this.config.get(),
@@ -176,8 +190,13 @@ export class ScrapeService {
             startedAt: snapshot.task.startedAt,
             completedAt: snapshot.task.completedAt,
             error: snapshot.task.error,
+            counts: {
+              success: summary?.successCount ?? 0,
+              failed: summary?.failedCount ?? 0,
+              skipped: summary?.skippedCount ?? 0,
+            },
           });
-          this.taskEvents.invalidate("scrape-history", "pending-confirmation");
+          this.taskEvents.invalidate("scrape-history", "pending");
         },
         onError: async (runId, error) => {
           runtimeLoggerService.getLogger(`scrape:${runId}`).error(`Scrape execution failed: ${toErrorMessage(error)}`);
@@ -199,10 +218,6 @@ export class ScrapeService {
 
   async liveRuns(): Promise<ScrapeLiveRunsResponse> {
     return await (await this.runner()).liveRuns();
-  }
-
-  async pendingUncensoredConfirmation(): Promise<ScrapePendingUncensoredConfirmationResponse> {
-    return await (await this.runner()).pendingUncensoredConfirmation();
   }
 
   async history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse> {
@@ -250,14 +265,6 @@ export class ScrapeService {
     return result.snapshot;
   }
 
-  async confirmUncensored(input: ScrapeConfirmUncensoredInput) {
-    try {
-      return await (await this.runner()).confirmUncensored(input);
-    } finally {
-      this.taskEvents.invalidate("scrape-history", "pending-confirmation", "scrape-live");
-    }
-  }
-
   async nfoRead(input: NfoReadInput): Promise<NfoReadResponse> {
     return await this.nfoAdapter.read(input);
   }
@@ -286,7 +293,7 @@ export class ScrapeService {
     );
     if (!file) throw new Error("Library file not found");
     state.repositories.library.removeFile(file.id);
-    this.taskEvents.invalidate("scrape-history", "pending-confirmation");
+    this.taskEvents.invalidate("scrape-history");
     return { ok: true, ...target };
   }
 

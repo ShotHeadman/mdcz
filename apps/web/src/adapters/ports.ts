@@ -7,7 +7,6 @@ import type {
   ScrapeActionPort,
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
-import { resolveBatchRescrapeOutput } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
 import {
@@ -15,7 +14,12 @@ import {
   selectMaintenanceSessionId,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import { runScrapeRequest, selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import {
+  runScrapeRequest,
+  selectScrapeSnapshot,
+  selectScrapeTaskId,
+  useScrapeStore,
+} from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc } from "../client";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 
@@ -186,16 +190,13 @@ export const createWebDetailPort = (): DetailActionPort => ({
 });
 
 export const createWebScrapeActionPort = (): ScrapeActionPort => ({
-  rescrapeByUrl: async (targets, manualUrl) => {
+  rescrape: async (targets, source) => {
     const refs = targets.map((target) => target.ref);
-    const first = refs[0];
-    if (!first) throw new Error(getT().web.selectFileToScrape);
+    if (!refs[0]) throw new Error(getT().web.selectFileToScrape);
+    const libraryId = selectScrapeSnapshot(useScrapeStore.getState())?.task.libraryId;
+    if (!libraryId) throw new Error(getT().workbench.noLibraries);
     await runScrapeRequest(async () =>
-      api.scrape.start(
-        refs.length === 1
-          ? { executionMode: "single", refs, manualUrl }
-          : { executionMode: "batch", refs, ...resolveBatchRescrapeOutput(targets), manualUrl },
-      ),
+      api.scrape.start({ executionMode: refs.length === 1 ? "single" : "batch", libraryId, refs, ...source }),
     );
     requestScrapeLiveRunsRefresh();
   },
@@ -248,16 +249,10 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       await api.maintenance.discardSession(sessionId ? { sessionId } : undefined);
       useMaintenanceStore.getState().reset();
     },
-    preview: async (refs, presetId: MaintenancePresetId, targetDir) => {
+    preview: async (refs, presetId: MaintenancePresetId, libraryId) => {
       const rootId = refs[0]?.rootId ?? "";
       if (!rootId) throw new Error(getT().web.selectFileToMaintain);
-      const output = targetDir ? await api.mediaRoots.prepareOutputDirectory({ hostPath: targetDir }) : undefined;
-      const { sessionId } = await api.maintenance.start({
-        rootId,
-        presetId,
-        refs,
-        ...(output ? { outputRootId: output.id, outputRelativeDirectory: output.relativeDirectory } : {}),
-      });
+      const { sessionId } = await api.maintenance.start({ rootId, presetId, refs, libraryId });
       applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
       return { sessionId };
     },

@@ -4,7 +4,6 @@ import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
-  buildUncensoredConfirmationItems,
   MaintenanceWorkbenchAdapter,
   ScrapeWorkbenchAdapter,
   type SharedWorkbenchPorts,
@@ -16,7 +15,7 @@ import {
 } from "@mdcz/views/adapters";
 import { confirmDialog } from "@mdcz/views/common";
 import { getT, useT } from "@mdcz/views/i18n";
-import { ScrapeStartErrorDialog, UncensoredConfirmDialog, type UncensoredConfirmSelection } from "@mdcz/views/scrape";
+import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
 import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import {
   runScrapeRequest,
@@ -28,13 +27,13 @@ import {
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
-import { requestPendingUncensoredConfirmationRefresh, requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
+import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
@@ -46,15 +45,11 @@ export const Route = createFileRoute("/workbench")({
 });
 
 const createWebSetupPort = (): WorkbenchSetupPort => ({
-  browseDirectory: async (_kind, currentPath) => {
+  browseDirectory: async (currentPath) => {
     return currentPath || null;
   },
   isServer: true,
-  suggestDirectory: async ({ kind, path }) =>
-    await api.serverPaths.suggest({
-      path,
-      intent: kind === "scan" ? "workbench-scan" : "workbench-output",
-    }),
+  suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
   cancelCandidates: async (scanId) => {
     await api.scans.cancelCandidates({ scanId });
   },
@@ -78,19 +73,14 @@ function WorkbenchPage() {
   const t = useT();
   const search = Route.useSearch();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const ports = useMemo<SharedWorkbenchPorts>(() => createWebWorkbenchPorts(), []);
   const setupPort = useMemo(() => createWebSetupPort(), []);
-  const [uncensoredDialogOpen, setUncensoredDialogOpen] = useState(false);
   const [startError, setStartError] = useState<unknown>(null);
-  const { hydrationState, clearUncensoredConfirmation, refreshError } = useWorkbenchTaskStore(
-    useShallow((state) => ({
-      hydrationState: state.hydrationState,
-      clearUncensoredConfirmation: state.clearUncensoredConfirmation,
-      refreshError: state.refreshError,
-    })),
-  );
+  const refreshError = useWorkbenchTaskStore((state) => state.refreshError);
   const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
   const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: queryKeys.config.current, retry: false });
+  const librariesQ = useQuery({ queryFn: () => api.libraries.list(), queryKey: queryKeys.libraries.all, retry: false });
 
   const { isScraping, results } = useScrapeStore(
     useShallow((state) => ({
@@ -120,24 +110,23 @@ function WorkbenchPage() {
     }
   }, [sessionSnapshot.workbenchMode, setWorkbenchMode, workbenchMode]);
 
-  useEffect(() => {
-    if (hydrationState.shouldOpenUncensoredDialog) {
-      setUncensoredDialogOpen(true);
-    }
-  }, [hydrationState.shouldOpenUncensoredDialog]);
-
-  const handleStartDirectory = async (source: DirectorySource, targetDir: string, presetId: MaintenancePresetId) => {
+  const handleStartDirectory = async (
+    source: DirectorySource,
+    libraryId: string | undefined,
+    presetId: MaintenancePresetId,
+  ) => {
     try {
       if (workbenchMode === "maintenance") {
         if (isScraping) throw new Error(t.web.stopScrapeFirst);
         changeMaintenancePreset(presetId);
         useMaintenanceStore.getState().setPending(true);
-        await api.maintenance.start({ source, targetDir, presetId });
+        await api.maintenance.start({ source, libraryId, presetId });
         useMaintenanceStore.getState().setSnapshot(await api.maintenance.getActiveSession());
       } else {
+        if (!libraryId) throw new Error(t.workbench.noLibraries);
         activateNewScrapeTask();
         await runScrapeRequest(async () => {
-          await api.scrape.start({ executionMode: "batch", source, targetDir });
+          await api.scrape.start({ executionMode: "batch", libraryId, source });
           requestScrapeLiveRunsRefresh();
         });
       }
@@ -148,16 +137,14 @@ function WorkbenchPage() {
     }
   };
 
-  const handleStartSelectedScrape = async (candidates: MediaCandidate[], targetDir: string) => {
+  const handleStartSelectedScrape = async (candidates: MediaCandidate[], libraryId: string) => {
     try {
       activateNewScrapeTask();
       await runScrapeRequest(async () => {
-        const outputRoot = await api.mediaRoots.prepareOutputDirectory({ hostPath: targetDir });
         await api.scrape.start({
           refs: candidates.map((candidate) => candidate.ref),
           executionMode: "batch",
-          outputRootId: outputRoot.id,
-          outputRelativeDirectory: outputRoot.relativeDirectory,
+          libraryId,
         });
         requestScrapeLiveRunsRefresh();
       });
@@ -171,12 +158,12 @@ function WorkbenchPage() {
   const handleStartSelectedMaintenance = async (
     candidates: MediaCandidate[],
     presetId: MaintenancePresetId,
-    targetDir?: string,
+    libraryId?: string,
   ) => {
     await startMaintenanceFlow({
       candidates,
       presetId,
-      targetDir,
+      libraryId,
       port: ports.maintenance,
       isScraping,
       setWorkbenchMode,
@@ -260,16 +247,6 @@ function WorkbenchPage() {
     }
   };
 
-  const handleConfirmUncensored = async (selections: UncensoredConfirmSelection[]) => {
-    await api.scrape.confirmUncensored({
-      items: buildUncensoredConfirmationItems(hydrationState.ambiguousUncensoredItems, selections),
-    });
-    clearUncensoredConfirmation();
-    requestScrapeLiveRunsRefresh();
-    requestPendingUncensoredConfirmationRefresh();
-    toast.success(t.web.updatedUncensoredTypes);
-  };
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {refreshError ? <ErrorBanner>{t.web.taskRefreshFailed(refreshError)}</ErrorBanner> : null}
@@ -278,7 +255,9 @@ function WorkbenchPage() {
           <WorkbenchSetupAdapter
             mode={workbenchMode}
             config={configQ.data}
-            configLoading={configQ.isLoading}
+            configLoading={configQ.isLoading || librariesQ.isLoading}
+            libraries={librariesQ.data?.libraries}
+            onManageLibraries={() => void navigate({ to: "/libraries" })}
             port={setupPort}
             onStartDirectory={handleStartDirectory}
             onStartScrape={handleStartSelectedScrape}
@@ -299,12 +278,6 @@ function WorkbenchPage() {
         )}
       </div>
       <ScrapeStartErrorDialog error={startError} onClose={() => setStartError(null)} />
-      <UncensoredConfirmDialog
-        open={uncensoredDialogOpen && hydrationState.ambiguousUncensoredItems.length > 0}
-        items={hydrationState.ambiguousUncensoredItems}
-        onOpenChange={setUncensoredDialogOpen}
-        onConfirm={handleConfirmUncensored}
-      />
     </div>
   );
 }

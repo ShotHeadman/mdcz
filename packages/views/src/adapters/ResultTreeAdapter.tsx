@@ -105,6 +105,16 @@ function buildMenuContent(
     void port.openNfo(nfoPath);
   };
 
+  const handleRescrapeByNumber = async () => {
+    activateNewScrapeTask();
+    try {
+      await port.rescrape(groupedTargets, { unpin: true });
+      toast.success(t.scrape.launch.selection);
+    } catch (error) {
+      toast.error(toErrorMessage(error, t.scrape.rescrapeFailed));
+    }
+  };
+
   const handleManualUrlRescrape = () => {
     onManualUrlRescrape({
       videoPaths: groupedVideoPaths,
@@ -146,6 +156,7 @@ function buildMenuContent(
           <Link2 className="h-3.5 w-3.5" />
         </ContextMenuShortcut>
       </ContextMenuItem>
+      <ContextMenuItem onClick={handleRescrapeByNumber}>{t.scrape.rescrapeByNumber}</ContextMenuItem>
       <ContextMenuSeparator />
       {port.removeRecord && (
         <ContextMenuItem onClick={handleRemove} className="text-destructive focus:text-destructive">
@@ -249,7 +260,7 @@ export function ResultTreeAdapter({
       onManualUrlSubmit={async (target, manualUrl) => {
         activateNewScrapeTask();
         try {
-          await port.rescrapeByUrl(target.targets, manualUrl);
+          await port.rescrape(target.targets, { manualUrl });
           toast.success(t.scrape.launch.manualUrl);
         } catch (error) {
           toast.error(toErrorMessage(error, t.scrape.rescrapeByUrlFailed));

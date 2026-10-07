@@ -50,10 +50,6 @@ describe("createServerActorSourceProvider", () => {
         personOverviewSources: ["official"],
         personImageSources: ["local"],
       },
-      paths: {
-        ...defaultConfiguration.paths,
-        mediaPath: "",
-      },
     });
 
     const result = await provider.lookup(configuration, { name: "Actor A" });

@@ -1,3 +1,4 @@
+import type { AmbiguousCandidate } from "@mdcz/shared/pending";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import { isAbortError } from "../scrape/utils/abort";
 
@@ -7,7 +8,13 @@ export class SiteError extends Error {
   constructor(
     readonly reason: FailureReason,
     message: string,
-    readonly options: { httpStatus?: number; retryAfterMs?: number; cause?: unknown } = {},
+    readonly options: {
+      httpStatus?: number;
+      retryAfterMs?: number;
+      cause?: unknown;
+      /** The works an `ambiguous` search listed. */
+      candidates?: AmbiguousCandidate[];
+    } = {},
   ) {
     super(message, { cause: options.cause });
   }

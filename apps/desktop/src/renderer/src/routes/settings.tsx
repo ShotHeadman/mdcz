@@ -38,7 +38,6 @@ const createSettingsServices = (queryClient: QueryClient): SettingsServices => (
     await ipc.app.openWatermarkDirectory();
     return undefined;
   },
-  previewNaming: ipc.config.previewNaming,
   probeSiteConnectivity: ipc.crawler.probeSiteConnectivity,
   relaunchApp: async () => {
     await ipc.app.relaunch();

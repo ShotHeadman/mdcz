@@ -68,35 +68,6 @@ describe("ActorImageService", () => {
     await expect(readFile(join(root, ".cache", "index.json"), "utf8")).rejects.toThrow();
   });
 
-  it("resolves relative actor photo folders under mediaPath", async () => {
-    const { cacheRoot } = await createActorLibrary();
-    const mediaPath = await createTempDir();
-    const actorLibraryDir = join(mediaPath, "actor-library");
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      paths: {
-        ...defaultConfiguration.paths,
-        mediaPath,
-        actorPhotoFolder: "actor-library",
-      },
-    });
-    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
-    const manualPath = join(actorLibraryDir, "Actor Relative.jpg");
-
-    await mkdir(actorLibraryDir, { recursive: true });
-    await writeFile(manualPath, "manual", "utf8");
-
-    const resolved = await service.resolveLocalImage(config, ["Actor Relative"]);
-    const index = JSON.parse(await readFile(join(cacheRoot, "index.json"), "utf8")) as {
-      actors: Record<string, { publicFileName: string }>;
-    };
-
-    expect(resolved).toBe(manualPath);
-    expect(index.actors.actorrelative).toMatchObject({
-      publicFileName: "Actor Relative.jpg",
-    });
-  });
-
   it("materializes actor images for movie NFOs and leaves missing actors empty", async () => {
     const { root } = await createActorLibrary();
     const movieDir = join(root, "Movie");
@@ -161,13 +132,7 @@ describe("ActorImageService", () => {
   it("caches remote actor images into the internal cache and materializes them for movie NFOs", async () => {
     const { root, cacheRoot } = await createActorLibrary();
     const movieDir = join(root, "Movie");
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      paths: {
-        ...defaultConfiguration.paths,
-        mediaPath: root,
-      },
-    });
+    const config = defaultConfiguration;
     const validPngBytes = await readValidPngBytes();
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
@@ -220,13 +185,7 @@ describe("ActorImageService", () => {
 
   it("does not cache invalid remote actor image responses", async () => {
     const { root, cacheRoot } = await createActorLibrary();
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      paths: {
-        ...defaultConfiguration.paths,
-        mediaPath: root,
-      },
-    });
+    const config = defaultConfiguration;
     const networkClient = {
       getContent: vi.fn(async () => Buffer.from("<html>blocked</html>", "utf8")),
     };
@@ -251,13 +210,7 @@ describe("ActorImageService", () => {
   it("retries actor source lookup after a crawler-provided photo fails to cache", async () => {
     const { root } = await createActorLibrary();
     const movieDir = join(root, "Movie");
-    const config = configurationSchema.parse({
-      ...defaultConfiguration,
-      paths: {
-        ...defaultConfiguration.paths,
-        mediaPath: root,
-      },
-    });
+    const config = defaultConfiguration;
     const validPngBytes = await readValidPngBytes();
     const networkClient = {
       getContent: vi.fn(async (url: string) => {

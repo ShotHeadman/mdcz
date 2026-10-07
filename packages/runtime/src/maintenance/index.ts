@@ -6,6 +6,7 @@ export * from "./coordinator";
 export * from "./diffCrawlerData";
 export * from "./diffPaths";
 export * from "./LocalScanService";
+export * from "./libraryTarget";
 export type {
   MaintenanceRuntimeApplyEntryInput,
   MaintenanceRuntimeApplyResult,

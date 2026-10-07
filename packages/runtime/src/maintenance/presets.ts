@@ -31,10 +31,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
         keepSceneImages: true,
         keepTrailer: true,
       },
-      behavior: {
-        successFileMove: false,
-        successFileRename: false,
-      },
     },
   },
   remerge: {
@@ -42,24 +38,14 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
     dataSource: "stored",
     output: "write",
     assetPolicy: "preserve",
-    configOverrides: {
-      behavior: {
-        successFileMove: false,
-        successFileRename: false,
-      },
-    },
+    configOverrides: {},
   },
   local_organize: {
     id: "local_organize",
     dataSource: "local",
     output: "move",
     assetPolicy: "preserve",
-    configOverrides: {
-      behavior: {
-        successFileMove: true,
-        successFileRename: true,
-      },
-    },
+    configOverrides: {},
   },
   rebuild_all: {
     id: "rebuild_all",
@@ -73,10 +59,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
         keepFanart: false,
         keepSceneImages: false,
         keepTrailer: false,
-      },
-      behavior: {
-        successFileMove: true,
-        successFileRename: true,
       },
     },
   },

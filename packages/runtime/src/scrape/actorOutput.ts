@@ -32,7 +32,6 @@ export interface RuntimeActorImageService {
       movieDir: string;
       actors: string[];
       actorProfiles?: ActorProfile[];
-      actorPhotoBaseDir?: string;
       actorSourceProvider?: RuntimeActorSourceProvider;
       sourceHints?: RuntimeActorSourceHint[];
       signal?: AbortSignal;

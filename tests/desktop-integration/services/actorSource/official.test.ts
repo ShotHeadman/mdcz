@@ -155,15 +155,14 @@ describe("OfficialActorSource", () => {
     });
 
     const provider = new ActorSourceProvider({
-      registry: new ActorSourceRegistry([new LocalActorSource(), createOfficialSource(networkClient)]),
+      registry: new ActorSourceRegistry([
+        new LocalActorSource({ listLibraryDirectories: async () => [root] }),
+        createOfficialSource(networkClient),
+      ]),
     });
 
     const result = await provider.lookup(
       createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: root,
-        },
         personSync: {
           ...defaultConfiguration.personSync,
           personOverviewSources: ["official"],
@@ -396,15 +395,14 @@ describe("OfficialActorSource", () => {
     }));
 
     const provider = new ActorSourceProvider({
-      registry: new ActorSourceRegistry([new LocalActorSource(), createOfficialSource(networkClient)]),
+      registry: new ActorSourceRegistry([
+        new LocalActorSource({ listLibraryDirectories: async () => [root] }),
+        createOfficialSource(networkClient),
+      ]),
     });
 
     const result = await provider.lookup(
       createConfig({
-        paths: {
-          ...defaultConfiguration.paths,
-          mediaPath: root,
-        },
         personSync: {
           ...defaultConfiguration.personSync,
           personImageSources: ["official", "local"],

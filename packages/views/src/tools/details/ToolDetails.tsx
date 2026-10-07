@@ -1,5 +1,6 @@
 import type { MediaRootDto, RootBrowserEntryDto, ToolId } from "@mdcz/shared";
 import { Website } from "@mdcz/shared/enums";
+import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import {
   Badge,
@@ -15,7 +16,7 @@ import {
   SelectValue,
 } from "@mdcz/ui";
 import { FolderOpen } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useT } from "../../i18n";
 import { ToolField as Field, ToolShell } from "../ToolScaffold";
 
@@ -37,15 +38,23 @@ export interface ToolRunState {
 export interface SingleFileScraperDetailProps {
   browserEntries: RootBrowserEntryDto[];
   roots: MediaRootDto[];
+  libraries: MediaLibraryDto[];
   state?: ToolRunState;
   onRootChange?: (rootId: string) => void;
-  onRun: (input: { rootId: string; relativePath: string; manualUrl?: string }) => void;
+  onRun: (input: {
+    libraryId: string;
+    rootId: string;
+    relativePath: string;
+    manualUrl?: string;
+    unpin?: boolean;
+  }) => void;
   workbenchLink?: React.ReactNode;
 }
 
 export function SingleFileScraperDetail({
   browserEntries,
   roots,
+  libraries,
   state,
   onRootChange,
   onRun,
@@ -55,6 +64,10 @@ export function SingleFileScraperDetail({
   const [rootId, setRootId] = useState("");
   const [relativePath, setRelativePath] = useState("");
   const [manualUrl, setManualUrl] = useState("");
+  const [chosenLibraryId, setLibraryId] = useState("");
+  const [unpin, setUnpin] = useState(false);
+  const unpinId = useId();
+  const libraryId = chosenLibraryId || libraries[0]?.id || "";
   const enabledRoots = roots;
   const files = browserEntries.filter((entry) => entry.type === "file");
 
@@ -87,6 +100,23 @@ export function SingleFileScraperDetail({
             placeholder={t.tools.manualUrlPlaceholder}
           />
         </Field>
+        <Field label={t.tools.library}>
+          <select
+            className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
+            value={libraryId}
+            onChange={(event) => setLibraryId(event.target.value)}
+          >
+            {libraries.map((library) => (
+              <option key={library.id} value={library.id}>
+                {library.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="flex items-center gap-2 self-end pb-2 text-sm text-muted-foreground">
+          <Checkbox id={unpinId} checked={unpin} onCheckedChange={(checked) => setUnpin(checked === true)} />
+          <label htmlFor={unpinId}>{t.tools.unpin}</label>
+        </div>
       </div>
       <Field label={t.tools.relativePath}>
         <Input
@@ -118,8 +148,16 @@ export function SingleFileScraperDetail({
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          disabled={!rootId || !relativePath.trim() || state?.pending}
-          onClick={() => onRun({ rootId, relativePath: relativePath.trim(), manualUrl: manualUrl.trim() || undefined })}
+          disabled={!rootId || !libraryId || !relativePath.trim() || state?.pending}
+          onClick={() =>
+            onRun({
+              libraryId,
+              rootId,
+              relativePath: relativePath.trim(),
+              manualUrl: manualUrl.trim() || undefined,
+              ...(unpin ? { unpin } : {}),
+            })
+          }
         >
           {t.tools.startSingleFileScrape}
         </Button>

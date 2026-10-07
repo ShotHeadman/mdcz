@@ -112,10 +112,7 @@ const createFixture = async () => {
     }),
     runtime,
   });
-  vi.spyOn(configManager, "getValidated").mockResolvedValue({
-    ...defaultConfiguration,
-    paths: { ...defaultConfiguration.paths, mediaPath: directory },
-  });
+  vi.spyOn(configManager, "getValidated").mockResolvedValue(defaultConfiguration);
   fixtureCleanups.push(async () => {
     await service.shutdown();
     await persistenceService.close();

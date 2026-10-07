@@ -18,11 +18,11 @@ import { ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
 
 export const hasWorkbenchOutput = (input: {
-  mediaRootCount: number;
+  libraryCount: number;
   output?: { fileCount: number; totalBytes: number; rootPath: string | null } | null;
   recentCount: number;
 }): boolean =>
-  input.mediaRootCount > 0 ||
+  input.libraryCount > 0 ||
   Boolean(input.output?.rootPath) ||
   (input.output?.fileCount ?? 0) > 0 ||
   (input.output?.totalBytes ?? 0) > 0 ||
@@ -33,7 +33,7 @@ export function OverviewPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionDto | null>(null);
-  const setupQ = useQuery({ queryKey: queryKeys.setup.status, queryFn: () => api.setup.status(), retry: false });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
   const overviewQ = useQuery({
     queryKey: queryKeys.overview.summary,
     queryFn: () => api.overview.summary(),
@@ -43,7 +43,7 @@ export function OverviewPage() {
   const output = overviewQ.data?.output;
   const recent = overviewQ.data?.recentAcquisitions ?? [];
   const configured = hasWorkbenchOutput({
-    mediaRootCount: setupQ.data?.mediaRootCount ?? 0,
+    libraryCount: librariesQ.data?.libraries.length ?? 0,
     output,
     recentCount: recent.length,
   });
@@ -57,10 +57,10 @@ export function OverviewPage() {
             data={output}
             hasConfiguredOutput={configured}
             isError={overviewQ.isError}
-            isLoading={setupQ.isLoading || overviewQ.isLoading}
-            labels={{ startAction: t.web.goToWorkbench, setupAction: t.web.goToSettings }}
+            isLoading={librariesQ.isLoading || overviewQ.isLoading}
+            labels={{ startAction: t.web.goToWorkbench, setupAction: t.libraries.createFirst }}
             onSetup={() => {
-              void navigate({ to: "/settings" });
+              void navigate({ to: "/libraries" });
             }}
             onStart={() => {
               void navigate({ to: "/workbench" });

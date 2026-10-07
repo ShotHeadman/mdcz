@@ -1,6 +1,7 @@
 import { parse } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type { CrawlerData, FileInfo, NamingPreviewSampleId, NfoLocalState } from "@mdcz/shared/types";
 import { classifyMovie, type MovieClassification } from "../utils/movieClassification";
 import { buildSafeFileName, buildSafePath } from "../utils/path";
@@ -292,7 +293,13 @@ export const NAMING_PREVIEW_SAMPLES: Array<{
 ];
 
 export class NamingEngine {
-  buildLayout(fileInfo: FileInfo, data: CrawlerData, config: Configuration, localState?: NfoLocalState): NamingLayout {
+  buildLayout(
+    fileInfo: FileInfo,
+    data: CrawlerData,
+    config: Configuration,
+    target: Pick<PublicationTarget, "placement" | "folderTemplate" | "fileTemplate">,
+    localState?: NfoLocalState,
+  ): NamingLayout {
     const title = data.title_zh?.trim() || data.title;
     const originaltitle = data.original_title?.trim() || data.title.trim();
     const actorTemplateValue = pickActorTemplateValue(config, data.actors ?? [], data);
@@ -345,11 +352,11 @@ export class NamingEngine {
 
     const sourceVideo = parse(fileInfo.filePath);
     const folderRelativePath = truncatePathSegments(
-      buildSafePath(config.naming.folderTemplate, templateData),
+      buildSafePath(target.folderTemplate, templateData),
       config.naming.folderNameMax,
     );
     const fileBaseName = truncateSegment(
-      buildSafeFileName(config.naming.fileTemplate, templateData) || styledNumber,
+      buildSafeFileName(target.fileTemplate, templateData) || styledNumber,
       config.naming.fileNameMax,
     );
     const sourceBaseName = parse(sourceVideo.base).name;
@@ -357,10 +364,10 @@ export class NamingEngine {
       fileInfo.part && sourceBaseName.endsWith(fileInfo.part.suffix)
         ? sourceBaseName.slice(0, -fileInfo.part.suffix.length)
         : sourceBaseName;
-    const targetVideoFileName = config.behavior.successFileRename
-      ? `${fileBaseName}${partSuffix}${fileInfo.extension}`
-      : sourceVideo.base;
-    const nfoFileName = `${config.behavior.successFileRename || config.behavior.metadataOnly ? fileBaseName : nfoBaseName}.nfo`;
+    // In place, the video keeps its name and the NFO follows it; every other placement names its output by template.
+    const renamed = target.placement !== "inPlace";
+    const targetVideoFileName = renamed ? `${fileBaseName}${partSuffix}${fileInfo.extension}` : sourceVideo.base;
+    const nfoFileName = `${renamed ? fileBaseName : nfoBaseName}.nfo`;
 
     return {
       folderRelativePath,

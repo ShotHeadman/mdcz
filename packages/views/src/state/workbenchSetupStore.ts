@@ -15,7 +15,7 @@ interface WorkbenchSetupState {
   committedPlanKey: string | null;
   warnings: { count: number; paths: string[] };
   setRecursive: (recursive: boolean) => void;
-  targetDir: string;
+  libraryId: string;
   candidates: MediaCandidate[];
   selectedPaths: string[];
   scanStatus: WorkbenchSetupScanStatus;
@@ -23,7 +23,7 @@ interface WorkbenchSetupState {
   supportedExtensions: string[];
 
   setScanDir: (scanDir: string) => void;
-  setTargetDir: (targetDir: string) => void;
+  setLibraryId: (libraryId: string) => void;
   beginScan: () => void;
   applyScanResult: (
     planKey: string,
@@ -52,7 +52,7 @@ export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set, get) => 
   committedPlanKey: null,
   warnings: { count: 0, paths: [] },
   setRecursive: (recursive) => set({ recursive, scanStatus: "idle" }),
-  targetDir: "",
+  libraryId: "",
   candidates: [],
   selectedPaths: [],
   scanStatus: "idle",
@@ -74,7 +74,7 @@ export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set, get) => 
           },
     ),
 
-  setTargetDir: (targetDir) => set({ targetDir }),
+  setLibraryId: (libraryId) => set({ libraryId }),
 
   beginScan: () =>
     set({

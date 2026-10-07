@@ -3,34 +3,21 @@ import type { ScrapeLiveRunsResponse } from "@mdcz/shared/serverDtos";
 import { applyMaintenanceSessionSnapshot } from "@mdcz/views/state/maintenanceStore";
 import { createRefreshCoordinator } from "@mdcz/views/state/refreshCoordinator";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api, subscribeTaskNotifications } from "../client";
-import {
-  applyPendingUncensoredConfirmation,
-  applyScrapeLiveRunsSnapshot,
-  readScrapeRunsSnapshot,
-} from "../taskHydration";
+import { queryKeys } from "../lib/queryKeys";
+import { applyScrapeLiveRunsSnapshot, readScrapeRunsSnapshot } from "../taskHydration";
 
 const FAST_POLL_INTERVAL_MS = 2_000;
 const HEARTBEAT_TIMEOUT_MS = 60_000;
 const LIVENESS_CHECK_INTERVAL_MS = 2_000;
 
 let requestLiveRunsFromUi: (() => void) | null = null;
-let requestPendingUncensoredFromUi: (() => void) | null = null;
 
 /** Used by Web scrape mutations after their acknowledgement; it never applies mutation state. */
 export const requestScrapeLiveRunsRefresh = (): void => {
   requestLiveRunsFromUi?.();
-};
-
-export const requestPendingUncensoredConfirmationRefresh = (): void => {
-  requestPendingUncensoredFromUi?.();
-};
-
-export const hydratePendingUncensoredConfirmation = async (): Promise<void> => {
-  const response = await api.scrape.pendingUncensoredConfirmation();
-  const store = useWorkbenchTaskStore.getState();
-  store.setHydrationState(applyPendingUncensoredConfirmation(response, store.hydrationState));
 };
 
 export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
@@ -38,14 +25,14 @@ export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
 };
 
 export const useWebTaskSync = (): void => {
+  const queryClient = useQueryClient();
   useEffect(() => {
     let closed = false;
     let connectionOpen = false;
     let lastDispatchAt = Date.now();
     let fastPollingTimer: ReturnType<typeof setInterval> | null = null;
-    const refreshErrors: Record<"maintenance" | "pending" | "scrape", string | null> = {
+    const refreshErrors: Record<"maintenance" | "scrape", string | null> = {
       maintenance: null,
-      pending: null,
       scrape: null,
     };
     const updateRefreshError = (source: keyof typeof refreshErrors, error: unknown | null): void => {
@@ -90,11 +77,8 @@ export const useWebTaskSync = (): void => {
     const refreshMaintenanceSession = (): void => {
       void maintenanceCoordinator.request();
     };
-    const refreshPendingUncensored = (): void => {
-      void hydratePendingUncensoredConfirmation().then(
-        () => updateRefreshError("pending", null),
-        (error) => updateRefreshError("pending", error),
-      );
+    const refreshPending = (): void => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pending.all });
     };
     const startFastPolling = (): void => {
       refreshLiveRuns();
@@ -110,10 +94,8 @@ export const useWebTaskSync = (): void => {
     };
 
     requestLiveRunsFromUi = refreshLiveRuns;
-    requestPendingUncensoredFromUi = refreshPendingUncensored;
 
     refreshLiveRuns();
-    refreshPendingUncensored();
     refreshMaintenanceSession();
 
     const unsubscribe = subscribeTaskNotifications({
@@ -138,12 +120,12 @@ export const useWebTaskSync = (): void => {
         if (payload.resources.includes("ready")) {
           refreshLiveRuns();
           refreshMaintenanceSession();
-          refreshPendingUncensored();
+          refreshPending();
           return;
         }
         if (payload.resources.includes("scrape-live")) refreshLiveRuns();
         if (payload.resources.includes("maintenance")) refreshMaintenanceSession();
-        if (payload.resources.includes("pending-confirmation")) refreshPendingUncensored();
+        if (payload.resources.includes("pending")) refreshPending();
       },
     });
     const livenessTimer = setInterval(() => {
@@ -155,12 +137,11 @@ export const useWebTaskSync = (): void => {
       coordinator.dispose();
       maintenanceCoordinator.dispose();
       if (requestLiveRunsFromUi === refreshLiveRuns) requestLiveRunsFromUi = null;
-      if (requestPendingUncensoredFromUi === refreshPendingUncensored) requestPendingUncensoredFromUi = null;
       clearInterval(livenessTimer);
       stopFastPolling();
       unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 };
 
 export const __webTaskSyncTestHooks = {

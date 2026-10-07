@@ -7,7 +7,6 @@ import type {
   TranslateTestResponse,
 } from "@mdcz/shared/serverDtos";
 import type { SiteHealth } from "@mdcz/shared/siteResults";
-import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { PathAutocompleteResult } from "../path";
 
@@ -63,7 +62,6 @@ export interface SettingsServices {
   decrementInFlightSaves: () => void;
   listCrawlerSites: () => Promise<{ sites: SettingsCrawlerSiteInfo[] }>;
   openWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryOpenResult | undefined>;
-  previewNaming: (config?: Partial<Configuration>) => Promise<{ items: NamingPreviewItem[] }>;
   probeSiteConnectivity: (site: Website) => Promise<SiteConnectivityProbeResponse>;
   relaunchApp: () => Promise<void>;
   resetConfig: (path?: string) => Promise<unknown>;

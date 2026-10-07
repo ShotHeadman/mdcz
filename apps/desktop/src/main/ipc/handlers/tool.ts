@@ -1,6 +1,5 @@
 import type { ServiceContainer } from "@main/container";
 import { type Configuration, configManager } from "@main/services/config";
-import { ActorPhotoFolderConfigurationError } from "@main/services/config/actorPhotoPath";
 import { loggerService } from "@main/services/LoggerService";
 import {
   checkConnection as checkEmbyConnection,
@@ -117,16 +116,8 @@ export const createToolHandlers = (
   const ensureJellyfinReady = () => ensureMediaServerReady("jellyfin", "Jellyfin");
   const ensureEmbyReady = () => ensureMediaServerReady("emby", "Emby");
 
-  const rethrowMediaServerError = (
-    error: unknown,
-    errorType: MediaServerErrorCtor,
-    options: { includeActorPhotoFolderError?: boolean } = {},
-  ): void => {
+  const rethrowMediaServerError = (error: unknown, errorType: MediaServerErrorCtor): void => {
     if (error instanceof errorType) {
-      throw createIpcError(error.code, error.message);
-    }
-
-    if (options.includeActorPhotoFolderError && error instanceof ActorPhotoFolderConfigurationError) {
       throw createIpcError(error.code, error.message);
     }
   };
@@ -148,7 +139,6 @@ export const createToolHandlers = (
     operation: string,
     options: MediaServerHandlerOptions,
     service: MediaServerRunner<PersonSyncResult>,
-    extra: { includeActorPhotoFolderError?: boolean } = {},
   ) =>
     t.procedure.input(toolMediaServerModeInputSchema).action(async ({ input }): Promise<PersonSyncResult> => {
       try {
@@ -160,7 +150,7 @@ export const createToolHandlers = (
         const configuration = await options.ensureReady();
         return await service.run(configuration, mode);
       } catch (error) {
-        rethrowMediaServerError(error, options.errorType, extra);
+        rethrowMediaServerError(error, options.errorType);
         return raiseHandlerError(operation, error);
       }
     });
@@ -195,7 +185,6 @@ export const createToolHandlers = (
       jellyfinHandlers.syncPhotoOperation,
       jellyfinHandlers,
       jellyfinHandlers.photoService,
-      { includeActorPhotoFolderError: true },
     ),
     [IpcChannel.Tool_JellyfinActorInfoSync]: createMediaServerSyncHandler(
       jellyfinHandlers.syncInfoOperation,
@@ -207,7 +196,6 @@ export const createToolHandlers = (
       embyHandlers.syncPhotoOperation,
       embyHandlers,
       embyHandlers.photoService,
-      { includeActorPhotoFolderError: true },
     ),
     [IpcChannel.Tool_EmbyActorInfoSync]: createMediaServerSyncHandler(
       embyHandlers.syncInfoOperation,

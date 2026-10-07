@@ -10,6 +10,7 @@ export const domain: Messages["domain"] = {
     timeout: "超时",
     empty_shell: "返回空白页面",
     not_found: "未找到",
+    ambiguous: "该番号下列出了多部作品",
     parse_error: "页面解析失败",
     http_error: "HTTP 错误",
     network_error: "连接失败",

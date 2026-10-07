@@ -1,6 +1,7 @@
-import { basename, dirname, extname, join, parse, relative, resolve } from "node:path";
-import { deterministicMediaRootId, isPathInside, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
+import { basename, dirname, extname, join, parse, resolve } from "node:path";
+import { deterministicMediaRootId, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
+import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
@@ -16,10 +17,10 @@ import { resolveLocalAssetReference, uniqueDefinedPaths } from "./localAssetRefe
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 type MetadataLocation = {
-  mediaPath: string;
-  metadataPath: string;
   registeredOutputs?: Map<string, { nfoPath?: string; assets?: DiscoveredAssets }>;
   inventory?: DirectoryInventory;
+  /** The scrape settings that read numbers out of file names; without them a repaired or ignored name parses differently than it was scraped. */
+  filenameRules?: Pick<Configuration["scrape"], "filenameIgnoreTokens" | "numberMappings">;
 };
 
 const fileExists = async (path: string, inventory: DirectoryInventory): Promise<boolean> => {
@@ -158,9 +159,7 @@ export class LocalScanService {
     this.logger.info(`Scanning directory: ${dirPath}`);
 
     const candidates = await listVideoFiles(dirPath, true, undefined, signal);
-    metadata ??= this.registeredOutputs
-      ? { mediaPath: "", metadataPath: "", registeredOutputs: await this.registeredOutputs(candidates) }
-      : undefined;
+    metadata ??= this.registeredOutputs ? { registeredOutputs: await this.registeredOutputs(candidates) } : undefined;
     const videoFiles = excludeGeneratedStrmPaths(
       candidates.filter((videoPath) => !isGeneratedSidecarVideo(videoPath)),
       (videoPath) => videoPath,
@@ -221,7 +220,7 @@ export class LocalScanService {
     throwIfAborted(signal);
     const uniqueFilePaths = [...new Set(filePaths.map((filePath) => filePath.trim()).filter(Boolean))];
     metadata ??= this.registeredOutputs
-      ? { mediaPath: "", metadataPath: "", registeredOutputs: await this.registeredOutputs(uniqueFilePaths) }
+      ? { registeredOutputs: await this.registeredOutputs(uniqueFilePaths) }
       : undefined;
     const entries: LocalScanEntry[] = [];
     const inventory = metadata?.inventory ?? new DirectoryInventory();
@@ -270,20 +269,18 @@ export class LocalScanService {
     metadata?: MetadataLocation,
     inventory = new DirectoryInventory(),
   ): Promise<LocalScanEntry> {
-    metadata ??= this.registeredOutputs
-      ? { mediaPath: "", metadataPath: "", registeredOutputs: await this.registeredOutputs([videoPath]) }
-      : undefined;
+    metadata ??= this.registeredOutputs ? { registeredOutputs: await this.registeredOutputs([videoPath]) } : undefined;
     throwIfAborted(signal);
-    const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath, { inventory });
+    const rules = metadata?.filenameRules;
+    const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath, {
+      inventory,
+      parsedFileInfo: rules && parseFileInfo(videoPath, rules.filenameIgnoreTokens, rules.numberMappings),
+    });
     const dir = dirname(videoPath);
 
     const registered = metadata?.registeredOutputs?.get(videoPath);
     const registeredPath = registered?.nfoPath;
-    const metadataDir = registeredPath
-      ? dirname(registeredPath)
-      : metadata?.metadataPath.trim() && metadata.mediaPath && isPathInside(metadata.mediaPath, dir)
-        ? resolve(metadata.metadataPath, relative(metadata.mediaPath, dir))
-        : dir;
+    const metadataDir = registeredPath ? dirname(registeredPath) : dir;
     const nfoPaths = registered
       ? [registered.nfoPath].filter((path) => path !== undefined)
       : await this.findNfos(metadataDir, fileInfo, inventory, signal);

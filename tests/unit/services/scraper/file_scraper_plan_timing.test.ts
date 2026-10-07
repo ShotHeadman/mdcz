@@ -12,7 +12,13 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { createFileScraper, mockConfigManager, prepareFile, resolveTestOutputPlan } from "../../../helpers/scraper";
+import {
+  createFileScraper,
+  mockConfigManager,
+  prepareFile,
+  resolveTestOutputPlan,
+  testPublicationTarget,
+} from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -47,11 +53,11 @@ describe("FileScraper plan timing", () => {
         downloadSceneImages: false,
         downloadTrailer: false,
       },
-      naming: {
-        ...defaultConfiguration.naming,
-        folderTemplate: "{number}-{title}",
-        fileTemplate: "{number}-{title}",
-      },
+      naming: { ...defaultConfiguration.naming, actorNameMax: 2 },
+    });
+    const target = testPublicationTarget(sourcePath, {
+      folderTemplate: "{number}-{title}",
+      fileTemplate: "{number}-{title}",
     });
     const aggregatedData = createCrawlerData();
     const translatedData = createCrawlerData({
@@ -96,10 +102,7 @@ describe("FileScraper plan timing", () => {
       },
     });
     const translateCrawlerData = vi.fn().mockResolvedValue({ data: translatedData, error: null });
-    let currentConfig = {
-      ...config,
-      paths: { ...config.paths, mediaPath: "/selected-output" },
-    };
+    let currentConfig = config;
     mockConfigManager(config);
     const scraper = createFileScraper({
       aggregationService: {
@@ -122,12 +125,13 @@ describe("FileScraper plan timing", () => {
     const preparation = await prepareFile(scraper, sourcePath, { fileIndex: 1, totalFiles: 1 }, undefined, {
       source: { rootId: "root", relativePath: "ABC-123.mp4" },
       roots: [{ id: "root", hostPath: directory.path }],
+      target,
     });
     expect(preparation.status).toBe("prepared");
     expect(downloadAll).not.toHaveBeenCalled();
     currentConfig = {
       ...currentConfig,
-      naming: { ...currentConfig.naming, fileTemplate: "changed-{number}" },
+      naming: { ...currentConfig.naming, actorNameMax: 5 },
     };
     if (preparation.status !== "prepared") throw new Error("Expected prepared scrape");
     const results = await scraper.executePreparedFiles(preparation.prepared);
@@ -143,11 +147,10 @@ describe("FileScraper plan timing", () => {
         number: "ABC-123",
       }),
       translatedData,
-      expect.objectContaining({ paths: expect.objectContaining({ mediaPath: "/selected-output" }) }),
+      expect.objectContaining({ naming: expect.objectContaining({ actorNameMax: 2 }) }),
+      target,
       undefined,
-      {
-        executionMode: "batch",
-      },
+      { versionLabel: undefined },
     );
     expect(downloadAll.mock.calls[0]?.[5]).toMatchObject({
       movieBaseName: "ABC-123",

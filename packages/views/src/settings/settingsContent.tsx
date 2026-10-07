@@ -1,7 +1,6 @@
-import { isSharedDirectoryMode } from "@mdcz/shared/assetNaming";
 import {
-  type Configuration,
   NFO_FIELD_OPTIONS,
+  NOTIFICATION_CHANNELS,
   OFFICIAL_SITE_URLS,
   TRANSLATION_FIELD_OPTIONS,
 } from "@mdcz/shared/config";
@@ -14,7 +13,6 @@ import {
   POSTER_TAG_BADGE_POSITION_OPTIONS,
   POSTER_TAG_BADGE_TYPE_OPTIONS,
 } from "@mdcz/shared/posterBadges";
-import type { NamingPreviewItem } from "@mdcz/shared/types";
 import {
   Button,
   Dialog,
@@ -26,10 +24,11 @@ import {
   DialogTitle,
   DialogTrigger,
   FormControl,
+  Input,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
 import {
@@ -55,7 +54,7 @@ import { useSettingsSectionMode } from "./SettingsSectionModeContext";
 import { useSettingsInFlightSaves, useSettingsNotifier, useSettingsServices } from "./SettingsServices";
 import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import { useHasRenderableFields } from "./sectionVisibility";
-import { AGGREGATION_PRIORITY_KEYS, getNestedValue, isRecord, unflattenConfig } from "./settingsRegistry";
+import { AGGREGATION_PRIORITY_KEYS, isRecord } from "./settingsRegistry";
 
 // ── Constants ──
 
@@ -68,37 +67,6 @@ const TAG_BADGE_IMAGE_RATIO_LABEL = `${POSTER_TAG_BADGE_ASPECT_WIDTH}:${POSTER_T
 
 const toEnumOptions = (labels: Record<string, string>): Array<{ value: string; label: string }> =>
   Object.entries(labels).map(([value, label]) => ({ value, label }));
-
-const NAMING_PREVIEW_FIELD_KEYS = [
-  "paths.mediaPath",
-  "paths.metadataPath",
-  "paths.successOutputFolder",
-  "paths.sceneImagesFolder",
-  "download.generateNfo",
-  "download.downloadThumb",
-  "download.downloadPoster",
-  "download.downloadFanart",
-  "download.downloadTrailer",
-  "naming.folderTemplate",
-  "naming.fileTemplate",
-  "naming.assetNamingMode",
-  "naming.actorNameMax",
-  "naming.actorNameMore",
-  "naming.actorFallbackToStudio",
-  "naming.releaseRule",
-  "naming.folderNameMax",
-  "naming.fileNameMax",
-  "naming.cnwordStyle",
-  "naming.umrStyle",
-  "naming.leakStyle",
-  "naming.uncensoredStyle",
-  "naming.censoredStyle",
-  "naming.partStyle",
-  "download.nfoNaming",
-  "download.downloadSceneImages",
-  "behavior.successFileMove",
-  "behavior.successFileRename",
-] as const;
 
 const ASSET_DOWNLOAD_FIELD_KEYS = [
   "download.downloadThumb",
@@ -119,8 +87,6 @@ const ASSET_DOWNLOAD_FIELD_KEYS = [
 ] as const;
 
 const NAMING_SECTION_FIELD_KEYS = [
-  "naming.folderTemplate",
-  "naming.fileTemplate",
   "naming.assetNamingMode",
   "naming.nfoTitleTemplate",
   "naming.actorNameMax",
@@ -137,18 +103,6 @@ const NAMING_SECTION_FIELD_KEYS = [
   "naming.partStyle",
   "titleRepair.enabled",
 ] as const;
-
-export function buildNamingPreviewConfig(values: Record<string, unknown>): Partial<Configuration> {
-  const flat: Record<string, unknown> = {};
-  for (const key of NAMING_PREVIEW_FIELD_KEYS) {
-    const value = values[key] ?? getNestedValue(values, key);
-    if (value !== undefined) {
-      flat[key] = value;
-    }
-  }
-
-  return unflattenConfig(flat) as Partial<Configuration>;
-}
 
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -216,19 +170,9 @@ export function useCrawlerSiteOptions(flatDefaults: Record<string, unknown>): st
 // ── Section renderers ──
 
 export function PathsSection() {
-  const services = useSettingsServices();
   return (
     <>
-      <PathFieldWrapper name="paths.mediaPath" isDirectory />
       <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" />
-      {services.isServer && (
-        <>
-          <BoolField name="watch.enabled" />
-          <NumberField name="watch.intervalMinutes" min={1} max={1440} />
-        </>
-      )}
-      <MediaOrganizeSection />
-      <MetadataExportSection />
       <PathFieldWrapper name="paths.actorPhotoFolder" isDirectory />
       <TextField name="paths.sceneImagesFolder" />
       <PathFieldWrapper name="paths.outputSummaryPath" isDirectory />
@@ -485,90 +429,9 @@ export function NfoSection() {
             }))}
             showBulkActions
           />
-          <BoolField name="download.keepNfo" />
         </>
       )}
     </>
-  );
-}
-
-function NamingPreview() {
-  const t = useT();
-  const services = useSettingsServices();
-  const form = useFormContext<FieldValues>();
-  const previewValues = useWatch({
-    control: form.control,
-    name: NAMING_PREVIEW_FIELD_KEYS,
-  }) as unknown[];
-  const [previews, setPreviews] = useState<NamingPreviewItem[]>([]);
-  const [previewError, setPreviewError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const previewConfig = useMemo(() => {
-    const flatValues: Record<string, unknown> = {};
-    for (const [index, key] of NAMING_PREVIEW_FIELD_KEYS.entries()) {
-      flatValues[key] = previewValues[index];
-    }
-    return buildNamingPreviewConfig(flatValues);
-  }, [previewValues]);
-  const previewConfigRef = useRef(previewConfig);
-  const previewConfigKey = useMemo(() => JSON.stringify(previewConfig), [previewConfig]);
-
-  useEffect(() => {
-    previewConfigRef.current = previewConfig;
-  }, [previewConfig]);
-
-  useEffect(() => {
-    const requestKey = previewConfigKey;
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setLoading(true);
-      try {
-        const result = await services.previewNaming(previewConfigRef.current as Partial<Configuration>);
-        if (!cancelled && requestKey === previewConfigKey) {
-          setPreviews(result.items);
-          setPreviewError("");
-        }
-      } catch (error) {
-        if (!cancelled && requestKey === previewConfigKey) {
-          setPreviews([]);
-          setPreviewError(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (!cancelled && requestKey === previewConfigKey) {
-          setLoading(false);
-        }
-      }
-    }, 120);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [previewConfigKey, services.previewNaming]);
-
-  return (
-    <div className="rounded-md border bg-muted/30 p-3">
-      <div className="mb-2 text-xs font-medium text-muted-foreground">{t.settings.namingPreview.title}</div>
-      <div className="space-y-2">
-        {previews.length === 0 && (
-          <div role={previewError ? "alert" : undefined} className="text-xs text-muted-foreground">
-            {loading ? t.settings.namingPreview.generating : previewError || t.settings.namingPreview.waiting}
-          </div>
-        )}
-        {previews.map((p) => (
-          <div key={p.sample} className="text-xs">
-            <span className="mr-2 inline-block min-w-[4em] text-muted-foreground">
-              {t.settings.namingPreviewSamples[p.sample]}
-            </span>
-            <div className="space-y-1 break-all font-mono">
-              <div>{t.settings.namingPreview.source(p.sourcePath)}</div>
-              <div>{t.settings.namingPreview.organized(p.mediaPath)}</div>
-              {p.metadataDir !== p.folder ? <div>{t.settings.namingPreview.metadataDir(p.metadataDir)}</div> : null}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -583,7 +446,7 @@ function TitleRepairSection() {
 
 type NamingTemplateHelpKind = "folder" | "file";
 
-function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
+export function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
   const t = useT();
   const help = t.settings.namingTemplateHelp;
   const label = help[kind];
@@ -647,15 +510,6 @@ export function NamingSection() {
   const t = useT();
   const sectionMode = useSettingsSectionMode();
   const hasRenderableFields = useHasRenderableFields(NAMING_SECTION_FIELD_KEYS);
-  const form = useFormContext<FieldValues>();
-  const folderTemplate = String(form.watch("naming.folderTemplate") ?? "");
-  const successFileMove = Boolean(form.watch("behavior.successFileMove"));
-  const sharedDirectoryMode = isSharedDirectoryMode({
-    metadataOnly: Boolean(form.watch("behavior.metadataOnly")),
-    successFileMove,
-    folderTemplate,
-    metadataPath: String(form.watch("paths.metadataPath") ?? ""),
-  });
 
   if (!hasRenderableFields) {
     return null;
@@ -663,19 +517,14 @@ export function NamingSection() {
 
   return (
     <>
-      <TextField name="naming.folderTemplate" labelAddon={<NamingTemplateHelp kind="folder" />} />
-      <TextField name="naming.fileTemplate" labelAddon={<NamingTemplateHelp kind="file" />} />
-      <EnumField name="naming.assetNamingMode" options={toEnumOptions(t.settings.options.assetNaming)} />
-      {sectionMode === "public" && sharedDirectoryMode && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-          {t.settings.sharedDirectoryNotice.lead}
-          <code>{`{actor}/{number}`}</code>
-          {t.settings.sharedDirectoryNotice.tail}
+      {sectionMode === "public" && (
+        <div className="rounded-md border border-border/70 bg-muted/50 p-3 text-xs text-muted-foreground">
+          {t.settings.templatesMovedNotice}
         </div>
       )}
+      <EnumField name="naming.assetNamingMode" options={toEnumOptions(t.settings.options.assetNaming)} />
       <TextField name="naming.nfoTitleTemplate" />
       <TitleRepairSection />
-      {sectionMode === "public" && <NamingPreview />}
       <NumberField name="naming.actorNameMax" min={1} max={20} />
       <TextField name="naming.actorNameMore" />
       <BoolField name="naming.actorFallbackToStudio" />
@@ -928,52 +777,79 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
   );
 }
 
-export function MediaOrganizeSection() {
+/** Downloader paths and notification channels; the server is the only host that receives callbacks. */
+export function AutomationSection() {
   const t = useT();
-  const form = useFormContext<FieldValues>();
-  const metadataOnly = Boolean(form.watch("behavior.metadataOnly"));
-  const move = Boolean(form.watch("behavior.successFileMove"));
-
   return (
     <>
-      {metadataOnly && (
-        <div className="mb-3 rounded-md border border-border/70 bg-muted/50 p-3 text-xs text-muted-foreground">
-          {t.settings.metadataOnlyNotice}
-        </div>
-      )}
-      <BoolField name="behavior.successFileMove" disabled={metadataOnly} />
-      <PathFieldWrapper name="paths.successOutputFolder" isDirectory disabled={!move || metadataOnly} />
-      <BoolField name="behavior.successFileRename" disabled={metadataOnly} />
+      <PathMappingsField />
+      <UrlField name="notifications.webhookUrl" />
+      <SecretField name="notifications.webhookSecret" />
+      <ChipArrayFieldWrapper
+        name="notifications.channels"
+        options={NOTIFICATION_CHANNELS.map((value) => ({ value, label: t.settings.notificationChannels[value] }))}
+      />
+      <SecretField name="notifications.telegramBotToken" />
+      <TextField name="notifications.telegramChatId" />
+      <UrlField name="notifications.barkUrl" placeholder="https://api.day.app/..." />
+      <UrlField name="notifications.ntfyUrl" placeholder="https://ntfy.sh/..." />
+      <SecretField name="notifications.ntfyToken" />
+      <BoolField name="notifications.dailyDigest" />
+      <NumberField name="notifications.digestHour" min={0} max={23} />
     </>
   );
 }
 
-export function MetadataExportSection() {
+function PathMappingsField() {
   const t = useT();
-  const form = useFormContext<FieldValues>();
-  const search = useOptionalSettingsSearch();
-  const metadataOnly = Boolean(form.watch("behavior.metadataOnly"));
-  const shouldMountChildren = shouldMountConditionalSettings(metadataOnly, search);
-
   return (
-    <>
-      <BoolField name="behavior.metadataOnly" />
-      {shouldMountChildren && (
-        <div className="space-y-4 pt-1 pl-4 border-l-2 border-border/50 animate-in fade-in duration-200">
-          <PathFieldWrapper
-            name="paths.metadataPath"
-            isDirectory
-            rules={{
-              validate: (value) => {
-                if (metadataOnly && !String(value ?? "").trim()) {
-                  return t.settings.metadataPathRequired;
-                }
-                return true;
-              },
-            }}
-          />
-        </div>
-      )}
-    </>
+    <BaseField name="automation.pathMappings" layout="vertical" commitMode="debounce">
+      {(field) => {
+        const mappings = Array.isArray(field.value) ? (field.value as Array<{ from: string; to: string }>) : [];
+        const update = (next: Array<{ from: string; to: string }>) => field.onChange(next);
+        return (
+          <div className="space-y-2">
+            {mappings.map((mapping, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <Input
+                  aria-label={t.settings.pathMappings.from}
+                  placeholder={t.settings.pathMappings.fromPlaceholder}
+                  value={mapping.from}
+                  onChange={(event) =>
+                    update(mappings.map((row, at) => (at === index ? { ...row, from: event.target.value } : row)))
+                  }
+                />
+                <span className="text-muted-foreground">→</span>
+                <Input
+                  aria-label={t.settings.pathMappings.to}
+                  placeholder={t.settings.pathMappings.toPlaceholder}
+                  value={mapping.to}
+                  onChange={(event) =>
+                    update(mappings.map((row, at) => (at === index ? { ...row, to: event.target.value } : row)))
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t.settings.pathMappings.remove}
+                  onClick={() => update(mappings.filter((_row, at) => at !== index))}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => update([...mappings, { from: "", to: "" }])}
+            >
+              {t.settings.pathMappings.add}
+            </Button>
+          </div>
+        );
+      }}
+    </BaseField>
   );
 }

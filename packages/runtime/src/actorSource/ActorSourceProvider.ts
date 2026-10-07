@@ -194,8 +194,6 @@ export class ActorSourceProvider {
       aliases: query.aliases ?? [],
       sourceHints: normalizeHintsForCache(query.sourceHints),
       requiredField: query.requiredField,
-      mediaPath: (configuration.paths.mediaPath ?? "").trim(),
-      successOutputFolder: (configuration.paths.successOutputFolder ?? "").trim(),
       actorPhotoFolder: (configuration.paths.actorPhotoFolder ?? "").trim(),
       personOverviewSources: configuration.personSync.personOverviewSources,
       personImageSources: configuration.personSync.personImageSources,

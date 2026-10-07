@@ -24,11 +24,9 @@ export const createDirectoryScope = (
     targetDir,
     excludeDirPaths: [
       ...new Set(
-        [
-          ...plan.excludeDirPaths,
-          configuration.behavior.metadataOnly ? configuration.paths.metadataPath.trim() : "",
-          ...(mode === "scrape" && targetDir !== source.scanDir ? [targetDir] : []),
-        ].filter(Boolean),
+        [...plan.excludeDirPaths, ...(mode === "scrape" && targetDir !== source.scanDir ? [targetDir] : [])].filter(
+          Boolean,
+        ),
       ),
     ],
   };

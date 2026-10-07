@@ -8,6 +8,7 @@ import type { FieldAnchor } from "./settingsRegistry";
 import { useToc } from "./TocContext";
 import {
   AdvancedTopLevelSection,
+  AutomationTopLevelSection,
   DownloadTopLevelSection,
   MediaServerTopLevelSection,
   NamingTopLevelSection,
@@ -52,6 +53,7 @@ export function SettingsForm({
           <NamingTopLevelSection />
           <DownloadTopLevelSection />
           <MediaServerTopLevelSection />
+          <AutomationTopLevelSection />
           <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
           <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>

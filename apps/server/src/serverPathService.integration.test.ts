@@ -2,8 +2,7 @@ import { mkdir, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
-import { createFakeConfig, createFakeMediaRoots } from "./serverPathService.testSupport";
-import { ServerPathService } from "./services/serverPathService";
+import { createServerPathService } from "./serverPathService.testSupport";
 
 describe("ServerPathService filesystem integration", () => {
   it("lists matching child directories without returning files or symlinks", async () => {
@@ -25,7 +24,7 @@ describe("ServerPathService filesystem integration", () => {
         symlinkCreated = false;
       }
 
-      const service = new ServerPathService(createFakeMediaRoots(directory.path), createFakeConfig(directory.path));
+      const service = createServerPathService(directory.path);
       const response = await service.suggest({ path: path.join(directory.path, "Mov") });
 
       expect(response.accessible).toBe(true);
@@ -46,7 +45,7 @@ describe("ServerPathService filesystem integration", () => {
     const directory = await createTempDirectory("server-path-root");
 
     try {
-      const service = new ServerPathService(createFakeMediaRoots(directory.path), createFakeConfig(directory.path));
+      const service = createServerPathService(directory.path);
       const response = await service.suggest({ path: "" });
 
       expect(response.accessible).toBe(true);

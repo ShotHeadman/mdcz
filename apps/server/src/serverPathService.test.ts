@@ -1,7 +1,7 @@
 import type { Dirent, Stats } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { createFakeConfig, createFakeMediaRoots } from "./serverPathService.testSupport";
-import { type ServerPathFs, ServerPathService } from "./services/serverPathService";
+import { createServerPathService } from "./serverPathService.testSupport";
+import type { ServerPathFs } from "./services/serverPathService";
 
 const fakeDirectoryStats = {
   isDirectory: () => true,
@@ -17,7 +17,7 @@ describe("ServerPathService", () => {
         throw new Error("permission denied");
       },
     };
-    const service = new ServerPathService(createFakeMediaRoots("/media"), createFakeConfig("/media"), {
+    const service = createServerPathService("/media", {
       fs,
       platform: "linux",
     });
@@ -50,7 +50,7 @@ describe("ServerPathService", () => {
       ),
       readdir: async () => entries,
     };
-    const service = new ServerPathService(createFakeMediaRoots("E:/Media"), createFakeConfig("E:/Media"), {
+    const service = createServerPathService("E:/Media", {
       fs,
       platform: "win32",
     });

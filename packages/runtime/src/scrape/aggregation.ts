@@ -1,5 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
+import type { AmbiguousCandidate } from "@mdcz/shared/pending";
 import type { SiteResult, SkipReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { toCrawlerErrorResult } from "../crawler/base/BaseCrawler";
@@ -9,6 +10,7 @@ import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { canonicalizeCrawlerDataActorAliases } from "./canonicalizeActorAliases";
 import { buildCrawlerOptions } from "./crawlerOptions";
 import { FieldAggregator, summarizeFailedSiteResults } from "./fieldAggregation";
+import { ScrapeFailureError } from "./scrapeFailure";
 import { type AdmissionReject, resolveSiteAdmission } from "./siteAdmission";
 import { applyTextRepair } from "./textRepair";
 import { createAbortError, throwIfAborted } from "./utils/abort";
@@ -35,6 +37,9 @@ export interface AggregationResult {
 
 export interface SiteCrawlResult extends SiteResult {
   data?: CrawlerData;
+  candidates?: AmbiguousCandidate[];
+  /** The detail page a manual-URL scrape read, which attributes the data to one work when a number names several. */
+  sourceUrl?: string;
 }
 
 export interface AggregationStats {
@@ -73,13 +78,15 @@ export const mergeSiteData = (
 
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
+type StopReason = Extract<SkipReason, "early_stop" | "global_timeout" | "ambiguous">;
+
 interface CrawlerExecutionContext {
   sites: Website[];
   number: string;
   perCrawlerTimeoutMs: number;
   signal: AbortSignal;
-  stop: (reason: Extract<SkipReason, "early_stop" | "global_timeout">) => void;
-  stopReason?: Extract<SkipReason, "early_stop" | "global_timeout">;
+  stop: (reason: StopReason) => void;
+  stopReason?: StopReason;
   fieldAggregator: FieldAggregator;
   manualScrape?: ManualScrapeOptions;
   results: SiteCrawlResult[];
@@ -233,7 +240,7 @@ export class AggregationService {
       await this.recordSiteResults?.(number, rejected);
       const message = summarizeFailedSiteResults(number, rejected);
       this.logger.warn(message);
-      throw new Error(message);
+      throw new ScrapeFailureError("not_found", message);
     }
 
     this.logger.info(`Aggregating ${number} from ${admitted.length} sites: ${admitted.join(", ")}`);
@@ -244,16 +251,30 @@ export class AggregationService {
     );
     const crawled = await this.executeCrawlers(admitted, number, fieldAggregator, manualScrape);
     throwIfAborted(this.signal);
-    if (deferred.length > 0 && !crawled.some((result) => result.status === "success")) {
+    const isAmbiguous = (result: { reason?: string }) => result.reason === "ambiguous";
+    if (deferred.length > 0 && !crawled.some((result) => result.status === "success" || isAmbiguous(result))) {
       this.logger.info(`${number} found on no admitted site; trying other content types: ${deferred.join(", ")}`);
       crawled.push(...(await this.executeCrawlers(deferred, number, fieldAggregator, manualScrape)));
       throwIfAborted(this.signal);
     } else {
+      const skipReason = crawled.some(isAmbiguous) ? "ambiguous" : "content_type";
       for (const site of deferred) {
-        const skipped: AdmissionReject = { site, status: "skipped", skipReason: "content_type", elapsedMs: 0 };
+        const skipped: AdmissionReject = { site, status: "skipped", skipReason, elapsedMs: 0 };
         reportSiteResult(skipped);
         rejected.push(skipped);
       }
+    }
+    const ambiguous = crawled.filter(isAmbiguous);
+    if (ambiguous.length > 0) {
+      // No site's answer can be attributed to one of the listed works, so none of their data is kept.
+      await this.recordSiteResults?.(number, [...crawled.map(({ data: _data, ...result }) => result), ...rejected]);
+      const message = `${number} names different works on ${ambiguous.map((result) => result.site).join(", ")}`;
+      this.logger.warn(message);
+      throw new ScrapeFailureError(
+        "ambiguous",
+        message,
+        ambiguous.flatMap((result) => result.candidates ?? []),
+      );
     }
     const siteResults = [...crawled, ...rejected];
     await this.recordSiteResults?.(number, siteResults);
@@ -273,7 +294,7 @@ export class AggregationService {
     if (successes.size === 0) {
       const message = summarizeFailedSiteResults(number, siteResults);
       this.logger.warn(message);
-      throw new Error(message);
+      throw new ScrapeFailureError("not_found", message);
     }
 
     const stats: AggregationStats = {
@@ -354,9 +375,13 @@ export class AggregationService {
       } finally {
         context.inFlightSites.delete(site);
       }
-      const { data: _data, ...reported } = result;
+      const { data: _data, candidates: _candidates, sourceUrl: _sourceUrl, ...reported } = result;
       reportSiteResult(reported);
       context.results.push(result);
+      if (result.reason === "ambiguous") {
+        context.stop("ambiguous");
+        continue;
+      }
       if (result.status !== "success" || !result.data || context.signal.aborted) {
         continue;
       }
@@ -406,6 +431,7 @@ export class AggregationService {
           site,
           status: "success",
           data: { ...result.data, website: result.data.website ?? site },
+          sourceUrl: options.detailUrl,
           elapsedMs,
         };
       }
@@ -416,7 +442,15 @@ export class AggregationService {
       const reason = budgetExceeded ? "timeout" : result.reason;
       const detail = budgetExceeded ? siteTimeoutController.signal.reason.message : result.error;
       this.logger.warn(`${site} failed for ${number}: ${reason}: ${detail} (${elapsedMs}ms)`);
-      return { site, status: "failed", reason, detail, httpStatus: result.httpStatus, elapsedMs };
+      return {
+        site,
+        status: "failed",
+        reason,
+        detail,
+        httpStatus: result.httpStatus,
+        elapsedMs,
+        ...(result.candidates ? { candidates: result.candidates } : {}),
+      };
     } finally {
       budget.dispose();
     }

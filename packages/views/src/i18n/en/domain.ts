@@ -13,6 +13,7 @@ export const domain = {
     timeout: "timed out",
     empty_shell: "returned an empty page",
     not_found: "not found",
+    ambiguous: "lists several works under this number",
     parse_error: "page could not be parsed",
     http_error: "HTTP error",
     network_error: "connection failed",

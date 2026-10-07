@@ -41,8 +41,11 @@ export const workbench = {
   includeSubdirs: "Include subdirectories",
   scanDirPlaceholder: "Select media directory to scan",
   loadingConfig: "Loading config…",
-  outputDirLabel: "Output Directory",
-  outputDirPlaceholder: "Select output directory",
+  libraryLabel: "Library",
+  libraryPlaceholder: "Choose a library",
+  manageLibraries: "Manage libraries",
+  noLibraries: "Create a library first: it decides where finished movies go and how videos get there.",
+  createLibrary: "Create library",
   inaccessiblePathsWarning: (count: number) => `Some paths are inaccessible; ${count} skipped`,
   selectVisibleFilesAriaLabel: "Select currently visible files",
   refreshFiles: "Refresh files",
@@ -66,10 +69,7 @@ export const workbench = {
   // Setup adapter
   cancelScanFailed: (error: string) => `Failed to cancel scan: ${error}`,
   selectScanDirFailed: (error: string) => `Failed to select scan directory: ${error}`,
-  selectOutputDirFailed: (error: string) => `Failed to select output directory: ${error}`,
   enterFullPath: "Please enter a full path",
 
   // Ports
-  selectFilesToScrape: "Please select files to scrape",
-  multiUrlSameDirOnly: "Multi-file scrape by URL only supports files in the same directory under the same media root",
 };

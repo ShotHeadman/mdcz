@@ -6,6 +6,7 @@ import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type AggregationResult, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
+import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import type { FastifyInstance } from "fastify";
 import { expect } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/harness/tempDirectory";
@@ -78,10 +79,16 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
     cacheRoot: join(paths.dataDir, "actor-image-cache"),
     networkClient,
   });
+  if (options.automationWebhook) {
+    await config.load();
+    await config.update({
+      notifications: {
+        webhookUrl: options.automationWebhook.url ?? "",
+        webhookSecret: options.automationWebhook.secret ?? "",
+      },
+    });
+  }
   const app = buildServer({
-    serviceOptions: {
-      automationWebhook: options.automationWebhook,
-    },
     webStaticDir: options.webStaticDir ?? false,
     resources: {
       networkClient,
@@ -95,7 +102,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       auth:
         options.environmentPassword === undefined
           ? undefined
-          : new AuthService(config.runtimePaths, options.environmentPassword),
+          : new AuthService(config.runtimePaths, persistence, options.environmentPassword),
       config,
       mediaRoots,
       persistence,
@@ -279,31 +286,33 @@ export const createTestAggregation = (
   },
 });
 
-export const syncMediaRootFromConfig = async (
+/** Creates a library over `sourcePath` (moving into `<sourcePath>/JAV_output` unless overridden). */
+export const createTestLibrary = async (
   fastify: ServerApp["fastify"],
   token: string,
-  hostPath: string,
-): Promise<string> => {
-  await fastify.inject({
+  sourcePath: string,
+  settings: Partial<MediaLibrarySettingsInput> = {},
+): Promise<{ libraryId: string; rootId: string }> => {
+  const headers = { authorization: `Bearer ${token}` };
+  const created = await fastify.inject({
     method: "POST",
-    url: "/trpc/config.update",
-    headers: { authorization: `Bearer ${token}` },
-    payload: { paths: { mediaPath: hostPath } },
+    url: "/trpc/libraries.create",
+    headers,
+    payload: {
+      name: "Library",
+      sourcePath,
+      outputPath: join(sourcePath, "JAV_output"),
+      placement: "move",
+      ...settings,
+    },
   });
-  const rootsResponse = await fastify.inject({
-    method: "GET",
-    url: "/trpc/mediaRoots.list",
-    headers: { authorization: `Bearer ${token}` },
-  });
+  expect(created.statusCode).toBe(200);
+  const rootsResponse = await fastify.inject({ method: "GET", url: "/trpc/mediaRoots.list", headers });
   const rootId = rootsResponse
     .json()
-    .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === hostPath)?.id;
-
-  if (!rootId) {
-    throw new Error("Expected paths.mediaPath to create an enabled media root");
-  }
-
-  return rootId;
+    .result.data.roots.find((rootDto: { hostPath: string }) => rootDto.hostPath === sourcePath)?.id;
+  if (!rootId) throw new Error("Expected the library source to be a media root");
+  return { libraryId: created.json().result.data.id, rootId };
 };
 
 export const releaseTestServer = async (app: ServerApp): Promise<void> => {

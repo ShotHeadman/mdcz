@@ -5,6 +5,7 @@ export * from "./emby";
 export * from "./errors";
 export * from "./infoSync";
 export * from "./jellyfin";
+export * from "./libraryNotify";
 export * from "./personSync";
 export * from "./photoSync";
 export * from "./planner";

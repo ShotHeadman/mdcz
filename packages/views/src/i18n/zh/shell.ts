@@ -6,6 +6,8 @@ export const shell: Messages["shell"] = {
     workbench: "工作台",
     tools: "工具",
     library: "媒体库",
+    libraries: "库配置",
+    pending: "待处理",
     settings: "设置",
     logs: "日志",
     about: "关于",

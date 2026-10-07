@@ -1,8 +1,10 @@
-import { copyFile, lstat, mkdir, open, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import type { PublicationFileSystem } from "./types";
 
 export const outputFileSystem: PublicationFileSystem = {
   copyFile,
+  link,
+  symlink: async (target, path) => await symlink(target, path, "file"),
   mkdir,
   readdir,
   rename,
