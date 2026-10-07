@@ -6,9 +6,10 @@ import { toCrawlerErrorResult } from "../crawler/base/BaseCrawler";
 import type { CrawlerProvider } from "../crawler/CrawlerProvider";
 import { type CrawlerBudget, reportSiteResult, runWithCrawlerSource, SiteError } from "../network";
 import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
+import { canonicalizeCrawlerDataActorAliases } from "./canonicalizeActorAliases";
 import { buildCrawlerOptions } from "./crawlerOptions";
 import { FieldAggregator, summarizeFailedSiteResults } from "./fieldAggregation";
-import { resolveSiteAdmission } from "./siteAdmission";
+import { type AdmissionReject, resolveSiteAdmission } from "./siteAdmission";
 import { applyTextRepair } from "./textRepair";
 import { createAbortError, throwIfAborted } from "./utils/abort";
 
@@ -53,6 +54,22 @@ export interface ManualScrapeOptions {
 export type CrawlerPort = Pick<CrawlerProvider, "crawl" | "getSiteHealth">;
 
 export type SiteResultSink = (number: string, results: readonly SiteCrawlResult[]) => Promise<void> | void;
+
+/** Final metadata from site data and config alone: no requests and no translation, so stored results re-merge offline. */
+export const mergeSiteData = (
+  siteData: ReadonlyMap<Website, CrawlerData>,
+  config: Configuration,
+): Pick<AggregationResult, "data" | "sources" | "imageAlternatives"> => {
+  const { data, sources, imageAlternatives } = new FieldAggregator(
+    config.aggregation.fieldPriorities,
+    config.aggregation.behavior,
+  ).aggregate(siteData);
+  return {
+    data: canonicalizeCrawlerDataActorAliases(applyTextRepair(data, config.titleRepair), config),
+    sources,
+    imageAlternatives,
+  };
+};
 
 const EARLY_STOP_IMAGE_FIELDS = ["thumb_url", "poster_url"] as const;
 
@@ -189,7 +206,7 @@ export class AggregationService {
 
   private async executeAggregation(number: string, manualScrape?: ManualScrapeOptions): Promise<AggregationResult> {
     const configuredSites = manualScrape ? [manualScrape.site] : [...new Set(this.config.scrape.sites)];
-    const { admitted, rejected } = resolveSiteAdmission({
+    const { admitted, deferred, rejected } = resolveSiteAdmission({
       number,
       configuredSites,
       credentials: { fantiaCookie: this.config.network.fantiaCookie, javdbCookie: this.config.network.javdbCookie },
@@ -212,7 +229,7 @@ export class AggregationService {
           .join(", ")}`,
       );
     }
-    if (admitted.length === 0) {
+    if (admitted.length === 0 && deferred.length === 0) {
       await this.recordSiteResults?.(number, rejected);
       const message = summarizeFailedSiteResults(number, rejected);
       this.logger.warn(message);
@@ -227,6 +244,17 @@ export class AggregationService {
     );
     const crawled = await this.executeCrawlers(admitted, number, fieldAggregator, manualScrape);
     throwIfAborted(this.signal);
+    if (deferred.length > 0 && !crawled.some((result) => result.status === "success")) {
+      this.logger.info(`${number} found on no admitted site; trying other content types: ${deferred.join(", ")}`);
+      crawled.push(...(await this.executeCrawlers(deferred, number, fieldAggregator, manualScrape)));
+      throwIfAborted(this.signal);
+    } else {
+      for (const site of deferred) {
+        const skipped: AdmissionReject = { site, status: "skipped", skipReason: "content_type", elapsedMs: 0 };
+        reportSiteResult(skipped);
+        rejected.push(skipped);
+      }
+    }
     const siteResults = [...crawled, ...rejected];
     await this.recordSiteResults?.(number, siteResults);
 
@@ -256,8 +284,7 @@ export class AggregationService {
       siteResults,
       totalElapsedMs,
     };
-    const { data: aggregatedData, sources, imageAlternatives } = fieldAggregator.aggregate(successes);
-    const data = applyTextRepair(aggregatedData, this.config.titleRepair);
+    const { data, sources, imageAlternatives } = mergeSiteData(successes, this.config);
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
         `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,

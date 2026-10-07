@@ -401,7 +401,7 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
 });
 
 describe("getDefaultMaintenanceFieldSelection", () => {
-  it("prefers old when only old has value, otherwise new", () => {
+  it("prefers old when only old has value, except for cleared translations, otherwise new", () => {
     const onlyOldDiff = createMaintenanceValueDiff({
       field: "plot",
       oldValue: "Existing outline",
@@ -409,6 +409,7 @@ describe("getDefaultMaintenanceFieldSelection", () => {
       changed: true,
     });
     expect(getDefaultMaintenanceFieldSelection(onlyOldDiff)).toBe("old");
+    expect(getDefaultMaintenanceFieldSelection({ ...onlyOldDiff, field: "title_zh" })).toBe("new");
 
     const onlyNewDiff = createMaintenanceValueDiff({
       field: "plot",

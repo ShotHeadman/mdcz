@@ -1,6 +1,7 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { CrawlerData, NfoLocalState } from "@mdcz/shared/types";
 import type { AggregationService, ManualScrapeOptions } from "./aggregation";
-import { canonicalizeCrawlerDataActorAliases } from "./canonicalizeActorAliases";
+import { publishMetadata } from "./publishMetadata";
 import type { TranslateService } from "./TranslateService";
 import { throwIfAborted } from "./utils/abort";
 
@@ -9,6 +10,8 @@ export const prepareOnlineMetadata = async (input: {
   configuration: Configuration;
   aggregationService: Pick<AggregationService, "aggregate">;
   translateService: Pick<TranslateService, "translateCrawlerData">;
+  published?: { crawlerData?: CrawlerData; localState?: NfoLocalState };
+  keepEdits: boolean;
   manualScrape?: ManualScrapeOptions;
   signal?: AbortSignal;
 }) => {
@@ -17,15 +20,14 @@ export const prepareOnlineMetadata = async (input: {
     signal: input.signal,
   });
   throwIfAborted(input.signal);
-  const translation = await input.translateService.translateCrawlerData(
-    aggregation.data,
-    input.configuration,
-    input.signal,
-  );
+  const publication = await publishMetadata({
+    data: aggregation.data,
+    published: input.published,
+    keepEdits: input.keepEdits,
+    configuration: input.configuration,
+    translateService: input.translateService,
+    signal: input.signal,
+  });
   throwIfAborted(input.signal);
-  return {
-    aggregation,
-    crawlerData: canonicalizeCrawlerDataActorAliases(translation.data, input.configuration),
-    translationError: translation.error,
-  };
+  return { aggregation, crawlerData: publication.data, translationError: publication.error };
 };

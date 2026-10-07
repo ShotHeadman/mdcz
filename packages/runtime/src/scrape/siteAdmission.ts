@@ -1,17 +1,15 @@
 import { Website } from "@mdcz/shared/enums";
 import type { SiteHealth, SiteResult } from "@mdcz/shared/siteResults";
 import { getCrawlerConstructor } from "../crawler/registry";
-import { isLikelyUncensoredNumber } from "./utils/movieClassification";
+import { type ContentType, classifyNumber, isLikelyUncensoredNumber } from "./utils/movieClassification";
 
 export type AdmissionReject = SiteResult & { status: "skipped" };
 
-type Fc2Role = "fc2_only" | "fc2_capable";
-
-const FC2_ROLE: Partial<Record<Website, Fc2Role>> = {
-  [Website.FC2]: "fc2_only",
-  [Website.FC2HUB]: "fc2_only",
-  [Website.PPVDATABANK]: "fc2_only",
-  [Website.JAVDB]: "fc2_capable",
+// An FC2 number carries a literal prefix; only the censored/uncensored guess can be wrong, so its sites stay in reserve.
+const FALLBACK_CONTENT_TYPE: Record<ContentType, ContentType | undefined> = {
+  censored: "uncensored",
+  uncensored: "censored",
+  fc2: undefined,
 };
 
 type Credential = "fantiaCookie" | "javdbCookie";
@@ -23,8 +21,6 @@ const CREDENTIAL_DEPENDENCIES: Partial<
   // JavDB serves FC2 and uncensored titles only to signed-in accounts; everything else stays public.
   [Website.JAVDB]: { credential: "javdbCookie", appliesTo: isLikelyUncensoredNumber },
 };
-
-const FC2_NUMBER_PATTERN = /^FC2[\s_-]*(?:PPV[\s_-]*)?\d+$/iu;
 
 export interface SiteAdmissionInput {
   number: string;
@@ -41,25 +37,27 @@ const skip = (
   extra: Pick<SiteResult, "reason" | "detail"> = {},
 ): AdmissionReject => ({ site, status: "skipped", skipReason, elapsedMs: 0, ...extra });
 
+/** Admitted sites run first; deferred sites serve only the fallback content type and run when every admitted site misses. */
 export function resolveSiteAdmission(input: SiteAdmissionInput): {
   admitted: Website[];
+  deferred: Website[];
   rejected: AdmissionReject[];
 } {
   const candidates = input.manualScrape ? [input.manualScrape.site] : [...new Set(input.configuredSites)];
-  const isFc2 = FC2_NUMBER_PATTERN.test(input.number.trim());
+  const number = input.number.trim();
+  const contentType = classifyNumber(number);
+  const fallbackType = FALLBACK_CONTENT_TYPE[contentType];
   const now = input.now ?? Date.now();
   const admitted: Website[] = [];
+  const deferred: Website[] = [];
   const rejected: AdmissionReject[] = [];
 
   for (const site of candidates) {
-    const role = FC2_ROLE[site];
-    const numberPattern = getCrawlerConstructor(site)?.numberPattern;
-    if (
-      !input.manualScrape &&
-      ((isFc2 && !role) ||
-        (!isFc2 && role === "fc2_only") ||
-        (numberPattern && !numberPattern.test(input.number.trim())))
-    ) {
+    const crawler = getCrawlerConstructor(site);
+    const serves = (type: ContentType) => crawler?.contentTypes?.includes(type) ?? false;
+    const matches = crawler?.numberPattern ? crawler.numberPattern.test(number) : serves(contentType);
+    const isDeferred = !matches && !input.manualScrape && fallbackType !== undefined && serves(fallbackType);
+    if (!matches && !input.manualScrape && !isDeferred) {
       rejected.push(skip(site, "number_mismatch"));
       continue;
     }
@@ -86,8 +84,8 @@ export function resolveSiteAdmission(input: SiteAdmissionInput): {
       continue;
     }
 
-    admitted.push(site);
+    (isDeferred ? deferred : admitted).push(site);
   }
 
-  return { admitted, rejected };
+  return { admitted, deferred, rejected };
 }

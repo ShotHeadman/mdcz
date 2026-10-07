@@ -117,6 +117,12 @@ export type AmazonPosterApplyResultItem = {
 
 export type BatchTranslateField = "title" | "plot";
 
+/**
+ * `all` translates the source text again even where a translation exists, e.g. after switching models; `restore`
+ * drops translations so the NFO shows the source text it keeps alongside.
+ */
+export type BatchTranslateMode = "untranslated" | "all" | "restore";
+
 export type BatchTranslateScanItem = {
   filePath: string;
   nfoPath: string;
@@ -138,6 +144,7 @@ export type BatchTranslateApplyResultItem = {
 };
 
 export type BatchTranslateApplyInput = {
+  mode: BatchTranslateMode;
   items?: BatchTranslateScanItem[];
   batchSize?: number;
 };

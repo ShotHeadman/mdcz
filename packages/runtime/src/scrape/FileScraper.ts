@@ -231,6 +231,7 @@ export class FileScraper {
     try {
       throwIfAborted(signal);
       const inspected = [];
+      let publishedData: CrawlerData | undefined;
       for (const member of members) {
         const { options, progress, fileInfo: parsedFileInfo } = member;
         if (!options.roots?.length) throw new Error("Scrape publication requires registered media roots");
@@ -277,6 +278,7 @@ export class FileScraper {
             registered[0] ??
             (selectedName ? path.join(directory, selectedName) : undefined);
           const snapshot = nfoPath ? await inventory.loadNfo(nfoPath) : undefined;
+          publishedData ??= snapshot?.crawlerData;
           localState = snapshot?.localState || localState ? { ...snapshot?.localState, ...localState } : undefined;
         }
         inspected.push({
@@ -299,6 +301,8 @@ export class FileScraper {
         configuration,
         aggregationService: this.deps.aggregationService,
         translateService: this.deps.translateService,
+        published: { crawlerData: publishedData, localState: inspected[0].localState },
+        keepEdits: true,
         manualScrape: options.manualScrape,
         signal,
       });

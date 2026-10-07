@@ -1,3 +1,4 @@
+import { toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateEngine } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -18,6 +19,9 @@ import { GenreTranslator } from "./translate/GenreTranslator";
 import { ensureTargetChinese, normalizeNewlines } from "./translate/shared";
 import { type LanguageTarget, type MachineTranslator, type TranslationMappingStore, toTarget } from "./translate/types";
 import { isAbortError, throwIfAborted } from "./utils/abort";
+
+/** Fields whose published translation is already decided; a present key with no value publishes the source text. */
+export type SettledTranslations = Partial<Record<"title" | "plot", string | undefined>>;
 
 export interface TranslateServiceOptions {
   logger?: RuntimeLogger;
@@ -67,9 +71,10 @@ export class TranslateService {
     data: CrawlerData,
     config: Configuration,
     signal?: AbortSignal,
+    settled: SettledTranslations = {},
   ): Promise<{ data: CrawlerData; error: string | null }> {
     if (!config.translate.enableTranslation) {
-      return { data, error: null };
+      return { data: { ...data, title_zh: settled.title, plot_zh: settled.plot }, error: null };
     }
 
     throwIfAborted(signal);
@@ -91,6 +96,7 @@ export class TranslateService {
       field: "title" | "plot",
       input: string | undefined,
     ): { source: string | null; translated: string | undefined } => {
+      if (field in settled) return { source: null, translated: settled[field] };
       const text = normalizeNewlines(input ?? "").trim();
       if (!text || !selectedFields.has(field)) return { source: null, translated: undefined };
       if (detectLanguage(text) === "zh") return { source: null, translated: ensureTargetChinese(text, target) };
@@ -148,7 +154,7 @@ export class TranslateService {
         ...data,
         title_zh,
         plot_zh,
-        actors: mappedActors,
+        actors: toUniqueActorNames(mappedActors),
         actor_profiles: mappedActorProfiles.length > 0 ? mappedActorProfiles : data.actor_profiles,
         genres: mappedGenres,
       },

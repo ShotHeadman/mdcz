@@ -399,11 +399,6 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Part style",
     description: "Keep the original suffix of multi-part videos, or rewrite it as CD / PART / DISC.",
   },
-  "aggregation.behavior.preferLongerPlot": {
-    label: "Prefer longer plot",
-    description: "When several sites provide a plot, prefer the most informative one.",
-    aliases: ["aggregation", "plot", "prefer longer"],
-  },
   "aggregation.behavior.maxSceneImages": {
     label: "Maximum scene images",
     description: "Upper limit of scene images kept after aggregation.",

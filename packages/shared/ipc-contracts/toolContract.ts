@@ -5,6 +5,7 @@ import type {
   AmazonPosterScanItem,
   BatchTranslateApplyInput,
   BatchTranslateApplyResultItem,
+  BatchTranslateMode,
   BatchTranslateScanItem,
   IpcProcedure,
   MediaServerConnectionCheckResult,
@@ -18,7 +19,10 @@ export type ToolIpcContract = {
     { items?: Array<{ nfoPath: string; amazonPosterUrl: string }> },
     { results: AmazonPosterApplyResultItem[] }
   >;
-  [IpcChannel.Tool_BatchTranslateScan]: IpcProcedure<{ directory?: string }, { items: BatchTranslateScanItem[] }>;
+  [IpcChannel.Tool_BatchTranslateScan]: IpcProcedure<
+    { directory?: string; mode: BatchTranslateMode },
+    { items: BatchTranslateScanItem[] }
+  >;
   [IpcChannel.Tool_BatchTranslateApply]: IpcProcedure<
     BatchTranslateApplyInput,
     { results: BatchTranslateApplyResultItem[] }

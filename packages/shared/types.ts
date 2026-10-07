@@ -20,10 +20,11 @@ export interface ActorProfile {
   cup_size?: string;
 }
 
+/** What reading the video file found; a value the file does not reveal stays unknown. */
 export interface VideoMeta {
-  durationSeconds: number;
-  width: number;
-  height: number;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
   bitrate?: number;
 }
 
@@ -31,6 +32,7 @@ export interface CrawlerData {
   title: string;
   /** Original crawler title retained when a configured title repair changes `title`. */
   original_title?: string;
+  /** Published translation of `title`; never produced by crawlers or the merge. */
   title_zh?: string;
   number: string;
   actors: string[];
@@ -43,6 +45,7 @@ export interface CrawlerData {
   publisher?: string;
   series?: string;
   plot?: string;
+  /** Published translation of `plot`; never produced by crawlers or the merge. */
   plot_zh?: string;
   release_date?: string;
   durationSeconds?: number;
@@ -118,9 +121,31 @@ export interface ScrapeResult {
 
 export type UncensoredChoice = "umr" | "leak" | "uncensored";
 
+/** NFO elements people edit by hand or in a media server, which MDCz fingerprints to recognize those edits. */
+export type NfoEditableField =
+  | "title"
+  | "originaltitle"
+  | "plot"
+  | "actor"
+  | "genre"
+  | "studio"
+  | "director"
+  | "publisher"
+  | "set"
+  | "premiered"
+  | "rating";
+
 export interface NfoLocalState {
   uncensoredChoice?: UncensoredChoice;
   tags?: string[];
+  /** `<lockedfields>` names set in Emby/Jellyfin; MDCz honors the ones it knows and writes them all back. */
+  lockedFields?: string[];
+  /** Fingerprints of the values MDCz last published in this NFO. */
+  published?: Partial<Record<NfoEditableField, string>>;
+  /** Fingerprints of the values someone changed since then; those values outrank site data. */
+  edits?: Partial<Record<NfoEditableField, string>>;
+  /** `<fileinfo>` as MDCz or the media server measured it; maintenance never reads the video, so it writes this back. */
+  fileinfo?: Record<string, unknown>;
 }
 
 export interface UncensoredConfirmResultItem {
@@ -167,7 +192,7 @@ export interface IpcError {
 
 // ── Maintenance Mode ──────────────────────────────────────────────
 
-export type MaintenancePresetId = "import_local" | "refresh_metadata" | "local_organize" | "rebuild_all";
+export type MaintenancePresetId = "import_local" | "refresh_metadata" | "remerge" | "local_organize" | "rebuild_all";
 /** Assets discovered on disk for an existing video. */
 export interface DiscoveredAssets {
   thumb?: string;
@@ -231,6 +256,8 @@ interface BaseFieldDiff {
   oldValue: unknown;
   newValue: unknown;
   changed: boolean;
+  /** The old value is an edit made after MDCz published the NFO, so it is kept unless the user picks the new one. */
+  userEdited?: boolean;
 }
 
 export interface ValueFieldDiff extends BaseFieldDiff {

@@ -143,7 +143,7 @@ const createService = (
 };
 
 describe("BatchTranslateToolService", () => {
-  it("scans only entries whose title or plot still need translation", async () => {
+  it("scans the titles and plots the chosen mode covers", async () => {
     const config = createConfig();
 
     const { service, localScanService } = createService({
@@ -171,7 +171,7 @@ describe("BatchTranslateToolService", () => {
           },
           nfoPath: "/library/BBB-002.nfo",
           crawlerData: {
-            title: "原始标题",
+            title: "元のタイトル",
             title_zh: "中文标题",
             number: "BBB-002",
             plot: "中文简介",
@@ -182,15 +182,69 @@ describe("BatchTranslateToolService", () => {
     });
 
     const scanRoot = resolve("/library");
-    const items = await service.scan(scanRoot, config);
+    const untranslated = await service.scan(scanRoot, "untranslated", config);
+    const all = await service.scan(scanRoot, "all", config);
+    const restore = await service.scan(scanRoot, "restore", config);
 
     expect(localScanService.scan).toHaveBeenCalledWith(scanRoot, config.paths.sceneImagesFolder);
-    expect(items).toEqual<BatchTranslateScanItem[]>([
-      expect.objectContaining({
-        number: "AAA-001",
-        pendingFields: ["title", "plot"],
-      }),
+    expect(untranslated).toEqual<BatchTranslateScanItem[]>([
+      expect.objectContaining({ number: "AAA-001", pendingFields: ["title", "plot"] }),
     ]);
+    // A Chinese source needs no translation in either mode; a translated Japanese title is retranslated.
+    expect(all).toEqual<BatchTranslateScanItem[]>([
+      expect.objectContaining({ number: "AAA-001", pendingFields: ["title", "plot"] }),
+      expect.objectContaining({ number: "BBB-002", pendingFields: ["title"] }),
+    ]);
+    expect(restore).toEqual<BatchTranslateScanItem[]>([
+      expect.objectContaining({ number: "BBB-002", pendingFields: ["title"] }),
+    ]);
+  });
+
+  it("restores the source title and plot without calling the LLM", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-batch-restore-"));
+    tempDirs.push(root);
+    const entry = createEntry({
+      fileInfo: { filePath: join(root, "CCC-003.mp4"), fileName: "CCC-003.mp4", number: "CCC-003" },
+      nfoPath: join(root, "CCC-003.nfo"),
+      currentDir: root,
+      crawlerData: {
+        title: "元のタイトル",
+        title_zh: "中文标题",
+        number: "CCC-003",
+        plot: "元の説明",
+        plot_zh: "中文简介",
+      },
+    });
+    await writeFile(join(root, "CCC-003.nfo"), "<movie><title>中文标题</title></movie>");
+    const generateText = vi.fn();
+    const { service } = createService({
+      scanVideo: async () => entry,
+      generateText,
+      writeNfo: writePreparedNfo,
+      rootPath: root,
+    });
+
+    const [result] = await service.apply(
+      [
+        {
+          filePath: entry.fileInfo.filePath,
+          nfoPath: join(root, "CCC-003.nfo"),
+          directory: root,
+          number: "CCC-003",
+          title: "中文标题",
+          pendingFields: ["title", "plot"],
+        },
+      ],
+      createConfig(),
+      { mode: "restore" },
+    );
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ success: true, translatedFields: ["title", "plot"] });
+    const xml = await readFile(join(root, "CCC-003.nfo"), "utf8");
+    expect(xml).toContain("<title>元のタイトル</title>");
+    expect(xml).toContain("<plot>元の説明</plot>");
+    expect(xml).not.toContain("中文");
   });
 
   it("batches unique texts and writes translated NFOs without a journal", async () => {
@@ -292,6 +346,7 @@ describe("BatchTranslateToolService", () => {
         pendingFields: item.pendingFields as BatchTranslateScanItem["pendingFields"],
       })),
       config,
+      { mode: "untranslated" },
     );
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);

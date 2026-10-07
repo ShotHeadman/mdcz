@@ -150,8 +150,10 @@ export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): Maintenanc
   const hasOldValue = hasMaintenanceDiffSideValue(diff, "old");
   const hasNewValue = hasMaintenanceDiffSideValue(diff, "new");
 
+  if (diff.userEdited) return "old";
   if (!hasOldValue && hasNewValue) return "new";
-  if (hasOldValue && !hasNewValue) return "old";
+  // An emptied translation is the publish step choosing the source text, not a site dropping the field.
+  if (hasOldValue && !hasNewValue && diff.field !== "title_zh" && diff.field !== "plot_zh") return "old";
   return "new";
 };
 

@@ -1,5 +1,5 @@
 import type { CrawlerData } from "@mdcz/shared/types";
-
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { BaseCrawler } from "../base/BaseCrawler";
 import type { Context, CrawlerInput } from "../base/types";
 import { normalizeFc2Number } from "./helpers";
@@ -17,6 +17,7 @@ import { normalizeFc2Number } from "./helpers";
  * - `generateSearchUrl()` / `parseSearchPage()` / `parseDetailPage()` — site-specific parsing
  */
 export abstract class BaseFc2Crawler extends BaseCrawler {
+  static readonly contentTypes: readonly ContentType[] = ["fc2"];
   protected static readonly FC2_SERIES = "FC2系列";
 
   protected override newContext(input: CrawlerInput): Context {

@@ -195,28 +195,20 @@ describe("NfoGenerator", () => {
     expect(leakXml).not.toContain("<tag>无码</tag>");
   });
 
-  it("writes streamdetails when local video metadata is available", () => {
-    const xml = buildXml(
-      createCrawlerData({
-        durationSeconds: 5400,
-      }),
-      {
-        videoMeta: {
-          durationSeconds: 3600.9,
-          width: 1920,
-          height: 1080,
-          bitrate: 8_000_000,
-        },
-      },
-    );
+  it("writes streamdetails from the video, and carries them over when a rewrite does not read the video", () => {
+    const scraped = buildXml(createCrawlerData({ durationSeconds: 5400 }), {
+      videoMeta: { durationSeconds: 3600.9, width: 1920, height: 1080, bitrate: 8_000_000 },
+    });
+    const { crawlerData, localState } = parseNfoSnapshot(scraped);
+    const rewritten = buildXml({ ...crawlerData, website: Website.DMM }, { localState });
 
-    expect(xml).toContain("<fileinfo>");
-    expect(xml).toContain("<streamdetails>");
-    expect(xml).toContain("<video>");
-    expect(xml).toContain("<width>1920</width>");
-    expect(xml).toContain("<height>1080</height>");
-    expect(xml).toContain("<durationinseconds>3600</durationinseconds>");
-    expect(xml).toContain("<bitrate>8000000</bitrate>");
+    for (const xml of [scraped, rewritten]) {
+      expect(xml).toContain("<width>1920</width>");
+      expect(xml).toContain("<height>1080</height>");
+      expect(xml).toContain("<durationinseconds>3600</durationinseconds>");
+      expect(xml).toContain("<bitrate>8000000</bitrate>");
+      expect(xml).toContain("<runtime>60</runtime>");
+    }
   });
 
   it("supports originaltitle in the NFO title template", () => {

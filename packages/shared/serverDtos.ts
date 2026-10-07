@@ -13,7 +13,13 @@ import { normalizedCropRegionSchema } from "./posterCrop";
 import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
 import type { MediaCandidate } from "./types";
 
-export const maintenancePresetIdSchema = z.enum(["import_local", "refresh_metadata", "local_organize", "rebuild_all"]);
+export const maintenancePresetIdSchema = z.enum([
+  "import_local",
+  "refresh_metadata",
+  "remerge",
+  "local_organize",
+  "rebuild_all",
+]);
 export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({
@@ -1147,6 +1153,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
   z.object({
     toolId: z.literal("batch-nfo-translator"),
     action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
+    mode: z.enum(["untranslated", "all", "restore"]).optional(),
     text: z.string().trim().min(1).optional(),
     directory: z.string().trim().min(1).optional(),
     batchSize: z.number().int().min(1).max(20).optional(),

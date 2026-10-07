@@ -209,6 +209,27 @@ describe("AggregationService", () => {
     );
   });
 
+  it("tries sites of the other content type only when every admitted site misses", async () => {
+    const config = makeConfig({ network: { ...defaultConfiguration.network, javdbCookie: "_jdb_session=ok" } });
+    const thumb_url = "https://example.com/thumb.jpg";
+
+    // A censored release whose number looks like an uncensored date sequence.
+    const misclassified = new MultiResultCrawlerProvider(makeSiteResults([Website.DMM, { thumb_url }]));
+    const fallback = await new AggregationService(misclassified, { config }).aggregate("100524_001");
+    expect(misclassified.calledSites).toEqual([Website.JAVDB, Website.JAVBUS, Website.DMM]);
+    expect(fallback.sources.title).toBe(Website.DMM);
+
+    const uncensored = new MultiResultCrawlerProvider(makeSiteResults([Website.JAVBUS, { thumb_url }]));
+    const found = await new AggregationService(uncensored, { config }).aggregate("100524_001");
+    expect(uncensored.calledSites).toEqual([Website.JAVDB, Website.JAVBUS]);
+    expect(found.stats.siteResults).toContainEqual({
+      site: Website.DMM,
+      status: "skipped",
+      skipReason: "content_type",
+      elapsedMs: 0,
+    });
+  });
+
   it("marks crawler budget overruns as timeout failures", async () => {
     const siteResults = makeSiteResults(
       [Website.DMM, { title: "Slow DMM Title", thumb_url: "https://dmm.example/thumb.jpg" }],

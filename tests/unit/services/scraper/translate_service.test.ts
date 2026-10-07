@@ -91,7 +91,7 @@ describe("TranslateService term consistency", () => {
       }),
       undefined,
     );
-    expect(translated.data.actors).toEqual(["同一日语词", "同一日语词"]);
+    expect(translated.data.actors).toEqual(["同一日语词"]);
     expect(translated.data.title_zh).toBe("中文标题");
     expect(translated.data.plot_zh).toBe(plot);
     expect(translated.data.genres).toEqual(["统一译名"]);

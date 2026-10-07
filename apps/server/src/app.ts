@@ -148,6 +148,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         mappingStore,
         recordSiteResults: async (number, results) =>
           (await persistence.getState()).repositories.siteResults.record(number, results),
+        loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
       }),
     );
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents, config);

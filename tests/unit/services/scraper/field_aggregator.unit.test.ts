@@ -40,6 +40,31 @@ describe("FieldAggregator", () => {
         expectedValue: "DMM Studio",
         expectedSource: Website.DMM,
       },
+      {
+        aggregator: new FieldAggregator({
+          plot: [Website.OFFICIAL, Website.DMM],
+        }),
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ plot: "A longer plot with masked 犯●れ", website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ plot: "<script>var x = 1;</script>", website: Website.JAVDB })],
+          [Website.OFFICIAL, makeCrawlerData({ plot: "犯され", website: Website.OFFICIAL })],
+        ]),
+        field: "plot",
+        expectedValue: "犯され",
+        expectedSource: Website.OFFICIAL,
+      },
+      {
+        aggregator: new FieldAggregator({
+          plot: [Website.JAVDB, Website.DMM],
+        }),
+        results: new Map<Website, CrawlerData>([
+          [Website.DMM, makeCrawlerData({ plot: "DMM plot", website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ plot: "<script>var x = 1;</script>", website: Website.JAVDB })],
+        ]),
+        field: "plot",
+        expectedValue: "DMM plot",
+        expectedSource: Website.DMM,
+      },
     ];
 
     for (const { aggregator, results, field, expectedValue, expectedSource } of cases) {
@@ -50,68 +75,54 @@ describe("FieldAggregator", () => {
     }
   });
 
-  it("selects the longest plot across sources", () => {
-    const aggregator = new FieldAggregator({});
-    const results = new Map<Website, CrawlerData>([
-      [Website.DMM, makeCrawlerData({ plot: "Short plot", website: Website.DMM })],
-      [
-        Website.JAVDB,
-        makeCrawlerData({ plot: "This is a much longer plot description from JAVDB", website: Website.JAVDB }),
-      ],
+  it("merges actors across sites by identity and picks genres by priority", () => {
+    const renamed = new Map<Website, CrawlerData>([
+      [Website.DMM_TV, makeCrawlerData({ actors: ["及川美桜（夏生なつ）"], website: Website.DMM_TV })],
+      [Website.AVBASE, makeCrawlerData({ actors: ["夏生なつ"], website: Website.AVBASE })],
     ]);
-
-    const { data, sources } = aggregator.aggregate(results);
-
-    expect(data.plot).toBe("This is a much longer plot description from JAVDB");
-    expect(sources.plot).toBe(Website.JAVDB);
-  });
-
-  it("selects array fields without merging across sites", () => {
     const cases = [
       {
-        aggregator: new FieldAggregator({
-          actors: [Website.AVBASE, Website.JAVBUS, Website.JAVDB],
-        }),
+        priorities: { actors: [Website.AVBASE, Website.JAVBUS, Website.JAVDB] },
         results: new Map<Website, CrawlerData>([
-          [Website.JAVBUS, makeCrawlerData({ actors: ["女优 A", "男优 B"], website: Website.JAVBUS })],
-          [Website.AVBASE, makeCrawlerData({ actors: ["女优 A", "女优 C"], website: Website.AVBASE })],
-          [Website.JAVDB, makeCrawlerData({ actors: ["女优 A"], website: Website.JAVDB })],
+          [Website.JAVBUS, makeCrawlerData({ actors: ["女优 A", "女优 D"], website: Website.JAVBUS })],
+          [Website.AVBASE, makeCrawlerData({ actors: [], website: Website.AVBASE })],
+          [Website.JAVDB, makeCrawlerData({ actors: ["女优A", "女优 C"], website: Website.JAVDB })],
         ]),
         field: "actors",
-        expectedValue: ["女优 A", "女优 C"],
+        expectedValue: ["女优 A", "女优 D", "女优 C"],
+        expectedSource: Website.JAVBUS,
+      },
+      {
+        priorities: { actors: [Website.AVBASE, Website.DMM_TV] },
+        results: renamed,
+        field: "actors",
+        expectedValue: ["夏生なつ"],
         expectedSource: Website.AVBASE,
       },
       {
-        aggregator: new FieldAggregator({
-          actors: [Website.AVBASE, Website.JAVDB],
-        }),
-        results: new Map<Website, CrawlerData>([
-          [Website.AVBASE, makeCrawlerData({ actors: [], website: Website.AVBASE })],
-          [Website.JAVDB, makeCrawlerData({ actors: ["女优 A", "女优 B"], website: Website.JAVDB })],
-        ]),
+        priorities: { actors: [Website.DMM_TV, Website.AVBASE] },
+        results: renamed,
         field: "actors",
-        expectedValue: ["女优 A", "女优 B"],
-        expectedSource: Website.JAVDB,
+        expectedValue: ["及川美桜（夏生なつ）"],
+        expectedSource: Website.DMM_TV,
       },
       {
-        aggregator: new FieldAggregator({}),
+        priorities: { genres: [Website.JAVDB, Website.DMM] },
         results: new Map<Website, CrawlerData>([
-          [Website.DMM, makeCrawlerData({ genres: ["Tag A", "Tag B"], website: Website.DMM })],
-          [Website.JAVDB, makeCrawlerData({ genres: ["tag a", "Tag C"], website: Website.JAVDB })],
+          [Website.DMM, makeCrawlerData({ genres: ["単体作品", "ドラマ"], website: Website.DMM })],
+          [Website.JAVDB, makeCrawlerData({ genres: ["單體作品"], website: Website.JAVDB })],
         ]),
         field: "genres",
-        expectedValue: ["Tag A", "Tag B"],
-        expectedSource: undefined,
+        expectedValue: ["單體作品"],
+        expectedSource: Website.JAVDB,
       },
     ];
 
-    for (const { aggregator, results, field, expectedValue, expectedSource } of cases) {
-      const { data, sources } = aggregator.aggregate(results);
+    for (const { priorities, results, field, expectedValue, expectedSource } of cases) {
+      const { data, sources } = new FieldAggregator(priorities).aggregate(results);
 
       expect(data[field as keyof CrawlerData]).toEqual(expectedValue);
-      if (expectedSource !== undefined) {
-        expect(sources[field as keyof CrawlerData]).toBe(expectedSource);
-      }
+      expect(sources[field as keyof CrawlerData]).toBe(expectedSource);
     }
   });
 

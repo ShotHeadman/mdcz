@@ -175,7 +175,7 @@ export const settings = {
       official: {
         label: "Official studio sites",
         description:
-          "Official sources including S1, MOODYZ, IdeaPocket and other Will/Outvision makers, plus MGStage, Prestige, Faleno, Dahlia and KM Produce. Codes select eligible studios automatically.",
+          "Studios' own websites, queried only for their own codes. Titles without actor names and unmasked plots, but the plot is a single paragraph.",
       },
       [Website.AVBASE]: {
         label: "avbase",

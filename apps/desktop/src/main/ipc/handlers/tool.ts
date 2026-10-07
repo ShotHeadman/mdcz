@@ -22,6 +22,7 @@ import {
   toolAmazonPosterApplyInputSchema,
   toolAmazonPosterLookupInputSchema,
   toolBatchTranslateApplyInputSchema,
+  toolBatchTranslateScanInputSchema,
   toolCreateSymlinkInputSchema,
   toolDirectoryInputSchema,
   toolMediaServerModeInputSchema,
@@ -287,21 +288,23 @@ export const createToolHandlers = (
           return raiseHandlerError("Tool_AmazonPosterApply", error);
         }
       }),
-    [IpcChannel.Tool_BatchTranslateScan]: t.procedure.input(toolDirectoryInputSchema).action(async ({ input }) => {
-      try {
-        const directory = input?.directory?.trim();
-        if (!directory) {
-          throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Directory is required");
-        }
+    [IpcChannel.Tool_BatchTranslateScan]: t.procedure
+      .input(toolBatchTranslateScanInputSchema)
+      .action(async ({ input }) => {
+        try {
+          const directory = input?.directory?.trim();
+          if (!directory) {
+            throw createIpcError(IpcErrorCode.INVALID_ARGUMENT, "Directory is required");
+          }
 
-        const configuration = await configManager.getValidated();
-        return {
-          items: await batchTranslateToolService.scan(directory, configuration),
-        };
-      } catch (error) {
-        return raiseHandlerError("Tool_BatchTranslateScan", error);
-      }
-    }),
+          const configuration = await configManager.getValidated();
+          return {
+            items: await batchTranslateToolService.scan(directory, input.mode, configuration),
+          };
+        } catch (error) {
+          return raiseHandlerError("Tool_BatchTranslateScan", error);
+        }
+      }),
     [IpcChannel.Tool_BatchTranslateApply]: t.procedure
       .input(toolBatchTranslateApplyInputSchema)
       .action(async ({ input }) => {
@@ -313,7 +316,10 @@ export const createToolHandlers = (
 
           const configuration = await configManager.getValidated();
           return {
-            results: await batchTranslateToolService.apply(items, configuration, { maxBatchItems: input?.batchSize }),
+            results: await batchTranslateToolService.apply(items, configuration, {
+              mode: input.mode,
+              maxBatchItems: input.batchSize,
+            }),
           };
         } catch (error) {
           return raiseHandlerError("Tool_BatchTranslateApply", error);

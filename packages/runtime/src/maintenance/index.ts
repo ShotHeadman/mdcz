@@ -9,6 +9,7 @@ export * from "./LocalScanService";
 export type {
   MaintenanceRuntimeApplyEntryInput,
   MaintenanceRuntimeApplyResult,
+  MaintenanceRuntimeDependencies,
   MaintenanceRuntimePreviewItem,
   MaintenanceRuntimePreviewMovieInput,
 } from "./MaintenanceRuntime";

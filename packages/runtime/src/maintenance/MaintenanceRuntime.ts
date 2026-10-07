@@ -5,6 +5,7 @@ import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { MaintenanceMovieGroup } from "@mdcz/shared/maintenanceTasks";
 import type {
@@ -48,11 +49,13 @@ import {
   writePreparedNfo,
 } from "../scrape";
 import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
-import { AggregationService, type CrawlerPort, type SiteResultSink } from "../scrape/aggregation";
+import { AggregationService, type CrawlerPort, mergeSiteData, type SiteResultSink } from "../scrape/aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import { editedKeys } from "../scrape/nfoEdits";
 import { assignVersionLabels } from "../scrape/organize/versionLabels";
 import { prepareOnlineMetadata } from "../scrape/prepareOnlineMetadata";
+import { publishMetadata } from "../scrape/publishMetadata";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
@@ -76,6 +79,8 @@ export interface MaintenanceRuntimeDependencies {
   aggregationService?: Pick<AggregationService, "aggregate">;
   crawlerProvider?: CrawlerPort;
   recordSiteResults?: SiteResultSink;
+  /** The stored per-site rows for a number; `data` is the site's answer in its source language. */
+  loadSiteResults?: (number: string) => Promise<ReadonlyArray<{ site: string; data?: unknown }>>;
   logger?: RuntimeLogger;
   config: MaintenanceRuntimeConfigProvider;
   downloadManager?: DownloadManager;
@@ -267,31 +272,50 @@ export class MaintenanceRuntime {
 
       let crawlerData: CrawlerData | undefined;
       let imageAlternatives: MaintenanceImageAlternatives = {};
+      const published = { crawlerData: entry.crawlerData, localState: entry.nfoLocalState };
+      const { translateService } = this.deps;
       if (preset.dataSource === "online") {
-        if (!this.deps.aggregationService || !this.deps.translateService) {
+        if (!this.deps.aggregationService || !translateService) {
           throw new Error("Online preset lacks required aggregation or translation services");
         }
         const prepared = await prepareOnlineMetadata({
           number: entry.fileInfo.number,
           configuration: config,
           aggregationService: this.deps.aggregationService,
-          translateService: this.deps.translateService,
+          translateService,
+          published,
+          keepEdits: false,
           signal,
         });
         crawlerData = prepared.crawlerData;
         imageAlternatives = prepared.aggregation.imageAlternatives;
+      } else if (preset.dataSource === "stored") {
+        if (!this.deps.loadSiteResults || !translateService) {
+          throw new Error("Stored preset lacks site result storage or translation services");
+        }
+        const siteData = new Map(
+          (await this.deps.loadSiteResults(entry.fileInfo.number)).flatMap(({ site, data }) =>
+            data ? [[site as Website, data as CrawlerData] as const] : [],
+          ),
+        );
+        if (siteData.size === 0) throw new Error(`No stored site results for ${entry.fileInfo.number}`);
+        const merged = mergeSiteData(siteData, config);
+        imageAlternatives = merged.imageAlternatives;
+        const publication = await publishMetadata({
+          // Actor photos are output, not site data; re-merging must not fetch them again.
+          data: { ...merged.data, actor_profiles: entry.crawlerData?.actor_profiles },
+          published,
+          keepEdits: false,
+          configuration: config,
+          translateService,
+          signal,
+        });
+        crawlerData = publication.data;
       } else {
-        crawlerData = entry.crawlerData;
-        if (crawlerData) crawlerData = canonicalizeCrawlerDataActorAliases(crawlerData, config);
+        crawlerData = entry.crawlerData && canonicalizeCrawlerDataActorAliases(entry.crawlerData, config);
       }
 
-      const { fieldDiffs, unchangedFieldDiffs } = this.partitionDiffs(
-        entry,
-        config,
-        preset,
-        crawlerData,
-        imageAlternatives,
-      );
+      const { fieldDiffs, unchangedFieldDiffs } = this.partitionDiffs(entry, preset, crawlerData, imageAlternatives);
 
       const { pathDiff, affectedFiles } = await this.previewPaths({
         presetId: input.presetId,
@@ -536,7 +560,7 @@ export class MaintenanceRuntime {
                 assets,
                 config,
                 crawlerData: preparedCrawlerData,
-                enabled: Boolean((preset.dataSource === "online" || config.download.generateNfo) && sharedPlan.plan),
+                enabled: Boolean((preset.dataSource !== "local" || config.download.generateNfo) && sharedPlan.plan),
                 fileInfo: entry.fileInfo,
                 localState: entry.nfoLocalState,
                 buildTags: buildMovieTags,
@@ -775,7 +799,6 @@ export class MaintenanceRuntime {
 
   private partitionDiffs(
     entry: LocalScanEntry,
-    config: Configuration,
     preset: MaintenancePreset,
     crawlerData: CrawlerData | undefined,
     imageAlternatives: MaintenanceImageAlternatives,
@@ -790,9 +813,9 @@ export class MaintenanceRuntime {
     }
 
     return partitionCrawlerDataWithOptions(comparisonBase, crawlerData, {
-      includeTranslatedFields: config.translate.enableTranslation,
       entry,
       imageAlternatives,
+      userEdited: editedKeys(entry.nfoLocalState),
     });
   }
 

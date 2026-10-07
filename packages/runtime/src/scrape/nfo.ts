@@ -5,6 +5,13 @@ import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
+import {
+  fingerprintNfo,
+  fingerprintNfoField,
+  formatFingerprints,
+  parseFingerprints,
+  publishedFingerprints,
+} from "./nfoEdits";
 
 const builder = new XMLBuilder({
   attributeNamePrefix: "@_",
@@ -105,10 +112,10 @@ const truncateText = (value: string, maxChars: number): string => Array.from(val
 const buildVideoNode = (videoMeta: VideoMeta | undefined): Record<string, unknown> | undefined => {
   if (!videoMeta) return undefined;
   const video: Record<string, unknown> = {};
-  if (Number.isFinite(videoMeta.width)) video.width = videoMeta.width;
-  if (Number.isFinite(videoMeta.height)) video.height = videoMeta.height;
-  if (Number.isFinite(videoMeta.durationSeconds)) video.durationinseconds = Math.floor(videoMeta.durationSeconds);
-  if (videoMeta.bitrate !== undefined && Number.isFinite(videoMeta.bitrate)) video.bitrate = videoMeta.bitrate;
+  if (videoMeta.width !== undefined) video.width = videoMeta.width;
+  if (videoMeta.height !== undefined) video.height = videoMeta.height;
+  if (videoMeta.durationSeconds !== undefined) video.durationinseconds = Math.floor(videoMeta.durationSeconds);
+  if (videoMeta.bitrate !== undefined) video.bitrate = videoMeta.bitrate;
   return Object.keys(video).length > 0 ? video : undefined;
 };
 
@@ -136,8 +143,9 @@ const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
   originalPlot: string | undefined,
+  published: string,
   options: NfoOptions | undefined,
-): Record<string, unknown> | undefined => {
+): Record<string, unknown> => {
   const enabledFields = options?.enabledFields;
   const includeRemoteSceneImageUrls = options?.includeRemoteSceneImageUrls ?? true;
   const allowRemoteTrailerFallback = options?.allowRemoteTrailerFallback ?? true;
@@ -160,18 +168,6 @@ const buildMdczNode = (
           .filter((value): value is string => Boolean(value))
       : [];
 
-  if (
-    !rawTitle &&
-    !originalPlot &&
-    !thumbSourceUrl &&
-    !posterSourceUrl &&
-    !fanartSourceUrl &&
-    !trailerSourceUrl &&
-    sceneImageUrls.length === 0
-  ) {
-    return undefined;
-  }
-
   return {
     raw_title: rawTitle,
     original_plot: originalPlot,
@@ -180,6 +176,7 @@ const buildMdczNode = (
     fanart_source_url: fanartSourceUrl,
     trailer_source_url: trailerSourceUrl,
     scene_images: sceneImageUrls.length > 0 ? { image: sceneImageUrls } : undefined,
+    published,
   };
 };
 
@@ -189,10 +186,15 @@ export class NfoGenerator {
       throw new Error("NFO missing website");
     }
 
+    const localState = options?.localState;
     const rawTitle = data.title_zh?.trim() || data.title;
     const originaltitle = data.original_title?.trim() || data.title.trim();
     const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
-    const title = renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
+    // A title the user edited is final as written; wrapping it in the template again would repeat the template.
+    const title =
+      localState?.edits?.title === fingerprintNfoField({ title: rawTitle }, "title")
+        ? rawTitle
+        : renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
     const sourcePlot = data.plot?.trim();
     const plot = data.plot_zh?.trim() || sourcePlot;
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
@@ -200,7 +202,6 @@ export class NfoGenerator {
     const sources = options?.sources;
     const videoMeta = options?.videoMeta;
     const fileInfo = options?.fileInfo;
-    const localState = options?.localState;
     const durationSeconds = videoMeta?.durationSeconds ?? data.durationSeconds;
     const runtimeMinutes = durationSeconds ? Math.round(durationSeconds / 60) : undefined;
     const genres = Array.from(new Set(buildStringNodes(toArray(data.genres))));
@@ -223,6 +224,7 @@ export class NfoGenerator {
     movie.premiered = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.releasedate = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.dateadded = new Date().toISOString();
+    movie.lockedfields = localState?.lockedFields?.length ? localState.lockedFields.join("|") : undefined;
     movie.year = isNfoFieldEnabled(enabledFields, "release") ? parseReleaseYear(data.release_date) : undefined;
     movie.runtime = isNfoFieldEnabled(enabledFields, "runtime") ? runtimeMinutes : undefined;
     movie.rating = isNfoFieldEnabled(enabledFields, "rating") ? data.rating : undefined;
@@ -259,16 +261,15 @@ export class NfoGenerator {
       const fanartNode = buildFanartNode(data, assets);
       if (fanartNode) movie.fanart = fanartNode;
     }
-    const mdczNode = buildMdczNode(
+    movie.mdcz = buildMdczNode(
       data,
       rawTitle !== title ? rawTitle : undefined,
       isNfoFieldEnabled(enabledFields, "plot") && sourcePlot !== plot ? sourcePlot : undefined,
+      formatFingerprints(publishedFingerprints(movie, localState)),
       options,
     );
-    if (mdczNode) movie.mdcz = mdczNode;
-    if (isNfoFieldEnabled(enabledFields, "fileinfo") && videoNode) {
-      movie.fileinfo = { streamdetails: { video: videoNode } };
-    }
+    const fileinfo = videoNode ? { streamdetails: { video: videoNode } } : localState?.fileinfo;
+    if (isNfoFieldEnabled(enabledFields, "fileinfo") && fileinfo) movie.fileinfo = fileinfo;
 
     const xmlBody = builder.build({ movie });
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xmlBody}`;
@@ -344,6 +345,7 @@ const EDITABLE_MOVIE_FIELDS = [
   "thumb",
   "fanart",
   "tag",
+  "lockedfields",
 ] as const;
 const EDITABLE_MDCZ_FIELDS = [
   "raw_title",
@@ -353,6 +355,7 @@ const EDITABLE_MDCZ_FIELDS = [
   "fanart_source_url",
   "trailer_source_url",
   "scene_images",
+  "published",
 ] as const;
 
 const requireXmlRecord = (value: unknown, message: string): Record<string, unknown> => {
@@ -362,11 +365,20 @@ const requireXmlRecord = (value: unknown, message: string): Record<string, unkno
   return value as Record<string, unknown>;
 };
 
+const toRecordOrEmpty = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
 const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): string => {
   const existingRoot = requireXmlRecord(parser.parse(existingXml), "Invalid NFO root");
   const existingMovie = requireXmlRecord(existingRoot.movie, "Invalid NFO movie node");
   const generatedRoot = requireXmlRecord(parser.parse(generatedXml), "Invalid generated NFO root");
   const generatedMovie = requireXmlRecord(generatedRoot.movie, "Invalid generated NFO movie node");
+  const existingMdcz = toRecordOrEmpty(existingMovie.mdcz);
+  // Editing is not publishing: keeping the fingerprints of what MDCz published makes the changed values read as edits.
+  const published = formatFingerprints({
+    ...fingerprintNfo(existingMovie),
+    ...parseFingerprints(existingMdcz.published),
+  });
 
   for (const field of EDITABLE_MOVIE_FIELDS) {
     if (field in generatedMovie) existingMovie[field] = generatedMovie[field];
@@ -374,20 +386,15 @@ const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): s
   }
   existingMovie.actor = mergeActorNodes(existingMovie.actor, generatedMovie.actor);
 
-  const existingMdcz =
-    existingMovie.mdcz && typeof existingMovie.mdcz === "object" && !Array.isArray(existingMovie.mdcz)
-      ? (existingMovie.mdcz as Record<string, unknown>)
-      : {};
-  const generatedMdcz =
-    generatedMovie.mdcz && typeof generatedMovie.mdcz === "object" && !Array.isArray(generatedMovie.mdcz)
-      ? (generatedMovie.mdcz as Record<string, unknown>)
-      : {};
+  const generatedMdcz: Record<string, unknown> = {
+    ...requireXmlRecord(generatedMovie.mdcz, "Invalid generated NFO mdcz node"),
+    published,
+  };
   for (const field of EDITABLE_MDCZ_FIELDS) {
     if (field in generatedMdcz) existingMdcz[field] = generatedMdcz[field];
     else delete existingMdcz[field];
   }
-  if (Object.keys(existingMdcz).length > 0) existingMovie.mdcz = existingMdcz;
-  else delete existingMovie.mdcz;
+  existingMovie.mdcz = existingMdcz;
 
   existingRoot.movie = existingMovie;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(existingRoot)}`;

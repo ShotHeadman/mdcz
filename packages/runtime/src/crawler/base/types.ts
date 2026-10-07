@@ -3,6 +3,7 @@ import type { Website } from "@mdcz/shared/enums";
 import type { R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import type { FetchGateway } from "../FetchGateway";
 
 export interface CrawlerOptions {
@@ -68,5 +69,8 @@ export interface AdapterDependencies {
 export interface SiteAdapterConstructor {
   new (dependencies: AdapterDependencies): SiteAdapter;
   readonly siteRequestConfigs?: readonly SiteRequestConfig[];
+  /** Maker sites answer only the numbers this matches. */
   readonly numberPattern?: RegExp;
+  /** Catalog sites answer numbers of these content types; required when `numberPattern` is absent. */
+  readonly contentTypes?: readonly ContentType[];
 }

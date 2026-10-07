@@ -66,7 +66,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
       activeGroup.previewItems.find((item) => item.fileId === activeId)
     );
   }, [activeGroup, activeId, detailEntry]);
-  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "remerge" || presetId === "rebuild_all";
   const handleFieldSelectionChange = (
     fileId: string,
     field: import("@mdcz/shared/types").FieldDiff["field"],

@@ -14,6 +14,7 @@ export const maintenance = {
   prevGallery: "Previous still",
   nextGallery: "Next still",
   oldCurrent: "Old (Current)",
+  oldEdited: "Old (Edited by hand)",
   oldValueEmpty: "Old value is empty",
   imageSource: "Image source",
   newPreview: "New (Preview)",

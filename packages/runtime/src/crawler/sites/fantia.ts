@@ -4,6 +4,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
 import { load } from "cheerio";
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { parseDate } from "../base/parser";
 import type { Context, SearchPageResolution } from "../base/types";
@@ -194,6 +195,7 @@ const isExpectedDetailPage = ($: CheerioAPI, urlpath: string): boolean => {
 };
 
 export class FantiaCrawler extends BaseCrawler {
+  static readonly contentTypes: readonly ContentType[] = ["censored"];
   static readonly siteRequestConfigs = FANTIA_SITE_REQUEST_CONFIGS;
 
   site(): Website {

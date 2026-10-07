@@ -40,6 +40,10 @@ export const domain = {
       description: "Read existing NFO files and images into the library without changing any files",
     },
     refresh_metadata: { label: "Refresh in place", description: "Refresh metadata online and compare NFO differences" },
+    remerge: {
+      label: "Re-merge",
+      description: "Rebuild metadata from stored site results with the current priorities, without scraping",
+    },
     local_organize: { label: "Organize locally", description: "Reorganize the file and folder structure by the rules" },
     rebuild_all: {
       label: "Full rebuild",

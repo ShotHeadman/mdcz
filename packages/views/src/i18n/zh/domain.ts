@@ -34,6 +34,7 @@ export const domain: Messages["domain"] = {
     import_local: { label: "本地导入", description: "读取现有 NFO 与图片并登记到媒体库，不修改任何文件" },
     refresh_metadata: { label: "原地更新", description: "联网刷新元数据，对比NFO差异" },
     local_organize: { label: "本地整理", description: "按规则重新组织文件目录结构" },
+    remerge: { label: "重新合并", description: "不重新抓取，用已保存的站点结果按当前优先级重新生成元数据" },
     rebuild_all: { label: "全量重整", description: "重新获取数据并按现有设置修改目录结构" },
   },
   posterBadgeTypes: {

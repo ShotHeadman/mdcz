@@ -1,6 +1,7 @@
 import { Website } from "@mdcz/shared/enums";
 import type { ActorProfile, CrawlerData, NfoLocalState } from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";
+import { detectNfoEdits, parseFingerprints } from "../scrape/nfoEdits";
 import { isManagedMovieTag, normalizeNfoLocalState, parseManagedMovieTags, tagToUncensoredChoice } from "./movieTags";
 
 const WEBSITE_VALUES: Readonly<Record<Website, true>> = Object.fromEntries(
@@ -102,14 +103,13 @@ const pickThumbByAspect = (thumbs: ThumbEntry[], aspects: string[]): string | un
   return thumbs.find((entry) => entry.aspect && normalizedAspects.includes(entry.aspect))?.value;
 };
 
+// NFOs from other tools may carry only <runtime>, in minutes.
 const parseDurationSeconds = (movieNode: Record<string, unknown>): number | undefined => {
-  const fileinfo = toRecord(movieNode.fileinfo);
-  const streamdetails = toRecord(fileinfo?.streamdetails);
-  const video = toRecord(streamdetails?.video);
-  const durationValue = toStringValue(video?.durationinseconds);
-  if (!durationValue) return undefined;
-  const durationSeconds = Number.parseInt(durationValue, 10);
-  return Number.isFinite(durationSeconds) ? durationSeconds : undefined;
+  const video = toRecord(toRecord(toRecord(movieNode.fileinfo)?.streamdetails)?.video);
+  const seconds = Number.parseInt(toStringValue(video?.durationinseconds) ?? "", 10);
+  if (seconds > 0) return seconds;
+  const minutes = Number.parseInt(toStringValue(movieNode.runtime) ?? "", 10);
+  return minutes > 0 ? minutes * 60 : undefined;
 };
 
 export interface ParsedNfoSnapshot {
@@ -177,15 +177,20 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       : [];
   const mdczNode = toRecord(movieNode.mdcz);
   const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
-  const mdczRawTitle = toStringValue(mdczNode?.raw_title);
+  const published = parseFingerprints(mdczNode?.published);
+  const edits = detectNfoEdits(movieNode, published);
+  // raw_title is the untemplated title MDCz wrote; once the title was edited, only the edited text counts.
+  const shownTitle = (!edits.title && toStringValue(mdczNode?.raw_title)) || title;
+  const sourceTitle = originaltitle ?? shownTitle;
+  const shownPlot = plot ?? toStringValue(movieNode.outline);
+  const sourcePlot = toStringValue(mdczNode?.original_plot) ?? shownPlot;
   const rating = ratingText ? Number.parseFloat(ratingText) : undefined;
   const durationSeconds = parseDurationSeconds(movieNode);
-  const outline = toStringValue(movieNode.outline);
 
   return {
     crawlerData: {
-      title: originaltitle ?? title,
-      title_zh: mdczRawTitle ?? title,
+      title: sourceTitle,
+      title_zh: shownTitle !== sourceTitle ? shownTitle : undefined,
       number,
       actors,
       actor_profiles: actorProfiles.length > 0 ? actorProfiles : undefined,
@@ -193,9 +198,10 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       studio: toStringValue(movieNode.studio),
       director: toStringValue(movieNode.director),
       publisher: toStringValue(movieNode.publisher),
-      series: toStringValue(movieNode.set) ?? toStringValue(movieNode.series),
-      plot: toStringValue(mdczNode?.original_plot) ?? plot ?? outline,
-      plot_zh: plot ?? outline,
+      series:
+        toStringValue(movieNode.set) ?? toStringValue(toRecord(movieNode.set)?.name) ?? toStringValue(movieNode.series),
+      plot: sourcePlot,
+      plot_zh: shownPlot !== sourcePlot ? shownPlot : undefined,
       release_date: releaseDate,
       durationSeconds,
       rating: Number.isFinite(rating) ? rating : undefined,
@@ -211,6 +217,13 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       trailer_url: toStringValue(movieNode.trailer),
       website: identifier.website,
     },
-    localState: normalizeNfoLocalState({ uncensoredChoice, tags: localTags }),
+    localState: normalizeNfoLocalState({
+      uncensoredChoice,
+      tags: localTags,
+      lockedFields: toStringValue(movieNode.lockedfields)?.split("|"),
+      published,
+      edits,
+      fileinfo: toRecord(movieNode.fileinfo),
+    }),
   };
 };

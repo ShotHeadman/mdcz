@@ -4,7 +4,7 @@ import type { SignalService } from "@main/services/SignalService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService, SiteResultSink } from "@mdcz/runtime/scrape";
 import { DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
@@ -19,6 +19,7 @@ export interface DesktopMaintenanceRuntimeOptions {
   networkClient: NetworkClient;
   signalService: SignalService;
   recordSiteResults: SiteResultSink;
+  loadSiteResults: MaintenanceRuntimeDependencies["loadSiteResults"];
 }
 
 export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRuntimeOptions): MaintenanceRuntime => {
@@ -28,6 +29,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
     actorSourceProvider: options.actorSourceProvider,
     crawlerProvider: options.crawlerProvider,
     recordSiteResults: options.recordSiteResults,
+    loadSiteResults: options.loadSiteResults,
     logger,
     config: {
       get: async () => await configManager.getValidated(),

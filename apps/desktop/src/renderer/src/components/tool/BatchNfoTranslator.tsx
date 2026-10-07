@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import { useT } from "@mdcz/views/i18n";
 import { BatchNfoTranslatorWorkspaceDetail } from "@mdcz/views/tools";
 import { useState } from "react";
@@ -13,7 +13,11 @@ export function BatchNfoTranslator() {
   const [batchTranslateItems, setBatchTranslateItems] = useState<BatchTranslateScanItem[]>([]);
   const [batchTranslateScanning, setBatchTranslateScanning] = useState(false);
 
-  const scanBatchTranslateItems = async (directory: string, options: { silent?: boolean } = {}) => {
+  const scanBatchTranslateItems = async (
+    directory: string,
+    mode: BatchTranslateMode,
+    options: { silent?: boolean } = {},
+  ) => {
     const targetDirectory = directory.trim();
     if (!targetDirectory) {
       setBatchTranslateItems([]);
@@ -24,7 +28,7 @@ export function BatchNfoTranslator() {
     setBatchTranslateScanning(true);
     setBatchTranslateItems([]);
     try {
-      const result = await ipc.tool.batchTranslateScan(targetDirectory);
+      const result = await ipc.tool.batchTranslateScan(targetDirectory, mode);
       setBatchTranslateItems(result.items);
 
       if (!options.silent) {
@@ -46,8 +50,8 @@ export function BatchNfoTranslator() {
     }
   };
 
-  const handleBatchTranslateScan = async (directory: string) => {
-    await scanBatchTranslateItems(directory);
+  const handleBatchTranslateScan = async (directory: string, mode: BatchTranslateMode) => {
+    await scanBatchTranslateItems(directory, mode);
   };
 
   const handleBatchTranslateApplyComplete = ({
@@ -73,7 +77,9 @@ export function BatchNfoTranslator() {
     <BatchNfoTranslatorWorkspaceDetail
       items={batchTranslateItems}
       scanning={batchTranslateScanning}
-      onApply={async (items, batchSize) => (await ipc.tool.batchTranslateApply({ batchSize, items })).results}
+      onApply={async (items, batchSize, mode) =>
+        (await ipc.tool.batchTranslateApply({ mode, batchSize, items })).results
+      }
       onApplyComplete={handleBatchTranslateApplyComplete}
       onBrowseDirectory={browseDirectoryPath}
       onScan={handleBatchTranslateScan}

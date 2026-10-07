@@ -110,7 +110,13 @@ export const toolAmazonPosterLookupInputSchema = z.object({ nfoPath: optionalStr
 export const toolAmazonPosterApplyInputSchema = z.object({
   items: z.array(z.object({ nfoPath: z.string(), amazonPosterUrl: z.string() })).optional(),
 });
+const batchTranslateModeSchema = z.enum(["untranslated", "all", "restore"]);
+export const toolBatchTranslateScanInputSchema = z.object({
+  directory: optionalString,
+  mode: batchTranslateModeSchema,
+});
 export const toolBatchTranslateApplyInputSchema = z.object({
+  mode: batchTranslateModeSchema,
   items: z
     .array(
       z.object({

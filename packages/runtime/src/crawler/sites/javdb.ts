@@ -4,6 +4,7 @@ import { OFFICIAL_SITE_URLS } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { movieNumbersMatch, toDateSequenceLabel } from "../base/identity";
 import { extractAttr, extractText, parseDate } from "../base/parser";
@@ -27,6 +28,7 @@ const JAVDB_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
 ];
 
 export class JavdbCrawler extends BaseCrawler {
+  static readonly contentTypes: readonly ContentType[] = ["censored", "uncensored", "fc2"];
   static readonly siteRequestConfigs = JAVDB_SITE_REQUEST_CONFIGS;
 
   site(): Website {

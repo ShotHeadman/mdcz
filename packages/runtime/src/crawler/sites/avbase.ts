@@ -4,7 +4,7 @@ import { Website } from "@mdcz/shared/enums";
 import { stripTrailingActorNames } from "@mdcz/shared/titleRepair";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
-
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { parseDate } from "../base/parser";
 import type { Context } from "../base/types";
@@ -334,6 +334,7 @@ const resolveProductMetadata = (products: AvbaseProduct[]): ResolvedAvbaseProduc
 };
 
 export class AvbaseCrawler extends BaseCrawler {
+  static readonly contentTypes: readonly ContentType[] = ["censored"];
   site(): Website {
     return Website.AVBASE;
   }

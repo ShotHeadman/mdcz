@@ -24,10 +24,27 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
   const tags = Array.from(
     new Set((localState.tags ?? []).map((value) => value.trim()).filter((value) => value.length > 0)),
   );
-  if (!localState.uncensoredChoice && tags.length === 0) return undefined;
+  const lockedFields = Array.from(
+    new Set((localState.lockedFields ?? []).map((value) => value.trim()).filter((value) => value.length > 0)),
+  );
+  const published =
+    localState.published && Object.keys(localState.published).length > 0 ? localState.published : undefined;
+  const edits = localState.edits && Object.keys(localState.edits).length > 0 ? localState.edits : undefined;
+  if (
+    !localState.uncensoredChoice &&
+    tags.length === 0 &&
+    lockedFields.length === 0 &&
+    !published &&
+    !localState.fileinfo
+  )
+    return undefined;
   return {
     uncensoredChoice: localState.uncensoredChoice,
     tags: tags.length > 0 ? tags : undefined,
+    lockedFields: lockedFields.length > 0 ? lockedFields : undefined,
+    published,
+    edits,
+    fileinfo: localState.fileinfo,
   };
 };
 

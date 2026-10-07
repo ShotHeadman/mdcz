@@ -3,6 +3,7 @@ import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { BaseCrawler } from "../base/BaseCrawler";
 import { movieNumbersMatch } from "../base/identity";
 import { parseDate } from "../base/parser";
@@ -64,6 +65,7 @@ const extractDtDdValue = ($: CheerioAPI, label: string): string | undefined => {
 };
 
 export class SokmilCrawler extends BaseCrawler {
+  static readonly contentTypes: readonly ContentType[] = ["censored"];
   site(): Website {
     return Website.SOKMIL;
   }

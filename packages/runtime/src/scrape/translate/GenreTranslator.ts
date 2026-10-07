@@ -46,9 +46,10 @@ export class GenreTranslator {
   ): string[] {
     const { normalizedTerms, resolvedByKey, unresolvedEntries } = state;
     if (translated.length === unresolvedEntries.length) {
-      unresolvedEntries.forEach(([key, term], index) => {
+      unresolvedEntries.forEach(([key], index) => {
+        // An echoed term is the engine's answer too; caching it keeps refreshes from asking again.
         const value = translated[index]?.trim();
-        if (!value || value === term) return;
+        if (!value) return;
         const normalized = ensureTargetChinese(value, target);
         this.cache.set(key, normalized);
         resolvedByKey.set(key, normalized);

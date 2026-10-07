@@ -1,5 +1,6 @@
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { AggregationService } from "@mdcz/runtime/scrape";
@@ -212,6 +213,49 @@ describe("buildServer maintenance integration", () => {
     const session = await waitForMaintenanceSession(fastify, token, sessionId, "preview", "completed");
     expect(emptySelection.statusCode).toBe(400);
     expect(session.previews.map((item) => item.relativePath)).toEqual(["ABC-201.mp4", "ABC-203.mp4"]);
+  });
+
+  it("re-merges stored site results with the current field priorities without crawling", async () => {
+    const root = await createTempRoot("maintenance-remerge-root");
+    await writeMaintenanceInput(root, "ABC-500", "Local Title ABC-500");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const rootId = await syncMediaRootFromConfig(fastify, token, root);
+    await configureOrganizedOutput(fastify, token, root, {
+      translate: { enableTranslation: false },
+      aggregation: { fieldPriorities: { title: [Website.OFFICIAL, Website.DMM] } },
+    });
+    const siteData = (website: Website, title: string) => ({
+      number: "ABC-500",
+      title,
+      actors: ["Actor M"],
+      genres: [],
+      scene_images: [],
+      website,
+      thumb_url: "https://example.com/abc-500.jpg",
+    });
+    (await services.persistence.getState()).repositories.siteResults.record("ABC-500", [
+      { site: Website.DMM, status: "success", elapsedMs: 1, data: siteData(Website.DMM, "DMM Title Actor M") },
+      { site: Website.OFFICIAL, status: "success", elapsedMs: 1, data: siteData(Website.OFFICIAL, "Official Title") },
+    ]);
+    const crawl = vi.spyOn(CrawlerProvider.prototype, "crawl");
+
+    const { session, sessionId } = await startMaintenancePreview(fastify, token, rootId, "remerge", ["ABC-500.mp4"]);
+    expect(session.previews[0].fieldDiffs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "title", oldValue: "Local Title ABC-500", newValue: "Official Title" }),
+      ]),
+    );
+    const applied = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+    });
+    expect(applied.statusCode).toBe(200);
+    await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+    expect(await readFile(join(root, "ABC-500.nfo"), "utf8")).toContain("<title>Official Title</title>");
+    expect(crawl).not.toHaveBeenCalled();
   });
 
   it("exposes paused and resumed previews through HTTP", async () => {

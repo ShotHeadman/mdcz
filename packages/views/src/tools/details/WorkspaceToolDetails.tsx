@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { BatchTranslateApplyResultItem, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateApplyResultItem, BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import { Badge, Button, Checkbox, cn, Input, Label, Progress } from "@mdcz/ui";
 import {
   AlertCircle,
@@ -152,10 +152,14 @@ export function SingleFilePathScraperDetail({
 export interface BatchNfoTranslatorWorkspaceDetailProps {
   items: BatchTranslateScanItem[];
   scanning?: boolean;
-  onApply: (items: BatchTranslateScanItem[], batchSize: number) => Promise<BatchTranslateApplyResultItem[]>;
+  onApply: (
+    items: BatchTranslateScanItem[],
+    batchSize: number,
+    mode: BatchTranslateMode,
+  ) => Promise<BatchTranslateApplyResultItem[]>;
   onApplyComplete?: (summary: BatchNfoTranslatorApplySummary) => void;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
-  onScan: (directory: string) => void | Promise<void>;
+  onScan: (directory: string, mode: BatchTranslateMode) => void | Promise<void>;
 }
 
 const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus): string => {
@@ -184,6 +188,9 @@ export function BatchNfoTranslatorWorkspaceDetail({
   const t = useT();
   const [directory, setDirectory] = useState(readStoredBatchTranslateDirectory);
   const [batchSizeInput, setBatchSizeInput] = useState(String(DEFAULT_BATCH_TRANSLATE_SIZE));
+  const [mode, setMode] = useState<BatchTranslateMode>("untranslated");
+  // Apply must translate with the mode that produced the listed items.
+  const [scannedMode, setScannedMode] = useState<BatchTranslateMode>("untranslated");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -259,7 +266,8 @@ export function BatchNfoTranslatorWorkspaceDetail({
     setApplyProgress(null);
     setApplyPaused(false);
     persistBatchTranslateDirectory(directory);
-    await onScan(directory);
+    setScannedMode(mode);
+    await onScan(directory, mode);
   };
 
   const handleApply = async () => {
@@ -295,7 +303,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
 
       let chunkResults: BatchTranslateApplyResultItem[];
       try {
-        chunkResults = await onApply(chunk, normalizedBatchSize);
+        chunkResults = await onApply(chunk, normalizedBatchSize, scannedMode);
       } catch (error) {
         chunkResults = chunk.map((item) => buildFailedBatchTranslateResult(item, toErrorMessage(error)));
       }
@@ -389,60 +397,91 @@ export function BatchNfoTranslatorWorkspaceDetail({
       <div className={TOOL_SUBSECTION_CLASS}>
         <div className="space-y-3">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <Label
-              htmlFor="batch-translate-size"
-              className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
-            >
-              {t.tools.batchTranslateBatchSize}
-            </Label>
-            <span className="text-xs text-muted-foreground">{t.tools.batchTranslateBatchSizeHelp}</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              {t.tools.batchTranslateMode}
+            </span>
+            <span className="text-xs text-muted-foreground">{t.tools.batchTranslateModeHelp[mode]}</span>
           </div>
+          <div className="flex w-fit items-center gap-1.5 rounded-quiet-capsule bg-surface-floating/80 p-1 border border-black/5 dark:border-white/5">
+            {(["untranslated", "all", "restore"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={mode === option}
+                onClick={() => setMode(option)}
+                className={cn(
+                  "flex h-8 items-center px-3.5 rounded-quiet-capsule text-xs font-medium transition-all",
+                  mode === option
+                    ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                    : "text-muted-foreground hover:bg-surface-low hover:text-foreground",
+                )}
+              >
+                {t.tools.batchTranslateModeOptions[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 rounded-quiet-capsule bg-surface-floating/80 p-1 border border-black/5 dark:border-white/5">
-              <span className="px-2.5 text-xs font-medium text-muted-foreground">{t.tools.presetPrefix}</span>
-              {batchSizePresets.map((preset) => (
-                <button
-                  key={preset.value}
-                  type="button"
-                  onClick={() => setBatchSizeInput(String(preset.value))}
-                  className={cn(
-                    "flex h-8 items-center px-3.5 rounded-quiet-capsule text-xs font-medium transition-all",
-                    normalizedBatchSize === preset.value
-                      ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                      : "text-muted-foreground hover:bg-surface-low hover:text-foreground",
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
+      {mode !== "restore" && (
+        <div className={TOOL_SUBSECTION_CLASS}>
+          <div className="space-y-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <Label
+                htmlFor="batch-translate-size"
+                className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+              >
+                {t.tools.batchTranslateBatchSize}
+              </Label>
+              <span className="text-xs text-muted-foreground">{t.tools.batchTranslateBatchSizeHelp}</span>
             </div>
 
-            <div className="hidden h-6 w-px bg-black/10 dark:bg-white/10 sm:block" />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 rounded-quiet-capsule bg-surface-floating/80 p-1 border border-black/5 dark:border-white/5">
+                <span className="px-2.5 text-xs font-medium text-muted-foreground">{t.tools.presetPrefix}</span>
+                {batchSizePresets.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => setBatchSizeInput(String(preset.value))}
+                    className={cn(
+                      "flex h-8 items-center px-3.5 rounded-quiet-capsule text-xs font-medium transition-all",
+                      normalizedBatchSize === preset.value
+                        ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                        : "text-muted-foreground hover:bg-surface-low hover:text-foreground",
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
 
-            <div className="flex items-center gap-2">
-              <Label htmlFor="batch-translate-size" className="shrink-0 text-xs font-medium text-muted-foreground">
-                {t.tools.customPrefix}
-              </Label>
-              <div className="inline-flex h-10 items-center rounded-quiet-capsule bg-surface-low/90 px-4 border border-black/5 dark:border-white/5 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-ring/30 transition-all">
-                <input
-                  id="batch-translate-size"
-                  type="number"
-                  min={MIN_BATCH_TRANSLATE_SIZE}
-                  max={MAX_BATCH_TRANSLATE_SIZE}
-                  value={batchSizeInput}
-                  onBlur={() => setBatchSizeInput(String(normalizedBatchSize))}
-                  onChange={(event) => setBatchSizeInput(event.target.value)}
-                  className="w-12 bg-transparent text-center font-mono text-sm font-semibold text-foreground focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <span className="ml-2 flex h-4 shrink-0 select-none items-center border-l border-black/10 pl-2 text-xs font-medium text-muted-foreground leading-none dark:border-white/10">
-                  {t.tools.itemsPerBatch}
-                </span>
+              <div className="hidden h-6 w-px bg-black/10 dark:bg-white/10 sm:block" />
+
+              <div className="flex items-center gap-2">
+                <Label htmlFor="batch-translate-size" className="shrink-0 text-xs font-medium text-muted-foreground">
+                  {t.tools.customPrefix}
+                </Label>
+                <div className="inline-flex h-10 items-center rounded-quiet-capsule bg-surface-low/90 px-4 border border-black/5 dark:border-white/5 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-ring/30 transition-all">
+                  <input
+                    id="batch-translate-size"
+                    type="number"
+                    min={MIN_BATCH_TRANSLATE_SIZE}
+                    max={MAX_BATCH_TRANSLATE_SIZE}
+                    value={batchSizeInput}
+                    onBlur={() => setBatchSizeInput(String(normalizedBatchSize))}
+                    onChange={(event) => setBatchSizeInput(event.target.value)}
+                    className="w-12 bg-transparent text-center font-mono text-sm font-semibold text-foreground focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                  <span className="ml-2 flex h-4 shrink-0 select-none items-center border-l border-black/10 pl-2 text-xs font-medium text-muted-foreground leading-none dark:border-white/10">
+                    {t.tools.itemsPerBatch}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row">
         <Button
@@ -465,9 +504,13 @@ export function BatchNfoTranslatorWorkspaceDetail({
               ? applyProgress
                 ? t.tools.translatingProgress(applyProgress.completed, applyProgress.total)
                 : t.tools.translating
-              : selectedItems.length === items.length
-                ? t.tools.startBatchTranslate
-                : t.tools.translateSelected(selectedItems.length)}
+              : scannedMode === "restore"
+                ? selectedItems.length === items.length
+                  ? t.tools.startRestore
+                  : t.tools.restoreSelected(selectedItems.length)
+                : selectedItems.length === items.length
+                  ? t.tools.startBatchTranslate
+                  : t.tools.translateSelected(selectedItems.length)}
           </span>
         </Button>
         {applying ? (

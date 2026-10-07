@@ -3,7 +3,7 @@ import { toErrorMessage } from "@mdcz/runtime/shared";
 import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { CheerioAPI } from "cheerio";
-
+import type { ContentType } from "../../../scrape/utils/movieClassification";
 import { BaseCrawler } from "../../base/BaseCrawler";
 import { verifyMovieNumber } from "../../base/identity";
 import type { Context, CrawlerInput } from "../../base/types";
@@ -31,6 +31,7 @@ export const dmmPageTitle = ($: CheerioAPI): string | undefined =>
  * and fetch option building for DMM-family crawlers.
  */
 export abstract class BaseDmmCrawler extends BaseCrawler {
+  static readonly contentTypes: readonly ContentType[] = ["censored"];
   protected abstract dmmSiteLabel(): "DMM" | "DMM_TV";
 
   protected override newContext(input: CrawlerInput): Context {

@@ -25,8 +25,30 @@ const skipped = (site: Website, skipReason: string, extra: object = {}) => ({
 });
 
 describe("resolveSiteAdmission", () => {
-  it.each(["FC2-1234"])("keeps only FC2-capable sites for %s", (number) => {
-    expect(admit(number).admitted).toEqual([Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB]);
+  const censoredCatalogs = [
+    Website.DMM,
+    Website.DMM_TV,
+    Website.FANTIA,
+    Website.JAV321,
+    Website.KINGDOM,
+    Website.R18_DEV,
+    Website.SOKMIL,
+    Website.AVBASE,
+    Website.AVWIKIDB,
+  ];
+  it.each([
+    ["FC2-1234", [Website.FC2, Website.FC2HUB, Website.PPVDATABANK, Website.JAVDB], []],
+    ["HEYZO-3806", [Website.JAVBUS, Website.JAVDB, Website.HEYZO], censoredCatalogs],
+    ["100524_001", [Website.JAVBUS, Website.JAVDB], censoredCatalogs],
+    [
+      "SNOS-309",
+      [...censoredCatalogs.slice(0, 4), Website.JAVBUS, Website.JAVDB, ...censoredCatalogs.slice(4), Website.OFFICIAL],
+      [],
+    ],
+  ])("routes %s to the sites serving its content type, holding the other type in reserve", (number, admitted, deferred) => {
+    const result = admit(number);
+    expect(result.admitted).toEqual(admitted);
+    expect(result.deferred).toEqual(deferred);
   });
 
   it("excludes FC2-only sites for non-FC2 numbers but keeps JavDB", () => {
@@ -97,6 +119,7 @@ describe("resolveSiteAdmission", () => {
 
     expect(result).toEqual({
       admitted: [],
+      deferred: [],
       rejected: [
         skipped(Website.DMM, "unavailable", { reason: "region_blocked" }),
         skipped(Website.JAVDB, "cooldown", { reason: "rate_limited", detail: "42s" }),
@@ -125,6 +148,7 @@ describe("resolveSiteAdmission", () => {
 
     expect(manual(new Map([[Website.FANTIA, { reason: "login_wall" as const }]]))).toEqual({
       admitted: [Website.FANTIA],
+      deferred: [],
       rejected: [],
     });
     expect(

@@ -302,11 +302,6 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "分盘样式",
       description: "分盘的视频在输出时保留原始后缀，或统一改写为 CD / PART / DISC 风格",
     },
-    "aggregation.behavior.preferLongerPlot": {
-      label: "简介优先取更长内容",
-      description: "多个站点都提供简介时，优先采用信息量更高的版本。",
-      aliases: ["长简介"],
-    },
     "aggregation.behavior.maxSceneImages": {
       label: "最多保留剧照数",
       description: "聚合后的剧照数量上限。",

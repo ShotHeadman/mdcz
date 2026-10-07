@@ -82,7 +82,7 @@ export function MaintenanceBatchBarView({
 }: MaintenanceBatchBarViewProps) {
   const t = useT();
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
-  const usesDiffView = presetId === "refresh_metadata" || presetId === "rebuild_all";
+  const usesDiffView = presetId === "refresh_metadata" || presetId === "remerge" || presetId === "rebuild_all";
   const previewActionLabel = usesDiffView
     ? hasPreviewResults
       ? t.maintenance.refreshDiff

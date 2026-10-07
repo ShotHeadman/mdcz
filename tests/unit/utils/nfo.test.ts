@@ -147,7 +147,7 @@ describe("parseNfo", () => {
     const result = parseNfoSnapshot(xml).crawlerData;
 
     expect(result.plot).toBe("概要内容");
-    expect(result.plot_zh).toBe("概要内容");
+    expect(result.plot_zh).toBeUndefined();
   });
 
   it("reads release_date from the NFO", () => {
@@ -181,7 +181,7 @@ describe("parseNfo", () => {
     expect(result.scene_images).toEqual([]);
   });
 
-  it("round-trips local uncensored choice and custom tags through localState", () => {
+  it("round-trips local uncensored choice, custom tags and field locks through localState", () => {
     const xml = new NfoGenerator().buildXml(
       {
         title: "Local Tags",
@@ -195,6 +195,7 @@ describe("parseNfo", () => {
         localState: {
           uncensoredChoice: "leak",
           tags: ["中文字幕", "自定义标签"],
+          lockedFields: ["Name", "OfficialRating"],
         },
         buildTags: buildMovieTags,
       },
@@ -202,10 +203,61 @@ describe("parseNfo", () => {
 
     const parsed = parseNfoSnapshot(xml);
 
-    expect(parsed.localState).toEqual({
+    expect(xml).toContain("<lockedfields>Name|OfficialRating</lockedfields>");
+    expect(parsed.localState).toMatchObject({
       uncensoredChoice: "leak",
       tags: ["中文字幕", "自定义标签"],
+      lockedFields: ["Name", "OfficialRating"],
+      edits: undefined,
     });
+  });
+
+  it("recognizes values edited after publishing, across media-server rewrites and later publishes", () => {
+    const generator = new NfoGenerator();
+    const site = {
+      title: "Source Title",
+      number: "ABC-123",
+      actors: ["Actor A"],
+      actor_profiles: [{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }],
+      genres: ["Pantyhose/Tights", "Drama"],
+      series: "Series",
+      director: "Site Director",
+      plot: "Line one.\n\nLine two.",
+      scene_images: [],
+      website: Website.DMM,
+    };
+    const options = { nfoTitleTemplate: "{number} {title}" };
+    const editsOf = (xml: string) => Object.keys(parseNfoSnapshot(xml).localState?.edits ?? {});
+
+    // Emby's rewrite: actor thumbs dropped, <set><name>, CDATA, and "A/B" genres split and moved.
+    const published = generator.buildXml(site, options);
+    const rewritten = published
+      .replace(/<thumb>\.actors\/Actor A\.jpg<\/thumb>/u, "")
+      .replace("<set>Series</set>", "<set><name>Series</name></set>")
+      .replace(/<plot>([\s\S]*?)<\/plot>/u, "<plot><![CDATA[$1]]></plot>")
+      .replace(
+        /<genre>Pantyhose\/Tights<\/genre>(\s*)(<genre>Drama<\/genre>)/u,
+        "$2$1<genre>Pantyhose</genre>$1<genre>Tights</genre>",
+      );
+    expect(editsOf(rewritten)).toEqual([]);
+
+    const edited = rewritten
+      .replace("<title>ABC-123 Source Title</title>", "<title>User Title</title>")
+      .replace("<director>Site Director</director>", "<director>User Director</director>");
+    const snapshot = parseNfoSnapshot(edited);
+    expect(editsOf(edited)).toEqual(["title", "director"]);
+
+    const kept = generator.buildXml(snapshot.crawlerData, { ...options, localState: snapshot.localState });
+    expect(kept).toContain("<title>User Title</title>");
+    expect(editsOf(kept)).toEqual(["title", "director"]);
+
+    const siteDirector = { ...snapshot.crawlerData, director: "Site Director" };
+    expect(editsOf(generator.buildXml(siteDirector, { ...options, localState: snapshot.localState }))).toEqual([
+      "title",
+    ]);
+
+    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, options);
+    expect(editsOf(editorSaved)).toEqual(["genre"]);
   });
 
   it("does not restore mirrored genre tags as localState tags", () => {
@@ -229,9 +281,7 @@ describe("parseNfo", () => {
     const parsed = parseNfoSnapshot(xml);
 
     expect(parsed.crawlerData.genres).toEqual(["Drama", "Mystery"]);
-    expect(parsed.localState).toEqual({
-      tags: ["自定义标签"],
-    });
+    expect(parsed.localState?.tags).toEqual(["自定义标签"]);
   });
 
   it("emits poster/thumb/fanart/trailer rows in the aggregation source comment", () => {

@@ -1,3 +1,4 @@
+import type { MaintenancePresetId } from "@mdcz/shared/types";
 import { MaintenanceBatchBarView, type MaintenanceBatchBarViewProps, PathPlanView } from "@mdcz/views/maintenance";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
 import { useState } from "react";
@@ -33,9 +34,7 @@ const createBatchBarProps = (overrides: Partial<MaintenanceBatchBarViewProps> = 
 });
 
 function PresetSelectionHarness() {
-  const [presetId, setPresetId] = useState<"import_local" | "refresh_metadata" | "local_organize" | "rebuild_all">(
-    "import_local",
-  );
+  const [presetId, setPresetId] = useState<MaintenancePresetId>("import_local");
 
   return (
     <>
@@ -125,7 +124,7 @@ function ReplacementHarness({ onExecute }: { onExecute: () => void }) {
   );
 }
 
-test("maintenance setup selects all four presets through semantic buttons", async () => {
+test("maintenance setup selects every preset through semantic buttons", async () => {
   const screen = await render(<PresetSelectionHarness />);
   const current = screen.getByLabelText("当前维护预设");
   await expect.element(screen.getByText("输出目录")).not.toBeInTheDocument();
@@ -133,6 +132,7 @@ test("maintenance setup selects all four presets through semantic buttons", asyn
   for (const [label, presetId] of [
     ["本地导入", "import_local"],
     ["原地更新", "refresh_metadata"],
+    ["重新合并", "remerge"],
     ["本地整理", "local_organize"],
     ["全量重整", "rebuild_all"],
   ] as const) {

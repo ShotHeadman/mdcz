@@ -1,7 +1,7 @@
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   type ActorImageService,
@@ -25,6 +25,7 @@ export interface ServerMaintenanceRuntimeDependencies {
   actorSourceProvider: ActorSourceProvider;
   mappingStore?: TranslationMappingStore;
   recordSiteResults: SiteResultSink;
+  loadSiteResults: MaintenanceRuntimeDependencies["loadSiteResults"];
 }
 
 export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDependencies): MaintenanceRuntime => {
@@ -34,6 +35,7 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
     actorSourceProvider: deps.actorSourceProvider,
     crawlerProvider: deps.crawlerProvider,
     recordSiteResults: deps.recordSiteResults,
+    loadSiteResults: deps.loadSiteResults,
     logger,
     config: deps.config,
     downloadManager: new DownloadManager(deps.networkClient, {

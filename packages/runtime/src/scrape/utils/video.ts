@@ -25,9 +25,9 @@ const toVideoMetadata = (result: MediaInfoResult): VideoMeta | undefined => {
   }
 
   return {
-    durationSeconds: durationSeconds ?? 0,
-    width: width === undefined ? 0 : Math.round(width),
-    height: height === undefined ? 0 : Math.round(height),
+    durationSeconds,
+    width: width === undefined ? undefined : Math.round(width),
+    height: height === undefined ? undefined : Math.round(height),
     bitrate,
   };
 };

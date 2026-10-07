@@ -3,6 +3,7 @@ import { normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import { DEFAULT_R18_METADATA_LANGUAGE, type R18MetadataLanguage } from "@mdcz/shared/r18";
 import type { CrawlerData } from "@mdcz/shared/types";
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { toCrawlerErrorResult } from "../base/BaseCrawler";
 import { movieNumbersMatch, verifyMovieNumber } from "../base/identity";
 import { parseDate } from "../base/parser";
@@ -354,6 +355,7 @@ const mapR18RecordToCrawlerData = (record: JsonRecord, language: R18MetadataLang
 const isNotFoundError = (error: unknown): boolean => failureReasonOf(error) === "not_found";
 
 export class R18DevCrawler implements SiteAdapter {
+  static readonly contentTypes: readonly ContentType[] = ["censored"];
   private readonly gateway: FetchGateway;
 
   constructor(dependencies: AdapterDependencies) {

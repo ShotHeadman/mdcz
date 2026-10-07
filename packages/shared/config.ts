@@ -307,10 +307,25 @@ const titleRepairSchema = z.object({
   stripTrailingActors: z.boolean().default(false),
 });
 
+// Maker sites answer only their own numbers, so leading the text fields costs nothing elsewhere; their titles carry no
+// appended actor names and their plots are unmasked.
+const MAKER_TEXT_SITES = [
+  Website.OFFICIAL,
+  Website.ONEPONDO,
+  Website.TENMUSUME,
+  Website.CARIBBEANCOM,
+  Website.HEYZO,
+  Website.DAHLIA,
+  Website.FALENO,
+  Website.PRESTIGE,
+  Website.KM_PRODUCE,
+];
+
 const fieldPrioritiesSchema = z.object({
   title: z
     .array(z.enum(Website))
     .default([
+      ...MAKER_TEXT_SITES,
       Website.AVBASE,
       Website.MGSTAGE,
       Website.DMM,
@@ -325,6 +340,7 @@ const fieldPrioritiesSchema = z.object({
   plot: z
     .array(z.enum(Website))
     .default([
+      ...MAKER_TEXT_SITES,
       Website.AVBASE,
       Website.MGSTAGE,
       Website.DMM,
@@ -427,7 +443,6 @@ const fieldPrioritiesSchema = z.object({
 });
 
 const aggregationBehaviorSchema = z.object({
-  preferLongerPlot: z.boolean().default(true),
   maxSceneImages: z.number().int().min(0).max(100).default(30),
   maxActors: z.number().int().min(1).max(100).default(50),
   maxGenres: z.number().int().min(1).max(100).default(30),

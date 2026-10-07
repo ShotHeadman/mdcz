@@ -6,7 +6,12 @@ import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import type { InvalidatePayload, LogPayload, ShortcutPayload, TaskSnapshotPayload } from "@mdcz/shared/ipcEvents";
-import type { AppUpdateStatus, BatchTranslateApplyInput, TranslateTestInput } from "@mdcz/shared/ipcTypes";
+import type {
+  AppUpdateStatus,
+  BatchTranslateApplyInput,
+  BatchTranslateMode,
+  TranslateTestInput,
+} from "@mdcz/shared/ipcTypes";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
@@ -146,7 +151,8 @@ export const ipc = {
       client[IpcChannel.Tool_AmazonPosterLookup]({ nfoPath, title }),
     amazonPosterApply: (items: Array<{ nfoPath: string; amazonPosterUrl: string }>) =>
       client[IpcChannel.Tool_AmazonPosterApply]({ items }),
-    batchTranslateScan: (directory: string) => client[IpcChannel.Tool_BatchTranslateScan]({ directory }),
+    batchTranslateScan: (directory: string, mode: BatchTranslateMode) =>
+      client[IpcChannel.Tool_BatchTranslateScan]({ directory, mode }),
     batchTranslateApply: (input: BatchTranslateApplyInput) => client[IpcChannel.Tool_BatchTranslateApply](input),
     toggleDevTools: () => client[IpcChannel.Tool_ToggleDevTools](undefined),
   },

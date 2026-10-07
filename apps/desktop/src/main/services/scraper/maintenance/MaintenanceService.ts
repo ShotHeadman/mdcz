@@ -71,6 +71,8 @@ export class MaintenanceService {
         signalService: deps.signalService,
         recordSiteResults: async (number, results) =>
           (await deps.persistenceService.getState()).repositories.siteResults.record(number, results),
+        loadSiteResults: async (number) =>
+          (await deps.persistenceService.getState()).repositories.siteResults.list(number),
       });
     this.coordinator =
       deps.coordinator ??

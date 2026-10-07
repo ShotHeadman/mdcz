@@ -16,6 +16,7 @@ export const maintenance: Messages["maintenance"] = {
   prevGallery: "上一张剧照",
   nextGallery: "下一张剧照",
   oldCurrent: "旧 (当前)",
+  oldEdited: "旧 (手动修改过)",
   oldValueEmpty: "旧值为空",
   imageSource: "图片来源",
   newPreview: "新 (预览)",

@@ -159,8 +159,7 @@ export const settings: Messages["settings"] = {
       },
       official: {
         label: "厂商官网",
-        description:
-          "包含 S1、MOODYZ、IdeaPocket 等 Will/Outvision 片商，以及 MGStage、Prestige、Faleno、Dahlia、KM Produce；按番号自动选择适用站点。",
+        description: "片商自己的网站，只查询自家番号。标题不带演员名、简介无打码，但简介不分段。",
       },
       avbase: {
         label: "avbase",

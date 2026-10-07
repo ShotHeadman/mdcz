@@ -839,7 +839,6 @@ export function AggregationScrapeSection() {
 export function AggregationBehaviorSection() {
   return (
     <>
-      <BoolField name="aggregation.behavior.preferLongerPlot" />
       <NumberField name="aggregation.behavior.maxSceneImages" min={0} max={100} />
       <NumberField name="aggregation.behavior.maxActors" min={1} max={100} />
       <NumberField name="aggregation.behavior.maxGenres" min={1} max={100} />

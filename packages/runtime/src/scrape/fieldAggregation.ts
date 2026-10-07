@@ -1,12 +1,12 @@
+import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { ImageAlternatives, SiteCrawlResult, SourceMap } from "./aggregation";
 
-export type AggregationStrategy = "first_non_null" | "first_non_empty" | "longest" | "union" | "highest_quality";
+export type AggregationStrategy = "first_non_null" | "first_non_empty" | "union" | "highest_quality";
 
 export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStrategy>> = {
   title: "first_non_null",
-  title_zh: "first_non_null",
   number: "first_non_null",
   studio: "first_non_null",
   director: "first_non_null",
@@ -21,9 +21,8 @@ export const FIELD_STRATEGIES: Partial<Record<keyof CrawlerData, AggregationStra
   trailer_url: "first_non_null",
   website: "first_non_null",
   content_type: "first_non_null",
-  plot: "longest",
-  plot_zh: "longest",
-  actors: "first_non_empty",
+  plot: "first_non_null",
+  actors: "union",
   genres: "first_non_empty",
   scene_images: "first_non_empty",
 };
@@ -32,14 +31,12 @@ const SCRIPT_PATTERN =
   /(?:<script|<\/script|<style|function\s*\(|=>\s*\{|window\.|document\.\w+\(|var\s+\w+\s*=|const\s+\w+\s*=|let\s+\w+\s*=)/i;
 
 interface AggregationBehavior {
-  preferLongerPlot: boolean;
   maxSceneImages: number;
   maxActors: number;
   maxGenres: number;
 }
 
 const DEFAULT_BEHAVIOR: AggregationBehavior = {
-  preferLongerPlot: true,
   maxSceneImages: 30,
   maxActors: 50,
   maxGenres: 30,
@@ -64,6 +61,12 @@ const EMPTY_IMAGE_ALTERNATIVES: ImageAlternatives = {
 type PrimaryImageAlternativeField = "thumb_url" | "poster_url";
 
 const looksLikeCode = (text: string): boolean => SCRIPT_PATTERN.test(text);
+// DMM credits some actresses as "名義（別名）" (SNOS-055: 及川美桜（夏生なつ）); either name identifies her elsewhere.
+const actorIdentityNames = (actor: string): string[] => {
+  const normalized = normalizeActorName(actor);
+  const credited = normalized.match(/^(.+)\((.+)\)$/u);
+  return [normalized, ...(credited ? [credited[1], credited[2]] : [])].filter(Boolean);
+};
 const isPrimaryImageField = (field: keyof CrawlerData): field is PrimaryImageAlternativeField =>
   field === "thumb_url" || field === "poster_url";
 
@@ -93,7 +96,7 @@ export class FieldAggregator {
     this.behavior = { ...DEFAULT_BEHAVIOR, ...behavior };
   }
 
-  aggregate(results: Map<Website, CrawlerData>): {
+  aggregate(results: ReadonlyMap<Website, CrawlerData>): {
     data: CrawlerData;
     sources: SourceMap;
     imageAlternatives: ImageAlternatives;
@@ -126,7 +129,6 @@ export class FieldAggregator {
 
     const data: CrawlerData = {
       title: resolve("title") || firstEntry.data.title,
-      title_zh: resolve("title_zh"),
       number: resolve("number") || firstEntry.data.number,
       actors: resolve("actors") ?? [],
       genres: resolve("genres") ?? [],
@@ -136,7 +138,6 @@ export class FieldAggregator {
       publisher: resolve("publisher"),
       series: resolve("series"),
       plot: resolve("plot"),
-      plot_zh: resolve("plot_zh"),
       release_date: resolve("release_date"),
       durationSeconds: resolve("durationSeconds"),
       rating: resolve("rating"),
@@ -183,8 +184,6 @@ export class FieldAggregator {
         return this.firstNonNull(field, entries);
       case "first_non_empty":
         return this.firstNonEmpty(field, entries);
-      case "longest":
-        return this.longest(field, entries);
       case "union":
         return this.union(field, entries);
       case "highest_quality":
@@ -197,7 +196,12 @@ export class FieldAggregator {
   private firstNonNull(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
     for (const entry of entries) {
       const value = entry.data[field];
-      if (value !== undefined && value !== null && value !== "") {
+      if (
+        value !== undefined &&
+        value !== null &&
+        value !== "" &&
+        !(typeof value === "string" && looksLikeCode(value))
+      ) {
         return { value, source: entry.site };
       }
     }
@@ -212,7 +216,7 @@ export class FieldAggregator {
     for (const entry of entries) {
       const value = entry.data[field];
       if (Array.isArray(value) && value.length > 0) {
-        return { value: field === "actors" ? value.slice(0, this.behavior.maxActors) : value, source: entry.site };
+        return { value: field === "genres" ? value.slice(0, this.behavior.maxGenres) : value, source: entry.site };
       }
       if (typeof value === "string" && value.length > 0) {
         return { value, source: entry.site };
@@ -256,78 +260,22 @@ export class FieldAggregator {
     };
   }
 
-  private longest(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    let best: { value: string; source: Website } | null = null;
-    for (const entry of entries) {
-      const value = entry.data[field];
-      if (typeof value === "string" && value.length > 0) {
-        if (looksLikeCode(value)) continue;
-        if (!best || value.length > best.value.length) {
-          best = { value, source: entry.site };
-        }
-      }
-    }
-    return best ? { value: best.value, source: best.source } : { value: undefined };
-  }
-
   private union(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    if (field === "actors") {
-      return this.unionActors(entries);
-    }
-    if (field === "genres") {
-      return this.unionGenres(entries);
-    }
-
-    const seen = new Set<string>();
-    const merged: unknown[] = [];
-    let source: Website | undefined;
-    for (const entry of entries) {
-      const value = entry.data[field];
-      if (!Array.isArray(value)) continue;
-      for (const item of value) {
-        const key = typeof item === "string" ? item : JSON.stringify(item);
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(item);
-          source ??= entry.site;
-        }
-      }
-    }
-    return { value: merged.length > 0 ? merged : undefined, source };
-  }
-
-  private unionActors(entries: SourceEntry[]): { value: string[]; source?: Website } {
+    if (field !== "actors") throw new Error(`No union rule for ${field}`);
     const seen = new Set<string>();
     const merged: string[] = [];
     let source: Website | undefined;
     for (const entry of entries) {
       for (const actor of entry.data.actors) {
-        const normalized = actor.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          merged.push(actor);
-          source ??= entry.site;
-        }
+        const names = actorIdentityNames(actor);
+        const known = names.some((name) => seen.has(name));
+        for (const name of names) seen.add(name);
+        if (known || names.length === 0) continue;
+        merged.push(actor);
+        source ??= entry.site;
       }
     }
     return { value: merged.slice(0, this.behavior.maxActors), source };
-  }
-
-  private unionGenres(entries: SourceEntry[]): { value: string[]; source?: Website } {
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    let source: Website | undefined;
-    for (const entry of entries) {
-      for (const genre of entry.data.genres) {
-        const normalized = genre.normalize("NFKC").toLowerCase().trim();
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          merged.push(genre);
-          source ??= entry.site;
-        }
-      }
-    }
-    return { value: merged.slice(0, this.behavior.maxGenres), source };
   }
 
   private normalizeSceneImageSet(values: string[]): string[] {

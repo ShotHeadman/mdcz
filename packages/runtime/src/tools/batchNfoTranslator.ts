@@ -2,7 +2,12 @@ import { stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
-import type { BatchTranslateApplyResultItem, BatchTranslateField, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type {
+  BatchTranslateApplyResultItem,
+  BatchTranslateField,
+  BatchTranslateMode,
+  BatchTranslateScanItem,
+} from "@mdcz/shared/ipcTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
@@ -54,8 +59,9 @@ type BatchTranslateWriteNfoInput = {
 export type BatchTranslateWriteNfo = (input: BatchTranslateWriteNfoInput) => Promise<string | undefined>;
 
 type BatchTranslationAction =
-  | { field: BatchTranslateField; mode: "translate"; text: string; key: string }
-  | { field: BatchTranslateField; mode: "convert"; value: string };
+  | { field: BatchTranslateField; kind: "translate"; text: string; key: string }
+  | { field: BatchTranslateField; kind: "convert"; value: string }
+  | { field: BatchTranslateField; kind: "restore" };
 
 type BatchTranslationPlanItem = {
   entry: LocalScanEntry;
@@ -91,6 +97,7 @@ const MAX_BATCH_CHARS = 12_000;
 const MOVIE_NFO_NAME = "movie.nfo";
 
 export interface BatchNfoTranslatorApplyOptions {
+  mode: BatchTranslateMode;
   maxBatchItems?: number;
 }
 
@@ -167,31 +174,40 @@ const buildFieldAction = (
   sourceValue: string | undefined,
   currentValue: string | undefined,
   target: LanguageTarget,
+  mode: BatchTranslateMode,
 ): BatchTranslationAction | undefined => {
   const source = normalizeText(sourceValue);
-  const current = normalizeText(currentValue) || source;
+  const translated = normalizeText(currentValue);
+  if (mode === "restore") return source && translated && translated !== source ? { field, kind: "restore" } : undefined;
+  const current = translated || source;
   if (!current) return undefined;
 
-  if (detectLanguage(current) === "zh") {
-    const value = ensureTargetChinese(current, target);
-    return value === current ? undefined : { field, mode: "convert", value };
+  const text = mode === "all" ? source || current : current;
+  if (detectLanguage(text) === "zh") {
+    const value = ensureTargetChinese(text, target);
+    return value === current ? undefined : { field, kind: "convert", value };
   }
 
   return {
     field,
-    mode: "translate",
+    kind: "translate",
     text: source || current,
     key: `${target}:${source || current}`,
   };
 };
 
-const toScanItem = (entry: LocalScanEntry, target: LanguageTarget): BatchTranslateScanItem | null => {
+const toScanItem = (
+  entry: LocalScanEntry,
+  target: LanguageTarget,
+  mode: BatchTranslateMode,
+): BatchTranslateScanItem | null => {
   if (!entry.nfoPath || !entry.crawlerData) return null;
 
   const pendingFields: BatchTranslateField[] = [];
-  if (buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target))
+  if (buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target, mode))
     pendingFields.push("title");
-  if (buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target)) pendingFields.push("plot");
+  if (buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target, mode))
+    pendingFields.push("plot");
   if (pendingFields.length === 0) return null;
 
   return {
@@ -249,13 +265,15 @@ const translateChunk = async (
 };
 
 const translatePendingTexts = async (
-  llmApiClient: Pick<LlmApiClient, "generateText">,
+  llmApiClient: Pick<LlmApiClient, "generateText"> | undefined,
   items: PendingTranslation[],
   target: LanguageTarget,
   config: Configuration,
   logger: RuntimeLogger,
-  options: BatchNfoTranslatorApplyOptions = {},
+  options: Pick<BatchNfoTranslatorApplyOptions, "maxBatchItems">,
 ): Promise<PendingTranslationResult> => {
+  if (!llmApiClient) throw new Error("Batch NFO translation apply requires an llmApiClient dependency");
+  assertLlmConfiguration(config);
   const translatedByKey = new Map<string, string>();
   const failedReasonByKey = new Map<string, string>();
   const maxBatchItems = normalizeMaxBatchItems(options.maxBatchItems);
@@ -287,6 +305,7 @@ const translatePendingTexts = async (
 
 export const scanBatchNfoTranslations = async (
   directory: string,
+  mode: BatchTranslateMode,
   config: Configuration,
   dependencies: BatchNfoTranslatorDependencies = {},
 ): Promise<BatchTranslateScanItem[]> => {
@@ -297,7 +316,7 @@ export const scanBatchNfoTranslations = async (
   const target = toTarget(config.translate.targetLanguage);
   const entries = await dependencies.localScanService.scan(resolve(directory.trim()), config.paths.sceneImagesFolder);
   return entries
-    .map((entry) => toScanItem(entry, target))
+    .map((entry) => toScanItem(entry, target, mode))
     .filter((item): item is BatchTranslateScanItem => item !== null)
     .sort((left, right) => left.nfoPath.localeCompare(right.nfoPath, "zh-CN"));
 };
@@ -306,19 +325,14 @@ export const applyBatchNfoTranslations = async (
   items: BatchTranslateScanItem[],
   config: Configuration,
   dependencies: BatchNfoTranslatorDependencies,
-  options: BatchNfoTranslatorApplyOptions = {},
+  options: BatchNfoTranslatorApplyOptions,
 ): Promise<BatchTranslateApplyResultItem[]> => {
   if (items.length === 0) return [];
   if (!dependencies.localScanService) {
     throw new Error("Batch NFO translation apply requires a localScanService dependency");
   }
-  if (!dependencies.llmApiClient) {
-    throw new Error("Batch NFO translation apply requires an llmApiClient dependency");
-  }
   const publication = dependencies.publication;
   if (!publication) throw new Error("Batch NFO translation requires registered roots");
-
-  assertLlmConfiguration(config);
 
   const logger = dependencies.logger ?? noopLogger;
   const nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
@@ -344,14 +358,14 @@ export const applyBatchNfoTranslations = async (
     nfoPaths.add(nfoKey);
 
     const titleAction = item.pendingFields.includes("title")
-      ? buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target)
+      ? buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target, options.mode)
       : undefined;
     const plotAction = item.pendingFields.includes("plot")
-      ? buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target)
+      ? buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target, options.mode)
       : undefined;
 
     for (const action of [titleAction, plotAction]) {
-      if (action?.mode === "translate" && !pendingByKey.has(action.key)) {
+      if (action?.kind === "translate" && !pendingByKey.has(action.key)) {
         pendingByKey.set(action.key, { key: action.key, text: action.text });
       }
     }
@@ -359,14 +373,17 @@ export const applyBatchNfoTranslations = async (
     plans.push({ entry, titleAction, plotAction });
   }
 
-  const { failedReasonByKey, translatedByKey } = await translatePendingTexts(
-    dependencies.llmApiClient,
-    [...pendingByKey.values()],
-    target,
-    config,
-    logger,
-    options,
-  );
+  const { failedReasonByKey, translatedByKey } =
+    pendingByKey.size === 0
+      ? { failedReasonByKey: new Map<string, string>(), translatedByKey: new Map<string, string>() }
+      : await translatePendingTexts(
+          dependencies.llmApiClient,
+          [...pendingByKey.values()],
+          target,
+          config,
+          logger,
+          options,
+        );
   const results: BatchTranslateApplyResultItem[] = [];
 
   for (const plan of plans) {
@@ -394,18 +411,17 @@ export const applyBatchNfoTranslations = async (
 
     for (const action of [plan.titleAction, plan.plotAction]) {
       if (!action) continue;
+      const translatedKey = action.field === "title" ? "title_zh" : "plot_zh";
 
-      if (action.mode === "convert") {
-        if (action.field === "title") nextCrawlerData.title_zh = action.value;
-        else nextCrawlerData.plot_zh = action.value;
+      if (action.kind !== "translate") {
+        nextCrawlerData[translatedKey] = action.kind === "convert" ? action.value : undefined;
         translatedFields.push(action.field);
         continue;
       }
 
       const translated = translatedByKey.get(action.key);
       if (translated) {
-        if (action.field === "title") nextCrawlerData.title_zh = translated;
-        else nextCrawlerData.plot_zh = translated;
+        nextCrawlerData[translatedKey] = translated;
         translatedFields.push(action.field);
       } else {
         const reason = failedReasonByKey.get(action.key);

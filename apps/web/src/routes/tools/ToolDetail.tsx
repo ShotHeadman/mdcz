@@ -140,14 +140,14 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
       {toolId === "batch-nfo-translator" && (
         <BatchNfoTranslatorWorkspaceDetail
           items={batchItems}
-          onApply={async (items, batchSize) => {
-            const response = await executeM.mutateAsync({ toolId, action: "apply", batchSize, items });
+          onApply={async (items, batchSize, mode) => {
+            const response = await executeM.mutateAsync({ toolId, action: "apply", mode, batchSize, items });
             const data = response.data as { results?: BatchTranslateApplyResultItem[] } | undefined;
             return data?.results ?? [];
           }}
           scanning={executeM.isPending && executeM.variables?.toolId === toolId && executeM.variables.action === "scan"}
-          onScan={async (directory) => {
-            const response = await executeM.mutateAsync({ toolId, action: "scan", directory });
+          onScan={async (directory, mode) => {
+            const response = await executeM.mutateAsync({ toolId, action: "scan", mode, directory });
             const data = response.data as { items?: BatchTranslateScanItem[] } | undefined;
             setBatchItems(data?.items ?? []);
           }}

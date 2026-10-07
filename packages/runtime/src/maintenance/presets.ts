@@ -3,8 +3,8 @@ import type { MaintenancePresetId } from "@mdcz/shared/types";
 
 export interface MaintenancePreset {
   id: MaintenancePresetId;
-  requiresNetwork: boolean;
-  dataSource: "local" | "online";
+  /** `stored` re-merges the site results kept in the database, so it never touches the network. */
+  dataSource: "local" | "stored" | "online";
   output: "none" | "write" | "move";
   assetPolicy: "preserve" | "refresh" | "replace";
   configOverrides: DeepPartial<Configuration>;
@@ -13,7 +13,6 @@ export interface MaintenancePreset {
 export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset> = {
   import_local: {
     id: "import_local",
-    requiresNetwork: false,
     dataSource: "local",
     output: "none",
     assetPolicy: "preserve",
@@ -21,7 +20,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
   },
   refresh_metadata: {
     id: "refresh_metadata",
-    requiresNetwork: true,
     dataSource: "online",
     output: "write",
     assetPolicy: "refresh",
@@ -39,9 +37,20 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
       },
     },
   },
+  remerge: {
+    id: "remerge",
+    dataSource: "stored",
+    output: "write",
+    assetPolicy: "preserve",
+    configOverrides: {
+      behavior: {
+        successFileMove: false,
+        successFileRename: false,
+      },
+    },
+  },
   local_organize: {
     id: "local_organize",
-    requiresNetwork: false,
     dataSource: "local",
     output: "move",
     assetPolicy: "preserve",
@@ -54,7 +63,6 @@ export const MAINTENANCE_PRESETS: Record<MaintenancePresetId, MaintenancePreset>
   },
   rebuild_all: {
     id: "rebuild_all",
-    requiresNetwork: true,
     dataSource: "online",
     output: "move",
     assetPolicy: "replace",

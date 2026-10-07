@@ -82,13 +82,8 @@ const toDetailStatus = (
 const formatResolution = (
   videoMeta: VideoMeta | undefined,
   fallbackResolution: string | undefined,
-): string | undefined => {
-  if (videoMeta && videoMeta.width > 0 && videoMeta.height > 0) {
-    return `${videoMeta.width}x${videoMeta.height}`;
-  }
-
-  return fallbackResolution;
-};
+): string | undefined =>
+  videoMeta?.width && videoMeta.height ? `${videoMeta.width}x${videoMeta.height}` : fallbackResolution;
 
 const resolveArtworkUrls = (crawlerData: CrawlerData | undefined, assets: DetailAssetSources | undefined) => ({
   posterUrl: assets?.poster ?? crawlerData?.poster_url,

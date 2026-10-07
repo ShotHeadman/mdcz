@@ -1,11 +1,20 @@
 import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
 
-export const UNCENSORED_NUMBER_PATTERNS = [
-  /^FC2[-_\s]*(?:PPV[-_\s]*)?\d+/iu,
+/** What kind of catalog a number belongs to; crawlers declare which kinds they serve. */
+export type ContentType = "censored" | "uncensored" | "fc2";
+
+const FC2_NUMBER_PATTERN = /^FC2[-_\s]*(?:PPV[-_\s]*)?\d+/iu;
+const UNCENSORED_NUMBER_PATTERNS = [
   /^HEYZO-\d+/iu,
   /^(?:1PON(?:DO)?|10MU(?:SUME)?|CARIB(?:BEANCOM)?|PACO|MURA|KIN8)[-_]?\d+/iu,
   /^\d{6}[-_]\d{2,3}$/u,
 ];
+
+export const classifyNumber = (number: string): ContentType => {
+  const normalized = number.trim();
+  if (FC2_NUMBER_PATTERN.test(normalized)) return "fc2";
+  return UNCENSORED_NUMBER_PATTERNS.some((pattern) => pattern.test(normalized)) ? "uncensored" : "censored";
+};
 
 export const UMR_HINTS = ["umr", "破解", "universal media record"];
 export const LEAK_HINTS = ["流出", "leak"];
@@ -22,14 +31,7 @@ export const includesHint = (source: string, hints: string[]): boolean => {
   return hints.some((hint) => text.includes(hint));
 };
 
-export const isLikelyUncensoredNumber = (number: string): boolean => {
-  const normalized = number.trim().toUpperCase();
-  if (!normalized) {
-    return false;
-  }
-
-  return UNCENSORED_NUMBER_PATTERNS.some((pattern) => pattern.test(normalized));
-};
+export const isLikelyUncensoredNumber = (number: string): boolean => classifyNumber(number) !== "censored";
 
 export const classifyMovie = (
   fileInfo: FileInfo,

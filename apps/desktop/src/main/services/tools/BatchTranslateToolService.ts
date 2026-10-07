@@ -13,7 +13,7 @@ import {
   type BatchNfoTranslatorDependencies,
   scanBatchNfoTranslations,
 } from "@mdcz/runtime/tools";
-import type { BatchTranslateApplyResultItem, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateApplyResultItem, BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 
 export class BatchTranslateToolService {
   private readonly logger = loggerService.getLogger("BatchTranslateToolService");
@@ -50,8 +50,8 @@ export class BatchTranslateToolService {
     this.mediaRoots = mediaRoots ?? createDesktopMediaRootService(persistence);
   }
 
-  async scan(directory: string, config: Configuration): Promise<BatchTranslateScanItem[]> {
-    return await scanBatchNfoTranslations(directory, config, {
+  async scan(directory: string, mode: BatchTranslateMode, config: Configuration): Promise<BatchTranslateScanItem[]> {
+    return await scanBatchNfoTranslations(directory, mode, config, {
       localScanService: this.localScanService,
     });
   }
@@ -59,7 +59,7 @@ export class BatchTranslateToolService {
   async apply(
     items: BatchTranslateScanItem[],
     config: Configuration,
-    options: BatchNfoTranslatorApplyOptions = {},
+    options: BatchNfoTranslatorApplyOptions,
   ): Promise<BatchTranslateApplyResultItem[]> {
     void this.networkClient;
     if (items.length > 0) {

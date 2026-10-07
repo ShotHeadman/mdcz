@@ -4,6 +4,7 @@ import { Website } from "@mdcz/shared/enums";
 import { stripTrailingActorNames } from "@mdcz/shared/titleRepair";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { load } from "cheerio";
+import type { ContentType } from "../../scrape/utils/movieClassification";
 import { toCrawlerErrorResult } from "../base/BaseCrawler";
 import { verifyMovieNumber } from "../base/identity";
 import type { AdapterDependencies, CrawlerInput, CrawlerResponse, SiteAdapter } from "../base/types";
@@ -237,6 +238,7 @@ const readDetailNumberFromUrl = (value: string | undefined): string | null => {
 };
 
 export class AvwikidbCrawler implements SiteAdapter {
+  static readonly contentTypes: readonly ContentType[] = ["censored"];
   static readonly siteRequestConfigs = AVWIKIDB_SITE_REQUEST_CONFIGS;
 
   private readonly logger = runtimeLoggerService.getLogger("AvwikidbCrawler");

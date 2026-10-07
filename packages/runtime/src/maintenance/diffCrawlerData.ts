@@ -9,9 +9,10 @@ import type {
 } from "@mdcz/shared/types";
 
 interface DiffCrawlerDataOptions {
-  includeTranslatedFields?: boolean;
   entry?: LocalScanEntry;
   imageAlternatives?: MaintenanceImageAlternatives;
+  /** Keys whose old values someone edited after MDCz published them. */
+  userEdited?: ReadonlySet<keyof CrawlerData>;
 }
 
 export interface PartitionedCrawlerDataDiffs {
@@ -288,15 +289,7 @@ const buildImageCollectionFieldDiff = (
  * Only includes fields whose values actually changed.
  */
 export function diffCrawlerData(oldData: CrawlerData, newData: CrawlerData): FieldDiff[] {
-  return diffCrawlerDataWithOptions(oldData, newData, {});
-}
-
-export function diffCrawlerDataWithOptions(
-  oldData: CrawlerData,
-  newData: CrawlerData,
-  options: DiffCrawlerDataOptions,
-): FieldDiff[] {
-  return partitionCrawlerDataWithOptions(oldData, newData, options).fieldDiffs;
+  return partitionCrawlerDataWithOptions(oldData, newData, {}).fieldDiffs;
 }
 
 export function partitionCrawlerDataWithOptions(
@@ -306,15 +299,10 @@ export function partitionCrawlerDataWithOptions(
 ): PartitionedCrawlerDataDiffs {
   const fieldDiffs: FieldDiff[] = [];
   const unchangedFieldDiffs: FieldDiff[] = [];
-  const includeTranslatedFields = options.includeTranslatedFields ?? true;
   const entry = options.entry;
   const imageAlternatives = options.imageAlternatives;
 
   for (const key of VALUE_FIELDS) {
-    if (!includeTranslatedFields && (key === "title_zh" || key === "plot_zh")) {
-      continue;
-    }
-
     const diff =
       key in VALUE_SOURCE_FIELD_MAP
         ? buildSourceAwareValueDiff(key as keyof typeof VALUE_SOURCE_FIELD_MAP, oldData, newData)
@@ -366,6 +354,8 @@ export function partitionCrawlerDataWithOptions(
 
     (diff.changed ? fieldDiffs : unchangedFieldDiffs).push(diff);
   }
+
+  for (const diff of fieldDiffs) if (options.userEdited?.has(diff.field)) diff.userEdited = true;
 
   return {
     fieldDiffs,

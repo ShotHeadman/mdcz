@@ -31,6 +31,9 @@ import { crawlerRegistration as tenMusumeRegistration } from "./sites/tenmusume"
 const crawlerConstructors = new Map<Website, CrawlerConstructor>();
 
 const registerCrawler = (site: Website, crawler: CrawlerConstructor): void => {
+  if (!crawler.numberPattern && !crawler.contentTypes?.length) {
+    throw new Error(`Crawler for site '${site}' declares neither numberPattern nor contentTypes`);
+  }
   if (crawlerConstructors.has(site)) {
     throw new Error(`Crawler for site '${site}' is already registered`);
   }

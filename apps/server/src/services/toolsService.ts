@@ -125,12 +125,14 @@ export class ToolsService {
         const config = await this.config.get();
         if (input.action === "scan") {
           if (!input.directory) throw new Error("Batch NFO translation scan requires a directory");
-          const items = await scanBatchNfoTranslations(input.directory, config, {
+          if (!input.mode) throw new Error("Batch NFO translation scan requires a mode");
+          const items = await scanBatchNfoTranslations(input.directory, input.mode, config, {
             localScanService: this.localScanService,
           });
           return { toolId: input.toolId, ok: true, data: { items } };
         }
         if (input.action === "apply") {
+          if (!input.mode) throw new Error("Batch NFO translation apply requires a mode");
           const items = input.items ?? [];
           if (items.length > 0) {
             await this.mediaRoots.ensurePathRecord({
@@ -152,9 +154,7 @@ export class ToolsService {
                 roots: await this.mediaRoots.listRoots(),
               },
             },
-            {
-              maxBatchItems: input.batchSize,
-            },
+            { mode: input.mode, maxBatchItems: input.batchSize },
           );
           return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }
