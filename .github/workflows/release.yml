@@ -12,7 +12,6 @@ on:
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - "scripts/**"
-      - ".github/workflows/release.yml"
       - "mise.toml"
       - "tsconfig.json"
       - "tsconfig.node.json"
@@ -22,8 +21,6 @@ on:
       - "docker/**"
       - ".dockerignore"
       - "compose.yaml"
-      - ".github/workflows/promote-image.yml"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -54,48 +51,34 @@ jobs:
 
       - uses: jdx/mise-action@v4
 
+      # The release number is declared by the merged branch name (feat/X.Y.Z or fix/X.Y.Z),
+      # so commit prefixes inside a branch cannot change it. A merge that declares none
+      # (dependabot, squash merge) does not release; its changes ship with the next declared one.
       - name: Check if version bump needed
         id: check
         run: |
-          LAST_MSG=$(git log -1 --pretty=%s)
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          DECLARED=$(git log "${LAST_TAG:+${LAST_TAG}..}HEAD" --merges --pretty=%s \
+            | sed -nE 's#^Merge pull request \#[0-9]+ from [^/]+/(feat|fix)/([0-9]+\.[0-9]+\.[0-9]+)$#\2#p' \
+            | sort -V | tail -n 1)
           if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
             echo "::notice::main moved past checked commit $GITHUB_SHA; its newer run releases it"
             echo "skipped=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$LAST_MSG" == chore\(release\):* ]]; then
+          elif [[ "$(git log -1 --pretty=%s)" == chore\(release\):* ]]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          elif [ -z "$DECLARED" ]; then
+            echo "::notice::no feat/X.Y.Z or fix/X.Y.Z merge since ${LAST_TAG:-the start}; not releasing"
             echo "skipped=true" >> "$GITHUB_OUTPUT"
           else
             echo "skipped=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Determine bump type from commits
-        if: steps.check.outputs.skipped == 'false'
-        id: bump-type
-        run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$LAST_TAG" ]; then
-            RANGE="HEAD"
-          else
-            RANGE="${LAST_TAG}..HEAD"
-          fi
-
-          SUBJECTS=$(git log $RANGE --pretty="%s")
-          BODIES=$(git log $RANGE --pretty="%b")
-
-          if echo "$SUBJECTS" | grep -qE "^[a-z]+(\(.+\))?!:"; then
-            echo "type=major" >> "$GITHUB_OUTPUT"
-          elif echo "$BODIES" | grep -qE "^BREAKING CHANGE:"; then
-            echo "type=major" >> "$GITHUB_OUTPUT"
-          elif echo "$SUBJECTS" | grep -qE "^feat(\(.+\))?:"; then
-            echo "type=minor" >> "$GITHUB_OUTPUT"
-          else
-            echo "type=patch" >> "$GITHUB_OUTPUT"
+            echo "declared=$DECLARED" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Bump version
         if: steps.check.outputs.skipped == 'false'
         id: bump
         run: |
-          NEW_VERSION=$(node scripts/bump-version.mjs ${{ steps.bump-type.outputs.type }})
+          NEW_VERSION=$(node scripts/bump-version.mjs ${{ steps.check.outputs.declared }})
           echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
           echo "tag=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
