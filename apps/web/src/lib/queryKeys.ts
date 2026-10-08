@@ -11,6 +11,9 @@ export const queryKeys = {
     defaults: ["config", "defaults"] as const,
     profiles: ["config", "profiles"] as const,
   },
+  activity: {
+    list: ["activity", "list"] as const,
+  },
   overview: {
     all: ["overview"] as const,
     summary: ["overview", "summary"] as const,
@@ -18,7 +21,8 @@ export const queryKeys = {
   },
   library: {
     all: ["library"] as const,
-    list: (query: string) => ["library", "list", query] as const,
+    list: (filters: object) => ["library", "list", filters] as const,
+    summary: (libraryId: string | undefined) => ["library", "summary", libraryId ?? ""] as const,
   },
   libraries: {
     all: ["libraries"] as const,

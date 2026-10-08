@@ -8,6 +8,27 @@ export const overview = {
     loadFailed: "Failed to load",
     waitingFirstScrape: "Waiting for first scrape",
     notConfigured: "Not configured",
+    files: "Files",
+    size: "Size",
+  },
+  activity: {
+    title: "Recent activity",
+    kinds: { scan: "Scan", scrape: "Scrape", maintenance: "Maintenance" },
+    statuses: {
+      queued: "Queued",
+      discovering: "Looking for videos",
+      running: "Running",
+      paused: "Paused",
+      stopping: "Stopping",
+      completed: "Completed",
+      failed: "Failed",
+      stopped: "Stopped",
+      interrupted: "Interrupted",
+    },
+    counts: (succeeded: number, failed: number, skipped: number) =>
+      [`${succeeded} succeeded`, failed ? `${failed} failed` : "", skipped ? `${skipped} skipped` : ""]
+        .filter(Boolean)
+        .join(", "),
   },
   maintenance: {
     title: "Maintenance",

@@ -66,7 +66,7 @@ export const createContainer = ({
     async () => await configManager.getValidated(),
   );
   const outputLibraryScanner = new OutputLibraryScanner({ persistenceService });
-  const desktopLibraryService = new DesktopLibraryService(persistenceService);
+  const desktopLibraryService = new DesktopLibraryService(persistenceService, libraries);
   const amazonJpImageService = new AmazonJpImageService(networkClient, loggerService.getLogger("AmazonJpImageService"));
   const actorImageService = new ActorImageService({
     cacheRoot: getActorImageCacheDirectory(),

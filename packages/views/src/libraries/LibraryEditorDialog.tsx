@@ -32,6 +32,8 @@ import { NamingTemplateHelp } from "../settings/settingsContent";
 export interface LibraryEditorDialogProps {
   open: boolean;
   library?: MediaLibraryDto | null;
+  /** A new library over a directory that already holds videos and NFOs: they stay where they are. */
+  importExisting?: boolean;
   showAutomation: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (settings: MediaLibrarySettingsInput) => Promise<void>;
@@ -56,6 +58,7 @@ const emptySettings = (): MediaLibrarySettingsInput => ({
 export function LibraryEditorDialog({
   open,
   library,
+  importExisting = false,
   showAutomation,
   onOpenChange,
   onSave,
@@ -71,10 +74,10 @@ export function LibraryEditorDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSettings(library ? { ...library } : emptySettings());
+    setSettings(library ? { ...library } : { ...emptySettings(), ...(importExisting ? { placement: "inPlace" } : {}) });
     setSubmitError("");
     setShowErrors(false);
-  }, [library, open]);
+  }, [library, importExisting, open]);
 
   const parsed = useMemo(() => mediaLibrarySettingsSchema.safeParse(settings), [settings]);
   const fieldErrors = useMemo(() => {
@@ -110,8 +113,16 @@ export function LibraryEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{library ? t.libraries.editorEditTitle : t.libraries.editorCreateTitle}</DialogTitle>
-          <DialogDescription>{t.libraries.description}</DialogDescription>
+          <DialogTitle>
+            {library
+              ? t.libraries.editorEditTitle
+              : importExisting
+                ? t.libraries.importTitle
+                : t.libraries.editorCreateTitle}
+          </DialogTitle>
+          <DialogDescription>
+            {importExisting ? t.libraries.importExistingDescription : t.libraries.description}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-5">
           <Field label={t.libraries.fields.name} error={showErrors ? fieldErrors.name : undefined}>
@@ -291,7 +302,7 @@ export function LibraryEditorDialog({
           </Button>
           <Button onClick={() => void handleSave()} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {t.libraries.save}
+            {importExisting && !library ? t.libraries.importSave : t.libraries.save}
           </Button>
         </DialogFooter>
       </DialogContent>

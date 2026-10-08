@@ -26,3 +26,11 @@ export const formatBytes = (bytes: number, options: FormatBytesOptions = {}): st
 
   return `${displayValue} ${units[unitIndex]}`;
 };
+
+export const formatDuration = (milliseconds: number): string => {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours) return `${hours}h ${minutes}m`;
+  return minutes ? `${minutes}m ${seconds % 60}s` : `${seconds}s`;
+};

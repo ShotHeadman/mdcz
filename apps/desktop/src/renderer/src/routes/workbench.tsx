@@ -148,7 +148,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
     }
 
     await startMaintenanceFlow({
-      candidates,
+      refs: candidates.map((candidate) => candidate.ref),
       presetId,
       libraryId,
       port: workbenchPorts.maintenance,

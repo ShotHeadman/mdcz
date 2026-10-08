@@ -17,5 +17,7 @@ export const shell: Messages["shell"] = {
   themeSystem: "跟随系统",
   expandSidebar: "展开侧栏",
   collapseSidebar: "收起侧栏",
+  openMenu: "打开导航",
+  closeMenu: "关闭导航",
   switchLanguage: "Switch to English",
 };

@@ -1,18 +1,24 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
+import { startHealthFix } from "@mdcz/views/adapters";
 import { useT } from "@mdcz/views/i18n";
 import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import {
   chunkLibraryEntryIds,
+  createLibraryBrowseControls,
   LibraryDeleteDialog,
   LibraryIndexView,
   mergeLibraryAvailability,
+  parseLibraryBrowseSearch,
+  toLibraryListScope,
 } from "@mdcz/views/library";
-import { useInfiniteQuery, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api, getLibraryAssetSrc } from "../client";
 import { queryKeys } from "../lib/queryKeys";
 import { AppLink } from "../routeCommon";
@@ -20,12 +26,17 @@ import { AppLink } from "../routeCommon";
 export function LibraryPage() {
   const t = useT();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const scope = toLibraryListScope(search);
+  const isScraping = useScrapeStore(selectIsScraping);
+  const ports = useMemo(() => createWebWorkbenchPorts(), []);
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
   const libraryQ = useInfiniteQuery({
-    queryKey: queryKeys.library.list(query),
-    queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100 }),
+    queryKey: queryKeys.library.list({ query, ...scope }),
+    queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100, ...scope }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     retry: false,
@@ -47,12 +58,18 @@ export function LibraryPage() {
   const availabilityQs = useQueries({
     queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
       chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
-        queryKey: [...queryKeys.library.list(query), "availability", ids],
+        queryKey: [...queryKeys.library.list({ query, ...scope }), "availability", ids],
         queryFn: async () => await api.library.availability({ ids }),
         retry: false,
         staleTime: 30_000,
       })),
     ),
+  });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
+  const summaryQ = useQuery({
+    queryKey: queryKeys.library.summary(search.libraryId),
+    queryFn: () => api.library.summary({ libraryId: search.libraryId }),
+    retry: false,
   });
   const entries = mergeLibraryAvailability(
     pageEntries,
@@ -63,6 +80,31 @@ export function LibraryPage() {
     <>
       <LibraryIndexView
         availabilityFilter={availabilityFilter}
+        browse={createLibraryBrowseControls({
+          search,
+          libraries: librariesQ.data?.libraries ?? [],
+          summary: summaryQ.data,
+          update: (next) => void navigate({ to: "/library", search: next }),
+          onFix: async (issue) => {
+            const matches: LibraryEntryDto[] = [];
+            let cursor: string | undefined;
+            do {
+              const page = await api.library.list({ cursor, limit: 500, ...scope, health: issue });
+              matches.push(...page.entries);
+              cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+            await startHealthFix({
+              issue,
+              libraryId: search.libraryId,
+              entries: matches,
+              port: ports.maintenance,
+              isScraping,
+              toast,
+              toErrorMessage,
+            });
+            void navigate({ to: "/workbench", search: { intent: "maintenance" } });
+          },
+        })}
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={(path, entry) =>
@@ -94,7 +136,7 @@ export function LibraryPage() {
         }}
         onQueryChange={setQuery}
         onRefresh={() => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.library.list(query) });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
         }}
         query={query}
         total={libraryQ.data?.pages[0]?.total ?? 0}
@@ -119,6 +161,7 @@ export function LibraryPage() {
 }
 
 export const Route = createFileRoute("/library")({
+  validateSearch: parseLibraryBrowseSearch,
   component: LibraryPage,
 });
 

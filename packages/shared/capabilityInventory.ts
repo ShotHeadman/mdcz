@@ -116,6 +116,12 @@ export const CROSS_HOST_CAPABILITIES = [
     reason: "Desktop optionally deletes media files; server deletes only the library item.",
   },
   {
+    desktop: IpcChannel.Library_Summary,
+    server: "library.summary",
+    status: "adapted",
+    reason: "Server permits an omitted summary input; desktop requires the envelope.",
+  },
+  {
     desktop: IpcChannel.Library_List,
     server: "library.list",
     status: "adapted",
@@ -347,6 +353,7 @@ export const SERVER_ONLY_PROCEDURES = [
   { path: "auth.logout", reason: "Server host authentication." },
   { path: "auth.setup", reason: "Server host authentication." },
   { path: "auth.status", reason: "Server host authentication." },
+  { path: "activity.list", reason: "Tasks run unattended only on the server." },
   { path: "apiKeys.list", reason: "Downloader callbacks reach only the server." },
   { path: "apiKeys.create", reason: "Downloader callbacks reach only the server." },
   { path: "apiKeys.delete", reason: "Downloader callbacks reach only the server." },

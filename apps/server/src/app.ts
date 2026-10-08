@@ -26,6 +26,7 @@ import { defaultWebStaticDir, registerStaticWeb } from "./http/staticWeb";
 import { createServerMaintenanceRuntime } from "./maintenanceRuntimeFactory";
 import { appRouter } from "./routers";
 import type { ServerServices } from "./services";
+import { ActivityService } from "./services/activityService";
 import { AuthenticationError, AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
 import { BrowserService } from "./services/browserService";
@@ -133,7 +134,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
-  const library = options.services?.library ?? new LibraryService(persistence, mediaRoots);
+  const library = options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries);
   const maintenanceRuntime = createServerMaintenanceRuntime({
     config,
     prepareScrapeItem: options.resources?.prepareScrapeItem,
@@ -167,12 +168,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       logger: runtimeLogs.getLogger("LibraryWatch"),
       onPending: notePending,
     });
+  const activity = options.services?.activity ?? new ActivityService({ scans, scrape, maintenance });
   const automation: AutomationService =
     options.services?.automation ??
     new AutomationService({
-      scans,
+      activity,
       scrape,
-      maintenance,
       config,
       libraries,
       libraryWatch,
@@ -194,6 +195,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       onChanged: () => taskEvents.invalidate("pending", "scrape-history"),
     });
   const services: ServerServices = {
+    activity,
     automation,
     auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),

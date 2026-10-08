@@ -8,6 +8,7 @@ export const media: Messages["media"] = {
       failed: "失败",
     },
     paused: "已暂停",
+    queued: "等待中",
   },
   imageOption: {
     unknown: "未知",

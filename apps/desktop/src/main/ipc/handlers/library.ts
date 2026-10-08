@@ -4,7 +4,12 @@ import { toErrorMessage } from "@main/utils/common";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
 import { libraryFileRemoveInputSchema, libraryRelinkInputSchema } from "@mdcz/shared/serverDtos";
-import { libraryAvailabilityInputSchema, libraryDeleteInputSchema, libraryListInputSchema } from "../payloads";
+import {
+  libraryAvailabilityInputSchema,
+  libraryDeleteInputSchema,
+  libraryListInputSchema,
+  librarySummaryInputSchema,
+} from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:library");
@@ -15,6 +20,7 @@ export const createLibraryHandlers = (
   IpcRouterContract,
   | typeof IpcChannel.Library_Availability
   | typeof IpcChannel.Library_List
+  | typeof IpcChannel.Library_Summary
   | typeof IpcChannel.Library_Delete
   | typeof IpcChannel.Library_RemoveFile
   | typeof IpcChannel.Library_RelinkFile
@@ -38,6 +44,14 @@ export const createLibraryHandlers = (
       return await context.desktopLibraryService.list(input ?? {});
     } catch (error) {
       logger.error(`Library list failed: ${toErrorMessage(error)}`);
+      throw asSerializableIpcError(error);
+    }
+  }),
+  [IpcChannel.Library_Summary]: t.procedure.input(librarySummaryInputSchema).action(async ({ input }) => {
+    try {
+      return await context.desktopLibraryService.summary(input);
+    } catch (error) {
+      logger.error(`Library summary failed: ${toErrorMessage(error)}`);
       throw asSerializableIpcError(error);
     }
   }),

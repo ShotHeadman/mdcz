@@ -6,6 +6,7 @@ export const media = {
       failed: "Failed",
     },
     paused: "Paused",
+    queued: "Waiting",
   },
   imageOption: {
     unknown: "Unknown",

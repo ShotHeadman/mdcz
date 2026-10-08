@@ -11,6 +11,7 @@ import {
 } from "@mdcz/shared/pending";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
+  activityListInputSchema,
   apiKeyCreateInputSchema,
   authLoginInputSchema,
   cancelCandidatesInputSchema,
@@ -26,6 +27,7 @@ import {
   libraryFileRemoveInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
+  librarySummaryInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
   maintenanceDiscardSessionInputSchema,
@@ -175,6 +177,11 @@ export const appRouter = t.router({
       };
     }),
   }),
+  activity: t.router({
+    list: protectedProcedure
+      .input(activityListInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.activity.list(input?.limit)),
+  }),
   library: t.router({
     removeFile: protectedProcedure
       .input(libraryFileRemoveInputSchema)
@@ -185,6 +192,9 @@ export const appRouter = t.router({
     list: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
+    summary: protectedProcedure
+      .input(librarySummaryInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.library.summary(input)),
     detail: protectedProcedure
       .input(libraryDetailInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.detail(input.id)),

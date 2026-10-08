@@ -604,6 +604,81 @@ describe("LibraryRepository", () => {
     });
   });
 
+  it("summarizes library health and facets and filters by them within a library's directories", async () => {
+    database = createTestPersistenceDatabase();
+    await addRoots("root-1", "root-2");
+    const repository = new LibraryRepository(database);
+    const asset = (rootId: string, kind: string, relativePath: string) => ({
+      kind,
+      uri: relativePath,
+      rootId,
+      relativePath,
+    });
+    const crawlerDataJson = (data: object) => JSON.stringify(data);
+    await repository.upsertEntry({
+      movie: {
+        id: "healthy",
+        number: "ABC-123",
+        actors: ["Alice"],
+        crawlerDataJson: crawlerDataJson({ plot: "A plot", studio: "S1", genres: ["drama"] }),
+        assets: ["poster", "fanart", "nfo"].map((kind) => asset("root-1", kind, `abc/${kind}`)),
+      },
+      files: [{ rootId: "root-1", rootRelativePath: "abc/ABC-123.mp4" }],
+    });
+    await repository.upsertEntry({
+      movie: {
+        id: "bare",
+        number: "abc-123",
+        actors: ["Alice", "Bob"],
+        crawlerDataJson: crawlerDataJson({ plot: " ", studio: "S1", genres: ["drama", "3p"] }),
+      },
+      files: [{ rootId: "root-2", rootRelativePath: "abc/ABC-123.mp4" }],
+    });
+    await repository.upsertEntry({
+      movie: {
+        id: "translated",
+        number: "DEF-456",
+        actors: ["Bob"],
+        crawlerDataJson: crawlerDataJson({ plot_zh: "译文", studio: "S2", genres: [] }),
+        assets: [asset("root-1", "nfo", "def/movie.nfo")],
+      },
+      files: [{ rootId: "root-1", rootRelativePath: "def/DEF-456.mp4" }],
+    });
+
+    expect(repository.summary({})).toEqual({
+      total: 3,
+      issues: { missingPoster: 2, missingBackdrop: 2, missingSynopsis: 1, noNfo: 1, duplicate: 2 },
+      facets: {
+        actors: [
+          { name: "Alice", count: 2 },
+          { name: "Bob", count: 2 },
+        ],
+        studios: [
+          { name: "S1", count: 2 },
+          { name: "S2", count: 1 },
+        ],
+        tags: [
+          { name: "drama", count: 2 },
+          { name: "3p", count: 1 },
+        ],
+      },
+    });
+    expect(repository.summary({ pathPrefixes: ["/root-1/"] }).issues).toEqual({
+      missingPoster: 1,
+      missingBackdrop: 1,
+      missingSynopsis: 0,
+      noNfo: 0,
+      duplicate: 1,
+    });
+    const ids = async (filter: object) =>
+      (await repository.listEntriesPage({ limit: 10, ...filter })).entries.map((entry) => entry.id).sort();
+    await expect(ids({ health: "noNfo" })).resolves.toEqual(["bare"]);
+    await expect(ids({ health: "duplicate", pathPrefixes: ["/root-1"] })).resolves.toEqual(["healthy"]);
+    await expect(ids({ actor: "Bob" })).resolves.toEqual(["bare", "translated"]);
+    await expect(ids({ studio: "S2", tag: "drama" })).resolves.toEqual([]);
+    await expect(ids({ tag: "3p" })).resolves.toEqual(["bare"]);
+  });
+
   it("includes all registered roots and treats LIKE metacharacters literally", async () => {
     database = createTestPersistenceDatabase();
     const repository = new LibraryRepository(database);

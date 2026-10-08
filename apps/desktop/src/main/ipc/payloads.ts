@@ -8,6 +8,7 @@ import {
   libraryAvailabilityInputSchema,
   libraryDetailInputSchema,
   libraryListInputSchema,
+  librarySummaryInputSchema,
   maintenancePresetIdSchema,
   mediaRootEnsurePathInputSchema,
 } from "@mdcz/shared/serverDtos";
@@ -80,6 +81,7 @@ export {
   libraryAvailabilityInputSchema,
   libraryDetailInputSchema,
   libraryListInputSchema,
+  librarySummaryInputSchema,
   mediaRootEnsurePathInputSchema,
 };
 

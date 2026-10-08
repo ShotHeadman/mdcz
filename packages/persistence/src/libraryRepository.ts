@@ -79,11 +79,41 @@ export interface LibraryEntriesCursor {
   id: string;
 }
 
-export interface ListLibraryEntriesInput {
-  cursor?: LibraryEntriesCursor;
-  limit: number;
+export const LIBRARY_HEALTH_ISSUES = [
+  "missingPoster",
+  "missingBackdrop",
+  "missingSynopsis",
+  "noNfo",
+  "duplicate",
+] as const;
+export type LibraryHealthIssue = (typeof LIBRARY_HEALTH_ISSUES)[number];
+
+/** What narrows a listing or a summary; a movie matches when every given field matches. */
+export interface LibraryEntryFilter {
   query?: string;
   rootId?: string;
+  /** Host directories; a movie matches when one of its files is inside one of them. */
+  pathPrefixes?: readonly string[];
+  health?: LibraryHealthIssue;
+  actor?: string;
+  studio?: string;
+  tag?: string;
+}
+
+export interface ListLibraryEntriesInput extends LibraryEntryFilter {
+  cursor?: LibraryEntriesCursor;
+  limit: number;
+}
+
+export interface LibraryFacetCount {
+  name: string;
+  count: number;
+}
+
+export interface LibrarySummary {
+  total: number;
+  issues: Record<LibraryHealthIssue, number>;
+  facets: { actors: LibraryFacetCount[]; studios: LibraryFacetCount[]; tags: LibraryFacetCount[] };
 }
 
 export interface LibraryEntriesPage {
@@ -642,6 +672,40 @@ export class LibraryRepository {
     };
   }
 
+  /** Health counts and the most common actors, studios and tags among the movies a filter selects. */
+  summary(filter: Pick<LibraryEntryFilter, "pathPrefixes">, facetLimit = 30): LibrarySummary {
+    const scope = buildLibraryListWhere(filter) ?? sql`1`;
+    const issueColumns = sql.join(
+      LIBRARY_HEALTH_ISSUES.map(
+        (issue) =>
+          sql`coalesce(sum(CASE WHEN ${HEALTH_CONDITIONS[issue]} THEN 1 ELSE 0 END), 0) AS ${sql.identifier(issue)}`,
+      ),
+      sql`, `,
+    );
+    const counts = this.database.db.get<Record<"total" | LibraryHealthIssue, number>>(
+      sql`SELECT count(*) AS total, ${issueColumns} FROM library_items WHERE ${scope}`,
+    );
+    const jsonFacet = (values: SQL): LibraryFacetCount[] =>
+      this.database.db.all<LibraryFacetCount>(
+        sql`SELECT facet.value AS name, count(*) AS count FROM library_items, json_each(${values}) AS facet
+          WHERE ${scope} AND facet.value <> '' GROUP BY facet.value ORDER BY count(*) DESC, facet.value LIMIT ${facetLimit}`,
+      );
+    return {
+      total: counts.total,
+      issues: Object.fromEntries(
+        LIBRARY_HEALTH_ISSUES.map((issue) => [issue, counts[issue]]),
+      ) as LibrarySummary["issues"],
+      facets: {
+        actors: jsonFacet(sql`${libraryItems.actorsJson}`),
+        studios: this.database.db.all<LibraryFacetCount>(
+          sql`SELECT ${STUDIO} AS name, count(*) AS count FROM library_items
+            WHERE ${scope} AND ${STUDIO} <> '' GROUP BY ${STUDIO} ORDER BY count(*) DESC, ${STUDIO} LIMIT ${facetLimit}`,
+        ),
+        tags: jsonFacet(sql`json_extract(${libraryItems.crawlerDataJson}, '$.genres')`),
+      },
+    };
+  }
+
   async getOverviewSummary(recentLimit: number): Promise<LibraryOverviewSummary> {
     const baseWhere = buildLibraryListWhere({});
     const aggregate = this.database.db
@@ -787,8 +851,51 @@ export class LibraryRepository {
   }
 }
 
-const buildLibraryListWhere = (input: Pick<ListLibraryEntriesInput, "query" | "rootId">): SQL | undefined => {
+const STUDIO = sql`json_extract(${libraryItems.crawlerDataJson}, '$.studio')`;
+
+const hasLocalAsset = (kind: string): SQL =>
+  sql`EXISTS (SELECT 1 FROM library_item_assets AS asset WHERE asset.item_id = ${libraryItems.id} AND asset.kind = ${kind} AND asset.root_id IS NOT NULL)`;
+
+// One definition per issue serves the listing filter and the summary counts, so they cannot disagree.
+const HEALTH_CONDITIONS: Record<LibraryHealthIssue, SQL> = {
+  missingPoster: sql`NOT ${hasLocalAsset("poster")}`,
+  missingBackdrop: sql`NOT ${hasLocalAsset("fanart")}`,
+  noNfo: sql`NOT ${hasLocalAsset("nfo")}`,
+  missingSynopsis: sql`coalesce(
+    nullif(trim(json_extract(${libraryItems.crawlerDataJson}, '$.plot_zh')), ''),
+    nullif(trim(json_extract(${libraryItems.crawlerDataJson}, '$.plot')), '')
+  ) IS NULL`,
+  duplicate: sql`${libraryItems.number} IS NOT NULL AND EXISTS (
+    SELECT 1 FROM library_items AS other
+    WHERE other.id <> ${libraryItems.id} AND lower(other.number) = lower(${libraryItems.number})
+  )`,
+};
+
+const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   const filters: SQL[] = [];
+  if (input.pathPrefixes) {
+    const matches = input.pathPrefixes.map((prefix) => {
+      const pattern = `${escapeLikePattern(prefix.replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase())}/%`;
+      return sql`lower(rtrim(replace(prefix_root.host_path, '\\', '/'), '/') || '/' || prefix_file.root_relative_path) LIKE ${pattern} ESCAPE '\\'`;
+    });
+    filters.push(
+      sql`EXISTS (
+        SELECT 1
+        FROM library_item_files AS prefix_file
+        INNER JOIN media_roots AS prefix_root ON prefix_root.id = prefix_file.root_id
+        WHERE prefix_file.item_id = ${libraryItems.id}
+          AND (${sql.join(matches.length ? matches : [sql`0`], sql` OR `)})
+      )`,
+    );
+  }
+  if (input.health) filters.push(HEALTH_CONDITIONS[input.health]);
+  if (input.actor)
+    filters.push(sql`EXISTS (SELECT 1 FROM json_each(${libraryItems.actorsJson}) WHERE value = ${input.actor})`);
+  if (input.studio) filters.push(sql`${STUDIO} = ${input.studio}`);
+  if (input.tag)
+    filters.push(
+      sql`EXISTS (SELECT 1 FROM json_each(json_extract(${libraryItems.crawlerDataJson}, '$.genres')) WHERE value = ${input.tag})`,
+    );
   const rootId = input.rootId?.trim();
   if (rootId) {
     filters.push(

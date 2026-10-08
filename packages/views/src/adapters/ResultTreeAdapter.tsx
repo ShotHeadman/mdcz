@@ -224,12 +224,7 @@ export function ResultTreeAdapter({
           getScrapeResultTitle(group.display) ||
           getFileNameFromPath(group.display.output?.relativePath ?? group.display.relativePath),
         errorText: group.errorText ?? group.display.error,
-        status:
-          scrapeStatus === "paused" &&
-          group.status === "processing" &&
-          !group.items.some((item) => item.status === "processing")
-            ? "paused"
-            : group.status,
+        status: scrapeStatus === "paused" && group.status === "queued" ? "paused" : group.status,
         onClick: () =>
           setSelectedResultId(
             group.items.find((item) => item.fileId === selectedResultId)?.fileId ?? group.representative.fileId,

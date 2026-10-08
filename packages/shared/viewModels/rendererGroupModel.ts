@@ -4,7 +4,7 @@ import {
   type MultipartDisplaySelectors,
 } from "./multipartDisplay";
 
-export type RendererGroupStatus = "success" | "failed" | "processing" | "idle";
+export type RendererGroupStatus = "success" | "failed" | "processing" | "queued" | "idle";
 
 export interface RendererGroup<TItem, TDisplay = TItem, TStatus extends string = RendererGroupStatus> {
   id: string;

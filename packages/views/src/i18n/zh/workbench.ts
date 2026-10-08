@@ -8,6 +8,10 @@ export const workbench: Messages["workbench"] = {
 
   // Frame actions
   analyzingFiles: "正在分析文件...",
+  runSummary: (succeeded: number, failed: number, skipped: number, duration: string | null) =>
+    [`成功 ${succeeded}`, failed ? `失败 ${failed}` : "", skipped ? `跳过 ${skipped}` : "", duration ?? ""]
+      .filter(Boolean)
+      .join(" · "),
   resumeScrape: "恢复刮削任务",
   pauseScrape: "暂停刮削任务",
   resume: "恢复",

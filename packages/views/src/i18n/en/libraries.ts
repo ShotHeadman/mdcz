@@ -8,6 +8,20 @@ export const libraries = {
   createFirst: "Create your first library",
   createFirstDescription:
     "Before scraping, tell MDCz where videos come from and where finished movies go. You can add more libraries later.",
+  importExisting: "I already have a library",
+  importExistingDescription:
+    "Point MDCz at a directory that already holds videos and NFOs. It reads what is there; nothing is moved or rewritten.",
+  importTitle: "Import an existing library",
+  importSave: "Save and import",
+  health: {
+    title: "Health",
+    movies: (count: number) => `${count} movies indexed`,
+    notImported: "Nothing from this library is indexed yet. Import it to see what it needs.",
+    import: "Import now",
+    view: "View",
+    pending: (count: number) => `${count} waiting in the pending list`,
+    allGood: "No gaps found.",
+  },
   edit: "Edit",
   delete: "Delete",
   deleteTitle: (name: string) => `Delete library "${name}"?`,

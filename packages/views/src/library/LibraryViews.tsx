@@ -37,6 +37,8 @@ import {
 import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "../i18n";
+import { type LibraryBrowseControls, LibraryBrowsePanel } from "./LibraryBrowsePanel";
+import { LibraryPosterWall } from "./LibraryPosterWall";
 
 export type LibraryAvailabilityFilter = "all" | LibraryEntryDto["available"];
 
@@ -55,6 +57,7 @@ export interface LibraryIndexViewProps {
   totalBytes?: number;
   availabilityFilter: LibraryAvailabilityFilter;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
+  browse?: LibraryBrowseControls;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
   onOpenFolder?: (path: string) => void;
@@ -88,6 +91,7 @@ export function LibraryIndexView({
   totalBytes,
   availabilityFilter,
   linkComponent: LinkComponent,
+  browse,
   onAvailabilityFilterChange,
   onDeleteEntry,
   onOpenFolder,
@@ -214,8 +218,13 @@ export function LibraryIndexView({
             </div>
           </section>
 
+          {browse ? <LibraryBrowsePanel browse={browse} matchCount={total} /> : null}
+
           <section aria-label={t.library.listAriaLabel} className="flex flex-col gap-3" ref={listRef}>
-            {filteredEntries.length > 0 && (
+            {filteredEntries.length > 0 && browse?.view === "wall" && (
+              <LibraryPosterWall entries={filteredEntries} getImageSrc={getImageSrc} linkComponent={LinkComponent} />
+            )}
+            {filteredEntries.length > 0 && browse?.view !== "wall" && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   const entry = filteredEntries[virtualRow.index];
@@ -350,7 +359,7 @@ function LibraryEntryRow({
 
   return (
     <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
-      <div className="relative flex items-center gap-5 lg:gap-6">
+      <div className="relative flex flex-wrap items-center gap-x-5 gap-y-3 lg:flex-nowrap lg:gap-6">
         <div className="relative h-[72px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
           {imageSrc ? (
             <img
@@ -366,14 +375,14 @@ function LibraryEntryRow({
             </div>
           )}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col justify-center">
+        <div className="flex min-w-0 flex-1 basis-40 flex-col justify-center">
           <div className="flex items-center gap-3">
             <span className="shrink-0 rounded bg-foreground/5 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-foreground/60">
               {id}
             </span>
             <span className="truncate text-base font-bold tracking-tight text-foreground">{title}</span>
           </div>
-          <div className="mt-2 flex items-center gap-3 text-[11px]">
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px]">
             <ActorChips actors={entry.actors} />
             {isMultiFile && (
               <button
@@ -412,7 +421,7 @@ function LibraryEntryRow({
             <span className="text-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
           </div>
         </div>
-        <div className="flex items-center gap-1 pl-4">
+        <div className="ml-auto flex items-center gap-1 lg:pl-4">
           <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
           <div className="flex items-center gap-1">
             {LinkComponent ? (

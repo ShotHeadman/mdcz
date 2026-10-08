@@ -17,7 +17,12 @@ import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { PendingConfirmUncensoredInput, PendingRetryInput } from "@mdcz/shared/pending";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { LibraryListInput, MediaRootEnsurePathInput, ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
+import type {
+  LibraryListInput,
+  LibrarySummaryInput,
+  MediaRootEnsurePathInput,
+  ScrapeRunSnapshotDto,
+} from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { runScrapeRequest, useScrapeStore } from "@mdcz/views/state/scrapeStore";
@@ -66,6 +71,7 @@ export const ipc = {
       client[IpcChannel.Library_RemoveFile](input),
     availability: (ids: string[]) => client[IpcChannel.Library_Availability]({ ids }),
     list: (input?: LibraryListInput) => client[IpcChannel.Library_List](input),
+    summary: (input?: LibrarySummaryInput) => client[IpcChannel.Library_Summary](input),
     delete: (input: { id: string }) => client[IpcChannel.Library_Delete](input),
   },
   libraries: {

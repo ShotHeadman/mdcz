@@ -9,6 +9,27 @@ export const overview: Messages["overview"] = {
     loadFailed: "加载失败",
     waitingFirstScrape: "等待首次刮削",
     notConfigured: "未配置",
+    files: "文件数",
+    size: "大小",
+  },
+  activity: {
+    title: "最近活动",
+    kinds: { scan: "扫描", scrape: "刮削", maintenance: "维护" },
+    statuses: {
+      queued: "排队中",
+      discovering: "正在查找视频",
+      running: "运行中",
+      paused: "已暂停",
+      stopping: "正在停止",
+      completed: "已完成",
+      failed: "失败",
+      stopped: "已停止",
+      interrupted: "已中断",
+    },
+    counts: (succeeded: number, failed: number, skipped: number) =>
+      [`成功 ${succeeded}`, failed ? `失败 ${failed}` : "", skipped ? `跳过 ${skipped}` : ""]
+        .filter(Boolean)
+        .join("，"),
   },
   maintenance: {
     title: "维护",

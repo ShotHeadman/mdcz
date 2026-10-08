@@ -1,12 +1,14 @@
 import type { MediaLibraryDto, MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
+import type { LibraryHealthIssue, LibrarySummaryResponse } from "@mdcz/shared/serverDtos";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import { Badge, Button, cn, quietPanelSurfaceClass } from "@mdcz/ui";
-import { AlertCircle, FolderCog, FolderInput, FolderOutput, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Download, FolderCog, FolderInput, FolderOutput, Pencil, Plus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { confirmDialog } from "../common";
 import { useT } from "../i18n";
 import type { PathAutocompleteResult } from "../path";
 import { LibraryEditorDialog } from "./LibraryEditorDialog";
+import { LibraryHealthPanel } from "./LibraryHealthPanel";
 
 export interface LibrariesViewProps {
   libraries: MediaLibraryDto[];
@@ -15,7 +17,14 @@ export interface LibrariesViewProps {
   /** Server only: automation levels and discovery need the always-on server. */
   showAutomation: boolean;
   accessPanel?: ReactNode;
-  onCreate: (settings: MediaLibrarySettingsInput) => Promise<void>;
+  /** Per library id; absent until the summary arrives. */
+  summaries?: Record<string, LibrarySummaryResponse | undefined>;
+  pendingCounts?: Record<string, number>;
+  onCreate: (settings: MediaLibrarySettingsInput) => Promise<MediaLibraryDto>;
+  /** Opens the workbench ready to read the library's directory into the index. */
+  onImport: (library: MediaLibraryDto) => void;
+  onViewIssue: (library: MediaLibraryDto, issue: LibraryHealthIssue) => void;
+  onViewPending: (library: MediaLibraryDto) => void;
   onUpdate: (id: string, settings: MediaLibrarySettingsInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onPreviewNaming: (settings: MediaLibrarySettingsInput) => Promise<NamingPreviewItem[]>;
@@ -29,7 +38,12 @@ export function LibrariesView({
   errorMessage,
   showAutomation,
   accessPanel,
+  summaries = {},
+  pendingCounts = {},
   onCreate,
+  onImport,
+  onViewIssue,
+  onViewPending,
   onUpdate,
   onDelete,
   onPreviewNaming,
@@ -39,8 +53,10 @@ export function LibrariesView({
   const t = useT();
   const [editing, setEditing] = useState<MediaLibraryDto | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
-  const openEditor = (library: MediaLibraryDto | null) => {
+  const [importing, setImporting] = useState(false);
+  const openEditor = (library: MediaLibraryDto | null, importExisting = false) => {
     setEditing(library);
+    setImporting(importExisting);
     setEditorOpen(true);
   };
 
@@ -53,10 +69,16 @@ export function LibrariesView({
             <p className="text-sm text-muted-foreground">{t.libraries.description}</p>
           </div>
           {libraries.length > 0 ? (
-            <Button onClick={() => openEditor(null)}>
-              <Plus className="h-4 w-4" />
-              {t.libraries.add}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => openEditor(null, true)}>
+                <Download className="h-4 w-4" />
+                {t.libraries.importExisting}
+              </Button>
+              <Button onClick={() => openEditor(null)}>
+                <Plus className="h-4 w-4" />
+                {t.libraries.add}
+              </Button>
+            </div>
           ) : null}
         </header>
 
@@ -79,10 +101,17 @@ export function LibrariesView({
               <h2 className="text-base font-bold">{t.libraries.createFirst}</h2>
               <p className="text-sm text-muted-foreground">{t.libraries.createFirstDescription}</p>
             </div>
-            <Button onClick={() => openEditor(null)}>
-              <Plus className="h-4 w-4" />
-              {t.libraries.createFirst}
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button onClick={() => openEditor(null)}>
+                <Plus className="h-4 w-4" />
+                {t.libraries.createFirst}
+              </Button>
+              <Button variant="outline" onClick={() => openEditor(null, true)}>
+                <Download className="h-4 w-4" />
+                {t.libraries.importExisting}
+              </Button>
+            </div>
+            <p className="max-w-md text-xs text-muted-foreground">{t.libraries.importExistingDescription}</p>
           </section>
         ) : null}
 
@@ -133,6 +162,13 @@ export function LibrariesView({
                   </Button>
                 </div>
               </div>
+              <LibraryHealthPanel
+                summary={summaries[library.id]}
+                pendingCount={pendingCounts[library.id] ?? 0}
+                onImport={() => onImport(library)}
+                onViewIssue={(issue) => onViewIssue(library, issue)}
+                onViewPending={() => onViewPending(library)}
+              />
             </article>
           ))}
         </section>
@@ -142,11 +178,15 @@ export function LibrariesView({
       <LibraryEditorDialog
         open={editorOpen}
         library={editing}
+        importExisting={importing}
         showAutomation={showAutomation}
         onOpenChange={setEditorOpen}
         onSave={async (settings) => {
           if (editing) await onUpdate(editing.id, settings);
-          else await onCreate(settings);
+          else {
+            const created = await onCreate(settings);
+            if (importing) onImport(created);
+          }
         }}
         onPreviewNaming={onPreviewNaming}
         loadDirectorySuggestions={loadDirectorySuggestions}

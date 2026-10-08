@@ -13,13 +13,12 @@ import type {
   AutomationWebhookEventDto,
 } from "@mdcz/shared/serverDtos";
 import type { TaskEventBus, TaskLifecycleEvent } from "../taskEvents";
+import type { ActivityService } from "./activityService";
 import type { ServerConfigService } from "./configService";
 import type { LibraryWatchService } from "./libraryWatchService";
-import type { MaintenanceService } from "./maintenanceService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import type { RuntimeLogService } from "./runtimeLogService";
-import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
 
 const MAX_TRACKED_WEBHOOK_TASKS = 1_000;
@@ -72,9 +71,8 @@ export class AutomationService {
 
   constructor(
     private readonly deps: {
-      scans: ScanQueueService;
+      activity: Pick<ActivityService, "list">;
       scrape: ScrapeService;
-      maintenance: MaintenanceService;
       config: Pick<ServerConfigService, "get">;
       libraries: Pick<MediaLibraryService, "get" | "findBySourcePath">;
       libraryWatch: Pick<LibraryWatchService, "submitExternal">;
@@ -138,36 +136,17 @@ export class AutomationService {
   }
 
   async recent(input?: { limit?: number }): Promise<AutomationRecentResponse> {
-    const limit = input?.limit ?? 20;
-    const [scanTasks, scrapeHistory, maintenanceTask] = await Promise.all([
-      this.deps.scans.list(),
-      this.deps.scrape.history(),
-      this.deps.maintenance.automationTask(),
-    ]);
-
-    const tasks = [
-      ...scanTasks.tasks.map((task) => ({ updatedAt: task.updatedAt, event: this.toWebhookEvent(task) })),
-      ...scrapeHistory.runs.map((run) => ({
-        updatedAt: run.completedAt ?? run.createdAt,
-        event: {
-          taskId: run.id,
-          kind: "scrape" as const,
-          status: run.disposition,
-          startedAt: run.startedAt,
-          completedAt: run.completedAt,
-          summary: `Scrape ${run.rootDisplayName || run.rootId}: ${run.disposition}`,
-          errors: run.error ? [run.error] : [],
-        },
-      })),
-      ...(maintenanceTask
-        ? [{ updatedAt: maintenanceTask.updatedAt, event: this.toWebhookEvent(maintenanceTask) }]
-        : []),
-    ];
+    const { entries } = await this.deps.activity.list(input?.limit);
     return {
-      tasks: tasks
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-        .slice(0, limit)
-        .map(({ event }) => event),
+      tasks: entries.map((entry) => ({
+        taskId: entry.id,
+        kind: entry.kind,
+        status: entry.status,
+        startedAt: entry.startedAt,
+        completedAt: entry.completedAt,
+        summary: `${entry.kind[0]?.toUpperCase()}${entry.kind.slice(1)} ${entry.target}: ${entry.status}`,
+        errors: entry.error ? [entry.error] : [],
+      })),
     };
   }
 

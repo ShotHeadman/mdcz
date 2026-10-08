@@ -1,5 +1,6 @@
 import type { SiteUrlConfiguration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { formatDuration } from "@mdcz/shared/format";
 import type { TaskStatus } from "@mdcz/shared/serverDtos";
 import {
   selectIsScraping,
@@ -91,6 +92,18 @@ export function ScrapeWorkbenchAdapter({
       canPause={resultsCount > 0}
       stageMessage={stageMessage}
       showCompletedActions={!isScraping && snapshot !== null}
+      runSummary={
+        snapshot
+          ? t.workbench.runSummary(
+              snapshot.task.successCount,
+              snapshot.task.failedCount,
+              snapshot.task.skippedCount,
+              snapshot.task.startedAt && snapshot.task.completedAt
+                ? formatDuration(Date.parse(snapshot.task.completedAt) - Date.parse(snapshot.task.startedAt))
+                : null,
+            )
+          : undefined
+      }
       failedCount={failedCount}
       onPauseScrape={onPauseScrape}
       onResumeScrape={onResumeScrape}

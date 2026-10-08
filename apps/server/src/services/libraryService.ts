@@ -2,9 +2,11 @@ import type { LibraryEntryRecord } from "@mdcz/persistence";
 import {
   createRecentAcquisitionsFromEntries,
   LibraryAvailabilityChecker,
+  type MediaLibraryService,
   parseLibraryCrawlerData,
   relinkLibraryFile,
   toLibraryEntryDto,
+  toLibraryEntryFilter,
 } from "@mdcz/runtime/library";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
@@ -15,6 +17,8 @@ import type {
   LibraryEntryDto,
   LibraryListInput,
   LibraryListResponse,
+  LibrarySummaryInput,
+  LibrarySummaryResponse,
   MediaRootDto,
   OverviewSummaryResponse,
 } from "@mdcz/shared/serverDtos";
@@ -28,10 +32,16 @@ export class LibraryService {
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
+    private readonly libraries: MediaLibraryService,
   ) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     return await this.listDtos(input);
+  }
+
+  async summary(input: LibrarySummaryInput): Promise<LibrarySummaryResponse> {
+    const state = await this.persistence.getState();
+    return state.repositories.library.summary(await toLibraryEntryFilter(input, this.libraries));
   }
 
   async removeFile(input: { fileId: string }): Promise<{ success: true }> {
@@ -175,15 +185,12 @@ export class LibraryService {
 
   private async listDtos(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistence.getState();
-    const [rootMap, page] = await Promise.all([
-      this.loadRootMap(),
-      state.repositories.library.listEntriesPage({
-        cursor: decodeLibraryPageCursor(input?.cursor),
-        limit: input?.limit ?? 100,
-        query: input?.query,
-        rootId: input?.rootId,
-      }),
-    ]);
+    const [rootMap, filter] = await Promise.all([this.loadRootMap(), toLibraryEntryFilter(input, this.libraries)]);
+    const page = await state.repositories.library.listEntriesPage({
+      ...filter,
+      cursor: decodeLibraryPageCursor(input?.cursor),
+      limit: input?.limit ?? 100,
+    });
 
     return {
       entries: await Promise.all(

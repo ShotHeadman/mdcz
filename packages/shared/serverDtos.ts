@@ -670,16 +670,48 @@ export const libraryEntrySchema = z.object({
 
 export type LibraryEntryDto = z.infer<typeof libraryEntrySchema>;
 
+export const LIBRARY_HEALTH_ISSUES = [
+  "missingPoster",
+  "missingBackdrop",
+  "missingSynopsis",
+  "noNfo",
+  "duplicate",
+] as const;
+export const libraryHealthIssueSchema = z.enum(LIBRARY_HEALTH_ISSUES);
+export type LibraryHealthIssue = z.infer<typeof libraryHealthIssueSchema>;
+
+/** Narrows a listing or a summary to one library, and within it to one issue or one actor, studio or tag. */
+const libraryScopeFields = {
+  libraryId: z.string().trim().min(1).optional(),
+  health: libraryHealthIssueSchema.optional(),
+  actor: z.string().trim().min(1).optional(),
+  studio: z.string().trim().min(1).optional(),
+  tag: z.string().trim().min(1).optional(),
+};
+
 export const libraryListInputSchema = z
   .object({
     cursor: z.string().trim().min(1).max(2048).optional(),
     query: z.string().optional(),
     rootId: z.string().optional(),
     limit: z.number().int().min(1).max(500).optional(),
+    ...libraryScopeFields,
   })
   .optional();
 
 export type LibraryListInput = z.infer<typeof libraryListInputSchema>;
+
+export const librarySummaryInputSchema = z.object({ libraryId: libraryScopeFields.libraryId }).optional();
+export type LibrarySummaryInput = z.infer<typeof librarySummaryInputSchema>;
+
+const libraryFacetSchema = z.array(z.object({ name: z.string(), count: z.number().int() }));
+
+export const librarySummaryResponseSchema = z.object({
+  total: z.number().int(),
+  issues: z.record(libraryHealthIssueSchema, z.number().int()),
+  facets: z.object({ actors: libraryFacetSchema, studios: libraryFacetSchema, tags: libraryFacetSchema }),
+});
+export type LibrarySummaryResponse = z.infer<typeof librarySummaryResponseSchema>;
 
 export const libraryDetailInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -808,6 +840,26 @@ export const automationWebhookEventSchema = z.object({
 });
 
 export type AutomationWebhookEventDto = z.infer<typeof automationWebhookEventSchema>;
+
+export const activityEntrySchema = z.object({
+  id: z.string(),
+  kind: z.enum(["scan", "scrape", "maintenance"]),
+  status: taskStatusSchema,
+  target: z.string(),
+  updatedAt: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  /** Item outcomes of a scrape run; other kinds report none. */
+  counts: z.object({ success: z.number(), failed: z.number(), skipped: z.number() }).nullable(),
+  error: z.string().nullable(),
+});
+export type ActivityEntryDto = z.infer<typeof activityEntrySchema>;
+
+export const activityListInputSchema = z.object({ limit: z.number().int().min(1).max(100).optional() }).optional();
+export type ActivityListInput = z.infer<typeof activityListInputSchema>;
+
+export const activityListResponseSchema = z.object({ entries: z.array(activityEntrySchema) });
+export type ActivityListResponse = z.infer<typeof activityListResponseSchema>;
 
 export const automationRecentInputSchema = z
   .object({

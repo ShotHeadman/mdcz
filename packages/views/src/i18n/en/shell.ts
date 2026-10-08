@@ -15,5 +15,7 @@ export const shell = {
   themeSystem: "Follow system",
   expandSidebar: "Expand sidebar",
   collapseSidebar: "Collapse sidebar",
+  openMenu: "Open navigation",
+  closeMenu: "Close navigation",
   switchLanguage: "切换到中文",
 };

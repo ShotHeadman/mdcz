@@ -60,31 +60,31 @@ export function OverviewHeroStartCard({
         <div className="flex gap-7">
           {isLoading ? (
             <>
-              <MetricBlock label="Files" value="..." />
-              <MetricBlock label="Size" value="..." />
+              <MetricBlock label={t.overview.hero.files} value="..." />
+              <MetricBlock label={t.overview.hero.size} value="..." />
             </>
           ) : isError ? (
             <>
-              <MetricBlock label="Files" value="-" />
-              <MetricBlock label="Size" value={t.overview.hero.loadFailed} />
+              <MetricBlock label={t.overview.hero.files} value="-" />
+              <MetricBlock label={t.overview.hero.size} value={t.overview.hero.loadFailed} />
             </>
           ) : hasOutputRoot ? (
             <>
-              <MetricBlock label="Files" value={data?.fileCount ?? 0} />
+              <MetricBlock label={t.overview.hero.files} value={data?.fileCount ?? 0} />
               <MetricBlock
-                label="Size"
+                label={t.overview.hero.size}
                 value={formatBytes(data?.totalBytes ?? 0, { fractionDigits: 2, trimTrailingZeros: true })}
               />
             </>
           ) : hasConfiguredOutput ? (
             <>
-              <MetricBlock label="Files" value={0} />
-              <MetricBlock label="Size" value={t.overview.hero.waitingFirstScrape} />
+              <MetricBlock label={t.overview.hero.files} value={0} />
+              <MetricBlock label={t.overview.hero.size} value={t.overview.hero.waitingFirstScrape} />
             </>
           ) : (
             <>
-              <MetricBlock label="Files" value="-" />
-              <MetricBlock label="Size" value={t.overview.hero.notConfigured} />
+              <MetricBlock label={t.overview.hero.files} value="-" />
+              <MetricBlock label={t.overview.hero.size} value={t.overview.hero.notConfigured} />
             </>
           )}
         </div>

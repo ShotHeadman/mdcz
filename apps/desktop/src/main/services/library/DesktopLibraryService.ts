@@ -6,8 +6,10 @@ import {
   DESKTOP_OUTPUT_ROOT_DISPLAY_NAME,
   DESKTOP_OUTPUT_ROOT_ID,
   LibraryAvailabilityChecker,
+  type MediaLibraryService,
   relinkLibraryFile,
   toLibraryEntryDto,
+  toLibraryEntryFilter,
 } from "@mdcz/runtime/library";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
@@ -16,12 +18,22 @@ import type {
   LibraryEntryDto,
   LibraryListInput,
   LibraryListResponse,
+  LibrarySummaryInput,
+  LibrarySummaryResponse,
 } from "@mdcz/shared/serverDtos";
 
 export class DesktopLibraryService {
   private readonly availabilityChecker = new LibraryAvailabilityChecker();
 
-  constructor(private readonly persistenceService: DesktopPersistenceService) {}
+  constructor(
+    private readonly persistenceService: DesktopPersistenceService,
+    private readonly libraries: MediaLibraryService,
+  ) {}
+
+  async summary(input: LibrarySummaryInput): Promise<LibrarySummaryResponse> {
+    const state = await this.persistenceService.getState();
+    return state.repositories.library.summary(await toLibraryEntryFilter(input, this.libraries));
+  }
 
   async removeFile(input: { fileId: string }): Promise<{ success: true }> {
     (await this.persistenceService.getState()).repositories.library.removeFile(input.fileId);
@@ -44,15 +56,15 @@ export class DesktopLibraryService {
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistenceService.getState();
-    const [roots, page] = await Promise.all([
+    const [roots, filter] = await Promise.all([
       state.repositories.mediaRoots.list(),
-      state.repositories.library.listEntriesPage({
-        cursor: decodeLibraryPageCursor(input?.cursor),
-        limit: input?.limit ?? 100,
-        query: input?.query,
-        rootId: input?.rootId,
-      }),
+      toLibraryEntryFilter(input, this.libraries),
     ]);
+    const page = await state.repositories.library.listEntriesPage({
+      ...filter,
+      cursor: decodeLibraryPageCursor(input?.cursor),
+      limit: input?.limit ?? 100,
+    });
     const rootMap = new Map(roots.map((root) => [root.id, root]));
 
     return {

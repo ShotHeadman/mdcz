@@ -2,6 +2,8 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import type { OverviewRecentAcquisitionDto } from "@mdcz/shared/serverDtos";
 import { getT, useT } from "@mdcz/views/i18n";
 import {
+  ActivityTimelineCard,
+  hasActiveActivity,
   OverviewHeroStartCard,
   OverviewMaintenanceCard,
   RecentAcquisitionRemoveDialog,
@@ -40,6 +42,12 @@ export function OverviewPage() {
     retry: false,
   });
   const sitesQ = useQuery({ queryKey: queryKeys.overview.sites, queryFn: () => api.crawler.listSites(), retry: false });
+  const activityQ = useQuery({
+    queryKey: queryKeys.activity.list,
+    queryFn: () => api.activity.list({ limit: 12 }),
+    refetchInterval: (query) => (hasActiveActivity(query.state.data?.entries ?? []) ? 3_000 : false),
+    retry: false,
+  });
   const output = overviewQ.data?.output;
   const recent = overviewQ.data?.recentAcquisitions ?? [];
   const configured = hasWorkbenchOutput({
@@ -81,6 +89,8 @@ export function OverviewPage() {
         />
 
         {overviewQ.error && <ErrorBanner>{toErrorMessage(overviewQ.error)}</ErrorBanner>}
+
+        <ActivityTimelineCard entries={activityQ.data?.entries ?? []} />
 
         <section className="col-span-12 mt-8">
           <div className="mb-8">

@@ -1,29 +1,39 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
+import { startHealthFix } from "@mdcz/views/adapters";
 import { useT } from "@mdcz/views/i18n";
 import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import {
   chunkLibraryEntryIds,
+  createLibraryBrowseControls,
   LibraryDeleteDialog,
   LibraryIndexView,
   mergeLibraryAvailability,
+  parseLibraryBrowseSearch,
+  toLibraryListScope,
 } from "@mdcz/views/library";
-import { useInfiniteQuery, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
+import { createDesktopMaintenanceActionPort } from "@/adapters/ports";
 import { ipc } from "@/client/ipc";
 import { getImageSrc } from "@/utils/image";
 
 export function LibraryPage() {
   const t = useT();
+  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const scope = toLibraryListScope(search);
+  const isScraping = useScrapeStore(selectIsScraping);
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
   const queryClient = useQueryClient();
   const libraryQ = useInfiniteQuery({
-    queryKey: ["library", "list", query],
-    queryFn: ({ pageParam }) => ipc.library.list({ cursor: pageParam, query, limit: 100 }),
+    queryKey: ["library", "list", query, scope],
+    queryFn: ({ pageParam }) => ipc.library.list({ cursor: pageParam, query, limit: 100, ...scope }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -52,6 +62,11 @@ export function LibraryPage() {
       })),
     ),
   });
+  const librariesQ = useQuery({ queryKey: ["libraries"], queryFn: () => ipc.libraries.list() });
+  const summaryQ = useQuery({
+    queryKey: ["library", "summary", search.libraryId ?? ""],
+    queryFn: () => ipc.library.summary({ libraryId: search.libraryId }),
+  });
   const entries = mergeLibraryAvailability(
     pageEntries,
     availabilityQs.flatMap((availabilityQ) => availabilityQ.data ?? []),
@@ -61,6 +76,31 @@ export function LibraryPage() {
     <>
       <LibraryIndexView
         availabilityFilter={availabilityFilter}
+        browse={createLibraryBrowseControls({
+          search,
+          libraries: librariesQ.data?.libraries ?? [],
+          summary: summaryQ.data,
+          update: (next) => void navigate({ to: "/library", search: next }),
+          onFix: async (issue) => {
+            const matches: LibraryEntryDto[] = [];
+            let cursor: string | undefined;
+            do {
+              const page = await ipc.library.list({ cursor, limit: 500, ...scope, health: issue });
+              matches.push(...page.entries);
+              cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+            await startHealthFix({
+              issue,
+              libraryId: search.libraryId,
+              entries: matches,
+              port: createDesktopMaintenanceActionPort(),
+              isScraping,
+              toast,
+              toErrorMessage,
+            });
+            void navigate({ to: "/workbench", search: { intent: "maintenance" } });
+          },
+        })}
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={(path, entry) =>
@@ -120,5 +160,6 @@ export function LibraryPage() {
 }
 
 export const Route = createFileRoute("/library")({
+  validateSearch: parseLibraryBrowseSearch,
   component: LibraryPage,
 });

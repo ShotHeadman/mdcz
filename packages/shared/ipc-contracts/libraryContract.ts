@@ -5,6 +5,8 @@ import type {
   LibraryAvailabilityResponse,
   LibraryListInput,
   LibraryListResponse,
+  LibrarySummaryInput,
+  LibrarySummaryResponse,
 } from "../serverDtos";
 
 export interface LibraryDeleteInput {
@@ -16,5 +18,6 @@ export type LibraryIpcContract = {
   [IpcChannel.Library_RemoveFile]: IpcProcedure<import("../serverDtos").LibraryFileRemoveInput, { success: true }>;
   [IpcChannel.Library_Availability]: IpcProcedure<LibraryAvailabilityInput, LibraryAvailabilityResponse>;
   [IpcChannel.Library_List]: IpcProcedure<LibraryListInput, LibraryListResponse>;
+  [IpcChannel.Library_Summary]: IpcProcedure<LibrarySummaryInput, LibrarySummaryResponse>;
   [IpcChannel.Library_Delete]: IpcProcedure<LibraryDeleteInput, { success: true }>;
 };

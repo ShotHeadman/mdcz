@@ -161,7 +161,7 @@ function WorkbenchPage() {
     libraryId?: string,
   ) => {
     await startMaintenanceFlow({
-      candidates,
+      refs: candidates.map((candidate) => candidate.ref),
       presetId,
       libraryId,
       port: ports.maintenance,

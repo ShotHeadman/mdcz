@@ -16,6 +16,8 @@ import type {
   PendingRetryResponse,
 } from "./pending";
 import type {
+  ActivityListInput,
+  ActivityListResponse,
   ApiKeyCreateInput,
   ApiKeyCreateResponse,
   ApiKeyListResponse,
@@ -43,6 +45,8 @@ import type {
   LibraryListInput,
   LibraryListResponse,
   LibraryRelinkInput,
+  LibrarySummaryInput,
+  LibrarySummaryResponse,
   LogListInput,
   LogListResponse,
   MaintenanceApplyInput,
@@ -158,10 +162,14 @@ export interface ServerApiContract {
     start(input: MaintenanceStartInput): Promise<MaintenanceMutationAckDto>;
     stop(input: MaintenanceSessionInput): Promise<MaintenanceMutationAckDto>;
   };
+  activity: {
+    list(input?: ActivityListInput): Promise<ActivityListResponse>;
+  };
   library: {
     removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
+    summary(input?: LibrarySummaryInput): Promise<LibrarySummaryResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;

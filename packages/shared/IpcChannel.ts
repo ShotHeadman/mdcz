@@ -60,6 +60,7 @@ export enum IpcChannel {
   Overview_GetOutputSummary = "overview:get-output-summary",
 
   Library_List = "library:list",
+  Library_Summary = "library:summary",
   Library_Availability = "library:availability",
   Library_Delete = "library:delete",
   Library_RemoveFile = "library:removeFile",

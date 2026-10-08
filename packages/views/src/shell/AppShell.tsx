@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   Library,
   type LucideIcon,
+  Menu,
   Monitor,
   Moon,
   PanelLeftClose,
@@ -84,6 +85,9 @@ export function AppShell({
   const { theme, setTheme } = useTheme();
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
+  // Open for the path it was opened on, so following any link closes it.
+  const [drawerPath, setDrawerPath] = useState<string | null>(null);
+  const drawerOpen = drawerPath === currentPath;
   const themeMeta = useMemo(() => {
     if (theme === "light") return { icon: Sun, label: t.shell.themeLight };
     if (theme === "dark") return { icon: Moon, label: t.shell.themeDark };
@@ -97,10 +101,39 @@ export function AppShell({
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       {titlebar}
+      <header className="flex h-12 shrink-0 items-center gap-2 bg-sidebar px-2 text-sidebar-foreground md:hidden">
+        <Button variant="ghost" size="icon" aria-label={t.shell.openMenu} onClick={() => setDrawerPath(currentPath)}>
+          <Menu />
+        </Button>
+        <img src={AppLogo} alt="" className="h-5 w-5 rounded-md ring-1 ring-border/60" />
+        <span className="select-none text-base font-semibold tracking-tight">MDCz</span>
+      </header>
+      {drawerOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            aria-label={t.shell.closeMenu}
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setDrawerPath(null)}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col bg-sidebar text-sidebar-foreground shadow-xl">
+            <NavContent
+              collapsed={false}
+              currentPath={currentPath}
+              linkComponent={LinkComponent}
+              onCollapse={() => setDrawerPath(null)}
+              onThemeToggle={cycleTheme}
+              systemNav={systemNav}
+              themeIcon={themeMeta.icon}
+              themeLabel={themeMeta.label}
+            />
+          </aside>
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside
           className={cn(
-            "flex shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-300 ease-in-out",
+            "hidden shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-300 ease-in-out md:flex",
             collapsed ? "w-[60px]" : "w-[130px]",
           )}
         >
@@ -115,8 +148,8 @@ export function AppShell({
             themeLabel={themeMeta.label}
           />
         </aside>
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden py-2 pl-2">
-          <div className="flex-1 overflow-hidden rounded-l-xl bg-surface">{children}</div>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden md:py-2 md:pl-2">
+          <div className="flex-1 overflow-hidden bg-surface md:rounded-l-xl">{children}</div>
         </main>
       </div>
     </div>

@@ -108,7 +108,9 @@ const mergeScrapeResultStatus = (existing: ScrapeResultStatus, incoming: ScrapeR
 
 const getScrapeGroupStatus = (group: ScrapeResultGroup["items"]): RendererGroupStatus => {
   if (group.some((item) => item.status === "failed")) return "failed";
-  if (group.some((item) => item.status === "processing" || item.status === "pending")) return "processing";
+  if (group.some((item) => item.status === "processing")) return "processing";
+  if (group.every((item) => item.status === "pending")) return "queued";
+  if (group.some((item) => item.status === "pending")) return "processing";
   if (group.some((item) => item.status === "success")) return "success";
   return "idle";
 };

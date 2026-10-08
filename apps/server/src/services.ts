@@ -1,4 +1,5 @@
 import type { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
+import type { ActivityService } from "./services/activityService";
 import type { AuthService } from "./services/authService";
 import type { AutomationService } from "./services/automationService";
 import type { BrowserService } from "./services/browserService";
@@ -18,6 +19,7 @@ import type { ToolsService } from "./services/toolsService";
 import type { TaskEventBus } from "./taskEvents";
 
 export interface ServerServices {
+  activity: ActivityService;
   automation: AutomationService;
   auth: AuthService;
   browser: BrowserService;

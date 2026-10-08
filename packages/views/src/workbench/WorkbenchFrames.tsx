@@ -14,6 +14,8 @@ export interface ScrapeWorkbenchFrameProps {
   canPause?: boolean;
   stageMessage?: string;
   showCompletedActions: boolean;
+  /** What the finished run did; shown beside the follow-up actions. */
+  runSummary?: string;
   failedCount: number;
   onPauseScrape: () => void;
   onResumeScrape: () => void;
@@ -32,6 +34,7 @@ export function ScrapeWorkbenchFrame({
   canPause = true,
   stageMessage,
   showCompletedActions,
+  runSummary,
   failedCount,
   onPauseScrape,
   onResumeScrape,
@@ -45,7 +48,7 @@ export function ScrapeWorkbenchFrame({
   const stopping = scrapeStatus === "stopping";
   const barContentClassName = isScraping
     ? "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-4 px-4 py-3 md:px-5"
-    : "mx-auto flex w-fit max-w-[min(92vw,32rem)] items-center gap-2 px-3 py-2.5 md:px-4";
+    : "mx-auto flex w-fit max-w-[min(92vw,32rem)] flex-wrap items-center justify-center gap-2 px-3 py-2.5 md:px-4";
 
   return (
     <div className="relative h-full overflow-hidden bg-surface-canvas">
@@ -122,6 +125,7 @@ export function ScrapeWorkbenchFrame({
 
           {showCompletedActions ? (
             <>
+              {runSummary ? <span className="px-1 text-xs text-muted-foreground">{runSummary}</span> : null}
               <ReturnToWorkbenchSetupButton
                 dialogDescription={t.workbench.scrapeReturnDescription}
                 onConfirm={onReturnToSetup}
