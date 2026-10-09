@@ -7,9 +7,7 @@ export const workbench = {
   // Frame actions
   analyzingFiles: "Analyzing files…",
   runSummary: (succeeded: number, failed: number, skipped: number, duration: string | null) =>
-    [`${succeeded} succeeded`, failed ? `${failed} failed` : "", skipped ? `${skipped} skipped` : "", duration ?? ""]
-      .filter(Boolean)
-      .join(" · "),
+    [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`, duration ?? ""].filter(Boolean).join(" · "),
   resumeScrape: "Resume scrape task",
   pauseScrape: "Pause scrape task",
   resume: "Resume",

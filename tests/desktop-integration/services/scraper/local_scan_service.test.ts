@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
@@ -80,7 +80,7 @@ describe("LocalScanService", () => {
         [
           video,
           {
-            nfoPath: nfo,
+            nfoPaths: [nfo],
             assets: { poster: join(metadata, "poster.jpg"), sceneImages: [], actorPhotos: [] },
           },
         ],
@@ -101,8 +101,25 @@ describe("LocalScanService", () => {
     await rm(nfo);
     await writeFile(join(source, "movie.nfo"), "source metadata");
     const [missing] = await scanner.scanFiles(mediaRoot, [video], "extrafanart", undefined, locations);
-    expect(missing.nfoPath).toBe(nfo);
+    expect(missing.nfoPath).toBeUndefined();
     expect(missing.scanError).toContain("NFO");
+
+    // Of several registered NFOs the one saved last is read, and a deleted one does not block the survivor.
+    const movieNfo = join(metadata, "movie.nfo");
+    await writeFile(nfo, "<movie><num>ABC-123</num><title>Older</title></movie>");
+    await writeFile(movieNfo, "<movie><num>ABC-123</num><title>Newer</title></movie>");
+    await utimes(nfo, new Date(1_000_000), new Date(1_000_000));
+    const both = {
+      registeredOutputs: new Map([
+        [video, { nfoPaths: [nfo, movieNfo], assets: { sceneImages: [], actorPhotos: [] } }],
+      ]),
+    };
+    const [newest] = await new LocalScanService().scanFiles(mediaRoot, [video], "extrafanart", undefined, both);
+    expect(newest).toMatchObject({ nfoPath: movieNfo, nfoPaths: [movieNfo, nfo], crawlerData: { title: "Newer" } });
+    await rm(movieNfo);
+    const [survivor] = await new LocalScanService().scanFiles(mediaRoot, [video], "extrafanart", undefined, both);
+    expect(survivor).toMatchObject({ nfoPath: nfo, crawlerData: { title: "Older" } });
+    expect(survivor.scanError).toBeUndefined();
   });
 
   it("scans only the selected files in selected-file maintenance scans", async () => {

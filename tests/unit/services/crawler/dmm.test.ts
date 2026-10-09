@@ -404,6 +404,86 @@ describe("DmmCrawler", () => {
     expect(networkClient.requests.map((request) => request.url)).toContain(hyphenatedSearchUrl);
   });
 
+  it("reports a number listed by different makers as ambiguous and fetches only listings of other makers", async () => {
+    const number = "SW-130";
+    const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=sw00130/sort=ranking/";
+    const detailUrl = (cid: string) => `https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=${cid}/`;
+    const search = (listings: Array<[cid: string, maker?: string]>) =>
+      `<html><body>${listings
+        .map(([cid, maker]) => {
+          const makers = maker ? `,"makers":["${maker}"]` : "";
+          return `<script>const item = {"detailUrl":"${detailUrl(cid).replaceAll("/", "\\/")}"${makers}};</script>`;
+        })
+        .join("")}</body></html>`;
+    const detailHtml = (title: string, maker: string, released: string) => `
+      <html><body>
+        <h1><span>${title}</span></h1>
+        <table>
+          <tr><th>品番</th><td>SW-130</td></tr>
+          <tr><th>メーカー</th><td><a>${maker}</a></td></tr>
+          <tr><th>配信開始日</th><td><span>${released}</span></td></tr>
+        </table>
+      </body></html>`;
+    const switchWork = detailHtml("SWITCH Work", "SWITCH", "2012/08/23");
+    const plumWork = detailHtml("Plum Work", "Plum", "2021/07/08");
+
+    const cases = [
+      {
+        listings: [
+          ["1sw00130", "SWITCH"],
+          ["h_113sw00130", "Plum"],
+        ] as Array<[string, string?]>,
+        pages: [switchWork, plumWork],
+        expected: { success: false, reason: "ambiguous" },
+        fetched: ["1sw00130", "h_113sw00130"],
+      },
+      {
+        listings: [
+          ["1sw00130", "SWITCH"],
+          ["h_113sw00130", "スイッチ"],
+        ] as Array<[string, string?]>,
+        pages: [switchWork, detailHtml("SWITCH Reissue", "SWITCH", "2021/07/08")],
+        expected: { success: true, data: { title: "SWITCH Work" } },
+        fetched: ["1sw00130", "h_113sw00130"],
+      },
+      {
+        listings: [
+          ["1sw00130", "SWITCH"],
+          ["sw00130", "Plum"],
+          ["1sw00130bod", "SWITCH"],
+        ] as Array<[string, string?]>,
+        pages: [switchWork, plumWork, plumWork],
+        expected: { success: true, data: { title: "SWITCH Work" } },
+        fetched: ["1sw00130"],
+      },
+      {
+        listings: [["1sw00130"], ["h_113sw00130"]] as Array<[string, string?]>,
+        pages: [switchWork, plumWork],
+        expected: { success: true, data: { title: "SWITCH Work" } },
+        fetched: ["1sw00130"],
+      },
+    ];
+
+    for (const { listings, pages, expected, fetched } of cases) {
+      const fixtures = new Map<string, unknown>([
+        [searchUrl, search(listings)],
+        ...listings.map(([cid], index): [string, unknown] => [detailUrl(cid), pages[index]]),
+      ]);
+      const networkClient = new FixtureNetworkClient(fixtures);
+
+      const response = await new DmmCrawler(withGateway(networkClient)).crawl({ number, site: Website.DMM });
+
+      expect(response.result).toMatchObject(expected);
+      expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl, ...fetched.map(detailUrl)]);
+      if (!response.result.success) {
+        expect(response.result.candidates).toEqual([
+          expect.objectContaining({ detailUrl: detailUrl("1sw00130"), studio: "SWITCH", releaseDate: "2012-08-23" }),
+          expect.objectContaining({ detailUrl: detailUrl("h_113sw00130"), studio: "Plum", releaseDate: "2021-07-08" }),
+        ]);
+      }
+    }
+  });
+
   it("walks the remaining search candidates when the first detail page fails identity verification", async () => {
     const number = "SNOS-301";
     const searchUrl = "https://www.dmm.co.jp/search/=/searchstr=snos00301/sort=ranking/";

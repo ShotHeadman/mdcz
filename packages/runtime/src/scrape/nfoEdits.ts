@@ -34,8 +34,13 @@ const nodeText = (node: unknown): string => {
 export const fingerprintNfoField = (movie: Record<string, unknown>, field: NfoEditableField): string => {
   const values = (Array.isArray(movie[field]) ? movie[field] : [movie[field]])
     .map(nodeText)
-    // Emby reads <genre>A/B</genre> as two genres and writes them back as separate elements.
-    .flatMap((value) => (field === "genre" ? value.split("/").map((part) => part.trim()) : [value]))
+    .flatMap((value) => {
+      // Emby reads <genre>A/B</genre> as two genres and writes them back as separate elements.
+      if (field === "genre") return value.split("/").map((part) => part.trim());
+      // Jellyfin drops literal <br> from plots and reflows their whitespace; only the words identify an edit.
+      if (field === "plot") return [value.replace(/<br\s*\/?>/giu, "").replace(/\s+/gu, "")];
+      return [value];
+    })
     .filter(Boolean)
     .sort();
   const digest = createHash("sha256").update(JSON.stringify(values)).digest();

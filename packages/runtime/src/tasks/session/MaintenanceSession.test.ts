@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InactiveMaintenanceSessionError, MaintenanceSession } from "./MaintenanceSession";
 
 const createSession = () =>
@@ -31,7 +31,10 @@ const initialEntries = [
 ];
 
 describe("MaintenanceSession", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("owns transitions, monotonic progress, and immutable snapshots", () => {
+    vi.useFakeTimers({ now: new Date("2026-01-01T00:00:00.000Z") });
     const session = createSession();
     session.startRunning();
     session.initializeEntries(initialEntries);
@@ -64,18 +67,24 @@ describe("MaintenanceSession", () => {
     expect(session.snapshot().refs[0]).toEqual({ rootId: "root-1", relativePath: "one.mp4" });
     expect(session.snapshot().successCount).toBe(1);
 
+    vi.advanceTimersByTime(5_000);
     session.finish("completed", null);
     const previewId = session.snapshot().previews[0]?.id;
     if (!previewId) throw new Error("Expected preview ID");
     session.beginApply([{ previewId }]);
     expect(session.progress()).toEqual({ totalEntries: 1, completedEntries: 0, successCount: 0, failedCount: 0 });
+    vi.advanceTimersByTime(60_000);
     session.startRunning();
+    vi.advanceTimersByTime(1_000);
     const [item] = session.pendingBatchItems();
     if (!item) throw new Error("Expected apply item");
     session.markApplyProcessing(item);
     session.commitItem(item, { status: "success" });
     expect(session.progress()).toEqual({ totalEntries: 1, completedEntries: 1, successCount: 1, failedCount: 0 });
     session.finish("completed", null);
+    // The phase timestamps describe the apply alone; the preview's running time carries over, the review does not.
+    const { startedAt, completedAt, earlierPhasesMs } = session.snapshot().timestamps;
+    expect(earlierPhasesMs + (completedAt?.getTime() ?? 0) - (startedAt?.getTime() ?? 0)).toBe(6_000);
     expect(() => session.startRunning()).toThrow(InactiveMaintenanceSessionError);
   });
 });

@@ -85,7 +85,7 @@ export function LibraryPage() {
             const matches: LibraryEntryDto[] = [];
             let cursor: string | undefined;
             do {
-              const page = await ipc.library.list({ cursor, limit: 500, ...scope, health: issue });
+              const page = await ipc.library.list({ cursor, query, limit: 500, ...scope, health: issue });
               matches.push(...page.entries);
               cursor = page.nextCursor ?? undefined;
             } while (cursor);

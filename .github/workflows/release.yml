@@ -61,7 +61,13 @@ jobs:
           DECLARED=$(git log "${LAST_TAG:+${LAST_TAG}..}HEAD" --merges --pretty=%s \
             | sed -nE 's#^Merge pull request \#[0-9]+ from [^/]+/(feat|fix)/([0-9]+\.[0-9]+\.[0-9]+)$#\2#p' \
             | sort -V | tail -n 1)
-          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+          # A full rerun sees our version commit; its parent identifies the checked revision.
+          if [[ "$(git log -1 --pretty=%s)" == chore\(release\):* ]] \
+            && [ "$(git rev-parse HEAD^)" = "$GITHUB_SHA" ]; then
+            EXISTING_TAG=$(git describe --tags --exact-match HEAD)
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            echo "existing=$EXISTING_TAG" >> "$GITHUB_OUTPUT"
+          elif [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
             echo "::notice::main moved past checked commit $GITHUB_SHA; its newer run releases it"
             echo "skipped=true" >> "$GITHUB_OUTPUT"
           elif [[ "$(git log -1 --pretty=%s)" == chore\(release\):* ]]; then
@@ -78,12 +84,15 @@ jobs:
         if: steps.check.outputs.skipped == 'false'
         id: bump
         run: |
-          NEW_VERSION=$(node scripts/bump-version.mjs ${{ steps.check.outputs.declared }})
+          NEW_VERSION="${{ steps.check.outputs.existing }}"
+          if [ -z "$NEW_VERSION" ]; then
+            NEW_VERSION=$(node scripts/bump-version.mjs ${{ steps.check.outputs.declared }})
+          fi
           echo "version=${NEW_VERSION#v}" >> "$GITHUB_OUTPUT"
           echo "tag=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Push version commit and tag
-        if: steps.check.outputs.skipped == 'false'
+        if: steps.check.outputs.skipped == 'false' && steps.check.outputs.existing == ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

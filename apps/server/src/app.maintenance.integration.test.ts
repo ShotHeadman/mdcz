@@ -139,7 +139,11 @@ describe("buildServer maintenance integration", () => {
     const directory = await createTempRoot("maintenance-directory");
     const source = join(directory, "source");
     if (kind !== "missing") await mkdir(source);
-    if (kind === "files") await writeMaintenanceInput(source, "ABC-123", "Local movie");
+    if (kind === "files") {
+      await writeMaintenanceInput(source, "ABC-123", "Local movie");
+      await writeFile(join(source, "DEF-456.mp4"), "video without NFO");
+      await writeFile(join(source, "holiday-video.mp4"), "video without number or NFO");
+    }
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const response = await fastify.inject({
@@ -161,10 +165,34 @@ describe("buildServer maintenance integration", () => {
     expect(session).toMatchObject({
       id: sessionId,
       phase: "preview",
-      totalEntries: 1,
+      totalEntries: 3,
       directoryScope: { scanDir: source, recursive: true },
     });
-    expect(session?.refs.map((ref) => ref.relativePath)).toEqual(kind === "files" ? ["ABC-123.mp4"] : []);
+    expect(session?.refs.map((ref) => ref.relativePath).sort()).toEqual([
+      "ABC-123.mp4",
+      "DEF-456.mp4",
+      "holiday-video.mp4",
+    ]);
+    expect(session?.previews.every((preview) => preview.status === "ready")).toBe(true);
+    const before = await Promise.all(
+      (await readdir(source)).sort().map(async (name) => [name, await readFile(join(source, name), "utf8")]),
+    );
+    const applied = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+    });
+    expect(applied.statusCode).toBe(200);
+    const completed = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+    expect(completed).toMatchObject({ successCount: 3, failedCount: 0 });
+    const { library } = (await services.persistence.getState()).repositories;
+    expect(library.summary({})).toMatchObject({ total: 3, issues: { noNfo: 2, missingSynopsis: 3 } });
+    expect(
+      await Promise.all(
+        (await readdir(source)).sort().map(async (name) => [name, await readFile(join(source, name), "utf8")]),
+      ),
+    ).toEqual(before);
   });
   it("creates exactly one preview per selected ref", async () => {
     const root = await createTempRoot("maintenance-two-selected-root");
@@ -581,6 +609,14 @@ describe("buildServer maintenance integration", () => {
       vi.spyOn(state.repositories.library, "writeEntry").mockImplementation(() => {
         throw new Error("injected maintenance commit failure");
       });
+    const originalFiles = await Promise.all(
+      (await readdir(root, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map(async (entry) => {
+          const path = join(entry.parentPath, entry.name);
+          return { path, bytes: await readFile(path) };
+        }),
+    );
 
     const applyResponse = await fastify.inject({
       method: "POST",
@@ -607,16 +643,13 @@ describe("buildServer maintenance integration", () => {
       expect(appliedSession.currentBatch?.items[0]).toMatchObject({
         status: scenario === "conflict" ? "skipped" : "failed",
       });
-      if (scenario !== "commit_failure")
-        await expect(readFile(join(root, sourceNames[0]), "utf8")).resolves.toBeTruthy();
-      if (scenario === "conflict")
-        await expect(readFile(join(root, "JAV_output", "ABC-300", sourceNames[0]), "utf8")).resolves.toBe("occupied");
-      else if (scenario !== "commit_failure")
-        await expect(access(join(root, "JAV_output", "ABC-300", sourceNames[0]))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
+      const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => join(entry.parentPath, entry.name));
+      expect(remainingFiles.sort()).toEqual(originalFiles.map((file) => file.path).sort());
+      for (const file of originalFiles) expect(await readFile(file.path)).toEqual(file.bytes);
       if (scenario === "commit_failure")
-        expect((await state.repositories.library.getEntryById(before.id)).files).toEqual(before.files);
+        expect(await state.repositories.library.getEntryById(before.id)).toEqual(before);
       return;
     }
     expect(appliedSession.currentBatch?.items[0]).toMatchObject({ status: "success" });
@@ -664,18 +697,20 @@ describe("buildServer maintenance integration", () => {
     const imageUrl = `${imageServer.url}/image.png`;
     await writeFile(
       join(metadataRoot, `${baseName}.nfo`),
-      new NfoGenerator().buildXml(
-        {
-          number: "ABC-400",
-          title: "Local Title ABC-400",
-          actors: [],
-          genres: [],
-          scene_images: [],
-          website: Website.JAVDB,
-          poster_source_url: imageUrl,
-        },
-        { assets: { poster: posterPath, sceneImages: [], downloaded: [] } },
-      ),
+      new NfoGenerator()
+        .buildXml(
+          {
+            number: "ABC-400",
+            title: "Local Title ABC-400",
+            actors: [],
+            genres: [],
+            scene_images: [],
+            website: Website.JAVDB,
+            poster_source_url: imageUrl,
+          },
+          { assets: { poster: posterPath, sceneImages: [], downloaded: [] } },
+        )
+        .replace('type="javdb"', 'type="num"'),
     );
     const aggregation = createTestAggregation(`${imageServer.url}/image.png`, {
       titlePrefix: "Remote Title",

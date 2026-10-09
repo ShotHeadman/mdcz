@@ -23,6 +23,7 @@ import type { ScrapeStartInput } from "@mdcz/shared/serverDtos";
 import { z } from "zod";
 import type { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
 import { committedMovieRows } from "../publication/committedMovie";
+import { runtimeLoggerService } from "../shared";
 import { toMediaLibrary, toPublicationTarget } from "./mediaLibraryService";
 import type { ConfiguredMediaRootService } from "./mediaRootService";
 
@@ -43,7 +44,7 @@ export interface PendingServiceDependencies {
   onChanged?: () => void;
 }
 
-const candidatesSchema = z.array(ambiguousCandidateSchema);
+const logger = runtimeLoggerService.getLogger("PendingService");
 
 export class PendingService {
   constructor(private readonly deps: PendingServiceDependencies) {}
@@ -142,8 +143,7 @@ export class PendingService {
         },
         commit: (movie) => {
           const rows = committedMovieRows(movie);
-          repositories.library.writeEntry(rows.movie, rows.files);
-          repositories.pending.delete([item.id]);
+          repositories.pending.confirmUncensored(item.id, rows.movie, rows.files);
         },
       },
     });
@@ -171,7 +171,17 @@ export class PendingService {
   }
 
   private candidates(item: PendingItemRecord): AmbiguousCandidate[] {
-    return item.candidatesJson ? candidatesSchema.parse(JSON.parse(item.candidatesJson)) : [];
+    if (!item.candidatesJson) return [];
+    // Stored candidates outlive the schema (a site may be removed later); one unreadable entry must not fail the list.
+    return z
+      .array(z.unknown())
+      .parse(JSON.parse(item.candidatesJson))
+      .flatMap((candidate) => {
+        const parsed = ambiguousCandidateSchema.safeParse(candidate);
+        if (parsed.success) return [parsed.data];
+        logger.warn(`Dropped an unreadable candidate of pending entry ${item.id}: ${parsed.error.message}`);
+        return [];
+      });
   }
 
   private toDto(item: PendingItemRecord, absolutePath: string, libraries: ReadonlyMap<string, string>): PendingItemDto {

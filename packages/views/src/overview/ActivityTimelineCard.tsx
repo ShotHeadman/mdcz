@@ -38,10 +38,7 @@ export function ActivityTimelineCard({ entries }: ActivityTimelineCardProps) {
       <ol className="flex flex-col divide-y divide-border/40 rounded-quiet-xl bg-surface-low/60">
         {entries.map((entry) => {
           const { icon: Icon, className } = statusIcon(entry.status);
-          const duration =
-            entry.startedAt && entry.completedAt
-              ? formatDuration(Date.parse(entry.completedAt) - Date.parse(entry.startedAt))
-              : null;
+          const duration = entry.durationMs === null ? null : formatDuration(entry.durationMs);
           const details = [
             entry.counts
               ? t.overview.activity.counts(entry.counts.success, entry.counts.failed, entry.counts.skipped)

@@ -8,6 +8,7 @@ import {
   toLibraryEntryDto,
   toLibraryEntryFilter,
 } from "@mdcz/runtime/library";
+import type { Configuration } from "@mdcz/shared/config";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
@@ -33,6 +34,7 @@ export class LibraryService {
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,
     private readonly libraries: MediaLibraryService,
+    private readonly getConfiguration: () => Promise<Configuration>,
   ) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
@@ -41,7 +43,9 @@ export class LibraryService {
 
   async summary(input: LibrarySummaryInput): Promise<LibrarySummaryResponse> {
     const state = await this.persistence.getState();
-    return state.repositories.library.summary(await toLibraryEntryFilter(input, this.libraries));
+    return state.repositories.library.summary(
+      await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
+    );
   }
 
   async removeFile(input: { fileId: string }): Promise<{ success: true }> {
@@ -185,7 +189,10 @@ export class LibraryService {
 
   private async listDtos(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistence.getState();
-    const [rootMap, filter] = await Promise.all([this.loadRootMap(), toLibraryEntryFilter(input, this.libraries)]);
+    const [rootMap, filter] = await Promise.all([
+      this.loadRootMap(),
+      toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
+    ]);
     const page = await state.repositories.library.listEntriesPage({
       ...filter,
       cursor: decodeLibraryPageCursor(input?.cursor),

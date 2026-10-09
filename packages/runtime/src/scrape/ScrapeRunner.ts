@@ -1010,7 +1010,8 @@ export class ScrapeRunner {
         let uncensoredPendingAdded = false;
 
         const commit = () => {
-          const movieId = this.deps.persistence.library.writeEntry(
+          const published = libraryEntries[0];
+          const result = this.deps.persistence.pending.commitPublication(
             {
               id: committedMovie.id,
               assets: committedMovie.assets.filter((asset) => asset.fileId === null),
@@ -1022,19 +1023,19 @@ export class ScrapeRunner {
               createdAt: completedAt,
             },
             libraryEntries,
+            {
+              clearFiles: entries.map((entry) => entry.item),
+              uncensored: uncensoredAmbiguous
+                ? {
+                    rootId: published.rootId,
+                    relativePath: published.rootRelativePath,
+                    libraryId: manifest.libraryId,
+                    number: committedMovie.number,
+                  }
+                : undefined,
+            },
           );
-          this.deps.persistence.pending.deleteFiles(entries.map((entry) => entry.item));
-          if (uncensoredAmbiguous) {
-            const published = libraryEntries[0];
-            uncensoredPendingAdded = this.deps.persistence.pending.upsert({
-              kind: "uncensored",
-              rootId: published.rootId,
-              relativePath: published.rootRelativePath,
-              libraryId: manifest.libraryId,
-              movieId,
-              number: committedMovie.number,
-            });
-          }
+          uncensoredPendingAdded = result.uncensoredAdded;
         };
 
         const release = await acquireOutputDirectories(

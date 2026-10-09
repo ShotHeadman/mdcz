@@ -29,6 +29,7 @@ describe("DesktopLibraryService deletion", () => {
         }),
       } as never,
       {} as never,
+      vi.fn(),
     );
 
     await service.deleteEntry("item-1");

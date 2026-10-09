@@ -70,6 +70,7 @@ export class ScrapeService {
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly announcedRunIds = new Set<string>();
   private closed = false;
 
   constructor(
@@ -168,10 +169,27 @@ export class ScrapeService {
             result.fileId,
           );
         },
-        onInvalidate: () => {
+        onInvalidate: (runs) => {
+          for (const {
+            snapshot: { task },
+          } of runs) {
+            if (task.status !== "running" || this.announcedRunIds.has(task.id)) continue;
+            this.announcedRunIds.add(task.id);
+            this.taskEvents.lifecycle({
+              id: task.id,
+              kind: "scrape",
+              rootId: task.rootId,
+              rootDisplayName: task.rootDisplayName,
+              status: task.status,
+              startedAt: task.startedAt,
+              completedAt: task.completedAt,
+              error: task.error,
+            });
+          }
           this.scheduleScrapeInvalidation();
         },
         onTerminal: async (run, snapshot) => {
+          this.announcedRunIds.delete(run.id);
           const summary = (await this.persistence.getState()).repositories.scrapeRuns.summary(run);
           const terminalStatus = summary?.disposition ?? snapshot.task.status;
           this.addEvent(

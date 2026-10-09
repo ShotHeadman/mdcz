@@ -254,7 +254,7 @@ export class MaintenanceRuntime {
     root: MediaRoot;
     refs: Array<{ relativePath: string }>;
     signal?: AbortSignal;
-    registeredOutputs?: Map<string, { nfoPath?: string }>;
+    registeredOutputs?: Map<string, { nfoPaths: string[] }>;
   }): Promise<LocalScanEntry[]> {
     const config = await this.getPresetConfig("import_local");
     const filePaths = input.refs.map((ref) => resolveRootRelativePath(input.root, ref.relativePath));
@@ -341,6 +341,15 @@ export class MaintenanceRuntime {
         crawlerData = publication.data;
       } else {
         crawlerData = entry.crawlerData && canonicalizeCrawlerDataActorAliases(entry.crawlerData, config);
+        if (!crawlerData && preset.output === "none") {
+          crawlerData = {
+            title: entry.fileInfo.fileName,
+            number: entry.fileInfo.number,
+            actors: [],
+            genres: [],
+            scene_images: [],
+          };
+        }
       }
 
       const { fieldDiffs, unchangedFieldDiffs } = this.partitionDiffs(entry, preset, crawlerData, imageAlternatives);

@@ -123,7 +123,8 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   if (!movie || typeof movie !== "object") throw new Error("Invalid NFO movie node");
 
   const movieNode = movie as Record<string, unknown>;
-  const title = toStringValue(movieNode.title) ?? "";
+  const title =
+    toStringValue(movieNode.title) ?? toStringValue(movieNode.originaltitle) ?? toStringValue(movieNode.name) ?? "";
   const originaltitle = toStringValue(movieNode.originaltitle);
   const plot = toStringValue(movieNode.plot);
   const premiered = toStringValue(movieNode.premiered);

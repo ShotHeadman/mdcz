@@ -911,9 +911,17 @@ describe("buildServer scrape integration", () => {
 
     if (scenario === "missing") await rm(join(root, originalEntry.files[1].rootRelativePath));
     if (scenario === "commit_failure")
-      vi.spyOn(state.repositories.library, "writeEntry").mockImplementation(() => {
+      vi.spyOn(state.repositories.pending, "delete").mockImplementation(() => {
         throw new Error("injected confirmation failure");
       });
+    const originalFiles = await Promise.all(
+      (await readdir(root, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map(async (entry) => {
+          const path = join(entry.parentPath, entry.name);
+          return { path, bytes: await readFile(path) };
+        }),
+    );
     const confirm = async () =>
       await fastify.inject({
         method: "POST",
@@ -926,9 +934,12 @@ describe("buildServer scrape integration", () => {
     if (scenario === "missing" || scenario === "commit_failure") {
       expect(confirmResponse.statusCode).toBe(500);
       if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("Maintenance scan failed");
-      expect((await state.repositories.library.getEntryById(originalEntry.id)).files).toEqual(originalEntry.files);
-      if (scenario === "missing")
-        await expect(readFile(join(root, originalEntry.files[0].rootRelativePath), "utf8")).resolves.toBe("video");
+      expect(await state.repositories.library.getEntryById(originalEntry.id)).toEqual(originalEntry);
+      const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => join(entry.parentPath, entry.name));
+      expect(remainingFiles.sort()).toEqual(originalFiles.map((file) => file.path).sort());
+      for (const file of originalFiles) expect(await readFile(file.path)).toEqual(file.bytes);
       expect(await pendingItems()).toEqual([expect.objectContaining({ id: item.id })]);
       return;
     }
@@ -955,10 +966,27 @@ describe("buildServer scrape integration", () => {
     expect(aggregateCount).toBe(1);
   });
 
-  it("rejects repairs for unknown pending entries", async () => {
-    const { fastify } = await createTestServer();
+  it("lists pending entries despite unreadable stored candidates and rejects repairs for unknown ones", async () => {
+    const root = await createTempRoot("pending-candidates-root");
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
     const headers = { authorization: `Bearer ${token}` };
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
+    const candidate = { site: "dmm", detailUrl: "https://example.com/a", title: "Readable" };
+    // A site removed in a later release leaves candidates the current schema rejects; they must not hide the list.
+    const stored = [candidate, { ...candidate, site: "removed_site", title: "Unreadable" }];
+    (await services.persistence.getState()).repositories.pending.upsert({
+      kind: "ambiguous",
+      rootId,
+      relativePath: "SW-130.mp4",
+      libraryId,
+      number: "SW-130",
+      candidatesJson: JSON.stringify(stored),
+    });
+    const listed = await fastify.inject({ method: "GET", url: "/trpc/pending.list", headers });
+    expect(listed.json().result.data.items).toEqual([
+      expect.objectContaining({ number: "SW-130", candidates: [candidate] }),
+    ]);
 
     for (const [procedure, payload] of [
       ["pending.confirmUncensored", { id: "missing-item", choice: "uncensored" }],

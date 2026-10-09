@@ -637,16 +637,26 @@ describe("LibraryRepository", () => {
     await repository.upsertEntry({
       movie: {
         id: "translated",
-        number: "DEF-456",
+        number: "",
         actors: ["Bob"],
         crawlerDataJson: crawlerDataJson({ plot_zh: "译文", studio: "S2", genres: [] }),
         assets: [asset("root-1", "nfo", "def/movie.nfo")],
       },
       files: [{ rootId: "root-1", rootRelativePath: "def/DEF-456.mp4" }],
     });
+    // Movies without a number never duplicate each other.
+    await repository.upsertEntry({
+      movie: {
+        id: "unnumbered",
+        number: "",
+        crawlerDataJson: crawlerDataJson({ plot: "A plot" }),
+        assets: ["poster", "fanart", "nfo"].map((kind) => asset("root-1", kind, `none/${kind}`)),
+      },
+      files: [{ rootId: "root-1", rootRelativePath: "none/clip.mp4" }],
+    });
 
     expect(repository.summary({})).toEqual({
-      total: 3,
+      total: 4,
       issues: { missingPoster: 2, missingBackdrop: 2, missingSynopsis: 1, noNfo: 1, duplicate: 2 },
       facets: {
         actors: [
@@ -673,6 +683,12 @@ describe("LibraryRepository", () => {
     const ids = async (filter: object) =>
       (await repository.listEntriesPage({ limit: 10, ...filter })).entries.map((entry) => entry.id).sort();
     await expect(ids({ health: "noNfo" })).resolves.toEqual(["bare"]);
+    expect(repository.summary({ includeBackdrop: false })).toEqual({
+      ...repository.summary({}),
+      issues: { ...repository.summary({}).issues, missingBackdrop: 0 },
+    });
+    await expect(ids({ health: "missingBackdrop", includeBackdrop: false })).resolves.toEqual([]);
+    await expect(ids({ health: "missingBackdrop", includeBackdrop: true })).resolves.toEqual(["bare", "translated"]);
     await expect(ids({ health: "duplicate", pathPrefixes: ["/root-1"] })).resolves.toEqual(["healthy"]);
     await expect(ids({ actor: "Bob" })).resolves.toEqual(["bare", "translated"]);
     await expect(ids({ studio: "S2", tag: "drama" })).resolves.toEqual([]);

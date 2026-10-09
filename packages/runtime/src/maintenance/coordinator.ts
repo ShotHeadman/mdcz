@@ -175,7 +175,7 @@ const scanMembers = async (
     refsByRoot.set(member.rootId, group);
   }
   const byRef = new Map<string, LocalScanEntry>();
-  const registeredOutputs = new Map<string, { nfoPath?: string; assets: LocalScanEntry["assets"] }>();
+  const registeredOutputs = new Map<string, { nfoPaths: string[]; assets: LocalScanEntry["assets"] }>();
   const assets = await Promise.all(
     identity.assets.map(async (asset) => ({
       ...asset,
@@ -183,11 +183,12 @@ const scanMembers = async (
     })),
   );
   for (const member of members) {
-    const location: { nfoPath?: string; assets: LocalScanEntry["assets"] } = {
+    const location: { nfoPaths: string[]; assets: LocalScanEntry["assets"] } = {
+      nfoPaths: [],
       assets: { sceneImages: [], actorPhotos: [] },
     };
     for (const asset of assets.filter((asset) => asset.fileId === null || asset.fileId === member.fileId)) {
-      if (asset.kind === "nfo") location.nfoPath ??= asset.path;
+      if (asset.kind === "nfo") location.nfoPaths.push(asset.path);
       else if (asset.kind === "scene") location.assets.sceneImages.push(asset.path);
       else if (asset.kind === "actor") location.assets.actorPhotos.push(asset.path);
       else if (["thumb", "poster", "fanart", "trailer"].includes(asset.kind))

@@ -6,7 +6,7 @@ const scrapeRun = (id: string, completedAt: string) => ({
   rootDisplayName: "Downloads",
   disposition: "completed" as const,
   createdAt: completedAt,
-  startedAt: completedAt,
+  startedAt: new Date(Date.parse(completedAt) - 12_000).toISOString(),
   completedAt,
   successCount: 3,
   failedCount: 1,
@@ -35,11 +35,24 @@ describe("ActivityService", () => {
           }) as never,
       },
       scrape: {
-        history: async () => ({ runs: [scrapeRun("run-done", "2026-10-08T10:00:00.000Z")], results: [] }) as never,
+        history: async () =>
+          ({
+            runs: [
+              scrapeRun("run-done", "2026-10-08T10:00:00.000Z"),
+              { ...scrapeRun("run-live", "2026-10-08T11:00:00.000Z"), disposition: "interrupted", completedAt: null },
+            ],
+            results: [],
+          }) as never,
         liveRuns: async () =>
           ({
             runs: [
-              { task: { ...scrapeRun("run-done", "2026-10-08T10:00:00.000Z"), status: "completed" } },
+              {
+                task: {
+                  ...scrapeRun("run-done", "2026-10-08T10:00:00.000Z"),
+                  status: "completed",
+                  updatedAt: "2026-10-08T10:00:00.000Z",
+                },
+              },
               {
                 task: {
                   ...scrapeRun("run-live", "2026-10-08T11:00:00.000Z"),
@@ -61,6 +74,7 @@ describe("ActivityService", () => {
             status: "paused",
             startedAt: null,
             completedAt: null,
+            durationMs: null,
             error: null,
             updatedAt: "2026-10-08T08:00:00.000Z",
           }) as never,
@@ -75,5 +89,6 @@ describe("ActivityService", () => {
       { id: "scan-1", kind: "scan", status: "completed" },
     ]);
     expect(entries[1]?.counts).toEqual({ success: 3, failed: 1, skipped: 0 });
+    expect(entries.map((entry) => entry.durationMs)).toEqual([null, 12_000, null]);
   });
 });

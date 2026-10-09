@@ -6,6 +6,7 @@ import {
   resolveMaintenanceDiffImageOption,
   resolveMaintenanceDiffImageSrc,
 } from "@mdcz/runtime/maintenance";
+import { Website } from "@mdcz/shared/enums";
 import type { LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,7 +19,7 @@ import {
 
 describe("buildCommittedCrawlerData", () => {
   it("merges selected old and new diff values onto existing crawler data", () => {
-    const entry = createMaintenanceEntry(createMaintenanceCrawlerData());
+    const entry = createMaintenanceEntry(createMaintenanceCrawlerData({ website: undefined }));
     const preview: MaintenancePreviewItem = {
       fileId: entry.fileId,
       status: "ready",
@@ -60,11 +61,12 @@ describe("buildCommittedCrawlerData", () => {
       title_zh: "新标题",
       genres: ["Drama", "Mystery"],
       number: "ABC-123",
+      website: Website.DMM,
     });
   });
 
   it("returns base data directly when preview has no field diffs", () => {
-    const entry = createMaintenanceEntry(createMaintenanceCrawlerData());
+    const entry = createMaintenanceEntry(createMaintenanceCrawlerData({ website: undefined }));
     const preview: MaintenancePreviewItem = {
       fileId: entry.fileId,
       status: "ready",
@@ -73,6 +75,7 @@ describe("buildCommittedCrawlerData", () => {
 
     const committed = buildCommittedCrawlerData(entry, preview, undefined);
     expect(committed?.title).toBe("Old Title");
+    expect(committed?.website).toBe(Website.DMM);
   });
 
   it("returns undefined when neither entry nor preview has crawler data", () => {

@@ -95,6 +95,7 @@ export interface LibraryEntryFilter {
   /** Host directories; a movie matches when one of its files is inside one of them. */
   pathPrefixes?: readonly string[];
   health?: LibraryHealthIssue;
+  includeBackdrop?: boolean;
   actor?: string;
   studio?: string;
   tag?: string;
@@ -673,12 +674,12 @@ export class LibraryRepository {
   }
 
   /** Health counts and the most common actors, studios and tags among the movies a filter selects. */
-  summary(filter: Pick<LibraryEntryFilter, "pathPrefixes">, facetLimit = 30): LibrarySummary {
+  summary(filter: Pick<LibraryEntryFilter, "pathPrefixes" | "includeBackdrop">, facetLimit = 30): LibrarySummary {
     const scope = buildLibraryListWhere(filter) ?? sql`1`;
     const issueColumns = sql.join(
       LIBRARY_HEALTH_ISSUES.map(
         (issue) =>
-          sql`coalesce(sum(CASE WHEN ${HEALTH_CONDITIONS[issue]} THEN 1 ELSE 0 END), 0) AS ${sql.identifier(issue)}`,
+          sql`coalesce(sum(CASE WHEN ${healthCondition(issue, filter)} THEN 1 ELSE 0 END), 0) AS ${sql.identifier(issue)}`,
       ),
       sql`, `,
     );
@@ -865,11 +866,14 @@ const HEALTH_CONDITIONS: Record<LibraryHealthIssue, SQL> = {
     nullif(trim(json_extract(${libraryItems.crawlerDataJson}, '$.plot_zh')), ''),
     nullif(trim(json_extract(${libraryItems.crawlerDataJson}, '$.plot')), '')
   ) IS NULL`,
-  duplicate: sql`${libraryItems.number} IS NOT NULL AND EXISTS (
+  duplicate: sql`trim(coalesce(${libraryItems.number}, '')) <> '' AND EXISTS (
     SELECT 1 FROM library_items AS other
     WHERE other.id <> ${libraryItems.id} AND lower(other.number) = lower(${libraryItems.number})
   )`,
 };
+
+const healthCondition = (issue: LibraryHealthIssue, filter: Pick<LibraryEntryFilter, "includeBackdrop">): SQL =>
+  issue === "missingBackdrop" && filter.includeBackdrop === false ? sql`0` : HEALTH_CONDITIONS[issue];
 
 const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   const filters: SQL[] = [];
@@ -888,7 +892,7 @@ const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
       )`,
     );
   }
-  if (input.health) filters.push(HEALTH_CONDITIONS[input.health]);
+  if (input.health) filters.push(healthCondition(input.health, input));
   if (input.actor)
     filters.push(sql`EXISTS (SELECT 1 FROM json_each(${libraryItems.actorsJson}) WHERE value = ${input.actor})`);
   if (input.studio) filters.push(sql`${STUDIO} = ${input.studio}`);

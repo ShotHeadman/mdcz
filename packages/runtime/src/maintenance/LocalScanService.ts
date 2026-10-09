@@ -8,7 +8,7 @@ import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared
 import type { RegisteredMediaLocation } from "../library/registeredMedia";
 import { excludeGeneratedStrmPaths, isGeneratedSidecarVideo, resolveFileInfoWithSubtitles } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
-import { preferredLocalNfoBaseNames, selectLocalNfoNames } from "../scrape/selectLocalNfo";
+import { newestNfosFirst, preferredLocalNfoBaseNames, selectLocalNfoNames } from "../scrape/selectLocalNfo";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "../scrape/utils/filesystem";
 import { parseFileInfo } from "../scrape/utils/number";
@@ -17,7 +17,7 @@ import { resolveLocalAssetReference, uniqueDefinedPaths } from "./localAssetRefe
 
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 type MetadataLocation = {
-  registeredOutputs?: Map<string, { nfoPath?: string; assets?: DiscoveredAssets }>;
+  registeredOutputs?: Map<string, { nfoPaths: string[]; assets?: DiscoveredAssets }>;
   inventory?: DirectoryInventory;
   /** The scrape settings that read numbers out of file names; without them a repaired or ignored name parses differently than it was scraped. */
   filenameRules?: Pick<Configuration["scrape"], "filenameIgnoreTokens" | "numberMappings">;
@@ -279,15 +279,17 @@ export class LocalScanService {
     const dir = dirname(videoPath);
 
     const registered = metadata?.registeredOutputs?.get(videoPath);
-    const registeredPath = registered?.nfoPath;
-    const metadataDir = registeredPath ? dirname(registeredPath) : dir;
-    const nfoPaths = registered
-      ? [registered.nfoPath].filter((path) => path !== undefined)
-      : await this.findNfos(metadataDir, fileInfo, inventory, signal);
+    const registeredNfos = registered?.nfoPaths ?? [];
+    const metadataDir = registeredNfos[0] ? dirname(registeredNfos[0]) : dir;
+    // Registered NFOs may have been deleted since; the files on disk decide, then name preference.
+    let nfoPaths = await newestNfosFirst(registeredNfos, (path) => inventory.stats(path));
+    if (!nfoPaths.length && (registeredNfos.length || !registered))
+      nfoPaths = await this.findNfos(metadataDir, fileInfo, inventory, signal);
     const nfoPath = nfoPaths[0];
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
-    let scanError: string | undefined;
+    let scanError: string | undefined =
+      !nfoPath && registeredNfos.length ? `NFO recorded in library does not exist: ${registeredNfos[0]}` : undefined;
 
     if (nfoPath) {
       try {
@@ -308,7 +310,7 @@ export class LocalScanService {
 
     const assets =
       registered?.assets ??
-      (registered && !registeredPath
+      (registered && !registeredNfos.length
         ? { sceneImages: [], actorPhotos: [] }
         : await this.discoverAssets({
             dir: nfoPath ? dirname(nfoPath) : metadataDir,

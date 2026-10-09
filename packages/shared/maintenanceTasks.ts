@@ -133,7 +133,14 @@ export interface MaintenanceActiveSessionSnapshot extends MaintenanceSessionProg
   phase: MaintenanceSessionPhase;
   status: MaintenanceSessionStatus;
   refs: MaintenanceSessionRef[];
-  timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
+  timestamps: {
+    createdAt: Date;
+    updatedAt: Date;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    /** Running time of the phases before the current one; started and completed describe only the current phase. */
+    earlierPhasesMs: number;
+  };
   error: string | null;
   previews: MaintenanceSessionPreview[];
   currentBatch: {

@@ -849,6 +849,8 @@ export const activityEntrySchema = z.object({
   updatedAt: z.string(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
+  /** Time the server spent working; a maintenance session sums its phases and leaves out the time spent reviewing. */
+  durationMs: z.number().nullable(),
   /** Item outcomes of a scrape run; other kinds report none. */
   counts: z.object({ success: z.number(), failed: z.number(), skipped: z.number() }).nullable(),
   error: z.string().nullable(),

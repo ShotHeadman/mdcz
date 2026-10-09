@@ -12,6 +12,7 @@ import { toAbsoluteUrl } from "../helpers";
 
 import { BaseDmmCrawler, dmmPageTitle } from "./BaseDmmCrawler";
 import { toDmmMovieNumber } from "./contentId";
+import { addDistinctWork, ambiguousWorksError, type DmmWork, dmmDetailUrlWorkKey, isSameMaker } from "./distinctWorks";
 import { isDmmVideoLikeUrl } from "./dmmVideo";
 import { classifyDmmDetailFailure } from "./failureClassifier";
 import { DmmCategory, parseCategory, parseDigitalDetail, parseMonoLikeDetail } from "./parsers";
@@ -20,12 +21,12 @@ interface DmmContext extends Context {
   number00?: string;
   numberNo00?: string;
   searchKeywords: string[];
-  detailCandidates?: string[];
+  detailCandidates?: DmmSearchCandidate[];
 }
 
 const DMM_SEARCH_BASE = "https://www.dmm.co.jp/search/=/searchstr=";
 const DMM_SEARCH_BASE_ALT = "https://www.dmm.com/search/=/searchstr=";
-const DMM_FALLBACK_CANDIDATE_LIMIT = 2;
+const DMM_CANDIDATE_WALK_LIMIT = 4;
 
 const unescapeDetailUrl = (value: string): string => {
   return value.replaceAll("\\/", "/").replaceAll("\\u0026", "&");
@@ -44,6 +45,7 @@ interface DmmSearchCandidate {
   detailUrl: string;
   contentId?: string;
   title?: string;
+  maker?: string;
   order: number;
 }
 
@@ -103,6 +105,9 @@ const extractJsonStringField = (value: string, names: string[]): string | undefi
   return undefined;
 };
 
+const extractMaker = (value: string): string | undefined =>
+  (value.match(/makers\\":\[\\"(.*?)\\"/u)?.[1] ?? value.match(/"makers"\s*:\s*\["(.*?)"/u)?.[1])?.trim() || undefined;
+
 const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: string): DmmSearchCandidate[] => {
   const htmlText = $.html();
   const escapedMatches = htmlText.matchAll(/(?:detailUrl|detailURL|detail_url)\\":\\"(.*?)\\"/giu);
@@ -128,6 +133,7 @@ const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: 
     if (existing) {
       existing.contentId ??= metadata.contentId;
       existing.title ??= metadata.title;
+      existing.maker ??= metadata.maker;
       return;
     }
 
@@ -135,6 +141,7 @@ const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: 
       detailUrl: parsed,
       contentId: metadata.contentId,
       title: metadata.title,
+      maker: metadata.maker,
       order,
     });
     order += 1;
@@ -148,6 +155,7 @@ const collectDetailCandidates = (context: DmmContext, $: CheerioAPI, searchUrl: 
     pushCandidate(extractJsonStringField(objectText, ["detailUrl", "detailURL", "detail_url"]), {
       contentId: extractJsonStringField(objectText, ["contentId", "contentID", "content_id"]),
       title: extractJsonStringField(objectText, ["title", "name"]),
+      maker: extractMaker(objectText),
     });
   }
 
@@ -262,29 +270,40 @@ export class DmmCrawler extends BaseDmmCrawler {
 
   protected async parseDetailPage(context: DmmContext, $: CheerioAPI, detailUrl: string): Promise<CrawlerData | null> {
     const primary = await this.parseDetailDocument(context, $, detailUrl);
+    const works: DmmWork[] = [];
+    const workKeys = new Set<string>();
     if (primary && movieNumbersMatch(primary.number, context.number)) {
-      return primary;
+      works.push({ data: primary, detailUrl });
+      const key = dmmDetailUrlWorkKey(detailUrl);
+      if (key) workKeys.add(key);
     }
 
-    const fallbacks = (context.detailCandidates ?? [])
-      .filter((candidateUrl) => candidateUrl !== detailUrl)
-      .slice(0, DMM_FALLBACK_CANDIDATE_LIMIT);
-    for (const candidateUrl of fallbacks) {
+    // The same number can name works of different makers (SW-133 is a 2012 SWITCH and a 2022 Plum title). Search
+    // results name each listing's maker, so only a listing of another maker is fetched; ordinary numbers cost no
+    // extra requests. Without a verified work, every unseen listing is a fallback for the failed identity check.
+    let walked = 0;
+    for (const { detailUrl: candidateUrl, maker } of context.detailCandidates ?? []) {
+      const key = dmmDetailUrlWorkKey(candidateUrl);
+      if (candidateUrl === detailUrl || (key && workKeys.has(key))) continue;
+      if (works.length > 0 && (!maker || works.some((work) => isSameMaker(work.data.studio, maker)))) continue;
+      if (walked >= DMM_CANDIDATE_WALK_LIMIT) break;
+      walked += 1;
       try {
         const data = isDmmVideoLikeUrl(candidateUrl)
-          ? await this.tryDmmVideoDetailUrl(context, candidateUrl, Website.DMM, "DMM video GraphQL fallback")
+          ? await this.tryDmmVideoDetailUrl(context, candidateUrl, Website.DMM, "DMM video GraphQL candidate")
           : await this.parseDetailDocument(context, load(await this.fetch(candidateUrl, context)), candidateUrl);
         if (data && movieNumbersMatch(data.number, context.number)) {
-          this.logger.debug(`DMM fallback candidate matched ${context.number} via ${candidateUrl}`);
-          return data;
+          addDistinctWork(works, { data, detailUrl: candidateUrl });
+          if (key) workKeys.add(key);
         }
       } catch (error) {
         if (isNetworkWideFailure(error)) throw error;
-        this.logger.debug(`DMM fallback candidate failed for ${candidateUrl}: ${toErrorMessage(error)}`);
+        this.logger.debug(`DMM candidate failed for ${candidateUrl}: ${toErrorMessage(error)}`);
       }
     }
 
-    return primary;
+    if (works.length > 1) throw ambiguousWorksError(Website.DMM, context.number, works);
+    return works[0]?.data ?? primary;
   }
 
   private async parseDetailDocument(
@@ -364,7 +383,7 @@ export class DmmCrawler extends BaseDmmCrawler {
       return null;
     }
 
-    context.detailCandidates = candidates.map((entry) => entry.detailUrl);
+    context.detailCandidates = candidates;
     return isDmmVideoLikeUrl(candidate.detailUrl) ? this.reuseSearchDocument(candidate.detailUrl) : candidate.detailUrl;
   }
 }

@@ -287,6 +287,7 @@ describe("web maintenance action port", () => {
         updatedAt: new Date("2026-05-12T00:00:00.000Z"),
         startedAt: new Date("2026-05-12T00:00:00.000Z"),
         completedAt: null,
+        earlierPhasesMs: 0,
       },
       error: null,
       previews: [],

@@ -3,6 +3,9 @@ import type { MaintenanceService } from "./maintenanceService";
 import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
 
+const durationBetween = (startedAt: string | null, completedAt: string | null): number | null =>
+  startedAt && completedAt ? Date.parse(completedAt) - Date.parse(startedAt) : null;
+
 /**
  * What the server has been doing, newest first: scans, scrape runs and the current maintenance session.
  * Finished scrape runs and scans are persisted; a maintenance session is listed only while it is the active one.
@@ -23,21 +26,20 @@ export class ActivityService {
       this.deps.scrape.liveRuns(),
       this.deps.maintenance.automationTask(),
     ]);
-    const finishedRunIds = new Set(scrapeHistory.runs.map((run) => run.id));
+    const liveRunIds = new Set(liveRuns.runs.map(({ task }) => task.id));
     const entries: ActivityEntryDto[] = [
-      ...liveRuns.runs
-        .filter(({ task }) => !finishedRunIds.has(task.id))
-        .map(({ task }) => ({
-          id: task.id,
-          kind: "scrape" as const,
-          status: task.status,
-          target: task.rootDisplayName || task.rootId,
-          updatedAt: task.updatedAt,
-          startedAt: task.startedAt,
-          completedAt: task.completedAt,
-          counts: { success: task.successCount, failed: task.failedCount, skipped: task.skippedCount },
-          error: task.error,
-        })),
+      ...liveRuns.runs.map(({ task }) => ({
+        id: task.id,
+        kind: "scrape" as const,
+        status: task.status,
+        target: task.rootDisplayName || task.rootId,
+        updatedAt: task.updatedAt,
+        startedAt: task.startedAt,
+        completedAt: task.completedAt,
+        durationMs: durationBetween(task.startedAt, task.completedAt),
+        counts: { success: task.successCount, failed: task.failedCount, skipped: task.skippedCount },
+        error: task.error,
+      })),
       ...scanTasks.tasks.map((task) => ({
         id: task.id,
         kind: "scan" as const,
@@ -46,20 +48,24 @@ export class ActivityService {
         updatedAt: task.updatedAt,
         startedAt: task.startedAt,
         completedAt: task.completedAt,
+        durationMs: durationBetween(task.startedAt, task.completedAt),
         counts: null,
         error: task.error,
       })),
-      ...scrapeHistory.runs.map((run) => ({
-        id: run.id,
-        kind: "scrape" as const,
-        status: run.disposition,
-        target: run.rootDisplayName || run.rootId,
-        updatedAt: run.completedAt ?? run.createdAt,
-        startedAt: run.startedAt,
-        completedAt: run.completedAt,
-        counts: { success: run.successCount, failed: run.failedCount, skipped: run.skippedCount },
-        error: run.error,
-      })),
+      ...scrapeHistory.runs
+        .filter((run) => !liveRunIds.has(run.id))
+        .map((run) => ({
+          id: run.id,
+          kind: "scrape" as const,
+          status: run.disposition,
+          target: run.rootDisplayName || run.rootId,
+          updatedAt: run.completedAt ?? run.createdAt,
+          startedAt: run.startedAt,
+          completedAt: run.completedAt,
+          durationMs: durationBetween(run.startedAt, run.completedAt),
+          counts: { success: run.successCount, failed: run.failedCount, skipped: run.skippedCount },
+          error: run.error,
+        })),
       ...(maintenanceTask
         ? [
             {
@@ -70,6 +76,7 @@ export class ActivityService {
               updatedAt: maintenanceTask.updatedAt,
               startedAt: maintenanceTask.startedAt,
               completedAt: maintenanceTask.completedAt,
+              durationMs: maintenanceTask.durationMs,
               counts: null,
               error: maintenanceTask.error,
             },

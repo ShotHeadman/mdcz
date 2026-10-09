@@ -134,7 +134,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
-  const library = options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries);
+  const library =
+    options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get());
   const maintenanceRuntime = createServerMaintenanceRuntime({
     config,
     prepareScrapeItem: options.resources?.prepareScrapeItem,

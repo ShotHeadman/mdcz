@@ -20,10 +20,11 @@ export async function writeTaskEventsStream(
   const write = (chunk: string): void => {
     if (closed) return;
     if (!raw.write(chunk)) {
+      // Runtime warnings are streamed too; unsubscribe before logging a stalled stream.
+      closeStream();
       runtimeLoggerService
         .getLogger("task-sse")
         .warn("Task SSE output is backpressured; closing the stream for a full resync");
-      closeStream();
     }
   };
 

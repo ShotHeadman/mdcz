@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -48,42 +48,75 @@ describe("WriteOutput", () => {
         { commit: () => undefined },
       );
       expect(copyFile).toHaveBeenCalledTimes(multipleTargets ? 1 : 0);
-      expect(rename).toHaveBeenCalledTimes(multipleTargets ? 2 : 1);
       expect(rename).toHaveBeenCalledWith(stagingPath, multipleTargets ? secondPoster : newPoster);
       await expect(readFile(stagingPath)).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(newPoster, "utf8")).resolves.toBe("downloaded");
       if (multipleTargets) await expect(readFile(secondPoster, "utf8")).resolves.toBe("downloaded");
     }
+    expect((await readdir(directory, { recursive: true })).some((name) => name.includes(".mdcz-"))).toBe(false);
   });
 
-  it("cleans up staged part files on failure without durable backups", async () => {
+  it("restores replaced artifacts and removes new ones when installation or commit fails", async () => {
+    for (const failure of ["install", "commit", "cross-device"] as const) {
+      const directory = await mkdtemp(path.join(tmpdir(), "mdcz-write-output-"));
+      directories.push(directory);
+      const nfo = path.join(directory, "movie.nfo");
+      const poster = path.join(directory, "poster.jpg");
+      const fanart = path.join(directory, "fanart.jpg");
+      const thumb = path.join(directory, "thumb.jpg");
+      const staging = path.join(directory, ".mdcz-staging-thumb.part");
+      const oldSource = path.join(directory, "old-thumb.jpg");
+      await writeFile(nfo, "old nfo");
+      await writeFile(poster, "old poster");
+      await symlink(poster, fanart, "file");
+      await writeFile(oldSource, "old thumb");
+      const originalNames = (await readdir(directory)).sort();
+      const originals = await Promise.all(
+        [nfo, poster, fanart, oldSource].map(async (target) => {
+          const { ino, size, mtimeMs } = await lstat(target);
+          return { target, ino, size, mtimeMs };
+        }),
+      );
+      await writeFile(staging, "new thumb");
+      const commit = vi.fn(async () => {
+        expect(await readFile(nfo, "utf8")).toBe("new nfo");
+        expect(await readFile(poster, "utf8")).toBe("new poster");
+        expect(await readlink(fanart)).toBe(nfo);
+        expect(await readFile(thumb, "utf8")).toBe("new thumb");
+        throw new Error("commit failed");
+      });
+      const output = new WriteOutput({
+        ...outputFileSystem,
+        rename: async (source, target) => {
+          if (failure === "install" && source.endsWith(".part") && target === poster) throw new Error("rename failed");
+          if (failure === "cross-device" && source === staging && target === thumb)
+            throw Object.assign(new Error("cross device staging"), { code: "EXDEV" });
+          await outputFileSystem.rename(source, target);
+        },
+      });
+      await expect(
+        output.install(
+          [
+            { targetPath: nfo, data: "new nfo" },
+            { targetPath: fanart, symlinkTo: nfo },
+            { targetPath: thumb, sourcePath: staging, size: 9, consume: true, removeSourcesAfterCommit: [oldSource] },
+            { targetPath: poster, data: "new poster" },
+          ],
+          { commit },
+        ),
+      ).rejects.toThrow(failure === "install" ? "rename failed" : "commit failed");
+      expect(commit).toHaveBeenCalledTimes(failure === "install" ? 0 : 1);
+      expect(await readFile(nfo, "utf8")).toBe("old nfo");
+      expect(await readFile(poster, "utf8")).toBe("old poster");
+      expect(await readlink(fanart)).toBe(poster);
+      expect(await readFile(oldSource, "utf8")).toBe("old thumb");
+      for (const { target, ...facts } of originals) expect(await lstat(target)).toMatchObject(facts);
+      expect((await readdir(directory)).sort()).toEqual(originalNames);
+    }
+
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-write-output-"));
     directories.push(directory);
-    const targetPath = path.join(directory, "movie.nfo");
     const failingTarget = path.join(directory, "poster.jpg");
-    const output = new WriteOutput({
-      ...outputFileSystem,
-      rename: async (source, target) => {
-        if (target === failingTarget) throw new Error("rename failed");
-        await outputFileSystem.rename(source, target);
-      },
-    });
-
-    await expect(
-      output.install(
-        [
-          { targetPath, data: "nfo" },
-          { targetPath: failingTarget, data: "poster" },
-        ],
-        { commit: () => undefined },
-      ),
-    ).rejects.toThrow("rename failed");
-
-    const files = await readdir(directory);
-    expect(files.some((file) => file.endsWith(".part"))).toBe(false);
-    expect(files.some((file) => file.endsWith(".backup"))).toBe(false);
-    await expect(readFile(targetPath, "utf8")).resolves.toBe("nfo");
-
     const stagingPath = path.join(directory, ".mdcz-staging-poster.part");
     await writeFile(stagingPath, "poster");
     const copyFile = vi.fn(outputFileSystem.copyFile);
@@ -100,6 +133,7 @@ describe("WriteOutput", () => {
     expect(copyFile).toHaveBeenCalledOnce();
     expect(commit).not.toHaveBeenCalled();
     await expect(readFile(stagingPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(directory)).toEqual([]);
   });
 
   it("rejects artifact targets that overwrite source media", async () => {

@@ -155,7 +155,7 @@ export class MaintenanceService {
     return await this.coordinator.getActiveSession();
   }
 
-  async automationTask(): Promise<(TaskLifecycleEvent & { updatedAt: string }) | null> {
+  async automationTask(): Promise<(TaskLifecycleEvent & { updatedAt: string; durationMs: number | null }) | null> {
     const session = await this.coordinator.getActiveSession();
     if (!session) return null;
     return {
@@ -165,6 +165,12 @@ export class MaintenanceService {
         completedAt: session.timestamps.completedAt,
       })),
       updatedAt: session.timestamps.updatedAt.toISOString(),
+      durationMs:
+        session.timestamps.startedAt && session.timestamps.completedAt
+          ? session.timestamps.earlierPhasesMs +
+            session.timestamps.completedAt.getTime() -
+            session.timestamps.startedAt.getTime()
+          : null,
     };
   }
 

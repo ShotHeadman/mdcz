@@ -49,7 +49,13 @@ export class MaintenanceSession {
   private phaseValue: "preview" | "apply" = "preview";
   private statusValue: MaintenanceSessionStatus = "queued";
   private refsValue: MaintenanceSessionRef[];
-  private timestamps: { createdAt: Date; updatedAt: Date; startedAt: Date | null; completedAt: Date | null };
+  private timestamps: {
+    createdAt: Date;
+    updatedAt: Date;
+    startedAt: Date | null;
+    completedAt: Date | null;
+    earlierPhasesMs: number;
+  };
   private errorValue: string | null = null;
   private readonly previews = new Map<string, MaintenanceSessionPreview>();
   private currentBatch: { id: string; items: Map<string, MaintenanceBatchItem> } | null = null;
@@ -74,7 +80,7 @@ export class MaintenanceSession {
     this.outputRootId = input.outputRootId ?? input.rootId;
     this.outputRelativeDirectory = input.outputRelativeDirectory ?? "";
     this.refsValue = input.refs.map((ref) => ({ ...ref }));
-    this.timestamps = { createdAt: now, updatedAt: now, startedAt: null, completedAt: null };
+    this.timestamps = { createdAt: now, updatedAt: now, startedAt: null, completedAt: null, earlierPhasesMs: 0 };
   }
 
   get phase(): "preview" | "apply" {
@@ -187,7 +193,14 @@ export class MaintenanceSession {
     this.statusValue = "queued";
     this.currentBatch = { id: randomUUID(), items };
     this.errorValue = null;
-    this.timestamps = { ...this.timestamps, updatedAt: now, startedAt: null, completedAt: null };
+    const { startedAt, completedAt, earlierPhasesMs } = this.timestamps;
+    this.timestamps = {
+      ...this.timestamps,
+      updatedAt: now,
+      startedAt: null,
+      completedAt: null,
+      earlierPhasesMs: earlierPhasesMs + (startedAt && completedAt ? completedAt.getTime() - startedAt.getTime() : 0),
+    };
     return { batchId: this.currentBatch.id };
   }
 
@@ -468,6 +481,7 @@ export class MaintenanceSession {
         updatedAt: new Date(this.timestamps.updatedAt),
         startedAt: this.timestamps.startedAt ? new Date(this.timestamps.startedAt) : null,
         completedAt: this.timestamps.completedAt ? new Date(this.timestamps.completedAt) : null,
+        earlierPhasesMs: this.timestamps.earlierPhasesMs,
       },
       error: this.errorValue,
       previews: this.activePreviews(),

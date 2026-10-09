@@ -10,7 +10,8 @@ type ResolveRoot = (rootId: string) => Promise<Pick<MediaRoot, "id" | "hostPath"
 
 export interface RegisteredMediaLocation {
   groupId?: string;
-  nfoPath?: string;
+  /** Every NFO registered for the movie, e.g. both `<video>.nfo` and `movie.nfo`. */
+  nfoPaths: string[];
   assets: DiscoveredAssets;
 }
 
@@ -50,10 +51,10 @@ export const registeredMediaLocations = async (
   const byItem = new Map<string, RegisteredMediaLocation>();
   for (const asset of snapshot.assets) {
     if (asset.fileId !== null) continue;
-    const location = byItem.get(asset.itemId) ?? { assets: { sceneImages: [], actorPhotos: [] } };
+    const location = byItem.get(asset.itemId) ?? { nfoPaths: [], assets: { sceneImages: [], actorPhotos: [] } };
     const path = absolute(asset);
     byItem.set(asset.itemId, location);
-    if (asset.kind === "nfo") location.nfoPath ??= path;
+    if (asset.kind === "nfo") location.nfoPaths.push(path);
     else if (asset.kind === "scene") location.assets.sceneImages.push(path);
     else if (asset.kind === "actor") location.assets.actorPhotos.push(path);
     else if (["thumb", "poster", "fanart", "trailer"].includes(asset.kind))
@@ -63,7 +64,7 @@ export const registeredMediaLocations = async (
     snapshot.files.map((file) => [
       absolute(file),
       {
-        ...(byItem.get(file.itemId) ?? { assets: { sceneImages: [], actorPhotos: [] } }),
+        ...(byItem.get(file.itemId) ?? { nfoPaths: [], assets: { sceneImages: [], actorPhotos: [] } }),
         groupId: file.itemId,
       },
     ]),

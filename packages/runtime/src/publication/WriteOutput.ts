@@ -26,7 +26,10 @@ export class WriteOutput {
     },
   ): Promise<TResult> {
     const staged: Array<{ targetPath: string; temporaryPath: string; size?: number }> = [];
+    const replacements: Array<{ targetPath: string; backupPath?: string; linkedBackup?: boolean; installed: boolean }> =
+      [];
     const temporaryPaths = new Set<string>();
+    let committed = false;
     const stagingId = randomUUID();
     const pathKey = (value: string) =>
       process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
@@ -85,13 +88,31 @@ export class WriteOutput {
       await options.validate?.();
       await options.beforeCommit?.();
       for (const artifact of staged) {
+        let existingTarget: Awaited<ReturnType<PublicationFileSystem["lstat"]>> | undefined;
         try {
           const existing = await this.fileSystem.lstat(artifact.targetPath);
           if (!existing.isFile() && !existing.isSymbolicLink())
             throw new Error(`Artifact target is not a file: ${artifact.targetPath}`);
+          existingTarget = existing;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
+        const replacement: (typeof replacements)[number] = { targetPath: artifact.targetPath, installed: false };
+        if (existingTarget) {
+          // A hard link keeps the target in place until the atomic replace, so a stop never leaves it missing;
+          // symlinks and filesystems without links fall back to moving the original aside.
+          const backupPath = `${artifact.targetPath}.mdcz-backup-${stagingId}`;
+          try {
+            // link(2) may follow a symlink on some platforms, which would back up the wrong file.
+            if (!existingTarget.isFile()) throw new Error("Only regular files are linked");
+            await this.fileSystem.link(artifact.targetPath, backupPath);
+            replacement.linkedBackup = true;
+          } catch {
+            await this.fileSystem.rename(artifact.targetPath, backupPath);
+          }
+          replacement.backupPath = backupPath;
+        }
+        replacements.push(replacement);
         try {
           await this.fileSystem.rename(artifact.temporaryPath, artifact.targetPath);
           temporaryPaths.delete(artifact.temporaryPath);
@@ -106,8 +127,13 @@ export class WriteOutput {
           await this.fileSystem.rename(localStaging, artifact.targetPath);
           temporaryPaths.delete(localStaging);
         }
+        replacement.installed = true;
       }
       const value = await options.commit();
+      committed = true;
+      for (const replacement of replacements) {
+        if (replacement.backupPath) temporaryPaths.add(replacement.backupPath);
+      }
       const installedTargets = new Set(staged.map((artifact) => pathKey(artifact.targetPath)));
       const obsoleteSources = new Set(
         artifacts
@@ -124,12 +150,29 @@ export class WriteOutput {
         }
       }
       return value;
+    } catch (error) {
+      if (!committed) {
+        for (const replacement of replacements.toReversed()) {
+          const { backupPath, targetPath } = replacement;
+          try {
+            if (backupPath && (replacement.installed || !replacement.linkedBackup))
+              await this.fileSystem.rename(backupPath, targetPath);
+            else if (backupPath) temporaryPaths.add(backupPath);
+            else if (replacement.installed) await this.fileSystem.rm(targetPath, { force: true });
+          } catch (restoreError) {
+            this.logger.warn(
+              `Failed to restore artifact ${targetPath}${backupPath ? ` from ${backupPath}` : ""}: ${toErrorMessage(restoreError)}`,
+            );
+          }
+        }
+      }
+      throw error;
     } finally {
       for (const temporaryPath of temporaryPaths) {
         try {
           await this.fileSystem.rm(temporaryPath, { force: true });
         } catch (error) {
-          this.logger.warn(`Failed to remove publication staging ${temporaryPath}: ${toErrorMessage(error)}`);
+          this.logger.warn(`Failed to remove publication temporary file ${temporaryPath}: ${toErrorMessage(error)}`);
         }
       }
     }

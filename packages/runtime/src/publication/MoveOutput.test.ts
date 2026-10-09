@@ -46,13 +46,19 @@ const fixture = async () => {
 };
 
 describe("MoveOutput", () => {
-  it("restores uncommitted media when the database commit fails", async () => {
+  it("restores uncommitted media and metadata when the database commit fails", async () => {
     const test = await fixture();
     const nfoPath = path.join(path.dirname(test.targetPath), "movie.nfo");
+    const posterPath = path.join(path.dirname(test.targetPath), "poster.jpg");
+    await fs.mkdir(path.dirname(posterPath), { recursive: true });
+    await writeFile(posterPath, "old poster");
     await expect(
       new MoveOutput().install({
         moves: [test.move],
-        artifacts: [{ targetPath: nfoPath, data: "nfo" }],
+        artifacts: [
+          { targetPath: nfoPath, data: "nfo" },
+          { targetPath: posterPath, data: "new poster" },
+        ],
         commit: () => {
           expect(existsSync(test.targetPath)).toBe(true);
           throw new Error("commit failed");
@@ -61,7 +67,9 @@ describe("MoveOutput", () => {
     ).rejects.toThrow("commit failed");
     await expect(readFile(test.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(readFile(nfoPath, "utf8")).resolves.toBe("nfo");
+    await expect(readFile(nfoPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(posterPath, "utf8")).resolves.toBe("old poster");
+    expect(await fs.readdir(path.dirname(test.targetPath))).toEqual(["poster.jpg"]);
 
     const rewritten = await fixture();
     await expect(

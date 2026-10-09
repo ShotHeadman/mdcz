@@ -855,21 +855,24 @@ describe("buildServer composition integration", () => {
         });
         return response.json().webhook.delivered;
       })
-      .toBe(1);
+      .toBe(2);
     const statusResponse = await fastify.inject({
       method: "GET",
       url: "/api/automation/webhooks/status",
       headers: { authorization: `Bearer ${token}` },
     });
 
-    // Scrape runs report their outcome once, when they finish.
     expect(webhook.deliveries).toEqual([
+      expect.objectContaining({
+        body: expect.objectContaining({ taskId, kind: "scrape", status: "running" }),
+        secret: "test-secret",
+      }),
       expect.objectContaining({
         body: expect.objectContaining({ taskId, kind: "scrape", status: "completed" }),
         secret: "test-secret",
       }),
     ]);
-    expect(statusResponse.json().webhook).toMatchObject({ configured: true, delivered: 1, failed: 0 });
+    expect(statusResponse.json().webhook).toMatchObject({ configured: true, delivered: 2, failed: 0 });
 
     await webhook.close();
   });

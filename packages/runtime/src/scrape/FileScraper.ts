@@ -39,7 +39,7 @@ import {
 } from "./output/executeOutputSteps";
 import { prepareOnlineMetadata } from "./prepareOnlineMetadata";
 import { pendingOutcomeOf, ScrapeFailureError } from "./scrapeFailure";
-import { preferredLocalNfoBaseNames, selectLocalNfoNames } from "./selectLocalNfo";
+import { newestNfosFirst, preferredLocalNfoBaseNames, selectLocalNfoNames } from "./selectLocalNfo";
 import type { TranslateService } from "./TranslateService";
 import { isAbortError, throwIfAborted } from "./utils/abort";
 import { classifyMovie, isLikelyUncensoredNumber } from "./utils/movieClassification";
@@ -278,10 +278,7 @@ export class FileScraper {
         const registered =
           inventory.registeredNfos.get(filesystemPathKey(await inventory.entryPath(parsedFileInfo.filePath))) ?? [];
         const nfoPath =
-          registered.find((value) =>
-            candidates.some((name) => name.toLowerCase() === path.parse(value).name.toLowerCase()),
-          ) ??
-          registered[0] ??
+          (await newestNfosFirst(registered, (nfoPath) => inventory.stats(nfoPath)))[0] ??
           (selectedName ? path.join(directory, selectedName) : undefined);
         const snapshot = nfoPath ? await inventory.loadNfo(nfoPath) : undefined;
         publishedData ??= snapshot?.crawlerData;

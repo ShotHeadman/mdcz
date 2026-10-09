@@ -222,7 +222,7 @@ describe("parseNfo", () => {
       genres: ["Pantyhose/Tights", "Drama"],
       series: "Series",
       director: "Site Director",
-      plot: "Line one.\n\nLine two.",
+      plot: "Line one.<br>\n\nLine two.",
       scene_images: [],
       website: Website.DMM,
     };
@@ -234,7 +234,7 @@ describe("parseNfo", () => {
     const rewritten = published
       .replace(/<thumb>\.actors\/Actor A\.jpg<\/thumb>/u, "")
       .replace("<set>Series</set>", "<set><name>Series</name></set>")
-      .replace(/<plot>([\s\S]*?)<\/plot>/u, "<plot><![CDATA[$1]]></plot>")
+      .replace(/<plot>([\s\S]*?)<\/plot>/u, "<plot><![CDATA[Line one.\nLine two.]]></plot>")
       .replace(
         /<genre>Pantyhose\/Tights<\/genre>(\s*)(<genre>Drama<\/genre>)/u,
         "$2$1<genre>Pantyhose</genre>$1<genre>Tights</genre>",

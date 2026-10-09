@@ -45,20 +45,6 @@ const getValueSourceField = (
   }
 };
 
-const cloneValue = <T>(value: T): T => {
-  if (Array.isArray(value)) {
-    return value.map((item) => cloneValue(item)) as T;
-  }
-
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, cloneValue(item)]),
-    ) as T;
-  }
-
-  return value;
-};
-
 const toRemoteSourceValue = (value: unknown): string | undefined => {
   if (typeof value !== "string") {
     return undefined;
@@ -194,7 +180,7 @@ const syncSharedFanartWithThumbSelection = (
   }
 
   mutableBaseData.fanart_url = undefined;
-  mutableBaseData.fanart_source_url = cloneValue(buildSelectedImageSourceValue(diff));
+  mutableBaseData.fanart_source_url = structuredClone(buildSelectedImageSourceValue(diff));
 };
 
 const applyOldImageSelection = (
@@ -203,11 +189,11 @@ const applyOldImageSelection = (
   hasExistingCrawlerData: boolean,
 ): void => {
   if (hasExistingCrawlerData) {
-    mutableBaseData[diff.field] = cloneValue(diff.oldValue);
+    mutableBaseData[diff.field] = structuredClone(diff.oldValue);
     return;
   }
 
-  mutableBaseData[diff.field] = cloneValue(toLocalImageFieldValue(diff.oldPreview.src) ?? diff.oldValue);
+  mutableBaseData[diff.field] = structuredClone(toLocalImageFieldValue(diff.oldPreview.src) ?? diff.oldValue);
 
   const sourceField = getImageSourceField(diff.field);
   if (sourceField) {
@@ -231,10 +217,12 @@ export const buildCommittedCrawlerData = (
     return undefined;
   }
 
-  const baseData = cloneValue(entry.crawlerData ?? proposedCrawlerData);
+  const baseData = structuredClone(entry.crawlerData ?? proposedCrawlerData);
   if (!baseData) {
     return undefined;
   }
+  // Metadata imported from an NFO names no site; the proposal's site must not replace one the data already has.
+  baseData.website ??= proposedCrawlerData?.website;
 
   if (!preview?.fieldDiffs?.length) {
     return baseData;
@@ -248,7 +236,7 @@ export const buildCommittedCrawlerData = (
       if (diff.kind === "image") {
         applyOldImageSelection(mutableBaseData, diff, hasExistingCrawlerData);
       } else {
-        mutableBaseData[diff.field] = cloneValue(diff.oldValue);
+        mutableBaseData[diff.field] = structuredClone(diff.oldValue);
 
         if (!hasExistingCrawlerData) {
           const sourceField = getValueSourceField(diff.field);
@@ -260,7 +248,7 @@ export const buildCommittedCrawlerData = (
       continue;
     }
 
-    mutableBaseData[diff.field] = cloneValue(diff.newValue);
+    mutableBaseData[diff.field] = structuredClone(diff.newValue);
 
     if (diff.kind === "image") {
       const sourceField = getImageSourceField(diff.field);
@@ -268,13 +256,13 @@ export const buildCommittedCrawlerData = (
         continue;
       }
 
-      mutableBaseData[sourceField] = cloneValue(buildSelectedImageSourceValue(diff));
+      mutableBaseData[sourceField] = structuredClone(buildSelectedImageSourceValue(diff));
     }
 
     if (diff.kind === "value") {
       const sourceField = getValueSourceField(diff.field);
       if (sourceField) {
-        mutableBaseData[sourceField] = cloneValue(buildSelectedValueSourceValue(diff));
+        mutableBaseData[sourceField] = structuredClone(buildSelectedValueSourceValue(diff));
       }
     }
 

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
+import type { LibraryFileInput, LibraryMovieInput } from "./libraryRepository";
+import { writeLibraryRows } from "./libraryWrite";
 import { type PendingItemRow, type PendingKind, pendingItems } from "./schema";
 
 export type PendingItemRecord = PendingItemRow;
@@ -73,6 +75,35 @@ export class PendingRepository {
         .delete(pendingItems)
         .where(inArray(pendingItems.id, [...ids]))
         .run();
+  }
+
+  /** Publishes a movie and settles its pending entries together, so a failure leaves neither half behind. */
+  commitPublication(
+    movie: LibraryMovieInput,
+    files: readonly LibraryFileInput[],
+    pending: {
+      clearFiles: readonly { rootId: string; relativePath: string }[];
+      uncensored?: Omit<PendingItemInput, "kind" | "movieId">;
+    },
+  ): { movieId: string; uncensoredAdded: boolean } {
+    return this.database.sqlite.transaction(() => {
+      const movieId = writeLibraryRows(this.database, movie, files);
+      this.deleteFiles(pending.clearFiles);
+      const uncensoredAdded = pending.uncensored
+        ? this.upsert({ ...pending.uncensored, kind: "uncensored", movieId })
+        : false;
+      return { movieId, uncensoredAdded };
+    })();
+  }
+
+  confirmUncensored(id: string, movie: LibraryMovieInput, files: readonly LibraryFileInput[]): void {
+    this.database.sqlite.transaction(() => {
+      const pending = this.get(id);
+      if (pending.kind !== "uncensored" || pending.movieId !== movie.id)
+        throw new Error("Pending confirmation no longer matches this movie");
+      writeLibraryRows(this.database, movie, files);
+      this.delete([id]);
+    })();
   }
 
   deleteFiles(refs: readonly { rootId: string; relativePath: string }[]): void {
