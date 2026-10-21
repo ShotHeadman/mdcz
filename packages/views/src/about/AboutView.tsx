@@ -1,6 +1,6 @@
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
 import { Badge, Button, quietHeroRadiusClass, quietPanelRadiusClass, Switch } from "@mdcz/ui";
-import { Bug, ExternalLink, Github, Server, Sparkles } from "lucide-react";
+import { Bug, ExternalLink, Github, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import AppLogo from "../assets/logo.png";
 import { useT } from "../i18n";
@@ -12,7 +12,6 @@ export interface AboutViewProps {
   showUpdateCheck?: boolean;
   showDebugAction?: boolean;
   debugActionLabel?: string;
-  logoSrc?: string;
   updateCheckDisabled?: boolean;
   updateStatus?: ReactNode;
   onDebug?: () => void;
@@ -50,7 +49,6 @@ export const AboutView = ({
   showUpdateCheck = true,
   showDebugAction = false,
   debugActionLabel,
-  logoSrc,
   updateCheckDisabled = false,
   updateStatus,
   onDebug,
@@ -60,7 +58,6 @@ export const AboutView = ({
   const t = useT();
   const resolvedDebugActionLabel = debugActionLabel ?? t.about.debugAction;
   const homepage = about.homepage ?? about.repository ?? fallbackAbout.homepage;
-  const resolvedLogoSrc = logoSrc ?? AppLogo;
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden bg-background/30 text-foreground selection:bg-primary/10">
@@ -73,15 +70,7 @@ export const AboutView = ({
               onClick={() => homepage && onOpenExternal(homepage)}
             >
               <div className="absolute inset-0 scale-125 rounded-full bg-primary/5 blur-2xl transition-colors group-hover:bg-primary/10" />
-              {resolvedLogoSrc ? (
-                <img
-                  alt={about.productName}
-                  className={`relative h-20 w-20 ${quietHeroRadiusClass}`}
-                  src={resolvedLogoSrc}
-                />
-              ) : (
-                <Server className="relative h-9 w-9 text-foreground" />
-              )}
+              <img alt={about.productName} className={`relative h-20 w-20 ${quietHeroRadiusClass}`} src={AppLogo} />
             </button>
             <div className="flex flex-col items-center gap-1">
               <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight">

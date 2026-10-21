@@ -18,9 +18,7 @@ export function ThemeProvider({
       defaultTheme={defaultTheme}
       storageKey={storageKey}
       onResolvedThemeChange={(resolvedTheme) => {
-        if (window.api) {
-          void ipc.app.syncTitleBarTheme(resolvedTheme === "dark").catch(() => undefined);
-        }
+        void ipc.app.syncTitleBarTheme(resolvedTheme === "dark").catch(() => undefined);
       }}
     >
       {children}

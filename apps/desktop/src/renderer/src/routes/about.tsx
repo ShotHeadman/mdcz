@@ -1,3 +1,4 @@
+import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { AppUpdateStatus } from "@mdcz/shared/ipcTypes";
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
@@ -7,10 +8,7 @@ import { useT } from "@mdcz/views/i18n";
 import { createFileRoute } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import AppLogo from "@/assets/images/logo.png";
-import { updateConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
-import type { ConfigOutput } from "@/client/types";
 
 export const Route = createFileRoute("/about")({
   component: About,
@@ -48,7 +46,7 @@ function About() {
             arch: info.arch,
           },
         });
-        setUpdateCheck((config as ConfigOutput).behavior?.updateCheck ?? true);
+        setUpdateCheck((config as Configuration).behavior?.updateCheck ?? true);
       })
       .catch((error) => {
         if (!cancelled) {
@@ -76,13 +74,7 @@ function About() {
     setUpdateCheck(checked);
     setIsSavingUpdateCheck(true);
     try {
-      await updateConfig({
-        body: {
-          behavior: {
-            updateCheck: checked,
-          },
-        },
-      });
+      await ipc.config.save({ behavior: { updateCheck: checked } });
     } catch (error) {
       setUpdateCheck(previous);
       toast.error(t.desktop.saveFailed(toErrorMessage(error, t.common.unknownError)));
@@ -153,7 +145,6 @@ function About() {
       about={about}
       debugActionLabel={t.desktop.enableDebug}
       loading={loading}
-      logoSrc={AppLogo}
       showDebugAction={showDebugAction}
       updateCheck={updateCheck}
       updateCheckDisabled={isSavingUpdateCheck}

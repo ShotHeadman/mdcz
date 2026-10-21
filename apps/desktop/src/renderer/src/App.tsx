@@ -1,4 +1,3 @@
-import "./index.css";
 import { Toaster, TooltipProvider } from "@mdcz/ui";
 import { ConfirmDialogHost } from "@mdcz/views/common";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -6,7 +5,6 @@ import { createHashHistory, createRouter, RouterProvider } from "@tanstack/react
 import { Suspense } from "react";
 import { BootFallback } from "./components/BootFallback";
 import { ThemeProvider } from "./contexts/ThemeProvider";
-import { ToastProvider } from "./contexts/ToastProvider";
 import { useIpcSync } from "./hooks/useIpcSync";
 import { useStylesReady } from "./hooks/useStylesReady";
 import { queryClient } from "./lib/queryClient";
@@ -42,13 +40,11 @@ const App = () => {
     <ThemeProvider>
       <TooltipProvider>
         <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <Suspense fallback={<BootFallback message="Loading page..." />}>
-              <RouterProvider router={router} />
-            </Suspense>
-            <Toaster />
-            <ConfirmDialogHost />
-          </ToastProvider>
+          <Suspense fallback={<BootFallback message="Loading page..." />}>
+            <RouterProvider router={router} />
+          </Suspense>
+          <Toaster />
+          <ConfirmDialogHost />
         </QueryClientProvider>
       </TooltipProvider>
     </ThemeProvider>

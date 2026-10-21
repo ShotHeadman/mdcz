@@ -1,7 +1,7 @@
 import { normalizeCode, normalizeText, uniqueStrings } from "@mdcz/runtime/shared";
 import type { CheerioAPI } from "cheerio";
 
-import { extractList, extractText } from "../base/parser";
+import { extractText } from "../base/parser";
 
 export const pageIdentityUrl = ($: CheerioAPI): string =>
   $("link[rel='canonical']").first().attr("href") ?? $("meta[property='og:url']").first().attr("content") ?? "";
@@ -160,33 +160,4 @@ export const extractByLabels = ($: CheerioAPI, labels: string[]): string | undef
 
 export const extractByLabel = ($: CheerioAPI, label: string): string | undefined => {
   return extractByLabels($, [label]);
-};
-
-export const extractLinksByLabels = ($: CheerioAPI, labels: string[]): string[] => {
-  const result = new Set<string>();
-  for (const label of labels) {
-    for (const selector of buildLabelSelectors(label)) {
-      const list = extractList($, `${selector} a`);
-      list.forEach((item) => {
-        result.add(item);
-      });
-    }
-  }
-
-  return Array.from(result);
-};
-
-export const normalizeCsv = (value: string | undefined): string[] => {
-  if (!value) {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      value
-        .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0),
-    ),
-  );
 };

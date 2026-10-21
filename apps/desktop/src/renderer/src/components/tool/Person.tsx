@@ -14,8 +14,8 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type MutableRefObject, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
-import { useToast } from "@/contexts/ToastProvider";
 
 function clearProgressResetTimer(timerRef: MutableRefObject<number | null>) {
   if (timerRef.current !== null) {
@@ -31,7 +31,6 @@ function formatSyncResult(label: string, result: PersonSyncResult) {
 export function Person() {
   const t = useT();
   const navigate = useNavigate();
-  const { showError, showInfo, showSuccess } = useToast();
   const checkJellyfinConnectionMut = useMutation({
     mutationFn: async () => ipc.tool.checkJellyfinConnection(),
   });
@@ -80,15 +79,15 @@ export function Person() {
       const blocker = describeFirstDiagnosticBlocker(getT(), "jellyfin", result);
       if (!blocker) {
         if (!silentSuccess) {
-          showSuccess(t.desktop.serverDiagnosticPassed("Jellyfin"));
+          toast.success(t.desktop.serverDiagnosticPassed("Jellyfin"));
         }
       } else if (!silentSuccess) {
-        showError(blocker);
+        toast.error(blocker);
       }
 
       return result;
     } catch (error) {
-      showError(t.desktop.serverConnectivityTestFailed("Jellyfin", toErrorMessage(error)));
+      toast.error(t.desktop.serverConnectivityTestFailed("Jellyfin", toErrorMessage(error)));
       setJellyfinCheckResult(null);
       return null;
     }
@@ -102,45 +101,45 @@ export function Person() {
       const blocker = describeFirstDiagnosticBlocker(getT(), "emby", result);
       if (!blocker) {
         if (!silentSuccess) {
-          showSuccess(t.desktop.serverDiagnosticPassed("Emby"));
+          toast.success(t.desktop.serverDiagnosticPassed("Emby"));
         }
       } else if (!silentSuccess) {
-        showError(blocker);
+        toast.error(blocker);
       }
 
       return result;
     } catch (error) {
-      showError(t.desktop.serverConnectivityTestFailed("Emby", toErrorMessage(error)));
+      toast.error(t.desktop.serverConnectivityTestFailed("Emby", toErrorMessage(error)));
       setEmbyCheckResult(null);
       return null;
     }
   };
 
   const handleSyncJellyfinActorInfo = async () => {
-    showInfo(t.desktop.diagnosingServerConnection("Jellyfin"));
+    toast.info(t.desktop.diagnosingServerConnection("Jellyfin"));
     const diagnostic = await runJellyfinConnectionCheck(true);
     if (!canRunPersonSync(diagnostic)) {
       const blocker = diagnostic ? describeFirstDiagnosticBlocker(getT(), "jellyfin", diagnostic) : undefined;
       if (blocker) {
-        showError(blocker);
+        toast.error(blocker);
       }
       return;
     }
     if (diagnostic.personCount === 0) {
-      showInfo(getEmptyPersonLibraryMessage("Jellyfin", "info"));
+      toast.info(getEmptyPersonLibraryMessage("Jellyfin", "info"));
       return;
     }
 
     clearProgressResetTimer(jellyfinProgressResetTimerRef);
     setJellyfinSyncProgress(0);
     setJellyfinInfoSyncRunning(true);
-    showInfo(t.desktop.syncingActorInfo("Jellyfin"));
+    toast.info(t.desktop.syncingActorInfo("Jellyfin"));
     try {
       const result = await ipc.tool.syncJellyfinActorInfo(jellyfinActorInfoMode);
       setJellyfinSyncProgress(100);
-      showSuccess(formatSyncResult(t.desktop.actorInfoSyncCompleted("Jellyfin"), result));
+      toast.success(formatSyncResult(t.desktop.actorInfoSyncCompleted("Jellyfin"), result));
     } catch (error) {
-      showError(t.desktop.actorInfoSyncFailed("Jellyfin", toErrorMessage(error)));
+      toast.error(t.desktop.actorInfoSyncFailed("Jellyfin", toErrorMessage(error)));
     } finally {
       setJellyfinInfoSyncRunning(false);
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
@@ -152,30 +151,30 @@ export function Person() {
   };
 
   const handleSyncJellyfinPhotos = async () => {
-    showInfo(t.desktop.diagnosingServerConnection("Jellyfin"));
+    toast.info(t.desktop.diagnosingServerConnection("Jellyfin"));
     const diagnostic = await runJellyfinConnectionCheck(true);
     if (!canRunPersonSync(diagnostic)) {
       const blocker = diagnostic ? describeFirstDiagnosticBlocker(getT(), "jellyfin", diagnostic) : undefined;
       if (blocker) {
-        showError(blocker);
+        toast.error(blocker);
       }
       return;
     }
     if (diagnostic.personCount === 0) {
-      showInfo(getEmptyPersonLibraryMessage("Jellyfin", "photo"));
+      toast.info(getEmptyPersonLibraryMessage("Jellyfin", "photo"));
       return;
     }
 
     clearProgressResetTimer(jellyfinProgressResetTimerRef);
     setJellyfinSyncProgress(0);
     setJellyfinPhotoSyncRunning(true);
-    showInfo(t.desktop.syncingActorPhotos("Jellyfin"));
+    toast.info(t.desktop.syncingActorPhotos("Jellyfin"));
     try {
       const result = await ipc.tool.syncJellyfinActorPhoto(jellyfinActorPhotoMode);
       setJellyfinSyncProgress(100);
-      showSuccess(formatSyncResult(t.desktop.actorPhotosSyncCompleted("Jellyfin"), result));
+      toast.success(formatSyncResult(t.desktop.actorPhotosSyncCompleted("Jellyfin"), result));
     } catch (error) {
-      showError(t.desktop.actorPhotosSyncFailed("Jellyfin", toErrorMessage(error)));
+      toast.error(t.desktop.actorPhotosSyncFailed("Jellyfin", toErrorMessage(error)));
     } finally {
       setJellyfinPhotoSyncRunning(false);
       clearProgressResetTimer(jellyfinProgressResetTimerRef);
@@ -187,30 +186,30 @@ export function Person() {
   };
 
   const handleSyncEmbyActorInfo = async () => {
-    showInfo(t.desktop.diagnosingServerConnection("Emby"));
+    toast.info(t.desktop.diagnosingServerConnection("Emby"));
     const diagnostic = await runEmbyConnectionCheck(true);
     if (!canRunPersonSync(diagnostic)) {
       const blocker = diagnostic ? describeFirstDiagnosticBlocker(getT(), "emby", diagnostic) : undefined;
       if (blocker) {
-        showError(blocker);
+        toast.error(blocker);
       }
       return;
     }
     if (diagnostic.personCount === 0) {
-      showInfo(getEmptyPersonLibraryMessage("Emby", "info"));
+      toast.info(getEmptyPersonLibraryMessage("Emby", "info"));
       return;
     }
 
     clearProgressResetTimer(embyProgressResetTimerRef);
     setEmbySyncProgress(0);
     setEmbyInfoSyncRunning(true);
-    showInfo(t.desktop.syncingActorInfo("Emby"));
+    toast.info(t.desktop.syncingActorInfo("Emby"));
     try {
       const result = await ipc.tool.syncEmbyActorInfo(embyActorInfoMode);
       setEmbySyncProgress(100);
-      showSuccess(formatSyncResult(t.desktop.actorInfoSyncCompleted("Emby"), result));
+      toast.success(formatSyncResult(t.desktop.actorInfoSyncCompleted("Emby"), result));
     } catch (error) {
-      showError(t.desktop.actorInfoSyncFailed("Emby", toErrorMessage(error)));
+      toast.error(t.desktop.actorInfoSyncFailed("Emby", toErrorMessage(error)));
     } finally {
       setEmbyInfoSyncRunning(false);
       clearProgressResetTimer(embyProgressResetTimerRef);
@@ -222,35 +221,35 @@ export function Person() {
   };
 
   const handleSyncEmbyPhotos = async () => {
-    showInfo(t.desktop.diagnosingServerConnection("Emby"));
+    toast.info(t.desktop.diagnosingServerConnection("Emby"));
     const diagnostic = await runEmbyConnectionCheck(true);
     if (!canRunPersonSync(diagnostic)) {
       const blocker = diagnostic ? describeFirstDiagnosticBlocker(getT(), "emby", diagnostic) : undefined;
       if (blocker) {
-        showError(blocker);
+        toast.error(blocker);
       }
       return;
     }
     if (diagnostic.personCount === 0) {
-      showInfo(getEmptyPersonLibraryMessage("Emby", "photo"));
+      toast.info(getEmptyPersonLibraryMessage("Emby", "photo"));
       return;
     }
 
     const adminKeyStep = diagnostic.steps.find((step) => step.key === "adminKey");
     if (adminKeyStep) {
-      showInfo(describeConnectionStep(getT(), "emby", adminKeyStep, diagnostic));
+      toast.info(describeConnectionStep(getT(), "emby", adminKeyStep, diagnostic));
     }
 
     clearProgressResetTimer(embyProgressResetTimerRef);
     setEmbySyncProgress(0);
     setEmbyPhotoSyncRunning(true);
-    showInfo(t.desktop.syncingActorPhotos("Emby"));
+    toast.info(t.desktop.syncingActorPhotos("Emby"));
     try {
       const result = await ipc.tool.syncEmbyActorPhoto(embyActorPhotoMode);
       setEmbySyncProgress(100);
-      showSuccess(formatSyncResult(t.desktop.actorPhotosSyncCompleted("Emby"), result));
+      toast.success(formatSyncResult(t.desktop.actorPhotosSyncCompleted("Emby"), result));
     } catch (error) {
-      showError(t.desktop.actorPhotosSyncFailed("Emby", toErrorMessage(error)));
+      toast.error(t.desktop.actorPhotosSyncFailed("Emby", toErrorMessage(error)));
     } finally {
       setEmbyPhotoSyncRunning(false);
       clearProgressResetTimer(embyProgressResetTimerRef);
@@ -293,10 +292,10 @@ export function Person() {
       settingsDisabled={anyPersonSyncRunning || anyPersonCheckPending}
       onCheck={(server) => {
         if (server === "jellyfin") {
-          showInfo(t.desktop.diagnosingServerConnection("Jellyfin"));
+          toast.info(t.desktop.diagnosingServerConnection("Jellyfin"));
           void runJellyfinConnectionCheck();
         } else {
-          showInfo(t.desktop.diagnosingServerConnection("Emby"));
+          toast.info(t.desktop.diagnosingServerConnection("Emby"));
           void runEmbyConnectionCheck();
         }
       }}
@@ -322,9 +321,9 @@ export function Person() {
         void stopJellyfinNameMatchingMut.mutateAsync().then(
           (result) => {
             setJellyfinCheckResult(result);
-            showSuccess(t.tools.personNameMatchingStopped);
+            toast.success(t.tools.personNameMatchingStopped);
           },
-          (error) => showError(toErrorMessage(error)),
+          (error) => toast.error(toErrorMessage(error)),
         )
       }
     />

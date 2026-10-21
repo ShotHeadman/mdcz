@@ -62,7 +62,6 @@ export const pendingRuleSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ignoreToken"), token: z.string().trim().min(1) }),
   z.object({ kind: z.literal("numberMapping"), match: z.string().trim().min(1) }),
 ]);
-export type PendingRule = z.infer<typeof pendingRuleSchema>;
 
 export const pendingRetryInputSchema = z.object({
   id: z.string().trim().min(1),

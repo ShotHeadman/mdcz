@@ -71,26 +71,6 @@ export const registeredMediaLocations = async (
   );
 };
 
-export const registeredOutputPaths = async (
-  outputs: PublicationOutputPort,
-  resolveRoot: ResolveRoot,
-  kind: string,
-): Promise<Set<string>> => {
-  const assets = outputs.publicationSnapshot({ kind }).assets;
-  const roots = new Map(
-    await Promise.all(
-      [...new Set(assets.map((asset) => asset.rootId))].map(async (id) => [id, await resolveRoot(id)] as const),
-    ),
-  );
-  return new Set(
-    assets.map((asset) => {
-      const root = roots.get(asset.rootId);
-      if (!root) throw new Error(`Resource root not found: ${asset.rootId}`);
-      return filesystemPathKey(resolveRootRelativePath(root, asset.relativePath));
-    }),
-  );
-};
-
 export type MovieLibrary = {
   getEntryById(id: string): Promise<{
     assets: Array<PublicationLibraryAsset & { fileId: string | null }>;

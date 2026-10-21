@@ -25,7 +25,7 @@ import type {
   MaintenancePreviewBatch,
 } from "@mdcz/shared/maintenanceTasks";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import type { MaintenancePresetId, MaintenanceStatus } from "@mdcz/shared/types";
+import type { MaintenancePresetId } from "@mdcz/shared/types";
 import { createDesktopMaintenanceRuntime } from "./runtimeFactory";
 
 export interface MaintenanceServiceDependencies {
@@ -42,14 +42,6 @@ export interface MaintenanceServiceDependencies {
   runtime?: MaintenanceRuntime;
   coordinator?: MaintenanceSessionCoordinator;
 }
-
-const idleStatus = (): MaintenanceStatus => ({
-  state: "idle",
-  totalEntries: 0,
-  completedEntries: 0,
-  successCount: 0,
-  failedCount: 0,
-});
 
 export class MaintenanceService {
   private readonly signalService: SignalService;
@@ -115,27 +107,6 @@ export class MaintenanceService {
         },
         events: { publish: async (event) => await this.publishCoordinatorEvent(event) },
       });
-  }
-
-  async getStatus(sessionId?: string): Promise<MaintenanceStatus> {
-    const snapshot = await this.coordinator.getActiveSession();
-    if (!snapshot || (sessionId && snapshot.id !== sessionId)) return idleStatus();
-    return {
-      state:
-        snapshot.status === "paused"
-          ? "paused"
-          : snapshot.status === "stopping"
-            ? "stopping"
-            : snapshot.status === "queued" || snapshot.status === "running"
-              ? snapshot.phase === "preview"
-                ? "previewing"
-                : "executing"
-              : "idle",
-      totalEntries: snapshot.totalEntries,
-      completedEntries: snapshot.completedEntries,
-      successCount: snapshot.successCount,
-      failedCount: snapshot.failedCount,
-    };
   }
 
   /** The runtime moving presets and the pending list's uncensored confirmation share. */
@@ -247,10 +218,6 @@ export class MaintenanceService {
   async discardSession(): Promise<void> {
     await this.coordinator.discardSession((await this.getActiveSession())?.id);
     this.signalService.publishTaskSnapshot({ resource: "maintenance", snapshot: null });
-  }
-
-  async waitForIdle(): Promise<void> {
-    await this.coordinator.waitForIdle();
   }
 
   async shutdown(_options: { timeoutMs?: number } = {}): Promise<void> {

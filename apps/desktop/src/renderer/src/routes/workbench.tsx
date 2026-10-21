@@ -25,9 +25,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createDesktopWorkbenchPorts } from "@/adapters/ports";
-import { pauseScrape, resumeScrape, retryScrapeSelection, startSelectedScrape, stopScrape } from "@/api/manual";
+import { retryScrapeSelection } from "@/api/scrape";
 import { ipc } from "@/client/ipc";
-import { isMediaDirectorySelectionCancelled } from "@/client/mediaPath";
 import WorkbenchSetup from "@/components/workbench/WorkbenchSetup";
 import { CURRENT_CONFIG_QUERY_KEY, useCurrentConfig } from "@/hooks/configQueries";
 
@@ -116,19 +115,14 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
     try {
       activateNewScrapeTask();
-      await startSelectedScrape(
-        candidates.map((candidate) => candidate.ref),
+      await ipc.scraper.start({
+        executionMode: "batch",
         libraryId,
-      );
+        refs: candidates.map((candidate) => candidate.ref),
+      });
       toast.success(t.scrape.launch.selection);
     } catch (error) {
-      const errorMessage = toErrorMessage(error);
-
-      if (isMediaDirectorySelectionCancelled(error)) {
-        return;
-      }
-
-      if (errorMessage.includes("NO_FILES")) {
+      if (toErrorMessage(error).includes("NO_FILES")) {
         toast.info(t.desktop.noMediaToScrape);
         return;
       }
@@ -163,7 +157,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
   const handleStopScrape = async () => {
     if (!(await confirmDialog({ title: t.desktop.confirmStopScrape, destructive: true }))) return;
     try {
-      await runScrapeRequest(stopScrape);
+      await runScrapeRequest(ipc.scraper.stop);
       toast.info(t.desktop.stopping);
     } catch (_error) {
       toast.error(t.desktop.stopScrapeFailed);
@@ -172,7 +166,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
   const handlePauseScrape = async () => {
     try {
-      await runScrapeRequest(pauseScrape);
+      await runScrapeRequest(ipc.scraper.pause);
       toast.info(t.desktop.taskPaused);
     } catch (_error) {
       toast.error(t.desktop.pauseFailed);
@@ -181,7 +175,7 @@ export function DesktopWorkbenchRoute({ routeIntent }: { routeIntent?: "maintena
 
   const handleResumeScrape = async () => {
     try {
-      await runScrapeRequest(resumeScrape);
+      await runScrapeRequest(ipc.scraper.resume);
       toast.success(t.desktop.taskResumed);
     } catch (_error) {
       toast.error(t.desktop.resumeFailed);

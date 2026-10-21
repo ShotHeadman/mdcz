@@ -1,13 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   classifyStrmTarget,
   inspectStrmTarget,
   isStrmFile,
+  prepareMovedStrmContent,
   readStrmTarget,
   resolvePlayableMediaTarget,
-  writeStrmTarget,
 } from "@mdcz/runtime/scrape/utils/strm";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -91,24 +91,14 @@ describe("strm utils", () => {
     );
   });
 
-  it("rewrites the target line while preserving KODIPROP headers", async () => {
+  it("anchors a relative target when moving while preserving KODIPROP headers", async () => {
     const root = await createTempDir();
     const filePath = join(root, "ABC-123.strm");
     await writeFile(filePath, "\uFEFF#KODIPROP:rtsp_transport=tcp\n../videos/ABC-123.mp4\n", "utf8");
 
-    await writeStrmTarget(filePath, "/videos/ABC-123.mp4");
-
-    await expect(readStrmTarget(filePath)).resolves.toBe("/videos/ABC-123.mp4");
-    await expect(readFile(filePath, "utf8")).resolves.toBe("\uFEFF#KODIPROP:rtsp_transport=tcp\n/videos/ABC-123.mp4\n");
-  });
-
-  it("creates a missing STRM file and its parent directory", async () => {
-    const root = await createTempDir();
-    const filePath = join(root, "metadata", "ABC-123.strm");
-
-    await writeStrmTarget(filePath, "/videos/ABC-123.mp4");
-
-    await expect(readFile(filePath, "utf8")).resolves.toBe("/videos/ABC-123.mp4");
+    await expect(prepareMovedStrmContent(filePath, join(root, "output", "ABC-123.strm"))).resolves.toBe(
+      `\uFEFF#KODIPROP:rtsp_transport=tcp\n${resolve(root, "../videos/ABC-123.mp4")}\n`,
+    );
   });
 
   it("rejects Kodi-only url schemes for desktop playback", async () => {

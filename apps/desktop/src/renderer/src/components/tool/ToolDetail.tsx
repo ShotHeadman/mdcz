@@ -1,3 +1,4 @@
+import type { ToolId } from "@mdcz/shared/toolCatalog";
 import type { ComponentType } from "react";
 import { AmazonPoster } from "./AmazonPoster";
 import { BatchNfoTranslator } from "./BatchNfoTranslator";
@@ -5,7 +6,6 @@ import { CrawlerTester } from "./CrawlerTester";
 import { Person } from "./Person";
 import { SingleFileScraper } from "./SingleFileScraper";
 import { SymlinkManager } from "./SymlinkManager";
-import type { ToolId } from "./toolCatalog";
 
 interface ToolDetailProps {
   toolId: ToolId;

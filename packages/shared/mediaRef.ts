@@ -22,19 +22,7 @@ export const wireRelativePathSchema = z.string().transform((relativePath, contex
   return normalized;
 });
 
-export const wireRelativeDirectorySchema = z.string().transform((relativeDirectory, context) => {
-  const normalized = relativeDirectory.replace(/\\/gu, "/").replace(/^\/+|\/+$/gu, "");
-  if (!normalized) return "";
-  const parsed = normalizeWireRelativePath(normalized);
-  if (parsed) return parsed;
-  context.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid media relative directory: ${relativeDirectory}` });
-  return z.NEVER;
-});
-
 export const parseWireRelativePath = (relativePath: string): string => wireRelativePathSchema.parse(relativePath);
-
-export const parseWireRelativeDirectory = (relativeDirectory: string): string =>
-  wireRelativeDirectorySchema.parse(relativeDirectory);
 
 export const rootFileRefSchema = z
   .object({

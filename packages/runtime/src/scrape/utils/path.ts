@@ -1,4 +1,4 @@
-import { normalize, sep } from "node:path";
+import { sep } from "node:path";
 
 const ILLEGAL_SEGMENT_CHARS = /[<>:"/\\|?*]/gu;
 const REPLACED_WHITESPACE = /\s+/gu;
@@ -37,16 +37,6 @@ export const sanitizePathSegment = (input: string): string => {
     .replace(/[.-]{2,}/gu, "-")
     .trim()
     .replace(/[ .]+$/gu, "");
-};
-
-export const renderPathTemplate = (template: string, data: TemplateData): string => {
-  return template.replace(TEMPLATE_PLACEHOLDER, (_match, key: string) => {
-    const value = data[key];
-    if (value === undefined || value === null) {
-      return "";
-    }
-    return String(value);
-  });
 };
 
 const renderTemplateValue = (
@@ -155,9 +145,4 @@ export const buildSafePath = (template: string, data: TemplateData): string => {
 
 export const buildSafeFileName = (template: string, data: TemplateData): string => {
   return sanitizePathSegment(trimTemplateEdges(renderSafeSegment(template, data)));
-};
-
-export const normalizeCrossPlatformPath = (inputPath: string): string => {
-  const normalized = normalize(inputPath);
-  return normalized.replace(/[\\/]+/gu, sep);
 };

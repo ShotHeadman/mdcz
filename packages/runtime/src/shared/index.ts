@@ -5,10 +5,6 @@ export interface RuntimeLogger {
   error(message: string): void;
 }
 
-export interface RuntimeEvents<TPayload = unknown> {
-  publish(payload: TPayload): void;
-}
-
 export const noopRuntimeLogger: RuntimeLogger = {
   debug: () => undefined,
   info: () => undefined,

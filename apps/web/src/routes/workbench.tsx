@@ -281,10 +281,3 @@ function WorkbenchPage() {
     </div>
   );
 }
-
-export const __workbenchTestHooks = {
-  getRetryFailedConfirmMessage: (failedCount: number): string => getT().web.retryFailedConfirm(failedCount),
-  get STOP_SCRAPE_CONFIRM_MESSAGE() {
-    return getT().web.stopScrapeConfirm;
-  },
-};

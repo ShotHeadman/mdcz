@@ -4,14 +4,13 @@ import { useT } from "@mdcz/views/i18n";
 import { CrawlerTesterDetail, type CrawlerTesterDetailProps, type ToolRunState } from "@mdcz/views/tools";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
-import { useToast } from "@/contexts/ToastProvider";
 
 type CrawlerTestResult = NonNullable<CrawlerTesterDetailProps["result"]>;
 
 export function CrawlerTester() {
   const t = useT();
-  const { showError, showSuccess } = useToast();
   const sitesQ = useQuery({
     queryKey: ["crawler", "sites"],
     queryFn: async () => {
@@ -29,11 +28,11 @@ export function CrawlerTester() {
 
   const handleCrawlerTest: CrawlerTesterDetailProps["onRun"] = async ({ number, site }) => {
     if (!site) {
-      showError(t.desktop.selectSite);
+      toast.error(t.desktop.selectSite);
       return;
     }
     if (!number.trim()) {
-      showError(t.desktop.enterMovieNumber);
+      toast.error(t.desktop.enterMovieNumber);
       return;
     }
 
@@ -43,12 +42,12 @@ export function CrawlerTester() {
       const result = await ipc.crawler.test(site as Website, number.trim());
       setCrawlerTestResult(result);
       if (result.data) {
-        showSuccess(t.desktop.testSucceededWithTime((result.elapsed / 1000).toFixed(1)));
+        toast.success(t.desktop.testSucceededWithTime((result.elapsed / 1000).toFixed(1)));
       } else {
-        showError(result.error ?? t.desktop.noDataRetrieved);
+        toast.error(result.error ?? t.desktop.noDataRetrieved);
       }
     } catch (error) {
-      showError(t.desktop.crawlerTestFailed(toErrorMessage(error)));
+      toast.error(t.desktop.crawlerTestFailed(toErrorMessage(error)));
     } finally {
       setCrawlerTesting(false);
     }

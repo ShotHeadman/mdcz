@@ -1,4 +1,4 @@
-import { diffCrawlerData, partitionCrawlerDataWithOptions } from "@mdcz/runtime/maintenance";
+import { partitionCrawlerDataWithOptions } from "@mdcz/runtime/maintenance";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it } from "vitest";
@@ -48,20 +48,21 @@ const getEntryCrawlerData = (entry: LocalScanEntry): CrawlerData => {
 
 describe("diffCrawlerData", () => {
   it("ignores actor thumbnail path changes because actor_profiles are execution-time derived data", () => {
-    const diffs = diffCrawlerData(
+    const diffs = partitionCrawlerDataWithOptions(
       createCrawlerData({
         actor_profiles: [{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }],
       }),
       createCrawlerData({
         actor_profiles: [{ name: "Actor A", photo_url: "https://example.com/actor-a.png" }],
       }),
-    );
+      {},
+    ).fieldDiffs;
 
     expect(diffs).toEqual([]);
   });
 
   it("still reports actor list changes through the actors field", () => {
-    const diffs = diffCrawlerData(
+    const diffs = partitionCrawlerDataWithOptions(
       createCrawlerData({
         actors: ["Actor A"],
         actor_profiles: [{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }],
@@ -73,7 +74,8 @@ describe("diffCrawlerData", () => {
           { name: "Actor B", photo_url: "https://example.com/actor-b.png" },
         ],
       }),
-    );
+      {},
+    ).fieldDiffs;
 
     expect(diffs).toEqual([
       {

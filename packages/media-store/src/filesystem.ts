@@ -327,16 +327,6 @@ export const listRootFiles = async (
   }
 };
 
-export const mkdirpRootPath = async (root: MediaRoot, relativePath: string): Promise<void> => {
-  const absolutePath = resolveRootRelativePath(root, relativePath);
-
-  try {
-    await mkdir(absolutePath, { recursive: true });
-  } catch (error) {
-    throw toStorageError(error, relativePath);
-  }
-};
-
 const assertAbsolutePath = (value: string, label: string): void => {
   if (!path.isAbsolute(value)) {
     throw new TypeError(`${label} must be an absolute path: ${value}`);
@@ -397,12 +387,4 @@ export const atomicCopyFile = async (sourcePath: string, targetPath: string): Pr
   await publishFileAtomically(targetPath, async (temporaryPath) => {
     await copyFile(sourcePath, temporaryPath);
   });
-};
-
-export const atomicWriteRootFile = async (
-  root: MediaRoot,
-  relativePath: string,
-  content: string | Uint8Array,
-): Promise<void> => {
-  await atomicWriteFile(resolveRootRelativePath(root, relativePath), content);
 };

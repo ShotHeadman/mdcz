@@ -6,6 +6,7 @@ import type {
   BatchTranslateScanItem,
   MediaServerConnectionCheckResult,
 } from "@mdcz/shared/ipcTypes";
+import { isRemoteAssetUrl } from "@mdcz/shared/mediaRef";
 import type { PersonSyncJobDto, PersonSyncStartInput } from "@mdcz/shared/serverDtos";
 import type { ToolId } from "@mdcz/shared/toolCatalog";
 import { useT } from "@mdcz/views/i18n";
@@ -28,8 +29,6 @@ import { queryKeys } from "../../lib/queryKeys";
 import { AppLink, ErrorBanner } from "../../routeCommon";
 import { toRunState } from "../toolsController";
 
-const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
-
 const normalizePath = (value: string): string => value.trim().replace(/\\/gu, "/").replace(/\/+$/u, "");
 
 const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPath: string; id: string }>): string[] => {
@@ -44,7 +43,7 @@ const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPat
       if (!trimmed) {
         return "";
       }
-      if (isRemoteImageCandidate(trimmed)) {
+      if (isRemoteAssetUrl(trimmed)) {
         return trimmed;
       }
 

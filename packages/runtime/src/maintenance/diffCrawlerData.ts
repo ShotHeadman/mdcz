@@ -284,14 +284,6 @@ const buildImageCollectionFieldDiff = (
   };
 };
 
-/**
- * Compute field-level diffs between old (local NFO) and new (network) CrawlerData.
- * Only includes fields whose values actually changed.
- */
-export function diffCrawlerData(oldData: CrawlerData, newData: CrawlerData): FieldDiff[] {
-  return partitionCrawlerDataWithOptions(oldData, newData, {}).fieldDiffs;
-}
-
 export function partitionCrawlerDataWithOptions(
   oldData: CrawlerData,
   newData: CrawlerData,

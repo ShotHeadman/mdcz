@@ -21,10 +21,6 @@ export const requestScrapeLiveRunsRefresh = (): void => {
   requestLiveRunsFromUi?.();
 };
 
-export const hydrateActiveMaintenanceSession = async (): Promise<void> => {
-  applyMaintenanceSessionSnapshot(await api.maintenance.getActiveSession());
-};
-
 export const useWebTaskSync = (): void => {
   const queryClient = useQueryClient();
   useEffect(() => {
@@ -167,10 +163,4 @@ export const useWebTaskSync = (): void => {
       unsubscribe();
     };
   }, [queryClient]);
-};
-
-export const __webTaskSyncTestHooks = {
-  FAST_POLL_INTERVAL_MS,
-  HEARTBEAT_TIMEOUT_MS,
-  LIVENESS_CHECK_INTERVAL_MS,
 };

@@ -65,10 +65,8 @@ export const desktop = {
   startFailed: (error: string) => `Start failed: ${error}`,
   selectResultFirst: "Please select a result item first",
   retryFailed: (error: string) => `Retry failed: ${error}`,
-  desktopPlaybackOnly: "Playback is only supported in the desktop client",
 
   // Playback & ports
-  playbackOnlyOnDesktop: "Playback is only available in desktop mode",
   playbackFailed: "Playback failed",
   missingLocalVideoPath: "Missing local video path",
   selectFileToScrape: "Please select a file to scrape",
@@ -89,7 +87,6 @@ export const desktop = {
   recentAcquisitions: "Recent acquisitions",
 
   // Scrape completion dialog
-  updatedUncensoredTypes: (count: number) => `Updated uncensored type for ${count} files`,
 
   // File filters
   mediaFiles: "Media files",

@@ -1,5 +1,7 @@
+import { dedupeMediaSources } from "@mdcz/shared/imageSource";
+import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
-import { LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
+import { isRemoteAssetUrl, LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
@@ -22,14 +24,6 @@ import {
 } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc } from "../client";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
-
-const dedupeValues = (values: string[]): string[] =>
-  values
-    .map((value) => value.trim())
-    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
-
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
 
 const getDirName = (path: string): string => {
   const normalized = path.replace(/[\\/]+$/u, "");
@@ -95,8 +89,6 @@ const toRelativePath = (item: DetailViewItem, path: string): string => {
 const getRootId = (item: DetailViewItem): string => item.fileRef?.rootId ?? item.id.split(":")[0] ?? "";
 const getMetadataRootId = (item: DetailViewItem): string => item.nfoRef?.rootId ?? getRootId(item);
 
-const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
-
 const shouldResolveAgainstBaseDir = (candidate: string, item: DetailViewItem): boolean => {
   if (isAbsoluteLocalPath(candidate)) {
     return false;
@@ -125,7 +117,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (!trimmed) {
     return "";
   }
-  if (isRemoteImageCandidate(trimmed)) {
+  if (isRemoteAssetUrl(trimmed)) {
     return trimmed;
   }
   if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
@@ -152,7 +144,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
 export const createWebDetailPort = (): DetailActionPort => ({
   showFilePath: false,
   resolveImageCandidates: async (candidates, baseDir, item) =>
-    dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
+    dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);

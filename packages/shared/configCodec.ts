@@ -58,6 +58,3 @@ export const parseConfigurationContent = (
   content: string,
   format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
 ): Configuration => configurationSchema.parse(parseConfigurationDocument(content, format));
-
-export const readConfigurationText = (content: string, filePath: string): Configuration =>
-  parseConfigurationContent(content, inferConfigurationFileFormat(filePath));

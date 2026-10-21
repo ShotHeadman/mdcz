@@ -5,3 +5,6 @@ export const localPathStyle = (value: string): LocalPathStyle | undefined => {
   if (value.startsWith("/") && !value.startsWith("//")) return "posix";
   return undefined;
 };
+
+export const isAbsoluteLocalPath = (value: string): boolean =>
+  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");

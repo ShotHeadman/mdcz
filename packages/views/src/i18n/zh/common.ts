@@ -18,7 +18,6 @@ export const common: Messages["common"] = {
   search: "搜索",
   copy: "复制",
   open: "打开",
-  back: "返回",
   next: "下一步",
   start: "开始",
   stop: "停止",

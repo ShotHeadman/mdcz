@@ -1,3 +1,9 @@
+import {
+  getLogSearchText,
+  getVisualLogLevel,
+  getVisualLogLevelLabel,
+  stringifyRuntimeLogMessage,
+} from "@mdcz/shared/logFormatting";
 import type { LogEntryDto } from "@mdcz/shared/serverDtos";
 import {
   Button,
@@ -15,12 +21,6 @@ import { useLogStore } from "@mdcz/views/state/logStore";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  getRuntimeLogSearchText,
-  getVisualLogLevel,
-  getVisualLogLevelLabel,
-  stringifyRuntimeLogMessage,
-} from "@/components/logviewer/logFormat";
 
 const toLogEntryLevel = (level: string): LogEntryDto["level"] => {
   if (level === "OK" || level === "WARN" || level === "ERR" || level === "REQ" || level === "INFO") {
@@ -60,7 +60,7 @@ function LogsComponent() {
     const normalizedFilter = query.trim().toLowerCase();
     if (!normalizedFilter) return logEntries;
     const matchingIds = new Set(
-      logs.filter((log) => getRuntimeLogSearchText(log).includes(normalizedFilter)).map((log) => log.id),
+      logs.filter((log) => getLogSearchText(log).includes(normalizedFilter)).map((log) => log.id),
     );
     return logEntries.filter((log) => matchingIds.has(log.id));
   }, [logEntries, logs, query]);

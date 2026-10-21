@@ -1,3 +1,5 @@
+import { dedupeMediaSources } from "@mdcz/shared/imageSource";
+import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import { type LocalFileTarget, parseWireRelativePath } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
@@ -10,16 +12,10 @@ import type {
 import { type DetailViewItem, getDetailLocalAssetRef } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
 import { selectScrapeSnapshot, useScrapeStore } from "@mdcz/views/state/scrapeStore";
-import { readNfo, retryScrapeSelection, updateNfo } from "@/api/manual";
+import { retryScrapeSelection } from "@/api/scrape";
 import { ipc } from "@/client/ipc";
 import { getImageSrc, getLocalImagePath, resolveImagePath } from "@/utils/image";
 import { playMediaPath } from "@/utils/playback";
-
-const dedupeValues = (values: string[]): string[] =>
-  values.filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
-
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
 
 const toDesktopFileTarget = (path: string, item?: DetailViewItem | null): LocalFileTarget => {
   const normalizedPath = path.replace(/\\/gu, "/");
@@ -43,7 +39,7 @@ export const resolveDesktopImageCandidates = async (
   baseDir?: string,
   item?: DetailViewItem | null,
 ): Promise<string[]> =>
-  dedupeValues(
+  dedupeMediaSources(
     await Promise.all(
       candidates.map(async (candidate) => {
         const resolvedPath = getDetailLocalAssetRef(item, candidate) ? candidate : resolveImagePath(candidate, baseDir);
@@ -89,14 +85,11 @@ export const createDesktopDetailPort = (): DetailActionPort => ({
   },
   readNfo: async (item: DetailViewItem, path: string) => {
     const nfoTarget = item.nfoRef && path === item.nfoPath ? item.nfoRef : path;
-    const response = await readNfo(nfoTarget, getItemFileTarget(item));
-    return {
-      path: response.data.path,
-      crawlerData: response.data.crawlerData,
-    };
+    const response = await ipc.file.nfoRead(nfoTarget, getItemFileTarget(item));
+    return { path: response.nfoPath, crawlerData: response.data };
   },
   writeNfo: async (item: DetailViewItem, path: string, data: CrawlerData) => {
-    await updateNfo(path, data, getItemFileTarget(item));
+    await ipc.file.nfoWrite(path, data, getItemFileTarget(item));
   },
   preparePosterCrop: async (item) => {
     const target = getItemFileTarget(item);

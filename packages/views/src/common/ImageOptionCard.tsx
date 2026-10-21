@@ -1,3 +1,4 @@
+import { dedupeMediaSources } from "@mdcz/shared/imageSource";
 import { Badge, cn } from "@mdcz/ui";
 import { ImageIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,12 +32,8 @@ export interface ImageOptionCardProps {
   width?: number | null;
 }
 
-const dedupeValues = (values: string[]): string[] =>
-  values
-    .map((value) => value.trim())
-    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
-
-const defaultResolveImageCandidates: ResolveImageOptionCandidates = async (candidates) => dedupeValues(candidates);
+const defaultResolveImageCandidates: ResolveImageOptionCandidates = async (candidates) =>
+  dedupeMediaSources(candidates);
 
 const formatDimensions = (
   width: number | null | undefined,
@@ -105,7 +102,7 @@ export function ImageOptionCard({
   const [measuredSize, setMeasuredSize] = useState<{ height: number; src: string; width: number } | null>(null);
   const rawCandidates = useMemo(() => {
     const raw = empty || !src.trim() ? fallbackSrcs : [src, ...fallbackSrcs];
-    return dedupeValues(raw);
+    return dedupeMediaSources(raw);
   }, [empty, fallbackSrcs, src]);
   const candidates = useResolvedImageOptionCandidates(resolveImageCandidates, rawCandidates, baseDir);
   const firstCandidate = candidates[0] ?? "";

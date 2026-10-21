@@ -20,7 +20,6 @@ export const maintenancePresetIdSchema = z.enum([
   "local_organize",
   "rebuild_all",
 ]);
-export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({
   available: z.boolean(),
@@ -46,13 +45,6 @@ export const mediaRootListResponseSchema = z.object({
 });
 
 export type MediaRootListResponse = z.infer<typeof mediaRootListResponseSchema>;
-
-export const mediaRootCreateInputSchema = z.object({
-  displayName: z.string().trim().min(1),
-  hostPath: z.string().trim().min(1),
-});
-
-export type MediaRootCreateInput = z.infer<typeof mediaRootCreateInputSchema>;
 
 export const mediaRootEnsurePathInputSchema = z.object({
   displayName: z.string().trim().min(1).optional(),
@@ -97,8 +89,6 @@ export type RootBrowserResponse = z.infer<typeof rootBrowserResponseSchema>;
 
 export const serverPathIntentSchema = z.enum(["settings", "workbench-scan", "workbench-output", "media-root"]);
 
-export type ServerPathIntentDto = z.infer<typeof serverPathIntentSchema>;
-
 export const serverPathSuggestInputSchema = z.object({
   path: z.string().optional().default(""),
   kind: z.literal("directory").optional().default("directory"),
@@ -128,10 +118,8 @@ export const serverPathSuggestResponseSchema = z.object({
 export type ServerPathSuggestResponse = z.infer<typeof serverPathSuggestResponseSchema>;
 
 export const taskKindSchema = z.enum(["scan", "scrape", "maintenance"]);
-export type TaskKind = z.infer<typeof taskKindSchema>;
 
 export const scanStatusSchema = z.enum(["queued", "running", "completed", "failed", "paused", "stopping"]);
-export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
 export const taskStatusSchema = z.enum([
   "queued",
@@ -236,8 +224,6 @@ export const scrapeRunTaskSchema = z.object({
   /** The library the run publishes into; re-scrapes of its items go there too. */
   libraryId: z.string().nullable(),
 });
-
-export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;
 
 export const scanTaskListResponseSchema = z.object({
   tasks: z.array(scanTaskSchema),
@@ -424,12 +410,6 @@ export const scrapeLiveItemSchema = z.object({
 });
 
 export type ScrapeLiveItemDto = z.infer<typeof scrapeLiveItemSchema>;
-
-export const scrapeResultListResponseSchema = z.object({
-  results: z.array(scrapeResultSchema),
-});
-
-export type ScrapeResultListResponse = z.infer<typeof scrapeResultListResponseSchema>;
 
 export const scrapeResultDetailResponseSchema = z.object({
   result: scrapeResultSchema,
@@ -837,8 +817,6 @@ export const overviewOutputSummarySchema = z.object({
   totalBytes: z.number(),
 });
 
-export type OverviewOutputSummaryDto = z.infer<typeof overviewOutputSummarySchema>;
-
 export const overviewSummaryResponseSchema = z.object({
   output: overviewOutputSummarySchema,
   recentAcquisitions: z.array(overviewRecentAcquisitionSchema),
@@ -910,8 +888,6 @@ export const automationRecentInputSchema = z
     limit: z.coerce.number().int().min(1).max(100).optional(),
   })
   .optional();
-
-export type AutomationRecentInput = z.infer<typeof automationRecentInputSchema>;
 
 export const automationRecentResponseSchema = z.object({
   tasks: z.array(automationWebhookEventSchema),

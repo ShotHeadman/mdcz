@@ -1,7 +1,6 @@
+import type { Configuration } from "@mdcz/shared/config";
 import { queryOptions, type UseQueryOptions, useQuery } from "@tanstack/react-query";
-import { getCurrentConfig } from "@/client/api";
 import { ipc } from "@/client/ipc";
-import type { ConfigOutput } from "@/client/types";
 
 export interface ConfigProfilesOutput {
   profiles: string[];
@@ -16,10 +15,7 @@ export const currentConfigQueryOptions = () =>
   queryOptions({
     queryKey: CURRENT_CONFIG_QUERY_KEY,
     staleTime: 30_000,
-    queryFn: async () => {
-      const response = await getCurrentConfig({ throwOnError: true });
-      return response.data as ConfigOutput;
-    },
+    queryFn: async () => (await ipc.config.get()) as Configuration,
   });
 
 export const defaultConfigQueryOptions = () =>
@@ -27,7 +23,7 @@ export const defaultConfigQueryOptions = () =>
     queryKey: DEFAULT_CONFIG_QUERY_KEY,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: Number.POSITIVE_INFINITY,
-    queryFn: async () => (await ipc.config.getDefaults()) as ConfigOutput,
+    queryFn: async () => (await ipc.config.getDefaults()) as Configuration,
   });
 
 export const configProfilesQueryOptions = () =>
@@ -38,12 +34,12 @@ export const configProfilesQueryOptions = () =>
   });
 
 type CurrentConfigQueryOptions = Omit<
-  UseQueryOptions<ConfigOutput, Error, ConfigOutput, typeof CURRENT_CONFIG_QUERY_KEY>,
+  UseQueryOptions<Configuration, Error, Configuration, typeof CURRENT_CONFIG_QUERY_KEY>,
   "queryKey" | "queryFn"
 >;
 
 type DefaultConfigQueryOptions = Omit<
-  UseQueryOptions<ConfigOutput, Error, ConfigOutput, typeof DEFAULT_CONFIG_QUERY_KEY>,
+  UseQueryOptions<Configuration, Error, Configuration, typeof DEFAULT_CONFIG_QUERY_KEY>,
   "queryKey" | "queryFn"
 >;
 

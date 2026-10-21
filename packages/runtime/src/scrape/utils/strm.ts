@@ -1,7 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { atomicWriteFile } from "@mdcz/media-store";
 import { localPathStyle } from "@mdcz/shared/localPath";
 
 const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
@@ -140,20 +139,6 @@ export const readStrmTarget = async (filePath: string): Promise<string | undefin
 export const inspectStrmTarget = async (filePath: string): Promise<StrmTargetInfo | undefined> => {
   const target = await readStrmTarget(filePath);
   return target ? classifyStrmTarget(filePath, target) : undefined;
-};
-
-export const writeStrmTarget = async (filePath: string, nextTarget: string): Promise<void> => {
-  if (!isStrmFile(filePath)) {
-    return;
-  }
-
-  const content = await readFile(filePath, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
-      return "";
-    }
-    throw error;
-  });
-  await atomicWriteFile(filePath, replaceStrmTarget(content, nextTarget));
 };
 
 export const replaceStrmTarget = (content: string, nextTarget: string): string => {

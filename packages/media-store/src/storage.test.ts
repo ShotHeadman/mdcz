@@ -36,7 +36,6 @@ vi.mock("node:fs/promises", async () => {
 import {
   atomicCopyFile,
   atomicWriteFile,
-  atomicWriteRootFile,
   createMediaRoot,
   filesystemPathKey,
   listRootDirectory,
@@ -141,7 +140,7 @@ describe("absolute filesystem publication", () => {
     );
   });
 
-  it("keeps the old root file and removes its temporary file when publish fails", async () => {
+  it("keeps the old file and removes its temporary file when publish fails", async () => {
     const root = await createTempRoot();
     const targetPath = path.join(root.hostPath, "nested", "movie.nfo");
     await mkdir(path.dirname(targetPath), { recursive: true });
@@ -149,7 +148,7 @@ describe("absolute filesystem publication", () => {
     const renameError = new Error("rename failed");
     filesystemFaults.renameError = renameError;
 
-    await expect(atomicWriteRootFile(root, "nested/movie.nfo", "new")).rejects.toBe(renameError);
+    await expect(atomicWriteFile(targetPath, "new")).rejects.toBe(renameError);
 
     await expect(readFile(targetPath, "utf8")).resolves.toBe("old");
     await expect(readdir(path.dirname(targetPath))).resolves.toEqual(["movie.nfo"]);
@@ -193,10 +192,10 @@ describe("absolute filesystem publication", () => {
 });
 
 describe("mounted filesystem helpers", () => {
-  it("atomically writes, reads, lists, and converts root-relative references", async () => {
+  it("reads, lists, and converts root-relative references", async () => {
     const root = await createTempRoot();
 
-    await atomicWriteRootFile(root, "nested/movie.nfo", "metadata");
+    await atomicWriteFile(path.join(root.hostPath, "nested", "movie.nfo"), "metadata");
 
     await expect(readRootFile(root, "nested/movie.nfo")).resolves.toEqual(Buffer.from("metadata"));
     await expect(listRootDirectory(root, "nested")).resolves.toEqual([
@@ -210,8 +209,8 @@ describe("mounted filesystem helpers", () => {
 
   it("walks files with desktop-compatible symlink semantics", async () => {
     const root = await createTempRoot();
-    await atomicWriteRootFile(root, "movie.mkv", "video");
-    await atomicWriteRootFile(root, "linked/target.mp4", "video");
+    await atomicWriteFile(path.join(root.hostPath, "movie.mkv"), "video");
+    await atomicWriteFile(path.join(root.hostPath, "linked", "target.mp4"), "video");
     await mkdir(path.join(root.hostPath, "links"), { recursive: true });
     try {
       const linkType = process.platform === "win32" ? "junction" : "dir";

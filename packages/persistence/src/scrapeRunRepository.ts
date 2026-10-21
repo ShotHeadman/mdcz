@@ -6,7 +6,6 @@ import { scrapeRuns } from "./schema";
 
 export type ScrapeExecutionMode = "single" | "batch";
 export type ScrapeUncensoredChoice = "umr" | "leak" | "uncensored";
-export type ScrapeTerminalOutcome = "success" | "failed" | "skipped";
 export type ScrapeRunDisposition = "completed" | "failed" | "stopped" | "interrupted";
 
 export interface ScrapeRunManifestItem {
@@ -19,8 +18,6 @@ export interface ScrapeRunManifestItem {
   /** Replaces the number parsed from the file name. */
   number?: string | null;
 }
-
-export type ScrapeRunItemRecord = ScrapeRunManifestItem;
 
 export interface ScrapeRunRecord {
   id: string;

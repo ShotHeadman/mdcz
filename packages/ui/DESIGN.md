@@ -73,7 +73,7 @@ Large semantic panels should be rare. The overall interface should remain tone-l
 
 ### 4.2 Runtime Tokens
 
-These tokens are already defined in `src/renderer/src/index.css` and should be treated as the baseline surface system:
+These tokens are already defined in `packages/ui/src/theme.css` and should be treated as the baseline surface system:
 
 | Token | Light Value | Dark Value | Primary Use |
 |-------|-------------|------------|-------------|
@@ -168,7 +168,7 @@ Rounded geometry is central to the identity, but it must stay composed. Avoid mi
 
 ### 6.2 Shared Quiet Craft Baselines
 
-These reusable class patterns already exist in `src/renderer/src/components/ui/quietCraft.ts`:
+These reusable class patterns already exist in `packages/ui/src/quietCraft.ts`:
 
 - `quietControlRadiusClass`
 - `quietPanelRadiusClass`

@@ -4,19 +4,10 @@ import { getT } from "@mdcz/views/i18n";
 import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
 
-export const playMediaPath = async (
-  path: LocalFileTarget,
-  unavailableMessage = getT().desktop.playbackOnlyOnDesktop,
-  fallbackErrorMessage = getT().desktop.playbackFailed,
-): Promise<void> => {
-  if (!window.api) {
-    toast.info(unavailableMessage);
-    return;
-  }
-
+export const playMediaPath = async (path: LocalFileTarget): Promise<void> => {
   try {
     await ipc.app.playMedia(path);
   } catch (error) {
-    toast.error(toErrorMessage(error, fallbackErrorMessage));
+    toast.error(toErrorMessage(error, getT().desktop.playbackFailed));
   }
 };

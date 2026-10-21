@@ -146,5 +146,3 @@ export const IpcErrorCode = {
   INVALID_ARGUMENT: "INVALID_ARGUMENT",
   OPERATION_CANCELLED: "OPERATION_CANCELLED",
 } as const;
-
-export type IpcErrorCodeType = (typeof IpcErrorCode)[keyof typeof IpcErrorCode];

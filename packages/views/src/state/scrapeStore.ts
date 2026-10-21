@@ -3,7 +3,6 @@ import type { ScrapeResult } from "@mdcz/shared/types";
 import { create } from "zustand";
 
 export type ScrapeStatus = "idle" | "running" | "stopping" | "paused";
-export type ScrapeOutcome = "completed" | "failed" | "stopped" | "interrupted" | null;
 
 interface ScrapeState {
   snapshot: ScrapeRunSnapshotDto | null;
@@ -128,14 +127,6 @@ export const selectScrapeStatus = (state: ScrapeState): ScrapeStatus => {
   const status = selectScrapeSnapshot(state)?.task.status;
   if (status === "paused" || status === "stopping") return status;
   return status === "queued" || status === "discovering" || status === "running" ? "running" : "idle";
-};
-
-/** Identifies terminal states that need distinct result messaging. */
-export const selectScrapeOutcome = (state: ScrapeState): ScrapeOutcome => {
-  const status = selectScrapeSnapshot(state)?.task.status;
-  return status === "completed" || status === "failed" || status === "stopped" || status === "interrupted"
-    ? status
-    : null;
 };
 
 export const selectIsScraping = (state: ScrapeState): boolean => selectScrapeStatus(state) !== "idle";

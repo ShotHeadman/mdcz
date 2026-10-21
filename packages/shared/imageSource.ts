@@ -1,7 +1,6 @@
-const isSupportedImageScheme = (value: string): boolean => /^(?:https?:|data:|blob:|local-file:|file:)/u.test(value);
+import { isAbsoluteLocalPath } from "./localPath";
 
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+const isSupportedImageScheme = (value: string): boolean => /^(?:https?:|data:|blob:|local-file:|file:)/u.test(value);
 
 export const normalizeImageSourcePath = (rawPath: string): string => {
   const value = rawPath.trim();
@@ -49,3 +48,8 @@ export const resolveImagePath = (rawPath: string | undefined, baseDir?: string):
   if (!normalizedRelative) return normalizedBase;
   return `${normalizedBase}${separator}${normalizedRelative}`;
 };
+
+export const dedupeMediaSources = (values: string[]): string[] =>
+  values
+    .map((value) => value.trim())
+    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);

@@ -26,7 +26,6 @@ export const web = {
 
   // Overview
   goToWorkbench: "Go to Workbench",
-  goToSettings: "Go to Settings",
   recentAcquisitions: "Recent acquisitions",
   removedFromRecent: "Removed from recent acquisitions",
 
@@ -65,7 +64,6 @@ export const web = {
   stopping: "Stopping…",
   stopFailed: (error: string) => `Stop failed: ${error}`,
   noFailedItemsToRetry: "No failed items available to retry",
-  updatedUncensoredTypes: "Updated uncensored types",
   taskRefreshFailed: (error: string) => `Failed to refresh task status: ${error}`,
 
   // Logs
@@ -79,19 +77,6 @@ export const web = {
   logsCleared: "Logs cleared successfully",
 
   // Status badges & types
-  taskStatus: {
-    queued: "Queued",
-    running: "Running",
-    completed: "Completed",
-    failed: "Failed",
-    paused: "Paused",
-    stopping: "Stopping",
-  },
-  taskType: {
-    maintenance: "Maintenance",
-    scan: "Scan",
-    scrape: "Scrape",
-  },
 
   // Ports
   missingScrapeResultId: "Missing scrape result ID",

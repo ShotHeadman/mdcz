@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, resolveDefaultApiBase, setAdminToken, setApiBase } from "./client";
+import { api, resolveDefaultApiBase, setAdminToken } from "./client";
 
 describe("web api client", () => {
   const originalFetch = globalThis.fetch;
@@ -70,7 +70,6 @@ describe("web api client", () => {
         protocol: "http:",
       },
     });
-    setApiBase("");
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ result: { data: { token: "token-remote" } } }), { status: 200 }),
     );

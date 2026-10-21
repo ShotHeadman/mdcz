@@ -16,7 +16,7 @@ import {
   useFormField,
 } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
-import { type ComponentProps, createContext, type ReactElement, type ReactNode, useContext, useState } from "react";
+import { type ComponentProps, type ReactElement, type ReactNode, useState } from "react";
 import type { ControllerRenderProps, FieldValues, RegisterOptions } from "react-hook-form";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
@@ -35,7 +35,6 @@ import {
 } from "./BufferedFieldControls";
 import { ChipArrayField, type ChipArrayOption } from "./ChipArrayField";
 import { DurationField } from "./DurationField";
-import { OrderedSiteField } from "./OrderedSiteField";
 import { PathArrayField } from "./PathArrayField";
 import { ServerPathField } from "./ServerPathField";
 
@@ -43,21 +42,6 @@ import { ServerPathField } from "./ServerPathField";
 
 type CommitMode = "debounce" | "immediate";
 type ConfigFieldLayout = "horizontal" | "vertical";
-
-interface ConfigFieldLayoutContextValue {
-  layout: ConfigFieldLayout;
-}
-
-interface ConfigFieldLayoutProviderProps {
-  layout?: ConfigFieldLayout;
-  children: ReactNode;
-}
-
-const ConfigFieldLayoutContext = createContext<ConfigFieldLayoutContextValue>({ layout: "horizontal" });
-
-export function ConfigFieldLayoutProvider({ children, layout = "horizontal" }: ConfigFieldLayoutProviderProps) {
-  return <ConfigFieldLayoutContext.Provider value={{ layout }}>{children}</ConfigFieldLayoutContext.Provider>;
-}
 
 interface BaseFieldProps {
   name: FieldKey;
@@ -112,15 +96,13 @@ function ConnectedBaseField({ name, description, labelAddon, children, layout, c
   const text = t.settingsFields.fields[name];
   const label = text.label;
   const form = useFormContext();
-  const fieldLayout = useContext(ConfigFieldLayoutContext);
   const { resetToDefault } = useAutoSaveField(name, { mode: commitMode });
   const search = useOptionalSettingsSearch();
   const visible =
     search && isFieldManagedBySettingsSearch(name) ? !search.hasActiveFilters || search.isFieldVisible(name) : true;
   const highlighted = search ? search.isFieldHighlighted(name) : false;
   const modified = search ? search.isFieldModified(name) : false;
-  const resolvedLayout = layout ?? fieldLayout.layout;
-  const isVerticalLayout = resolvedLayout === "vertical";
+  const isVerticalLayout = layout === "vertical";
   const controlClassName = isVerticalLayout
     ? "flex w-full justify-end [&>div]:w-full [&_input]:w-full [&_textarea]:w-full [&_[data-slot=select-trigger]]:w-full"
     : undefined;
@@ -149,7 +131,7 @@ function ConnectedBaseField({ name, description, labelAddon, children, layout, c
               headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
               control={children(field)}
               controlClassName={controlClassName}
-              layout={resolvedLayout}
+              layout={layout}
               highlighted={highlighted}
             />
           </FormItem>
@@ -547,22 +529,6 @@ export function ChipArrayFieldWrapper({
   return (
     <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
       {(field) => <ChipArrayField field={field} options={options} showBulkActions={showBulkActions} />}
-    </BaseField>
-  );
-}
-
-export function OrderedSiteFieldWrapper({
-  name,
-  description,
-  options,
-}: {
-  name: FieldKey;
-  description?: string;
-  options: string[];
-}) {
-  return (
-    <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
-      {(field) => <OrderedSiteField field={field} options={options} />}
     </BaseField>
   );
 }

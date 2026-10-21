@@ -16,7 +16,6 @@ export const common = {
   search: "Search",
   copy: "Copy",
   open: "Open",
-  back: "Back",
   next: "Next",
   start: "Start",
   stop: "Stop",

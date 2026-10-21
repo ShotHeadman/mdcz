@@ -4,7 +4,6 @@ import type { ServerApiContract } from "@mdcz/shared/serverApi";
 import { createTRPCUntypedClient, httpLink } from "@trpc/client";
 
 const FALLBACK_API_BASE = "http://127.0.0.1:3838";
-const API_BASE_KEY = "mdcz-web-api-base";
 const TOKEN_KEY = "mdcz-admin-token";
 
 export const resolveDefaultApiBase = ({
@@ -27,19 +26,6 @@ export const resolveDefaultApiBase = ({
     return `${location.protocol}//${location.hostname}:3838`;
   }
   return location.origin.replace(/\/+$/u, "");
-};
-
-export const getApiBase = (): string => localStorage.getItem(API_BASE_KEY) ?? resolveDefaultApiBase();
-
-export const setApiBase = (baseUrl: string): void => {
-  const trimmed = baseUrl.trim().replace(/\/+$/u, "");
-  if (!trimmed) {
-    localStorage.removeItem(API_BASE_KEY);
-    trpcCache = null;
-    return;
-  }
-  localStorage.setItem(API_BASE_KEY, trimmed);
-  trpcCache = null;
 };
 
 export const getAdminToken = (): string | null => localStorage.getItem(TOKEN_KEY);
@@ -81,7 +67,7 @@ export const getLibraryAssetSrc = (input: {
   }
   const url = new URL(
     `/api/library/assets/${encodeURIComponent(rootId)}/${encodePathSegments(assetPath)}`,
-    getApiBase(),
+    resolveDefaultApiBase(),
   );
   const token = getAdminToken();
   if (token) {
@@ -112,7 +98,7 @@ type WebTrpcClient = ReturnType<typeof createTRPCUntypedClient>;
 let trpcCache: { baseUrl: string; client: WebTrpcClient } | null = null;
 
 const getTrpc = (): WebTrpcClient => {
-  const baseUrl = getApiBase();
+  const baseUrl = resolveDefaultApiBase();
   if (trpcCache?.baseUrl === baseUrl) {
     return trpcCache.client;
   }
@@ -305,7 +291,7 @@ export const api: ServerApiContract = {
 
 const taskEventsUrl = (): string => {
   const token = getAdminToken();
-  return `${getApiBase()}/events/tasks${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  return `${resolveDefaultApiBase()}/events/tasks${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 };
 
 export const subscribeTaskNotifications = (handlers: {

@@ -2,7 +2,6 @@ export const ASSET_NAMING_MODES = ["fixed", "followVideo"] as const;
 export const MOVIE_NFO_BASE_NAME = "movie";
 
 export type AssetNamingMode = (typeof ASSET_NAMING_MODES)[number];
-export type MovieAssetKind = "thumb" | "poster" | "fanart" | "trailer";
 
 export interface MovieAssetFileNames {
   thumb: string;
@@ -35,12 +34,4 @@ export const buildMovieAssetFileNames = (
     fanart: `${trimmedBaseName}-fanart.jpg`,
     trailer: `${trimmedBaseName}-trailer.mp4`,
   };
-};
-
-export const getMovieAssetFileName = (
-  kind: MovieAssetKind,
-  movieBaseName: string,
-  assetNamingMode: AssetNamingMode = "fixed",
-): string => {
-  return buildMovieAssetFileNames(movieBaseName, assetNamingMode)[kind];
 };

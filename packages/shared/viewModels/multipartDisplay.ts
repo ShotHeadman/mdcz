@@ -110,6 +110,3 @@ export const buildMultipartDisplayGroups = <T>(
     .sort((left, right) => left.firstIndex - right.firstIndex)
     .map((entry) => entry.group);
 };
-
-export const countMultipartDisplayGroups = <T>(items: T[], selectors: MultipartDisplaySelectors<T>): number =>
-  buildMultipartDisplayGroups(items, selectors).length;

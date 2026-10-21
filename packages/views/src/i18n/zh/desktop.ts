@@ -58,9 +58,7 @@ export const desktop: Messages["desktop"] = {
   startFailed: (error: string) => `启动失败: ${error}`,
   selectResultFirst: "请先选择一个结果项",
   retryFailed: (error: string) => `重试失败: ${error}`,
-  desktopPlaybackOnly: "仅桌面客户端支持播放",
 
-  playbackOnlyOnDesktop: "播放功能仅在桌面客户端可用",
   playbackFailed: "播放失败",
   missingLocalVideoPath: "缺少本地视频路径",
   selectFileToScrape: "请选择要刮削的文件",
@@ -76,8 +74,6 @@ export const desktop: Messages["desktop"] = {
   fileMovedOrDeleted: "文件已移动或删除,无法定位原位置",
   cannotOpenFileExplorer: "无法打开系统文件管理器",
   recentAcquisitions: "最近入库",
-
-  updatedUncensoredTypes: (count: number) => `已更新 ${count} 个文件的无码类型`,
 
   mediaFiles: "媒体文件",
 

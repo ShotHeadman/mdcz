@@ -6,14 +6,13 @@ import { createRecentAcquisitionsFromEntries, toRuntimeLibraryEntrySummaryInput 
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { OverviewRecentAcquisitionItem } from "@mdcz/shared/ipc-contracts/overviewContract";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
+import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import { libraryDetailInputSchema } from "../payloads";
 import { asSerializableIpcError, t } from "../shared";
 
 const logger = loggerService.getLogger("IpcRouter:overview");
 
 const isRemotePath = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
 
 const resolveAssetDisplayPath = (
   rootMap: ReadonlyMap<string, MediaRoot>,

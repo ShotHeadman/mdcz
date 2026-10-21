@@ -142,10 +142,6 @@ export const findScrapeResultGroupItem = (
   return group.items.find((item) => item.fileId === itemId);
 };
 
-export const getScrapeResultGroupVideoPaths = (group: ScrapeResultGroup): string[] => {
-  return Array.from(new Set(group.items.map(scrapeResultPath).filter((value) => value.length > 0)));
-};
-
 export const getScrapeResultGroupTargets = (
   group: ScrapeResultGroup,
 ): Array<{ filePath: string; ref: ScrapeFileRefDto }> => {

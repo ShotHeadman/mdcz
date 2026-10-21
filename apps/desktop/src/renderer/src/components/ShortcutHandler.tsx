@@ -11,7 +11,7 @@ import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { retryScrapeSelection, stopScrape } from "@/api/manual";
+import { retryScrapeSelection } from "@/api/scrape";
 import { ipc } from "@/client/ipc";
 import { playMediaPath } from "@/utils/playback";
 
@@ -72,7 +72,7 @@ export function ShortcutHandler() {
           case "start-or-stop-scrape": {
             if (selectIsScraping(scrapeState)) {
               try {
-                await runScrapeRequest(stopScrape);
+                await runScrapeRequest(ipc.scraper.stop);
                 toast.info(t.desktop.stoppingScrape);
               } catch (error) {
                 toast.error(t.desktop.stopFailed(toErrorMessage(error)));
@@ -119,7 +119,7 @@ export function ShortcutHandler() {
               toast.info(t.desktop.selectResultFirst);
               return;
             }
-            await playMediaPath(selectedRef ?? selectedPath, t.desktop.desktopPlaybackOnly);
+            await playMediaPath(selectedRef ?? selectedPath);
             return;
           }
 

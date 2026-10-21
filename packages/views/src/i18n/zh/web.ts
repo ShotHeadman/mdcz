@@ -23,7 +23,6 @@ export const web: Messages["web"] = {
   scrapeResultNotFound: "未找到刮削结果",
 
   goToWorkbench: "去工作台",
-  goToSettings: "前往设置",
   recentAcquisitions: "最近入库",
   removedFromRecent: "已从最近入库移除",
 
@@ -57,7 +56,6 @@ export const web: Messages["web"] = {
   stopping: "正在停止...",
   stopFailed: (error: string) => `停止失败: ${error}`,
   noFailedItemsToRetry: "当前没有可重试的失败项目",
-  updatedUncensoredTypes: "已更新无码类型",
   taskRefreshFailed: (error: string) => `任务状态刷新失败: ${error}`,
 
   logsEmpty: "暂无日志。刮削或维护任务开始后，运行日志会显示在这里。",
@@ -68,20 +66,6 @@ export const web: Messages["web"] = {
   clearAllLogsDescription: "确定要清空所有日志内容吗？",
   confirmClear: "确定清空",
   logsCleared: "日志已成功清空",
-
-  taskStatus: {
-    queued: "排队中",
-    running: "运行中",
-    completed: "已完成",
-    failed: "失败",
-    paused: "已暂停",
-    stopping: "停止中",
-  },
-  taskType: {
-    maintenance: "维护",
-    scan: "扫描",
-    scrape: "刮削",
-  },
 
   missingScrapeResultId: "缺少刮削结果标识",
   selectFileToScrape: "请选择要刮削的文件",

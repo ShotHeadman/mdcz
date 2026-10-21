@@ -53,31 +53,6 @@ export const resolveWorkbenchMode = (input: {
   return input.currentMode;
 };
 
-export const getWorkbenchSessionSnapshot = (
-  currentMode: WorkbenchMode,
-  routeIntent?: WorkbenchRouteIntent,
-): WorkbenchSessionSnapshot => {
-  const scrapeStore = useScrapeStore.getState();
-  const maintenanceStore = useMaintenanceStore.getState();
-  const isScraping = selectIsScraping(scrapeStore);
-  const scrapeHasWork = selectScrapeHasWork(scrapeStore);
-  const maintenanceHasWork = selectMaintenanceHasWork(maintenanceStore);
-  const workbenchMode = resolveWorkbenchMode({
-    currentMode,
-    routeIntent,
-    isScraping,
-    scrapeHasWork,
-    maintenanceHasWork,
-  });
-
-  return {
-    workbenchMode,
-    scrapeHasWork,
-    maintenanceHasWork,
-    showSetup: workbenchMode === "maintenance" ? !maintenanceHasWork : !scrapeHasWork,
-  };
-};
-
 export const useWorkbenchSessionSnapshot = (
   currentMode: WorkbenchMode,
   routeIntent?: WorkbenchRouteIntent,

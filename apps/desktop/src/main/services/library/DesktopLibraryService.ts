@@ -13,6 +13,7 @@ import {
 } from "@mdcz/runtime/library";
 import type { Configuration } from "@mdcz/shared/config";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
+import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import type {
   LibraryAvailabilityInput,
   LibraryAvailabilityResponse,
@@ -137,9 +138,6 @@ const resolveRootDisplayName = (root: MediaRoot | undefined, rootId: string): st
 };
 
 const isRemotePath = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
-
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
 
 const resolveAssetDisplayPath = (
   rootMap: ReadonlyMap<string, MediaRoot>,

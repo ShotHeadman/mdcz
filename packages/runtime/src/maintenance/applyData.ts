@@ -111,27 +111,6 @@ export const hasMaintenanceDiffSideValue = (diff: FieldDiff, side: MaintenanceFi
   return hasMaintenanceFieldValue(side === "old" ? diff.oldValue : diff.newValue);
 };
 
-export const resolveMaintenanceDiffImageSrc = (diff: FieldDiff, side: MaintenanceFieldSelectionSide): string => {
-  if (diff.kind !== "image") return "";
-  return side === "old" ? diff.oldPreview.src : diff.newPreview.src;
-};
-
-export const resolveMaintenanceDiffImageOption = (
-  diff: FieldDiff,
-  side: MaintenanceFieldSelectionSide,
-): { src: string; fallbackSrcs: string[] } => {
-  if (diff.kind !== "image") return { src: "", fallbackSrcs: [] };
-  return side === "old" ? diff.oldPreview : diff.newPreview;
-};
-
-export const resolveMaintenanceDiffImageCollection = (
-  diff: FieldDiff,
-  side: MaintenanceFieldSelectionSide,
-): string[] => {
-  if (diff.kind !== "imageCollection") return [];
-  return side === "old" ? diff.oldPreview.items : diff.newPreview.items;
-};
-
 export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): MaintenanceFieldSelectionSide => {
   const hasOldValue = hasMaintenanceDiffSideValue(diff, "old");
   const hasNewValue = hasMaintenanceDiffSideValue(diff, "new");

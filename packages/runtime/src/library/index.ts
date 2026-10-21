@@ -1,7 +1,3 @@
-import type { MediaRoot } from "@mdcz/media-store";
-import { toRootRelativePath } from "@mdcz/media-store";
-import type { DownloadedAssets } from "@mdcz/shared/types";
-
 export * from "./availability";
 export * from "./desktopInputRoot";
 export * from "./desktopOutputRoot";
@@ -13,13 +9,6 @@ export * from "./mediaRootService";
 export * from "./pendingService";
 export * from "./registeredMedia";
 export * from "./relink";
-
-export interface RuntimeLibraryAsset {
-  kind: string;
-  uri: string;
-  rootId?: string;
-  relativePath?: string;
-}
 
 export interface RuntimeRecentAcquisition {
   id?: string;
@@ -61,62 +50,6 @@ export const toRuntimeLibraryEntrySummaryInput = (
   const file = entry.files.find((candidate) => candidate.id === entry.displayFileId);
   if (!file) throw new Error(`Library display file not found: ${entry.id}`);
   return { ...entry, fileName: file.fileName, lastKnownPath: file.lastKnownPath };
-};
-
-const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
-
-export const toLibraryAsset = (
-  root: Pick<MediaRoot, "id" | "hostPath"> | null | undefined,
-  kind: string,
-  uri: string | undefined,
-): RuntimeLibraryAsset | null => {
-  const value = uri?.trim();
-  if (!value) {
-    return null;
-  }
-
-  if (!root || isRemoteAssetUri(value)) {
-    return { kind, uri: value };
-  }
-
-  try {
-    const relativePath = toRootRelativePath(root, value);
-    return {
-      kind,
-      uri: relativePath,
-      rootId: root.id,
-      relativePath,
-    };
-  } catch {
-    return { kind, uri: value };
-  }
-};
-
-export const toLibraryAssets = (
-  root: Pick<MediaRoot, "id" | "hostPath"> | null | undefined,
-  assets: DownloadedAssets | undefined,
-): RuntimeLibraryAsset[] => {
-  if (!assets) {
-    return [];
-  }
-
-  const mapped: RuntimeLibraryAsset[] = [];
-  const add = (kind: string, uri: string | undefined) => {
-    const asset = toLibraryAsset(root, kind, uri);
-    if (asset) {
-      mapped.push(asset);
-    }
-  };
-
-  add("thumb", assets.thumb);
-  add("poster", assets.poster);
-  add("fanart", assets.fanart);
-  add("trailer", assets.trailer);
-  for (const sceneImage of assets.sceneImages) {
-    add("scene", sceneImage);
-  }
-
-  return mapped;
 };
 
 /** Matches the single row the overview grid shows at its widest breakpoint. */
@@ -192,10 +125,3 @@ export const createRecentAcquisitionsFromEntries = (
       .filter((entry): entry is RuntimeRecentAcquisition => entry !== null),
     RECENT_ACQUISITION_LIMIT,
   );
-
-export const getLatestLibraryEntryTimestamp = (
-  entries: readonly Pick<RuntimeLibraryEntrySummaryInput, "createdAt">[],
-): number | null => {
-  const latest = entries.reduce((max, entry) => Math.max(max, toTimestampMs(entry.createdAt)), 0);
-  return latest > 0 ? latest : null;
-};

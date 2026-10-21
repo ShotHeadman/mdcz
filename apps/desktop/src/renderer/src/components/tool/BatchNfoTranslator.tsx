@@ -3,13 +3,12 @@ import type { BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/ip
 import { useT } from "@mdcz/views/i18n";
 import { BatchNfoTranslatorWorkspaceDetail } from "@mdcz/views/tools";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ipc } from "@/client/ipc";
-import { useToast } from "@/contexts/ToastProvider";
 import { browseDirectoryPath } from "./toolUtils";
 
 export function BatchNfoTranslator() {
   const t = useT();
-  const { showError, showInfo, showSuccess } = useToast();
   const [batchTranslateItems, setBatchTranslateItems] = useState<BatchTranslateScanItem[]>([]);
   const [batchTranslateScanning, setBatchTranslateScanning] = useState(false);
 
@@ -21,7 +20,7 @@ export function BatchNfoTranslator() {
     const targetDirectory = directory.trim();
     if (!targetDirectory) {
       setBatchTranslateItems([]);
-      showError(t.desktop.enterScanDirectory);
+      toast.error(t.desktop.enterScanDirectory);
       return null;
     }
 
@@ -33,17 +32,17 @@ export function BatchNfoTranslator() {
 
       if (!options.silent) {
         if (result.items.length === 0) {
-          showInfo(t.desktop.scanCompletedNoItems);
+          toast.info(t.desktop.scanCompletedNoItems);
         } else {
           const fieldCount = result.items.reduce((sum, item) => sum + item.pendingFields.length, 0);
-          showSuccess(t.desktop.scanCompletedSummary(result.items.length, fieldCount));
+          toast.success(t.desktop.scanCompletedSummary(result.items.length, fieldCount));
         }
       }
 
       return result.items;
     } catch (error) {
       setBatchTranslateItems([]);
-      showError(t.desktop.scanFailed(toErrorMessage(error)));
+      toast.error(t.desktop.scanFailed(toErrorMessage(error)));
       return null;
     } finally {
       setBatchTranslateScanning(false);
@@ -66,11 +65,11 @@ export function BatchNfoTranslator() {
     totalCount: number;
   }) => {
     if (failedCount === 0) {
-      showSuccess(t.desktop.batchTranslateCompleted(successCount, totalCount, partialCount));
+      toast.success(t.desktop.batchTranslateCompleted(successCount, totalCount, partialCount));
       return;
     }
 
-    showError(t.desktop.batchTranslateCompletedWithErrors(successCount, partialCount, failedCount));
+    toast.error(t.desktop.batchTranslateCompletedWithErrors(successCount, partialCount, failedCount));
   };
 
   return (

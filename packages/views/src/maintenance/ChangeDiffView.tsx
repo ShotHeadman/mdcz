@@ -1,3 +1,4 @@
+import { dedupeMediaSources } from "@mdcz/shared/imageSource";
 import type { ActorProfile, CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { cn, Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
 import { ChevronLeft, ChevronRight, Clock, ImageIcon, LoaderCircle, X } from "lucide-react";
@@ -171,12 +172,8 @@ const resolveImageSourceValue = (
   return toDisplaySourceValue(side === "old" ? diff.oldValue : diff.newValue || previewSrc);
 };
 
-const dedupeValues = (values: string[]): string[] =>
-  values
-    .map((value) => value.trim())
-    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
-
-const defaultResolveImageCandidates: ResolveMaintenanceImageCandidates = async (candidates) => dedupeValues(candidates);
+const defaultResolveImageCandidates: ResolveMaintenanceImageCandidates = async (candidates) =>
+  dedupeMediaSources(candidates);
 
 const getImageDisplayProps = (
   field: FieldDiff["field"],
@@ -710,7 +707,7 @@ export function ChangeDiffView({
     }
 
     if (diff.field === "trailer_url") {
-      const oldTrailerCandidates = dedupeValues(
+      const oldTrailerCandidates = dedupeMediaSources(
         [
           entry?.assets.trailer,
           diff.oldValue as string,
@@ -718,7 +715,7 @@ export function ChangeDiffView({
           entry?.crawlerData?.trailer_url,
         ].filter((item): item is string => typeof item === "string" && item.trim().length > 0),
       );
-      const newTrailerCandidates = dedupeValues(
+      const newTrailerCandidates = dedupeMediaSources(
         [
           diff.newValue as string,
           preview?.proposedCrawlerData?.trailer_source_url,
@@ -812,7 +809,7 @@ export function ChangeDiffView({
     }
 
     if (diff.field === "trailer_url") {
-      const candidates = dedupeValues(
+      const candidates = dedupeMediaSources(
         [
           entry?.assets.trailer,
           diff.oldValue as string,

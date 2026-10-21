@@ -41,13 +41,6 @@ export const runMigrations = (database: PersistenceDatabase, config: RunMigratio
   }
 };
 
-export const migratePersistenceDatabase = (
-  database: PersistenceDatabase,
-  migrationsFolder = defaultMigrationsFolder,
-): void => {
-  runMigrations(database, { migrationsFolder });
-};
-
 // Only schema-level failures (unknown migration lineage, constraint conflicts) are fixed by starting over;
 // busy, I/O and permission errors would recur on a fresh file or mean another process still owns it.
 export const isSchemaMigrationFailure = (error: unknown): error is PersistenceError => {

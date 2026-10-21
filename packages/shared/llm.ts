@@ -1,7 +1,6 @@
 export const DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1";
 
 export const LLM_REASONING_EFFORT_OPTIONS = ["low", "medium", "high", "max"] as const;
-export type LlmReasoningEffort = (typeof LLM_REASONING_EFFORT_OPTIONS)[number];
 
 export const LLM_API_FORMAT_OPTIONS = ["responses", "chat-completions"] as const;
 export type LlmApiFormat = (typeof LLM_API_FORMAT_OPTIONS)[number];
