@@ -29,7 +29,7 @@ import { PublicationConflictError } from "../publication/conflicts";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { admitMaintenanceGroups, type MovieOwnership } from "../scrape/movieGroups";
 import { isAbortError } from "../scrape/utils/abort";
-import { TaskExecutor, type TaskExecutorContext } from "../tasks";
+import { type LibraryTaskGate, TaskExecutor, type TaskExecutorContext } from "../tasks";
 import {
   InactiveMaintenanceSessionError,
   type MaintenanceBatchItem,
@@ -257,10 +257,12 @@ export class MaintenanceSessionCoordinator {
         inventory: DirectoryInventory,
       ) => Promise<MaintenanceSessionRef[]>;
       persistence: MaintenancePersistencePort;
+      taskGate: LibraryTaskGate;
       events?: { publish(event: MaintenanceCoordinatorEvent): void | Promise<void> };
     },
   ) {
     this.runtime = deps.runtime;
+    deps.taskGate.track("maintenance", () => this.previewStarting || Boolean(this.session?.isActive()));
   }
 
   async startPreview(input: {
@@ -281,6 +283,7 @@ export class MaintenanceSessionCoordinator {
         "An active maintenance session already exists; please complete or stop the current session first",
       );
     }
+    this.deps.taskGate.assertAvailable("maintenance");
     this.previewStarting = true;
     try {
       const currentConfiguration = await this.deps.runtime.getConfiguration();
@@ -426,6 +429,7 @@ export class MaintenanceSessionCoordinator {
     this.assertOpen();
     if (this.previewStarting) throw new Error("Maintenance preview is starting, please try again shortly");
     if (this.session !== session) throw new Error("Current maintenance task is no longer valid; please start over");
+    this.deps.taskGate.assertAvailable("maintenance");
     const apply = session.beginApply(input.selections);
     try {
       await this.publishStatus(session, "queued", `Maintenance apply queued. Items: ${input.selections.length}`);

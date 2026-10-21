@@ -14,6 +14,7 @@ import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, FileScraper } from "@mdcz/runtime/scrape";
 import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import { admitScrapeGroups } from "@mdcz/runtime/scrape/movieGroups";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "../../../helpers/scraper";
@@ -45,6 +46,7 @@ const createHarness = async () => {
     undefined,
     new PersistentCooldownStore({ filePath: join(directory, "cooldowns.json") }),
     libraries,
+    new LibraryTaskGate(),
     undefined,
     persistence,
   );

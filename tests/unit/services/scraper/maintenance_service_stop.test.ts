@@ -10,6 +10,7 @@ import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -110,6 +111,7 @@ const createFixture = async () => {
     imageHostCooldownStore: new PersistentCooldownStore({
       filePath: path.join(directory, "image-host-cooldowns.json"),
     }),
+    taskGate: new LibraryTaskGate(),
     runtime,
   });
   vi.spyOn(configManager, "getValidated").mockResolvedValue(defaultConfiguration);

@@ -28,6 +28,7 @@ import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import { ActorSyncFollowUp, PersonSyncLock } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { AmazonJpImageService } from "@mdcz/runtime/tools";
 
 export interface CreateContainerOptions {
@@ -88,6 +89,7 @@ export const createContainer = ({
     ]),
   });
 
+  const taskGate = new LibraryTaskGate();
   const personSyncLock = new PersonSyncLock();
   const actorSync = new ActorSyncFollowUp({
     networkClient,
@@ -104,6 +106,7 @@ export const createContainer = ({
     actorSourceProvider,
     imageHostCooldownStore,
     libraries,
+    taskGate,
     outputLibraryScanner,
     persistenceService,
     mediaRoots,
@@ -118,6 +121,7 @@ export const createContainer = ({
     actorImageService,
     actorSourceProvider,
     imageHostCooldownStore,
+    taskGate,
     mediaRoots,
     prepareScrapeItem,
   });

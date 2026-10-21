@@ -12,6 +12,7 @@ import type { ConfiguredMediaRootService, MediaLibraryService } from "@mdcz/runt
 import { type ActorSyncFollowUp, notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { type ActorImageService, type PrepareScrapeItem, ScrapeRunner } from "@mdcz/runtime/scrape";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { app } from "electron";
@@ -40,6 +41,7 @@ export class ScraperService {
     private readonly actorSourceProvider: ActorSourceProvider | undefined,
     private readonly imageHostCooldownStore: PersistentCooldownStore,
     private readonly libraries: Pick<MediaLibraryService, "findBySourcePath" | "list">,
+    private readonly taskGate: LibraryTaskGate,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
@@ -67,6 +69,7 @@ export class ScraperService {
         },
         onPending: () => this.signalService.invalidate("pending", "overview"),
         recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
+        taskGate: this.taskGate,
         getConfiguration: async () => await configManager.getValidated(),
         networkClient: this.sharedNetworkClient,
         crawlerProvider: this.crawlerProvider,

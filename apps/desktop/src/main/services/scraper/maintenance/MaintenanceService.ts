@@ -16,6 +16,7 @@ import {
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import type {
   MaintenanceActiveSessionSnapshot,
@@ -35,6 +36,7 @@ export interface MaintenanceServiceDependencies {
   actorImageService: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
   imageHostCooldownStore: PersistentCooldownStore;
+  taskGate: LibraryTaskGate;
   mediaRoots?: ConfiguredMediaRootService;
   prepareScrapeItem?: MaintenanceRuntimeDependencies["prepareScrapeItem"];
   runtime?: MaintenanceRuntime;
@@ -89,6 +91,7 @@ export class MaintenanceService {
           list: async () => await mediaRoots.listRoots(),
         },
         runtime: this.runtime,
+        taskGate: deps.taskGate,
         discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
           return (
             await discoverDirectoryFiles({

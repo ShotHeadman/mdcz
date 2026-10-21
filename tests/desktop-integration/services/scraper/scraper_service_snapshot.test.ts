@@ -9,6 +9,7 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const directories: string[] = [];
@@ -28,6 +29,7 @@ const createHarness = async () => {
     undefined,
     new PersistentCooldownStore({ filePath: join(directory, "image-host-cooldowns.json") }),
     { list: async () => [], findBySourcePath: async () => undefined },
+    new LibraryTaskGate(),
     undefined,
     persistence,
   );
