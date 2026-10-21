@@ -76,11 +76,6 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["actor", "photo"],
   },
   "paths.sceneImagesFolder": { label: "Scene image folder name" },
-  "paths.outputSummaryPath": {
-    label: "Overview statistics directory",
-    description: "Leave empty to use the output directory.",
-    aliases: ["summary", "overview"],
-  },
   "paths.configDirectory": { label: "Configuration directory", aliases: ["config", "profile"] },
   "scrape.sites": {
     label: "Enabled sites & priority",

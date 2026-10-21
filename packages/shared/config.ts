@@ -290,7 +290,6 @@ const pathsSchema = z.object({
   defaultScanExcludeDirs: z.array(z.string()).default([]),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
-  outputSummaryPath: z.string().default(""),
 });
 
 const behaviorSchema = z.object({

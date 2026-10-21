@@ -39,7 +39,6 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["头像", "演员"],
     },
     "paths.sceneImagesFolder": { label: "剧照目录名" },
-    "paths.outputSummaryPath": { label: "概览统计目录", description: "留空则使用整理目标目录", aliases: ["概览目录"] },
     "paths.configDirectory": { label: "配置文件目录", aliases: ["配置目录"] },
     "scrape.sites": {
       label: "启用站点与优先级",

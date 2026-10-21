@@ -160,11 +160,7 @@ export class ServerPathService {
   }
 
   private collectConfigPathValues(configuration: Configuration): string[] {
-    return [
-      configuration.paths.actorPhotoFolder,
-      configuration.paths.outputSummaryPath,
-      configuration.paths.configDirectory,
-    ].map((value) => value.trim());
+    return [configuration.paths.actorPhotoFolder, configuration.paths.configDirectory].map((value) => value.trim());
   }
 
   private async listDirectoryEntries(
