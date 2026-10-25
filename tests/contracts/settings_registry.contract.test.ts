@@ -28,7 +28,7 @@ describe("settings registry and configuration schema", () => {
     expect(diff.staleExemptions, `Stale settings exemptions: ${diff.staleExemptions.join(", ")}`).toEqual([]);
     expect(SETTINGS_SCHEMA_EXEMPTIONS.every((entry) => entry.reason.length > 0)).toBe(true);
     expect(SETTINGS_SCHEMA_EXEMPTIONS).toContainEqual(
-      expect.objectContaining({ path: "personSync.actorAliases", kind: "dynamic-record" }),
+      expect.objectContaining({ path: "scrape.numberMappings", kind: "dynamic-record" }),
     );
     expect(schemaLeaves).toContain("translate.llmTemperature");
   });

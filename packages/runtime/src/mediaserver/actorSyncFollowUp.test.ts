@@ -37,8 +37,7 @@ const configuration = {
 const MINUTE = 60_000;
 
 describe("ActorSyncFollowUp", () => {
-  // setImmediate stays real so the photo-path check on disk can finish between fake seconds.
-  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
+  beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
   it.each([
@@ -263,7 +262,6 @@ describe("ActorSyncFollowUp", () => {
         });
       }
       await vi.advanceTimersByTimeAsync(1000);
-      await new Promise((resolve) => setImmediate(resolve));
     }
     await finished;
 

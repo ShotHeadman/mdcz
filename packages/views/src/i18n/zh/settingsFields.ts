@@ -276,6 +276,12 @@ export const settingsFields: Messages["settingsFields"] = {
       description:
         "开启后，{actor} 在没有演员名时会回退到片商或卖家名称；如需显示来源，可在模板中使用 {actorFallbackPrefix}{actor}。",
     },
+    "personSync.actorAliases": {
+      label: "演员别名归一",
+      description:
+        "把同一演员在各站点的不同写法统一为规范名称。之后刮削的演员名、{actor} 路径和 NFO 都使用规范名称，原写法保留为人物别名，用于查询头像和简介；已有影片不会自动改名。",
+      aliases: ["别名", "演员别名", "改名", "统一演员名"],
+    },
     "naming.releaseRule": { label: "发行日期格式" },
     "naming.folderNameMax": { label: "文件夹名最大长度" },
     "naming.fileNameMax": { label: "文件名最大长度" },

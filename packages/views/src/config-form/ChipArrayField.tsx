@@ -16,30 +16,34 @@ import {
 } from "@mdcz/ui";
 import { Check, ChevronsUpDown, X } from "lucide-react";
 import { useState } from "react";
-import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useT } from "../i18n";
 
 export type ChipArrayOption = string | { value: string; label: string };
 
 interface ChipArrayFieldProps {
-  field: ControllerRenderProps<FieldValues, string>;
+  values: string[];
+  onChange: (values: string[]) => void;
   placeholder?: string;
   options?: ChipArrayOption[]; // If provided, use a multi-select dropdown instead of free-form input
   showBulkActions?: boolean;
   defaultOpen?: boolean;
+  /** Values may contain spaces (romanized actor names), so only commas and line breaks separate them. */
+  allowSpaces?: boolean;
 }
 
 export function ChipArrayField({
-  field,
+  values,
+  onChange,
   placeholder,
   options,
   showBulkActions = false,
   defaultOpen = false,
+  allowSpaces = false,
 }: ChipArrayFieldProps) {
   const t = useT();
   const [inputValue, setInputValue] = useState("");
   const [open, setOpen] = useState(defaultOpen);
-  const values: string[] = Array.isArray(field.value) ? field.value : [];
+  const separators = allowSpaces ? /[,，\r\n]+/u : /[,，\s]+/u;
   const resolvedOptions = Array.isArray(options)
     ? options.map((option) => (typeof option === "string" ? { value: option, label: option } : option))
     : [];
@@ -61,7 +65,7 @@ export function ChipArrayField({
       }
     }
     if (changed) {
-      field.onChange(next);
+      onChange(next);
     }
   };
 
@@ -69,7 +73,7 @@ export function ChipArrayField({
     if (e.key === "Enter" || e.key === "," || e.key === "，") {
       e.preventDefault();
       if (inputValue.trim()) {
-        addValues(inputValue.split(/[,，\s]+/));
+        addValues(inputValue.split(separators));
         setInputValue("");
       }
     }
@@ -77,22 +81,22 @@ export function ChipArrayField({
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData("text");
-    if (pasted.includes(",") || pasted.includes("，") || pasted.includes("\n") || pasted.includes(" ")) {
+    if (pasted.split(separators).length > 1) {
       e.preventDefault();
-      addValues(pasted.split(/[,，\s\r\n]+/));
+      addValues(pasted.split(separators));
       setInputValue("");
     }
   };
 
   const removeValue = (valueToRemove: string) => {
-    field.onChange(values.filter((v: string) => v !== valueToRemove));
+    onChange(values.filter((v: string) => v !== valueToRemove));
   };
 
   const toggleOption = (opt: string) => {
     if (values.includes(opt)) {
       removeValue(opt);
     } else {
-      field.onChange([...values, opt]);
+      onChange([...values, opt]);
     }
   };
 
@@ -161,7 +165,7 @@ export function ChipArrayField({
                     variant="ghost"
                     size="xs"
                     className="h-6 px-2 text-[11px]"
-                    onClick={() => field.onChange(resolvedOptions.map((option) => option.value))}
+                    onClick={() => onChange(resolvedOptions.map((option) => option.value))}
                     disabled={allOptionsSelected}
                   >
                     {t.configForm.selectAll}
@@ -171,7 +175,7 @@ export function ChipArrayField({
                     variant="ghost"
                     size="xs"
                     className="h-6 px-2 text-[11px]"
-                    onClick={() => field.onChange([])}
+                    onClick={() => onChange([])}
                     disabled={values.length === 0}
                   >
                     {t.configForm.selectNone}
@@ -218,7 +222,7 @@ export function ChipArrayField({
               type="button"
               onClick={() => {
                 if (inputValue.trim()) {
-                  addValues(inputValue.split(/[,，\s]+/));
+                  addValues(inputValue.split(separators));
                   setInputValue("");
                 }
               }}

@@ -1,4 +1,8 @@
-export type ActorAliasMap = Record<string, string[]>;
+/** One actor: the name every scrape writes, and the spellings sites use for them. */
+export interface ActorAliasGroup {
+  name: string;
+  aliases: string[];
+}
 
 export type ResolvedActorAlias = {
   canonicalName: string;
@@ -37,49 +41,36 @@ export const toUniqueActorNames = (
   return output;
 };
 
-export const normalizeActorAliasMap = (actorAliases: Record<string, ReadonlyArray<string>>): ActorAliasMap => {
-  const output: ActorAliasMap = {};
+export const normalizeActorAliasGroups = (groups: readonly ActorAliasGroup[]): ActorAliasGroup[] =>
+  groups.map((group) => {
+    const name = group.name.trim();
+    return {
+      name,
+      aliases: toUniqueActorNames(group.aliases).filter(
+        (alias) => normalizeActorName(alias) !== normalizeActorName(name),
+      ),
+    };
+  });
 
-  for (const [rawCanonicalName, rawAliases] of Object.entries(actorAliases)) {
-    const canonicalName = toTrimmedActorName(rawCanonicalName);
-    if (!canonicalName) {
-      continue;
-    }
-
-    output[canonicalName] = toUniqueActorNames(rawAliases).filter(
-      (alias) => normalizeActorName(alias) !== normalizeActorName(canonicalName),
-    );
-  }
-
-  return output;
-};
-
-const findActorAliasGroup = (actorAliases: ActorAliasMap, name: string): ResolvedActorAlias | undefined => {
+const findActorAliasGroup = (groups: readonly ActorAliasGroup[], name: string): ResolvedActorAlias | undefined => {
   const normalizedName = normalizeActorName(name);
   if (!normalizedName) {
     return undefined;
   }
 
-  for (const [canonicalName, aliases] of Object.entries(actorAliases)) {
-    const candidates = [canonicalName, ...aliases];
-    if (candidates.some((candidate) => normalizeActorName(candidate) === normalizedName)) {
-      return {
-        canonicalName,
-        aliases: toUniqueActorNames(candidates),
-      };
-    }
-  }
-
-  return undefined;
+  const group = groups.find((candidate) =>
+    [candidate.name, ...candidate.aliases].some((alias) => normalizeActorName(alias) === normalizedName),
+  );
+  return group && { canonicalName: group.name, aliases: toUniqueActorNames([group.name, ...group.aliases]) };
 };
 
-export const resolveActorAlias = (actorAliases: ActorAliasMap, value: string): ResolvedActorAlias => {
+export const resolveActorAlias = (actorAliases: readonly ActorAliasGroup[], value: string): ResolvedActorAlias => {
   const name = toTrimmedActorName(value) ?? "";
   return findActorAliasGroup(actorAliases, name) ?? { canonicalName: name, aliases: name ? [name] : [] };
 };
 
 export const resolveActorAliasCandidates = (
-  actorAliases: ActorAliasMap,
+  actorAliases: readonly ActorAliasGroup[],
   values: ReadonlyArray<string | undefined | null>,
 ): ResolvedActorAlias => {
   const names = toUniqueActorNames(values);

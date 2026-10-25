@@ -111,6 +111,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "naming.actorNameMax", anchor: "naming" },
   { key: "naming.actorNameMore", anchor: "naming" },
   { key: "naming.actorFallbackToStudio", anchor: "naming" },
+  { key: "personSync.actorAliases", anchor: "naming" },
   { key: "naming.releaseRule", anchor: "naming" },
   { key: "naming.folderNameMax", anchor: "naming" },
   { key: "naming.fileNameMax", anchor: "naming" },
@@ -209,11 +210,6 @@ export interface SettingsSchemaExemption {
 }
 
 export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
-  {
-    path: "personSync.actorAliases",
-    kind: "dynamic-record",
-    reason: "Actor aliases are user-defined keys and cannot be represented as static registry leaves.",
-  },
   {
     path: "scrape.numberMappings",
     kind: "dynamic-record",

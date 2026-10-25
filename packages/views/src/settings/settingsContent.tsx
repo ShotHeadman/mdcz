@@ -1,3 +1,4 @@
+import type { ActorAliasGroup } from "@mdcz/shared/actorAliases";
 import {
   type Configuration,
   NFO_FIELD_OPTIONS,
@@ -32,9 +33,10 @@ import {
 } from "@mdcz/ui";
 import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import type { FieldValues } from "react-hook-form";
-import { useFormContext, useWatch } from "react-hook-form";
+import type { FieldError, FieldValues } from "react-hook-form";
+import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { ChipArrayField } from "../config-form/ChipArrayField";
 import {
   BaseField,
   BoolField,
@@ -96,6 +98,7 @@ const NAMING_SECTION_FIELD_KEYS = [
   "naming.actorNameMax",
   "naming.actorNameMore",
   "naming.actorFallbackToStudio",
+  "personSync.actorAliases",
   "naming.releaseRule",
   "naming.folderNameMax",
   "naming.fileNameMax",
@@ -542,6 +545,7 @@ export function NamingSection() {
       <NumberField name="naming.actorNameMax" min={1} max={20} />
       <TextField name="naming.actorNameMore" />
       <BoolField name="naming.actorFallbackToStudio" />
+      <ActorAliasesField />
       <TextField name="naming.releaseRule" />
       <EnumField name="naming.partStyle" options={toEnumOptions(t.settings.options.partStyle)} />
       <NumberField name="naming.folderNameMax" min={10} max={255} />
@@ -860,6 +864,92 @@ export function QbittorrentSection({ status }: { status: ReactNode }) {
       <TextField name="automation.qbittorrent.category" />
       {status}
     </>
+  );
+}
+
+type ActorAliasGroupError = { name?: FieldError; aliases?: FieldError | Array<FieldError | undefined> };
+
+function ActorAliasesField() {
+  const t = useT();
+  const form = useFormContext<FieldValues>();
+  const formState = useFormState({ control: form.control, name: "personSync.actorAliases" });
+  // A new actor stays in the editor until it has a name and an alias, so an unfinished row is never saved.
+  const [draft, setDraft] = useState<ActorAliasGroup | null>(null);
+  // The server reports a group's issue at its name or alias path, below this field's own error slot.
+  const groupError = (index: number): string | undefined => {
+    const error = form.getFieldState(`personSync.actorAliases.${index}`, formState).error as
+      | ActorAliasGroupError
+      | undefined;
+    const aliases = Array.isArray(error?.aliases) ? error.aliases.find(Boolean) : error?.aliases;
+    return error?.name?.message ?? aliases?.message;
+  };
+  return (
+    <BaseField name="personSync.actorAliases" layout="vertical" commitMode="debounce">
+      {(field) => {
+        const groups = Array.isArray(field.value) ? (field.value as ActorAliasGroup[]) : [];
+        // The draft renders as the last row, so its inputs stay mounted (and focused) when it is saved.
+        const rows = draft ? [...groups, draft] : groups;
+        const update = (index: number, next: Partial<ActorAliasGroup>) => {
+          if (!draft || index < groups.length) {
+            field.onChange(groups.map((group, at) => (at === index ? { ...group, ...next } : group)));
+            return;
+          }
+          const updated = { ...draft, ...next };
+          if (!updated.name.trim() || updated.aliases.length === 0) {
+            setDraft(updated);
+            return;
+          }
+          field.onChange([...groups, updated]);
+          setDraft(null);
+        };
+        const remove = (index: number) =>
+          draft && index === groups.length
+            ? setDraft(null)
+            : field.onChange(groups.filter((_group, at) => at !== index));
+        return (
+          <div className="space-y-2">
+            {rows.map((group, index) => (
+              <div key={index} className="space-y-2 rounded-md border border-border/60 p-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    aria-label={t.settings.actorAliases.name}
+                    placeholder={t.settings.actorAliases.namePlaceholder}
+                    className="h-8"
+                    value={group.name}
+                    onChange={(event) => update(index, { name: event.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={t.settings.actorAliases.remove}
+                    onClick={() => remove(index)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <ChipArrayField
+                  allowSpaces
+                  values={group.aliases}
+                  onChange={(aliases) => update(index, { aliases })}
+                  placeholder={t.settings.actorAliases.aliasesPlaceholder}
+                />
+                {groupError(index) ? <p className="text-xs text-destructive">{groupError(index)}</p> : null}
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={Boolean(draft)}
+              onClick={() => setDraft({ name: "", aliases: [] })}
+            >
+              {t.settings.actorAliases.add}
+            </Button>
+          </div>
+        );
+      }}
+    </BaseField>
   );
 }
 

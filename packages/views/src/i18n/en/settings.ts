@@ -165,6 +165,13 @@ export const settings = {
     add: "Add mapping",
     remove: "Remove mapping",
   },
+  actorAliases: {
+    name: "Canonical name",
+    namePlaceholder: "The name scrapes write, e.g. 河北彩花",
+    aliasesPlaceholder: "Other spellings; add with Enter or comma",
+    add: "Add actor",
+    remove: "Remove actor",
+  },
   integrations: {
     access: "Downloader access",
     accessDescription: "Allows downloaders and cloud tools to access automation APIs (cannot log into the web UI).",
@@ -326,7 +333,6 @@ export const settings = {
       details.length > 0 ? `Configuration validation failed: ${details.join("; ")}` : "Configuration validation failed",
     detail: (field: string, message: string) => `${field}: ${message}`,
     issues: {
-      actorAliasListEmpty: "Actor alias list cannot be empty",
       actorCanonicalNameEmpty: "Canonical actor name cannot be empty",
       actorAliasListNoValidAlias: "Actor alias list requires at least one valid alias",
       actorAliasEmpty: "Actor alias cannot be empty",

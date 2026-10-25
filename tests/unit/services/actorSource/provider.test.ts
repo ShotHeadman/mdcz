@@ -35,7 +35,7 @@ describe("ActorSourceProvider image lookup", () => {
     const config = createConfig({
       personSync: {
         ...basePersonSync,
-        actorAliases: { 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] },
+        actorAliases: [{ name: "河北彩花", aliases: ["河北彩伽", "河北彩花（河北彩伽）"] }],
       },
     });
 
@@ -54,7 +54,7 @@ describe("ActorSourceProvider image lookup", () => {
     const updatedConfig = createConfig({
       personSync: {
         ...basePersonSync,
-        actorAliases: { 河北彩花: ["河北彩伽"] },
+        actorAliases: [{ name: "河北彩花", aliases: ["河北彩伽"] }],
       },
     });
     await provider.lookup(updatedConfig, { name: "河北彩花", requiredField: "photo_url" });

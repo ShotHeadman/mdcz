@@ -30,7 +30,6 @@
     "test:unit": "vitest run --project unit --silent",
     "test:integration": "vitest run --project integration --project desktop-integration --project contract --silent",
     "test:coverage": "vitest run --coverage --project unit --project integration --project desktop-integration --project contract --silent",
-    "test:coverage:desktop": "vitest run --config vitest.desktop-coverage.config.ts --coverage --silent",
     "typecheck": "tsc -b --pretty false",
     "format": "biome check --write"
   },

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { resolveActorAlias, resolveActorAliasCandidates } from "./actorAliases";
 
 describe("actor aliases", () => {
-  const actorAliases = {
-    河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"],
-    三上悠亚: ["鬼頭桃菜", "鬼头桃菜"],
-  };
+  const actorAliases = [
+    { name: "河北彩花", aliases: ["河北彩伽", "河北彩花（河北彩伽）"] },
+    { name: "三上悠亚", aliases: ["鬼頭桃菜", "鬼头桃菜"] },
+  ];
 
   it("resolves canonical names and aliases using normalized matching", () => {
     expect(resolveActorAlias(actorAliases, " 河北彩伽 ")).toEqual({

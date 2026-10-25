@@ -4,7 +4,6 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { ActorProfile } from "@mdcz/shared/types";
 import type { RuntimeNetworkClient } from "../network";
-import { pathExists } from "../scrape/utils/filesystem";
 import type { RuntimeLogger } from "../shared";
 import type { MediaServerItemDetail, MediaServerMode } from "./client";
 import { toStringArray, toStringRecord, toStringValue } from "./common";
@@ -103,16 +102,6 @@ const imageContentTypeFromPath = (path: string): string => {
   return "image/jpeg";
 };
 
-const loadPrimaryImage = async (
-  networkClient: RuntimeNetworkClient,
-  source: string,
-): Promise<{ content: Uint8Array; contentType: string } | null> => {
-  const content = (await pathExists(source))
-    ? await readFile(source)
-    : await networkClient.getContent?.(source, { headers: { accept: "image/*" } });
-  return content ? { content, contentType: imageContentTypeFromPath(source) } : null;
-};
-
 /**
  * Syncs one person from a single actor-source lookup. There is no refresh afterwards: both servers show the write
  * at once, and on Emby a refresh is what starts its TMDb name search.
@@ -205,10 +194,12 @@ export const syncMediaServerPerson = async <TPerson extends MediaServerPerson>(
       stage = remote ? "download photo" : "read local photo";
       if (!remote)
         target.signalService.showLogText(`Using local ${target.serviceName} actor photo for ${name}: ${source}`);
-      const image = await loadPrimaryImage(target.networkClient, source);
-      if (image) {
+      const content = remote
+        ? await target.networkClient.getContent?.(source, { headers: { accept: "image/*" } })
+        : await readFile(source);
+      if (content) {
         stage = "upload photo";
-        await target.uploadPrimaryImage(person.Id, image.content, image.contentType);
+        await target.uploadPrimaryImage(person.Id, content, imageContentTypeFromPath(source));
         target.signalService.showLogText(`Updated ${target.serviceName} actor photo: ${name}`);
         changed = true;
       }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
+import { normalizeActorAliasGroups, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UI_LOCALES, Website } from "./enums";
@@ -178,7 +178,6 @@ const downloadSchema = z.object({
 
 /** Custom issue messages are codes so the UI can localize them. */
 export type ConfigIssueCode =
-  | "actorAliasListEmpty"
   | "actorCanonicalNameEmpty"
   | "actorAliasListNoValidAlias"
   | "actorAliasEmpty"
@@ -188,61 +187,59 @@ export type ConfigIssueCode =
   | "jellyfinUserIdNotUuid";
 
 const actorAliasesSchema = z
-  .record(z.string(), z.array(z.string()).min(1, "actorAliasListEmpty" satisfies ConfigIssueCode))
-  .default({})
-  .superRefine((actorAliases, ctx) => {
-    const owners = new Map<string, { canonicalName: string; rawCanonicalName: string }>();
+  .preprocess(
+    // Releases up to 0.19 wrote an empty `[personSync.actorAliases]` table into every config file.
+    (value) =>
+      typeof value === "object" && value !== null && !Array.isArray(value) && !Object.keys(value).length ? [] : value,
+    z.array(z.object({ name: z.string(), aliases: z.array(z.string()) })),
+  )
+  .default([])
+  .superRefine((groups, ctx) => {
+    const owners = new Map<string, number>();
 
-    for (const [rawCanonicalName, rawAliases] of Object.entries(actorAliases)) {
-      const canonicalName = toTrimmedActorName(rawCanonicalName);
+    for (const [groupIndex, group] of groups.entries()) {
+      const canonicalName = toTrimmedActorName(group.name);
       if (!canonicalName) {
         ctx.addIssue({
           code: "custom",
-          path: [rawCanonicalName],
+          path: [groupIndex, "name"],
           message: "actorCanonicalNameEmpty" satisfies ConfigIssueCode,
         });
         continue;
       }
 
       if (
-        !rawAliases.some((alias) => {
+        !group.aliases.some((alias) => {
           const normalizedAlias = toTrimmedActorName(alias);
           return normalizedAlias && normalizeActorName(normalizedAlias) !== normalizeActorName(canonicalName);
         })
       ) {
         ctx.addIssue({
           code: "custom",
-          path: [rawCanonicalName],
+          path: [groupIndex, "aliases"],
           message: "actorAliasListNoValidAlias" satisfies ConfigIssueCode,
         });
       }
 
-      const names = [canonicalName, ...rawAliases];
-      for (const [index, rawName] of names.entries()) {
+      for (const [index, rawName] of [group.name, ...group.aliases].entries()) {
         const name = toTrimmedActorName(rawName);
-        const path = index === 0 ? [rawCanonicalName] : [rawCanonicalName, index - 1];
+        const path = index === 0 ? [groupIndex, "name"] : [groupIndex, "aliases", index - 1];
         if (!name) {
-          if (index > 0) {
-            ctx.addIssue({ code: "custom", path, message: "actorAliasEmpty" satisfies ConfigIssueCode });
-          }
+          ctx.addIssue({ code: "custom", path, message: "actorAliasEmpty" satisfies ConfigIssueCode });
           continue;
         }
 
         const normalizedName = normalizeActorName(name);
         const owner = owners.get(normalizedName);
-        if (owner && (owner.canonicalName !== canonicalName || owner.rawCanonicalName !== rawCanonicalName)) {
-          ctx.addIssue({
-            code: "custom",
-            path,
-            message: "actorAliasConflict" satisfies ConfigIssueCode,
-          });
+        if (owner !== undefined && owner !== groupIndex) {
+          ctx.addIssue({ code: "custom", path, message: "actorAliasConflict" satisfies ConfigIssueCode });
           continue;
         }
-        owners.set(normalizedName, { canonicalName, rawCanonicalName });
+        owners.set(normalizedName, groupIndex);
       }
     }
   })
-  .transform((actorAliases) => normalizeActorAliasMap(actorAliases));
+  .transform(normalizeActorAliasGroups);
 
 const personSyncSchema = z.object({
   personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["official", "avjoho", "avbase"]),

@@ -3,45 +3,48 @@ import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoF
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
-  it("round-trips actor alias maps through TOML and validates alias groups", () => {
+  it("round-trips actor alias groups through TOML and validates them", () => {
     const parsed = parseConfigurationContent(
-      '[personSync.actorAliases]\n"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]\n',
+      '[[personSync.actorAliases]]\nname = "河北彩花"\naliases = ["河北彩伽", "河北彩花（河北彩伽）"]\n',
       "toml",
     );
 
-    expect(parsed.personSync.actorAliases).toEqual({ 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] });
+    expect(parsed.personSync.actorAliases).toEqual([
+      { name: "河北彩花", aliases: ["河北彩伽", "河北彩花（河北彩伽）"] },
+    ]);
     expect(parseConfigurationContent(serializeConfiguration(parsed, "toml"), "toml")).toEqual(parsed);
     expect(
       parseConfigurationContent('[personSync]\npersonImageSources = ["local"]\n', "toml").personSync.actorAliases,
-    ).toEqual({});
+    ).toEqual([]);
+    expect(parseConfigurationContent("[personSync.actorAliases]\n", "toml").personSync.actorAliases).toEqual([]);
 
     expect(
       configurationSchema.parse({
-        personSync: {
-          actorAliases: { " 河北彩花 ": ["河北彩伽", " 河北彩伽 ", "河北彩花"] },
-        },
+        personSync: { actorAliases: [{ name: " 河北彩花 ", aliases: ["河北彩伽", " 河北彩伽 ", "河北彩花"] }] },
       }).personSync.actorAliases,
-    ).toEqual({ 河北彩花: ["河北彩伽"] });
+    ).toEqual([{ name: "河北彩花", aliases: ["河北彩伽"] }]);
 
     const collision = configurationSchema.safeParse({
       personSync: {
-        actorAliases: {
-          河北彩花: ["河北彩伽"],
-          河北彩伽: ["别名"],
-        },
+        actorAliases: [
+          { name: "河北彩花", aliases: ["河北彩伽"] },
+          { name: "河北彩伽", aliases: ["别名"] },
+        ],
       },
     });
 
     expect(collision.success).toBe(false);
     if (!collision.success) {
-      expect(collision.error.issues[0]?.path).toEqual(["personSync", "actorAliases", "河北彩伽"]);
+      expect(collision.error.issues[0]?.path).toEqual(["personSync", "actorAliases", 1, "name"]);
     }
 
     expect(
-      configurationSchema.safeParse({
-        personSync: { actorAliases: { 河北彩花: [] } },
-      }).success,
+      configurationSchema.safeParse({ personSync: { actorAliases: [{ name: "河北彩花", aliases: [] }] } }).success,
     ).toBe(false);
+    // The earlier canonical-name map is not read any more; such a file fails validation instead.
+    expect(configurationSchema.safeParse({ personSync: { actorAliases: { 河北彩花: ["河北彩伽"] } } }).success).toBe(
+      false,
+    );
   });
   it("defaults filename token lists to empty and round-trips configured literal values", () => {
     expect(defaultConfiguration.scrape).toMatchObject({

@@ -361,6 +361,12 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "When on, {actor} falls back to the studio or seller name if there are no actors; use {actorFallbackPrefix}{actor} in templates to show the source.",
   },
+  "personSync.actorAliases": {
+    label: "Actor aliases",
+    description:
+      "Unifies the spellings sites use for one actor under a canonical name. Later scrapes write the canonical name into actor lists, the {actor} path and NFOs, and keep the other spellings as person aliases for photo and biography lookups; existing movies are not renamed.",
+    aliases: ["alias", "actor name", "rename"],
+  },
   "naming.releaseRule": { label: "Release date format" },
   "naming.folderNameMax": { label: "Maximum folder name length" },
   "naming.fileNameMax": { label: "Maximum file name length" },

@@ -149,6 +149,13 @@ export const settings: Messages["settings"] = {
     add: "添加映射",
     remove: "删除映射",
   },
+  actorAliases: {
+    name: "规范名称",
+    namePlaceholder: "刮削写入的名字，如 河北彩花",
+    aliasesPlaceholder: "其他写法，按 Enter 或逗号添加",
+    add: "添加演员",
+    remove: "删除演员",
+  },
   integrations: {
     access: "下载器接入",
     accessDescription: "供下载器与网盘调用自动化接口，无法用于登录网页界面。",
@@ -289,7 +296,6 @@ export const settings: Messages["settings"] = {
     failed: (details) => (details.length > 0 ? `配置校验失败：${details.join("；")}` : "配置校验失败"),
     detail: (field, message) => `${field}：${message}`,
     issues: {
-      actorAliasListEmpty: "演员别名列表不能为空",
       actorCanonicalNameEmpty: "演员规范名称不能为空",
       actorAliasListNoValidAlias: "演员别名列表至少需要一个有效别名",
       actorAliasEmpty: "演员别名不能为空",
