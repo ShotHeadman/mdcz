@@ -7,7 +7,7 @@ import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { ActorSyncFollowUp, PersonSyncLock } from "@mdcz/runtime/mediaserver";
-import { NetworkClient } from "@mdcz/runtime/network";
+import { type CookieResolver, NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { LibraryTaskGate } from "@mdcz/runtime/tasks";
@@ -59,6 +59,7 @@ export interface ServerResourceOverrides {
   imageHostCooldownStore?: PersistentCooldownStore;
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
+  avjohoCookieResolver?: CookieResolver;
   mappingStore?: FileTranslationMappingStore;
   aggregationService?: ScrapeServiceResources["aggregationService"];
   prepareScrapeItem?: PrepareScrapeItem;
@@ -69,6 +70,11 @@ export interface BuildServerOptions {
   services?: Partial<ServerServices>;
   resources?: ServerResourceOverrides;
   webStaticDir?: string | false;
+  /**
+   * The library watcher, qBittorrent polling and outbound notifications. Desktop turns them off: it quits with its
+   * window and does not launch at login, and an imported server profile must not start polling or messaging.
+   */
+  backgroundAutomation?: boolean;
 }
 
 export interface ServerApp {
@@ -128,8 +134,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     });
   const actorSourceProvider =
     options.resources?.actorSourceProvider ??
-    createServerActorSourceProvider(networkClient, actorImageService, async () =>
-      (await libraries.list()).flatMap((library) => [library.sourcePath, library.outputPath].filter(Boolean)),
+    createServerActorSourceProvider(
+      networkClient,
+      actorImageService,
+      async () =>
+        (await libraries.list()).flatMap((library) => [library.sourcePath, library.outputPath].filter(Boolean)),
+      options.resources?.avjohoCookieResolver,
     );
   const taskGate = new LibraryTaskGate();
   const personSyncLock = new PersonSyncLock();
@@ -285,6 +295,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     }
     await services.scans.recoverInterrupted();
     await services.auth.status();
+    if (options.backgroundAutomation === false) return;
     await services.libraryWatch.start();
     services.automation.start();
     services.qbittorrent.start();

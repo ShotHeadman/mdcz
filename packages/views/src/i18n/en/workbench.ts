@@ -1,4 +1,10 @@
 export const workbench = {
+  /** Keyed by the task already running. */
+  taskConflict: {
+    scrape: "A scrape is running. Stop it before starting maintenance.",
+    maintenance: "Maintenance is running. Stop it before starting a scrape.",
+  },
+
   // Return button
   returnDialogDescription: "Returning will clear the current workbench content. Are you sure you want to continue?",
   returnDialogTitle: "Return to workbench setup",

@@ -7,9 +7,7 @@ export function ScrapeStartErrorDialog({ error, onClose }: { error: unknown; onC
     error && typeof error === "object" && "message" in error && typeof error.message === "string"
       ? error.message
       : String(error ?? "")
-  )
-    .replace(/^Error invoking remote method '[^']+':\s*/u, "")
-    .trim();
+  ).trim();
 
   return (
     <Dialog open={error !== null} onOpenChange={(open) => !open && onClose()}>

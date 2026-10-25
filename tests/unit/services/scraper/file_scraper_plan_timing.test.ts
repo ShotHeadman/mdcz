@@ -1,4 +1,3 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type {
   ActorImageService,
   AggregationService,
@@ -8,17 +7,12 @@ import type {
   OrganizePlan,
   TranslateService,
 } from "@mdcz/runtime/scrape";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import {
-  createFileScraper,
-  mockConfigManager,
-  prepareFile,
-  resolveTestOutputPlan,
-  testPublicationTarget,
-} from "../../../helpers/scraper";
+import { createFileScraper, prepareFile, resolveTestOutputPlan, testPublicationTarget } from "../../../helpers/scraper";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -103,7 +97,6 @@ describe("FileScraper plan timing", () => {
     });
     const translateCrawlerData = vi.fn().mockResolvedValue({ data: translatedData, error: null });
     let currentConfig = config;
-    mockConfigManager(config);
     const scraper = createFileScraper({
       aggregationService: {
         aggregate,

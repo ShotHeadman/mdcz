@@ -3,7 +3,7 @@ import type {
   ConnectionCheckReason,
   MediaServerCheckKey,
   PersonSyncResult,
-} from "@mdcz/shared/ipcTypes";
+} from "@mdcz/shared/toolTypes";
 
 export const tools = {
   connectionCheck: {
@@ -48,7 +48,6 @@ export const tools = {
     image_unreachable: "Amazon image URL is unreachable",
     query_failed: "Lookup failed",
   } as Record<AmazonPosterLookupReason, string>,
-  symlinkStarted: "Symlink creation task started",
   personSyncSummary: (result: PersonSyncResult) =>
     result.processedCount + result.failedCount + result.skippedCount === 0
       ? "The media server returned no actors to sync"
@@ -70,7 +69,6 @@ export const tools = {
   personNameMatchingNotice:
     "Jellyfin fills every new actor from a TMDb search by name, which often matches JAV actors to unrelated people. MDCz replaces this on the actors its scrapes add, but not on actors it misses. Turning the search off applies to the whole server: actors in your other libraries stop getting TMDb photos and bios too.",
   stopPersonNameMatching: "Turn off actor search",
-  personNameMatchingStopped: "Jellyfin no longer searches TMDb for new actors",
   stepPassed: "Passed",
   actorInfoSync: "Actor metadata sync",
   syncMissingOnly: "Fill missing metadata only",
@@ -90,7 +88,6 @@ export const tools = {
   amazonPosterScanNote: "After scanning, a batch processing dialog will open to review and select posters to replace.",
   startScan: "Start scan",
   scanning: "Scanning…",
-  enterSearchQuery: "Please enter a title, URL, or ASIN",
   amazonPosterEnhance: "Amazon poster enhancement",
   amazonProgress: ({ completed, total, hits }: { completed: number; total: number; hits: number }) =>
     `Completed ${completed}/${total}, ${hits} matched`,
@@ -100,6 +97,7 @@ export const tools = {
   statusQueryFailed: "Query failed",
   statusNoResults: "No results",
   statusKeepCurrent: "Keep current",
+  statusReplaceFailed: "Replace failed",
   elapsed: (time: string) => `Elapsed: ${time}`,
   titleUrlOrAsin: "Title / URL / ASIN",
   reQuery: "Search again",
@@ -114,6 +112,8 @@ export const tools = {
   confirmReplaceDescription: (count: number) =>
     `About to replace poster files for ${count} items. This will overwrite existing posters.`,
   replacing: "Replacing…",
+  replaceOutcome: ({ replaced, failed }: { replaced: number; failed: number }) =>
+    `Replaced ${replaced} poster${replaced === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}`,
 
   mediaDirectory: "Media directory",
   selectMediaDirectory: "Select media directory",
@@ -149,9 +149,9 @@ export const tools = {
   processing: "Processing…",
   createMappingNow: "Create symlinks now",
 
+  browseFile: "Browse…",
+  mediaFiles: "Media files",
   filePath: "File path",
-  singleFileScrapeNote: "Ideal for retrying single failed items. The task will open the logs view when started.",
-  scraping: "Scraping…",
   batchTranslateDirPlaceholder: "Enter scraped media directory",
   browseDirectory: "Browse",
   batchTranslateMode: "Action",

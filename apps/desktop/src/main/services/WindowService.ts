@@ -1,12 +1,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-
-import { app, BrowserWindow, nativeImage, nativeTheme } from "electron";
+import type { DesktopBridgeEvents } from "@mdcz/shared/desktopBridge";
+import { app, BrowserWindow, nativeImage, nativeTheme, shell } from "electron";
 import windowStateKeeper from "electron-window-state";
-
 import iconPath from "../../../build/icon.png?asset";
-import { buildRendererContentSecurityPolicy } from "../../shared/rendererCsp";
-import { isTrustedRendererUrl, resolvePackagedRendererPath } from "../rendererTrust";
+import { APP_URL, isTrustedRendererUrl } from "../rendererTrust";
 import {
   buildTitleBarOverlay,
   resolveCustomTitleBarWindowOptions,
@@ -19,38 +17,24 @@ const DEFAULT_WINDOW_WIDTH = 1100;
 const DEFAULT_WINDOW_HEIGHT = 750;
 const MIN_WINDOW_WIDTH = 900;
 const MIN_WINDOW_HEIGHT = 640;
-const DEFAULT_RENDERER_ROUTE = "/overview";
 
 export interface MainWindowCreationOptions {
   useCustomTitleBar: boolean;
 }
 
-export const denyWindowOpen = (): { action: "deny" } => ({ action: "deny" });
-
-export const isRendererNavigationAllowed = isTrustedRendererUrl;
-
-export { buildRendererContentSecurityPolicy } from "../../shared/rendererCsp";
+// Links with target="_blank" and window.open() go to the system browser; the app never opens a second window.
+export const openExternalInstead = ({ url }: { url: string }): { action: "deny" } => {
+  if (/^https?:\/\//iu.test(url)) void shell.openExternal(url);
+  return { action: "deny" };
+};
 
 const installRendererIsolation = (mainWindow: BrowserWindow): void => {
   const { webContents } = mainWindow;
-  webContents.setWindowOpenHandler(denyWindowOpen);
+  webContents.setWindowOpenHandler(openExternalInstead);
   webContents.on("will-navigate", (event, url) => {
-    if (!isRendererNavigationAllowed(url)) {
+    if (!isTrustedRendererUrl(url)) {
       event.preventDefault();
     }
-  });
-  const csp = buildRendererContentSecurityPolicy();
-  webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    if (details.resourceType !== "mainFrame") {
-      callback({});
-      return;
-    }
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [csp],
-      },
-    });
   });
 };
 
@@ -91,6 +75,7 @@ export class WindowService {
       height: state.height,
       minWidth: MIN_WINDOW_WIDTH,
       minHeight: MIN_WINDOW_HEIGHT,
+      title: "MDCz",
       show: false,
       autoHideMenuBar: true,
       icon: appIcon,
@@ -118,6 +103,8 @@ export class WindowService {
     mainWindow.once("ready-to-show", () => {
       mainWindow.show();
     });
+    // The page is web's app, titled for the browser.
+    mainWindow.on("page-title-updated", (event) => event.preventDefault());
 
     mainWindow.on("closed", () => {
       if (this.mainWindow === mainWindow) {
@@ -137,14 +124,11 @@ export class WindowService {
       throw new Error("Main window has not been created");
     }
 
-    const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+    await mainWindow.loadURL(`${APP_URL}/overview`);
+  }
 
-    if (rendererUrl) {
-      await mainWindow.loadURL(new URL(DEFAULT_RENDERER_ROUTE, rendererUrl).toString());
-      return;
-    }
-
-    await mainWindow.loadFile(resolvePackagedRendererPath(), { hash: DEFAULT_RENDERER_ROUTE });
+  send<TEvent extends keyof DesktopBridgeEvents>(event: TEvent, payload: DesktopBridgeEvents[TEvent]): void {
+    this.getMainWindow()?.webContents.send(`desktop:${event}`, payload);
   }
 
   toggleDevTools(): void {

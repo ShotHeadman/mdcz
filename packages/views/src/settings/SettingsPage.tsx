@@ -6,7 +6,7 @@ import { toConfigErrorMessage } from "./autoSaveUtils";
 import { SettingsEditor } from "./SettingsEditor";
 import { SettingsLayout } from "./SettingsLayout";
 import { SettingsProfileDialogs, type SettingsProfileImportMode } from "./SettingsProfileDialogs";
-import { type SettingsNotifier, type SettingsServices, SettingsServicesProvider } from "./SettingsServices";
+import { type SettingsServices, SettingsServicesProvider } from "./SettingsServices";
 import type { FieldAnchor } from "./settingsRegistry";
 
 export interface SettingsProfileActions {
@@ -36,8 +36,6 @@ interface SettingsPageProps {
   profileActions: SettingsProfileActions;
   initialSection?: FieldAnchor;
 }
-
-const notifier: SettingsNotifier = { error: toast.error, info: toast.info, success: toast.success };
 
 function suggestImportProfileName(fileLabel: string, existingProfiles: readonly string[]): string {
   const baseName = (fileLabel.split(/[\\/]+/u).at(-1) ?? "").replace(/\.(json|toml)$/iu, "");
@@ -104,31 +102,24 @@ export function SettingsPage({
     }
   }, [activeProfile, importDialogOpen, importMode, overwriteProfileName, profiles]);
 
-  // Profile actions read or replace the whole config file, so a pending field auto-save would be lost or exported stale.
-  const ensureNoPendingSave = (action: string) => {
-    if (services.getInFlightSaves() === 0) return true;
-    toast.warning(text.savingWait(action));
-    return false;
-  };
+  // The profile controls disable while a field auto-save is in flight; actions that read or replace the active config
+  // re-check the live count, since a control rendered before the save started can still fire.
+  const saveInFlight = () => services.getInFlightSaves() > 0;
 
   const runProfileAction = async (failedLabel: string, action: () => Promise<void>) => {
     try {
       await action();
     } catch (error) {
-      toast.error(`${failedLabel}: ${toConfigErrorMessage(error)}`);
+      toast.error(`${failedLabel}: ${toConfigErrorMessage(error)}`, { id: "profile" });
     }
   };
 
-  const handleOpenResetDialog = () => {
-    if (ensureNoPendingSave(text.actions.reset)) setResetDialogOpen(true);
-  };
-
   const handleReset = () => {
-    if (!ensureNoPendingSave(text.actions.reset)) return;
+    if (saveInFlight()) return;
     void runProfileAction(text.failed.reset, async () => {
       await profileActions.reset();
       profileActions.invalidate();
-      toast.success(text.resetSucceeded(activeProfile ?? "default"));
+      toast.success(text.resetSucceeded(activeProfile ?? "default"), { id: "profile" });
       setResetDialogOpen(false);
     });
   };
@@ -139,18 +130,16 @@ export function SettingsPage({
     void runProfileAction(text.failed.create, async () => {
       await profileActions.create(name);
       profileActions.invalidate();
-      toast.success(text.created(name));
       setNewProfileName("");
       setNewProfileDialogOpen(false);
     });
   };
 
   const handleSwitchProfile = (name: string) => {
-    if (!name || name === activeProfile || !ensureNoPendingSave(text.actions.switch)) return;
+    if (!name || name === activeProfile || saveInFlight()) return;
     void runProfileAction(text.failed.switch, async () => {
       await profileActions.switch(name);
       profileActions.invalidate();
-      toast.success(text.switched(name));
     });
   };
 
@@ -159,17 +148,16 @@ export function SettingsPage({
     void runProfileAction(text.failed.delete, async () => {
       await profileActions.delete(deleteProfileName);
       profileActions.invalidate();
-      toast.success(text.deleted);
       setDeleteProfileDialogOpen(false);
       setDeleteProfileName("");
     });
   };
 
   const handleExportProfile = () => {
-    if (!activeProfile || !ensureNoPendingSave(text.actions.export)) return;
+    if (!activeProfile || saveInFlight()) return;
     void runProfileAction(text.failed.export, async () => {
       const result = await profileActions.export(activeProfile);
-      if (result) toast.success(text.exported(result.profileName));
+      if (result) toast.success(text.exported(result.profileName), { id: "profile" });
     });
   };
 
@@ -185,12 +173,12 @@ export function SettingsPage({
       setImportFile(file);
       setImportProfileName(suggestImportProfileName(file.label, profiles));
     } catch (error) {
-      toast.error(`${text.failed.selectFile}: ${toErrorMessage(error)}`);
+      toast.error(`${text.failed.selectFile}: ${toErrorMessage(error)}`, { id: "profile" });
     }
   };
 
   const handleImportProfile = () => {
-    if (!importFile || !importTargetName || !ensureNoPendingSave(text.actions.import)) return;
+    if (!importFile || !importTargetName || saveInFlight()) return;
     void runProfileAction(text.failed.import, async () => {
       const result = await profileActions.import({
         path: importFile.path,
@@ -198,7 +186,9 @@ export function SettingsPage({
         overwrite: importMode === "overwrite",
       });
       profileActions.invalidate();
-      toast.success(result.overwritten ? text.overwritten(result.profileName) : text.imported(result.profileName));
+      toast.success(result.overwritten ? text.overwritten(result.profileName) : text.imported(result.profileName), {
+        id: "profile",
+      });
       setImportDialogOpen(false);
       resetImportState();
     });
@@ -215,13 +205,13 @@ export function SettingsPage({
     onSwitchProfile: handleSwitchProfile,
     onCreateProfile: () => setNewProfileDialogOpen(true),
     onDeleteProfile: () => setDeleteProfileDialogOpen(true),
-    onResetConfig: handleOpenResetDialog,
+    onResetConfig: () => setResetDialogOpen(true),
     onExportProfile: handleExportProfile,
     onImportProfile: handleOpenImportDialog,
   };
 
   return (
-    <SettingsServicesProvider services={services} notifier={notifier}>
+    <SettingsServicesProvider services={services}>
       <div className="flex h-full flex-col overflow-hidden">
         <div className="flex-1 overflow-hidden">
           {config ? (

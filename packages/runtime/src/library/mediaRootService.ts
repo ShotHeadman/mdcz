@@ -50,12 +50,10 @@ export class ConfiguredMediaRootService {
     return [...(await this.registry.list())];
   }
 
+  /** The root a directory belongs to, an existing enclosing one if there is one, and the directory inside it. */
   async ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse> {
-    const root = await this.ensurePathRecord(input);
-    return {
-      ...toMediaRootDto(root),
-      relativeDirectory: "",
-    };
+    const { root, relativeDirectory } = await this.admitDirectory(input);
+    return { ...toMediaRootDto(root), relativeDirectory };
   }
 
   async registerPathIntent(hostPath: string): Promise<MediaRoot> {
@@ -97,8 +95,7 @@ export class ConfiguredMediaRootService {
     const targetPath = parsed.hostPath.trim();
     this.validatePathSyntax(targetPath);
     await mkdir(targetPath, { recursive: true });
-    const { root, relativeDirectory } = await this.admitDirectory(parsed);
-    return { ...toMediaRootDto(root), relativeDirectory };
+    return await this.ensurePath(parsed);
   }
 
   async setupStatus(): Promise<{ configured: boolean; mediaRootCount: number }> {

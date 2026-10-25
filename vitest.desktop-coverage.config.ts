@@ -10,11 +10,6 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["tests/unit/setup.ts"],
     testTimeout: 120_000,
-    server: {
-      deps: {
-        inline: ["@egoist/tipc"],
-      },
-    },
     coverage: {
       provider: "v8",
       include: ["apps/desktop/src/main/**/*.ts"],

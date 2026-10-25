@@ -41,15 +41,14 @@ export const LogsPage = () => {
         kind: "all",
         ...(activeTaskIds.length > 0 ? { taskIds: activeTaskIds } : {}),
       }),
-    retry: false,
   });
   const clearRuntimeM = useMutation({
     mutationFn: () => api.logs.clearRuntime(),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.logs.all });
       setIsClearDialogOpen(false);
-      toast.success(t.web.logsCleared);
     },
+    onError: (error) => toast.error(toErrorMessage(error), { id: "logs" }),
   });
 
   useEffect(
@@ -96,10 +95,7 @@ export const LogsPage = () => {
           error={logsQ.error ? <ErrorBanner>{toErrorMessage(logsQ.error)}</ErrorBanner> : undefined}
           logs={filteredLogs}
           query={query}
-          onAutoScrollChange={(nextValue) => {
-            setAutoScroll(nextValue);
-            toast.info(nextValue ? t.web.autoScrollEnabled : t.web.autoScrollDisabled);
-          }}
+          onAutoScrollChange={setAutoScroll}
           onClearRuntime={() => setIsClearDialogOpen(true)}
           onQueryChange={setQuery}
         />

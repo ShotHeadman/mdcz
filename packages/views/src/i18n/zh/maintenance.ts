@@ -77,25 +77,15 @@ export const maintenance: Messages["maintenance"] = {
   selectAll: (selected: number, total: number) => `全选 (${selected}/${total})`,
 
   // MaintenanceBatchBarAdapter
-  selectItemsFirst: "请先选择要执行的项目",
   previewFailed: (error: string) => `预览失败: ${error}`,
-  noExecutableSelections: "没有可执行的项目，请先完成预览并处理阻塞项。",
-  maintenanceStarted: (count: number) => `维护任务已启动，共 ${count} 项`,
   startFailed: (error: string) => `启动失败: ${error}`,
-  previewResumed: "维护预览已恢复",
-  taskResumed: "维护任务已恢复",
-  previewPaused: "维护预览已暂停",
-  taskPaused: "维护任务已暂停",
   resumeFailed: (error: string) => `恢复失败: ${error}`,
   pauseFailed: (error: string) => `暂停失败: ${error}`,
-  processStopped: "维护流程已停止",
   stopFailed: (error: string) => `停止失败: ${error}`,
   discardSessionFailed: (error: string) => `丢弃维护会话失败: ${error}`,
 
   // MaintenanceEntryListAdapter
   multiPartTitle: (title: string, count: number) => `${title} · 共 ${count} 个分盘文件`,
-  noOpenablePath: "无可打开的文件路径",
-  openFolderFailed: (error: string) => `打开目录失败: ${error}`,
   openFolder: "打开目录",
   play: "播放",
   editNfo: "编辑 NFO",
@@ -117,10 +107,4 @@ export const maintenance: Messages["maintenance"] = {
   readingLocalFiles: "正在读取本地文件",
   fileChanges: "文件变动",
   dataCompare: "数据对比",
-
-  // workbenchSession
-  scrapeRunningCannotMaintain: "正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。",
-  noMaintainableItems: "未发现可维护项目",
-  localImportStarted: (count: number) => `本地导入预览已启动，共 ${count} 项`,
-  previewStarted: "维护预览已启动",
 };

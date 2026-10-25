@@ -5,6 +5,7 @@ import { isRemoteAssetUrl, LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/sh
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
+  FileActions,
   MaintenanceActionPort,
   ScrapeActionPort,
   SharedWorkbenchPorts,
@@ -23,7 +24,12 @@ import {
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc } from "../client";
+import { desktop } from "../desktop";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
+
+const fileActions: Partial<FileActions> = desktop
+  ? { play: desktop.playMedia, openFolder: desktop.showItemInFolder }
+  : {};
 
 const getDirName = (path: string): string => {
   const normalized = path.replace(/[\\/]+$/u, "");
@@ -142,7 +148,8 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
-  showFilePath: false,
+  ...fileActions,
+  showFilePath: Boolean(desktop),
   resolveImageCandidates: async (candidates, baseDir, item) =>
     dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
   readNfo: async (item, path) => {
@@ -165,16 +172,16 @@ export const createWebDetailPort = (): DetailActionPort => ({
     await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
   },
   preparePosterCrop: async (item) => {
-    if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
-    const response = await api.scrape.posterCropSession({ id: item.resultId });
+    if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
+    const response = await api.scrape.posterCropSession(item.fileRef);
     return {
       ...response,
       sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
     };
   },
   savePosterCrop: async (item, crop) => {
-    if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
-    const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
+    if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
+    const response = await api.scrape.posterCropSave({ ...item.fileRef, crop });
     const posterUrl = new URL(getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }));
     if (response.revision) posterUrl.searchParams.set("revision", response.revision);
     return { posterUrl: posterUrl.toString() };
@@ -182,6 +189,7 @@ export const createWebDetailPort = (): DetailActionPort => ({
 });
 
 export const createWebScrapeActionPort = (): ScrapeActionPort => ({
+  ...fileActions,
   rescrape: async (targets, source) => {
     const refs = targets.map((target) => target.ref);
     if (!refs[0]) throw new Error(getT().web.selectFileToScrape);
@@ -228,6 +236,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   };
 
   return {
+    ...fileActions,
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
     },
@@ -255,7 +264,6 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       const sessionId = requireSessionId();
       await api.maintenance.execute({
         sessionId,
-        confirmationToken: `maintenance:${sessionId}`,
         previewIds: selections.map((selection) => selection.previewId),
         selections,
       });

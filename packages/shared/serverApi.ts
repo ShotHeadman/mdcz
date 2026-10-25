@@ -9,6 +9,7 @@ import type {
   MediaLibraryStubProbeResponse,
   MediaLibraryUpdateInput,
 } from "./mediaLibrary";
+import type { RootFileRef } from "./mediaRef";
 import type {
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
@@ -245,7 +246,7 @@ export interface ServerApiContract {
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
-    posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
+    posterCropSession(input: RootFileRef): Promise<PosterCropSessionResponse>;
     posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
     pause(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;

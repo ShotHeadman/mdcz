@@ -27,7 +27,6 @@ export const web = {
   // Overview
   goToWorkbench: "Go to Workbench",
   recentAcquisitions: "Recent acquisitions",
-  removedFromRecent: "Removed from recent acquisitions",
 
   // Settings services
   copiedWatermarkDir: "Server watermark directory path copied.",
@@ -35,7 +34,6 @@ export const web = {
   copyServerPath: "Copy server path",
 
   // Library
-  removedFromLibrary: "Removed from library",
 
   // Tools
   openWorkbench: "Open Workbench",
@@ -53,33 +51,23 @@ export const web = {
   // Workbench
   stopScrapeConfirm: "Are you sure you want to stop scraping?",
   retryFailedConfirm: (count: number) => `Are you sure you want to retry ${count} failed items?`,
-  stopScrapeFirst: "Please stop the current scrape task first",
-  taskSubmitted: "Task submitted",
-  selectedScrapeStarted: "Scraping started for selected files",
-  noControllableScrapeTask: "No controllable scrape task currently running",
-  taskPaused: "Task paused",
   pauseFailed: (error: string) => `Pause failed: ${error}`,
-  taskResumed: "Task resumed",
   resumeFailed: (error: string) => `Resume failed: ${error}`,
   stopping: "Stopping…",
   stopFailed: (error: string) => `Stop failed: ${error}`,
-  noFailedItemsToRetry: "No failed items available to retry",
   taskRefreshFailed: (error: string) => `Failed to refresh task status: ${error}`,
 
   // Logs
   logsEmpty: "No logs yet. Logs will appear here after a scrape or maintenance task starts.",
   logsNoMatch: "No matching logs found.",
-  autoScrollEnabled: "Auto-scroll enabled",
-  autoScrollDisabled: "Auto-scroll disabled",
   clearAllLogsTitle: "Clear all logs",
   clearAllLogsDescription: "Are you sure you want to clear all log entries?",
   confirmClear: "Confirm clear",
-  logsCleared: "Logs cleared successfully",
 
   // Status badges & types
 
   // Ports
-  missingScrapeResultId: "Missing scrape result ID",
+  missingVideoFile: "This item has no video file",
   selectFileToScrape: "Please select a file to scrape",
   noScrapeTaskToRetry: "No scrape task available to retry",
   noControllableMaintenanceSession: "No controllable maintenance session",

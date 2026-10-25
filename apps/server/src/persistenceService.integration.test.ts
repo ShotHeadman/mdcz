@@ -1,5 +1,6 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { publicationJournal } from "@mdcz/runtime/publication";
 import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
@@ -45,21 +46,40 @@ describe("ServerPersistenceService", () => {
     await expect(harness.service.initialize()).rejects.toThrow("Server persistence service is closed");
   });
 
-  it("reuses the initialized state", async () => {
+  it("joins concurrent opens and removes the publication staging an earlier run left behind", async () => {
     const harness = await createService();
 
     try {
-      const first = await harness.service.initialize();
-      const second = await harness.service.initialize();
+      const [first, second, third] = await Promise.all([
+        harness.service.initialize(),
+        harness.service.initialize(),
+        harness.service.getState(),
+      ]);
 
       expect(second).toBe(first);
+      expect(third).toBe(first);
       const competing = new ServerPersistenceService({ databasePath: harness.databasePath });
       await expect(competing.initialize()).rejects.toThrow("Cannot acquire database ownership");
       await competing.close();
+      const mediaRoot = join(dirname(harness.databasePath), "media");
+      const stagedFile = join(mediaRoot, "movie.mp4.mdcz-staging-test.part");
+      const stagedDirectory = join(mediaRoot, "nested", ".mdcz-staging-assets");
+      const unjournaledStaging = join(mediaRoot, "other.mp4.mdcz-staging-foreign.part");
+      publicationJournal.record(stagedFile);
+      publicationJournal.record(stagedDirectory);
+      await mkdir(stagedDirectory, { recursive: true });
+      await Promise.all([
+        writeFile(stagedFile, "staged"),
+        writeFile(join(stagedDirectory, "poster.jpg"), "staged"),
+        writeFile(unjournaledStaging, "keep"),
+      ]);
       await harness.service.close();
       const restarted = new ServerPersistenceService({ databasePath: harness.databasePath });
       try {
         await expect(restarted.initialize()).resolves.toHaveProperty("database");
+        await expect(readFile(stagedFile)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(readFile(stagedDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+        await expect(readFile(unjournaledStaging, "utf8")).resolves.toBe("keep");
       } finally {
         await restarted.close();
       }

@@ -34,6 +34,7 @@ import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
+import { toast } from "sonner";
 import {
   BaseField,
   BoolField,
@@ -54,12 +55,7 @@ import { useT } from "../i18n";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
-import {
-  type SettingsIntegrationServices,
-  useSettingsInFlightSaves,
-  useSettingsNotifier,
-  useSettingsServices,
-} from "./SettingsServices";
+import { type SettingsIntegrationServices, useSettingsInFlightSaves, useSettingsServices } from "./SettingsServices";
 import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_KEYS, isRecord } from "./settingsRegistry";
@@ -183,7 +179,6 @@ export function PathsSection() {
       <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" />
       <PathFieldWrapper name="paths.actorPhotoFolder" isDirectory />
       <TextField name="paths.sceneImagesFolder" />
-      <PathFieldWrapper name="paths.configDirectory" isDirectory />
     </>
   );
 }
@@ -306,7 +301,6 @@ export function AssetDownloadsSection() {
 function PosterBadgeImageOverridesField() {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [watermarkDirectoryPath, setWatermarkDirectoryPath] = useState("");
   const [openingDirectory, setOpeningDirectory] = useState(false);
@@ -318,8 +312,9 @@ function PosterBadgeImageOverridesField() {
       setWatermarkDirectoryPath(result.path);
       setDialogOpen(true);
     } catch (error) {
-      notifier.error(
+      toast.error(
         t.settings.badgeOverrides.createDirFailed(error instanceof Error ? error.message : t.common.unknownError),
+        { id: "watermark" },
       );
     }
   };
@@ -330,14 +325,15 @@ function PosterBadgeImageOverridesField() {
       const result = await services.openWatermarkDirectory();
       if (result?.message) {
         if (result.unsupported) {
-          notifier.info(result.message);
+          toast.info(result.message, { id: "watermark" });
         } else {
-          notifier.success(result.message);
+          toast.success(result.message, { id: "watermark" });
         }
       }
     } catch (error) {
-      notifier.error(
+      toast.error(
         t.settings.badgeOverrides.openDirFailed(error instanceof Error ? error.message : t.common.unknownError),
+        { id: "watermark" },
       );
     } finally {
       setOpeningDirectory(false);
@@ -551,7 +547,6 @@ export function NamingSection() {
 export function TranslateSection() {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [testing, setTesting] = useState(false);
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
@@ -587,11 +582,13 @@ export function TranslateSection() {
     try {
       const result = await services.testTranslation(input);
       const text = t.settings.translationTest;
-      if (result.status === "ok") notifier.success(text.ok(result.sample ?? ""));
-      else if (result.status === "failed") notifier.error(`${text.failed}: ${result.error}`);
-      else notifier.error(text[result.status]);
+      if (result.status === "ok") toast.success(text.ok(result.sample ?? ""), { id: "translation-test" });
+      else if (result.status === "failed") toast.error(`${text.failed}: ${result.error}`, { id: "translation-test" });
+      else toast.error(text[result.status], { id: "translation-test" });
     } catch (error) {
-      notifier.error(t.settings.testFailed(error instanceof Error ? error.message : t.common.unknownError));
+      toast.error(t.settings.testFailed(error instanceof Error ? error.message : t.common.unknownError), {
+        id: "translation-test",
+      });
     } finally {
       setTesting(false);
     }
@@ -731,7 +728,6 @@ interface UiSectionProps {
 export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [relaunching, setRelaunching] = useState(false);
   const form = useFormContext<FieldValues>();
   const currentUseCustomTitleBar = Boolean(useWatch({ control: form.control, name: "ui.useCustomTitleBar" }) ?? true);
@@ -740,17 +736,14 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
   const canRelaunch = titleBarChanged && inFlightSaves === 0;
 
   const handleRelaunch = async () => {
-    if (inFlightSaves > 0) {
-      notifier.info(t.settings.waitForAutosave);
-      return;
-    }
-
     setRelaunching(true);
     try {
       await services.relaunchApp();
     } catch (error) {
       setRelaunching(false);
-      notifier.error(t.settings.relaunchFailed(error instanceof Error ? error.message : t.common.unknownError));
+      toast.error(t.settings.relaunchFailed(error instanceof Error ? error.message : t.common.unknownError), {
+        id: "relaunch",
+      });
     }
   };
 
@@ -787,7 +780,6 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
 export function NotificationsSection() {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const form = useFormContext<FieldValues>();
   const [testing, setTesting] = useState(false);
 
@@ -799,9 +791,9 @@ export function NotificationsSection() {
     setTesting(true);
     try {
       await testNotification(settings);
-      notifier.success(t.settings.integrations.testSent);
+      toast.success(t.settings.integrations.testSent, { id: "notification-test" });
     } catch (error) {
-      notifier.error(t.settings.testFailed(toErrorMessage(error)));
+      toast.error(t.settings.testFailed(toErrorMessage(error)), { id: "notification-test" });
     } finally {
       setTesting(false);
     }

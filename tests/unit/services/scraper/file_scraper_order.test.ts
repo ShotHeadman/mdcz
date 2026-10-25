@@ -1,4 +1,3 @@
-import { type Configuration, configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse } from "@mdcz/runtime/crawler/base/types";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -10,10 +9,11 @@ import {
   NfoGenerator,
   TranslateService,
 } from "@mdcz/runtime/scrape";
+import { type Configuration, configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
-import { createFileScraper, mockConfigManager, prepareFile } from "../../../helpers/scraper";
+import { createFileScraper, prepareFile } from "../../../helpers/scraper";
 
 class OrderedStubCrawlerProvider extends CrawlerProvider {
   readonly calledSites: Website[] = [];
@@ -66,8 +66,8 @@ describe("FileScraper site aggregation", () => {
     const config = createConfig({
       filenameIgnoreTokens: ["[7sis-001]+"],
     });
-    mockConfigManager(config);
     const scraper = createFileScraper({
+      getConfiguration: async () => config,
       aggregationService: new AggregationService(crawlerProvider, { config }),
       translateService: new TranslateService(new NetworkClient()),
       nfoGenerator: new NfoGenerator(),

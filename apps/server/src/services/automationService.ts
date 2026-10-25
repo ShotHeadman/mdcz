@@ -67,6 +67,7 @@ export class AutomationService {
   readonly #taskDeliveryPhases = new Map<string, number>();
   #pendingSinceLastMessage = 0;
   #digestTimer?: ReturnType<typeof setInterval>;
+  #unsubscribeLifecycle?: () => void;
   #lastDigestDay = "";
 
   constructor(
@@ -81,16 +82,16 @@ export class AutomationService {
       taskEvents: TaskEventBus;
       logger: ReturnType<RuntimeLogService["getLogger"]>;
     },
-  ) {
-    deps.taskEvents.subscribeLifecycle((task) => void this.onLifecycle(task));
-  }
+  ) {}
 
   start(): void {
+    this.#unsubscribeLifecycle = this.deps.taskEvents.subscribeLifecycle((task) => void this.onLifecycle(task));
     this.#digestTimer = setInterval(() => void this.sendDigestIfDue(), DIGEST_CHECK_INTERVAL_MS);
     this.#digestTimer.unref();
   }
 
   close(): void {
+    this.#unsubscribeLifecycle?.();
     clearInterval(this.#digestTimer);
   }
 

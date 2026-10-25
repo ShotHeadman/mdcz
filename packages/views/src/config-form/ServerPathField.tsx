@@ -14,16 +14,12 @@ interface ServerPathFieldProps {
 
 export function ServerPathField({ field, placeholder, isDirectory = true }: ServerPathFieldProps) {
   const services = useSettingsServices();
-  const kind = isDirectory ? "directory" : "file";
-  const supportsBrowse = !services.isServer;
-  const suggestions = services.getPathSuggestions?.(kind) ?? [];
+  const browsePath = services.browsePath;
   const suggestDirectoryPath = services.suggestDirectoryPath;
 
-  const handleBrowse = async () => {
-    const response = await services.browsePath(kind);
-    if (response.paths && response.paths.length > 0) {
-      field.onChange(response.paths[0]);
-    }
+  const handleBrowse = async (browse: NonNullable<typeof browsePath>) => {
+    const path = await browse(isDirectory ? "directory" : "file");
+    if (path) field.onChange(path);
   };
 
   return (
@@ -33,7 +29,6 @@ export function ServerPathField({ field, placeholder, isDirectory = true }: Serv
           <PathAutocompleteInput
             value={String(field.value ?? "")}
             placeholder={placeholder}
-            staticSuggestions={suggestions}
             loadSuggestions={
               isDirectory && suggestDirectoryPath ? async (value) => await suggestDirectoryPath(value) : undefined
             }
@@ -42,13 +37,13 @@ export function ServerPathField({ field, placeholder, isDirectory = true }: Serv
             onChange={field.onChange}
           />
         </FormControl>
-        {supportsBrowse ? (
+        {browsePath ? (
           <Button
             type="button"
             variant="outline"
             size="icon"
             className="h-8 w-8 shrink-0 border-input hover:bg-muted/50"
-            onClick={handleBrowse}
+            onClick={() => void handleBrowse(browsePath)}
           >
             <FolderOpen className="h-4 w-4" />
           </Button>

@@ -376,23 +376,24 @@ function CookieValidateButton({ fieldKey }: { fieldKey: FieldKey }) {
         : "Unknown";
 
   const handleCheck = async () => {
+    const id = `cookie-check-${siteName}`;
     setChecking(true);
     try {
       const response = await services.checkCookies();
       const entry = response.results.find((r) => r.site === siteName);
       if (!entry) {
-        toast.error(t.configForm.cookieCheckFailed(siteName, t.configForm.cookieCheckNoResult));
+        toast.error(t.configForm.cookieCheckFailed(siteName, t.configForm.cookieCheckNoResult), { id });
         return;
       }
       const message = t.configForm.cookieCheckStatus[entry.status](entry.site);
       if (entry.valid) {
-        toast.success(message);
+        toast.success(message, { id });
       } else {
-        toast.error(entry.error ? `${message}: ${entry.error}` : message);
+        toast.error(entry.error ? `${message}: ${entry.error}` : message, { id });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : t.configForm.cookieCheckRequestFailed;
-      toast.error(t.configForm.cookieCheckFailed(siteName, msg));
+      toast.error(t.configForm.cookieCheckFailed(siteName, msg), { id });
     } finally {
       setChecking(false);
     }

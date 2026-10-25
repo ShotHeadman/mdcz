@@ -1,4 +1,3 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import {
   checkEmbyConnection as checkConnection,
@@ -7,6 +6,7 @@ import {
   syncEmbyPersons,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>

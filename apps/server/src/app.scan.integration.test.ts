@@ -213,6 +213,20 @@ describe("buildServer scan integration", () => {
     });
     expect(shallowResponse.statusCode).toBe(200);
     expect(shallowResponse.json().result.data.candidates).toEqual([]);
+    // An excluded output directory under the scan root is skipped; excluding the scan root itself excludes nothing.
+    for (const [excludeDirPaths, count] of [
+      [[join(mediaDirectory.path, "JAV_output")], 7],
+      [[mediaDirectory.path], 8],
+    ] as const) {
+      const excludedResponse = await fastify.inject({
+        method: "GET",
+        url: `/trpc/scans.candidates?input=${encodeURIComponent(
+          JSON.stringify({ recursive: true, scanDir: mediaDirectory.path, excludeDirPaths }),
+        )}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(excludedResponse.json().result.data.candidates).toHaveLength(count);
+    }
   });
 
   it("reuses the enclosing root for a nested scan directory so candidates cannot escape it", async () => {

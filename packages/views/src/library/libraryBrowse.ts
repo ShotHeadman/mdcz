@@ -45,6 +45,7 @@ export const createLibraryBrowseControls = (input: {
   libraries: LibraryBrowseControls["libraries"];
   summary: LibrarySummaryResponse | undefined;
   update: (search: LibraryBrowseSearch) => void;
+  fixBlockedReason?: string;
   onFix: LibraryBrowseControls["onFix"];
 }): LibraryBrowseControls => {
   const { search, update } = input;
@@ -66,6 +67,7 @@ export const createLibraryBrowseControls = (input: {
         ...(facet ? { [facet.kind]: facet.name } : {}),
       }),
     onViewChange: (view) => update({ ...search, view: view === "wall" ? "wall" : undefined }),
+    fixBlockedReason: input.fixBlockedReason,
     onFix: input.onFix,
   };
 };

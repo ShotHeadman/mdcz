@@ -1,5 +1,5 @@
+import { getT } from "@mdcz/views/i18n";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import { api, resolveDefaultApiBase, setAdminToken } from "./client";
 
 describe("web api client", () => {
@@ -61,6 +61,22 @@ describe("web api client", () => {
     });
   });
 
+  it("words the server's refusal to overlap scrape and maintenance in the reader's language", async () => {
+    const domainError = { code: "LIBRARY_TASK_CONFLICT", message: "busy", details: { running: "maintenance" } };
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { message: "busy", code: -32009, data: { code: "CONFLICT", httpStatus: 409, domainError } },
+        }),
+        { status: 409 },
+      ),
+    );
+
+    await expect(api.scrape.start({ executionMode: "batch", libraryId: "library-1", refs: [] })).rejects.toThrow(
+      getT().workbench.taskConflict.maintenance,
+    );
+  });
+
   it("uses the remote host with the server port for development login requests", async () => {
     Object.defineProperty(globalThis, "location", {
       configurable: true,
@@ -92,6 +108,12 @@ describe("web api client", () => {
         location: { hostname: "192.0.2.10", origin: "http://192.0.2.10:5173", protocol: "http:" },
       }),
     ).toBe("http://192.0.2.10:3838");
+    expect(
+      resolveDefaultApiBase({
+        development: true,
+        location: { hostname: "app", origin: "mdcz-api://app", protocol: "mdcz-api:" },
+      }),
+    ).toBe("mdcz-api://app");
     expect(resolveDefaultApiBase({ configuredBase: "https://api.example.test/", development: false })).toBe(
       "https://api.example.test",
     );

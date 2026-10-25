@@ -123,12 +123,6 @@ export class MaintenanceService {
     if (selectedIds && selected.length !== selectedIds.size)
       throw new Error("Some maintenance previews do not exist or do not belong to the current task");
     if (selected.length === 0) throw new Error("Select the maintenance previews to apply");
-    if (
-      selected.some((preview) => preview.proposedCrawlerData) &&
-      input.confirmationToken !== `maintenance:${input.sessionId}`
-    ) {
-      throw new Error("Applying maintenance requires a confirmation token");
-    }
     const fieldsByPreview = new Map((input.selections ?? []).map((item) => [item.previewId, item.fieldSelections]));
     const selections: MaintenanceApplySelection[] = selected.map((preview) => ({
       previewId: preview.id,

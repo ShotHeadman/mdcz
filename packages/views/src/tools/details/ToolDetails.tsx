@@ -1,6 +1,7 @@
 import type { MediaRootDto, RootBrowserEntryDto, ToolId } from "@mdcz/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { TOOL_DEFINITIONS } from "@mdcz/shared/toolCatalog";
 import {
   Badge,
@@ -40,6 +41,8 @@ export interface SingleFileScraperDetailProps {
   roots: MediaRootDto[];
   libraries: MediaLibraryDto[];
   state?: ToolRunState;
+  /** A native file picker; only the desktop app has one. */
+  onBrowseFile?: () => Promise<RootFileRef | null>;
   onRootChange?: (rootId: string) => void;
   onRun: (input: {
     libraryId: string;
@@ -56,6 +59,7 @@ export function SingleFileScraperDetail({
   roots,
   libraries,
   state,
+  onBrowseFile,
   onRootChange,
   onRun,
   workbenchLink,
@@ -68,8 +72,18 @@ export function SingleFileScraperDetail({
   const [unpin, setUnpin] = useState(false);
   const unpinId = useId();
   const libraryId = chosenLibraryId || libraries[0]?.id || "";
-  const enabledRoots = roots;
   const files = browserEntries.filter((entry) => entry.type === "file");
+  const selectRoot = (nextRootId: string) => {
+    setRootId(nextRootId);
+    setRelativePath("");
+    onRootChange?.(nextRootId);
+  };
+  const browseFile = async (browse: () => Promise<RootFileRef | null>) => {
+    const file = await browse();
+    if (!file) return;
+    selectRoot(file.rootId);
+    setRelativePath(file.relativePath);
+  };
 
   return (
     <div className="space-y-5">
@@ -78,15 +92,10 @@ export function SingleFileScraperDetail({
           <select
             className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
             value={rootId}
-            onChange={(event) => {
-              const nextRootId = event.target.value;
-              setRootId(nextRootId);
-              setRelativePath("");
-              onRootChange?.(nextRootId);
-            }}
+            onChange={(event) => selectRoot(event.target.value)}
           >
             <option value="">{t.tools.selectMediaDirectory}</option>
-            {enabledRoots.map((root) => (
+            {roots.map((root) => (
               <option key={root.id} value={root.id}>
                 {root.displayName}
               </option>
@@ -119,11 +128,19 @@ export function SingleFileScraperDetail({
         </div>
       </div>
       <Field label={t.tools.relativePath}>
-        <Input
-          value={relativePath}
-          onChange={(event) => setRelativePath(event.target.value)}
-          placeholder={t.tools.relativePathPlaceholder}
-        />
+        <div className="flex gap-2">
+          <Input
+            value={relativePath}
+            onChange={(event) => setRelativePath(event.target.value)}
+            placeholder={t.tools.relativePathPlaceholder}
+          />
+          {onBrowseFile ? (
+            <Button type="button" variant="secondary" onClick={() => void browseFile(onBrowseFile)}>
+              <FolderOpen className="h-4 w-4" />
+              {t.tools.browseFile}
+            </Button>
+          ) : null}
+        </div>
       </Field>
       <div className="grid max-h-[320px] gap-2 overflow-y-auto rounded-quiet border border-border/50 bg-surface-low/40 p-3">
         {files.map((entry) => (

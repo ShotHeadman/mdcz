@@ -413,10 +413,10 @@ describe("buildServer scrape integration", () => {
       ],
     });
     expect(scrapeHistoryResponse.json().result.data.runs[0].executionMode).toBe("batch");
-    const scrapeResultId = scrapeResult.id;
+    const video = { rootId, relativePath: "JAV_output/Actor A/ABC-123/ABC-123.mp4" };
     const cropSessionResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: scrapeResultId }))}`,
+      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify(video))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     const cropSession = cropSessionResponse.json().result.data;
@@ -424,7 +424,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.posterCropSave",
       headers: { authorization: `Bearer ${token}` },
-      payload: { id: scrapeResultId, crop: cropSession.initialCrop },
+      payload: { ...video, crop: cropSession.initialCrop },
     });
 
     const libraryResponse = await fastify.inject({
@@ -569,13 +569,13 @@ describe("buildServer scrape integration", () => {
           { type: "local", kind: "poster", file: { rootId, relativePath: entry.thumbnailPath } },
         ]),
       });
-      const crop = await restarted.services.scrape.posterCropSession(entry.displayFileId);
+      const crop = await restarted.services.scrape.posterCropSession(video);
       expect(crop).toMatchObject({
         sourceRelativePath: cropSession.sourceRelativePath,
         targetRelativePath: cropSession.targetRelativePath,
       });
       await expect(
-        restarted.services.scrape.posterCropSave({ id: entry.displayFileId, crop: crop.initialCrop }),
+        restarted.services.scrape.posterCropSave({ ...video, crop: crop.initialCrop }),
       ).resolves.toMatchObject({ revision: expect.any(String) });
     } finally {
       await restarted.fastify.close();
@@ -837,9 +837,10 @@ describe("buildServer scrape integration", () => {
       title: "Edited independent output",
       crawlerDataJson: expect.stringContaining("Edited independent output"),
     });
+    const video = { rootId, relativePath: outputRelativePath };
     const crop = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: result.id }))}`,
+      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify(video))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(crop.statusCode).toBe(200);
@@ -848,7 +849,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.posterCropSave",
       headers: { authorization: `Bearer ${token}` },
-      payload: { id: result.id, crop: crop.json().result.data.initialCrop },
+      payload: { ...video, crop: crop.json().result.data.initialCrop },
     });
     expect(savedCrop.statusCode).toBe(200);
     const retainedPath = `${directory}/checksum.txt`;

@@ -27,6 +27,8 @@ export interface MaintenanceBatchBarPreviewGroup {
 
 export interface MaintenanceBatchBarViewProps {
   activeExecution: boolean;
+  /** Why the preview and apply actions are unavailable, such as a running scrape. */
+  blockedReason?: string;
   canPauseMaintenance: boolean;
   canReturnToSetup: boolean;
   canRunPrimaryAction: boolean;
@@ -55,6 +57,7 @@ export interface MaintenanceBatchBarViewProps {
 
 export function MaintenanceBatchBarView({
   activeExecution,
+  blockedReason,
   canPauseMaintenance,
   canReturnToSetup,
   canRunPrimaryAction,
@@ -110,31 +113,34 @@ export function MaintenanceBatchBarView({
               dialogDescription={t.maintenance.returnDescription}
               onConfirm={onReturnToSetup}
             />
-            <Button
-              onClick={async () => {
-                if (!usesDiffView && hasPreviewResults) {
-                  onExecute();
-                  return;
-                }
-
-                await onPreview();
-              }}
-              disabled={!canRunPrimaryAction}
-              className="h-9 rounded-lg px-4"
-            >
-              <Play className="mr-2 h-4 w-4" />
-              {previewActionLabel}
-            </Button>
-            {usesDiffView && (
+            {/* Disabled buttons take no pointer events, so the reason sits on their wrapper. */}
+            <span className="flex flex-wrap gap-2" title={blockedReason}>
               <Button
-                variant="secondary"
-                onClick={() => onExecuteDialogOpenChange(true)}
-                disabled={!canRunReplacement}
+                onClick={async () => {
+                  if (!usesDiffView && hasPreviewResults) {
+                    onExecute();
+                    return;
+                  }
+
+                  await onPreview();
+                }}
+                disabled={!canRunPrimaryAction || (!usesDiffView && hasPreviewResults && readyCount === 0)}
                 className="h-9 rounded-lg px-4"
               >
-                {t.maintenance.dataReplace}
+                <Play className="mr-2 h-4 w-4" />
+                {previewActionLabel}
               </Button>
-            )}
+              {usesDiffView && (
+                <Button
+                  variant="secondary"
+                  onClick={() => onExecuteDialogOpenChange(true)}
+                  disabled={!canRunReplacement}
+                  className="h-9 rounded-lg px-4"
+                >
+                  {t.maintenance.dataReplace}
+                </Button>
+              )}
+            </span>
           </>
         ) : (
           <>

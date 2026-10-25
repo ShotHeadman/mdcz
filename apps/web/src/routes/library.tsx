@@ -20,6 +20,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api, getLibraryAssetSrc } from "../client";
+import { openFolder } from "../desktop";
 import { queryKeys } from "../lib/queryKeys";
 import { AppLink } from "../routeCommon";
 
@@ -39,19 +40,17 @@ export function LibraryPage() {
     queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100, ...scope }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
-    retry: false,
   });
   const deleteLibraryM = useMutation({
     mutationFn: async (entry: LibraryEntryDto) => {
       await api.library.delete({ id: entry.id });
     },
     onSuccess: async () => {
-      toast.success(t.web.removedFromLibrary);
       setDeleteTarget(null);
       await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
     },
     onError: (error) => {
-      toast.error(toErrorMessage(error));
+      toast.error(toErrorMessage(error), { id: "library-entry" });
     },
   });
   const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
@@ -60,16 +59,14 @@ export function LibraryPage() {
       chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
         queryKey: [...queryKeys.library.list({ query, ...scope }), "availability", ids],
         queryFn: async () => await api.library.availability({ ids }),
-        retry: false,
         staleTime: 30_000,
       })),
     ),
   });
-  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list() });
   const summaryQ = useQuery({
     queryKey: queryKeys.library.summary(search.libraryId),
     queryFn: () => api.library.summary({ libraryId: search.libraryId }),
-    retry: false,
   });
   const entries = mergeLibraryAvailability(
     pageEntries,
@@ -85,6 +82,7 @@ export function LibraryPage() {
           libraries: librariesQ.data?.libraries ?? [],
           summary: summaryQ.data,
           update: (next) => void navigate({ to: "/library", search: next }),
+          fixBlockedReason: isScraping ? t.workbench.taskConflict.scrape : undefined,
           onFix: async (issue) => {
             const matches: LibraryEntryDto[] = [];
             let cursor: string | undefined;
@@ -98,9 +96,6 @@ export function LibraryPage() {
               libraryId: search.libraryId,
               entries: matches,
               port: ports.maintenance,
-              isScraping,
-              toast,
-              toErrorMessage,
             });
             void navigate({ to: "/workbench", search: { intent: "maintenance" } });
           },
@@ -134,6 +129,7 @@ export function LibraryPage() {
         onLoadMore={() => {
           void libraryQ.fetchNextPage();
         }}
+        onOpenFolder={openFolder}
         onQueryChange={setQuery}
         onRefresh={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });

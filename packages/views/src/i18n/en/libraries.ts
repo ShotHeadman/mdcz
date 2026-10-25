@@ -25,8 +25,6 @@ export const libraries = {
   delete: "Delete",
   deleteTitle: (name: string) => `Delete library "${name}"?`,
   deleteDescription: "Only removes library settings and watch state; files and NFOs stay untouched.",
-  saved: "Library saved",
-  deleted: "Library deleted",
   loadFailed: (error: string) => `Could not load libraries: ${error}`,
   editorCreateTitle: "New library",
   editorEditTitle: "Edit library",

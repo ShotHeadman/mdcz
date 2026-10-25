@@ -1,6 +1,11 @@
 import type { Messages } from "../en";
 
 export const workbench: Messages["workbench"] = {
+  taskConflict: {
+    scrape: "正常刮削正在运行中，无法启动维护模式。请先停止当前刮削任务。",
+    maintenance: "维护模式正在运行中，无法启动正常刮削。请先停止当前维护任务。",
+  },
+
   // Return button
   returnDialogDescription: "返回后会清空当前工作台内容，确定继续吗？",
   returnDialogTitle: "返回工作台初始页面",

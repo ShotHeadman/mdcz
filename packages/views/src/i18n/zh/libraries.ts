@@ -23,8 +23,6 @@ export const libraries: Messages["libraries"] = {
   delete: "删除",
   deleteTitle: (name: string) => `删除库「${name}」？`,
   deleteDescription: "仅删除该库配置与监控状态，现有视频与 NFO 保持不变。",
-  saved: "库已保存",
-  deleted: "库已删除",
   loadFailed: (error: string) => `无法加载库：${error}`,
   editorCreateTitle: "新建库",
   editorEditTitle: "编辑库",

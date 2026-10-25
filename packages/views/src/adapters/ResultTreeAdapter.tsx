@@ -1,5 +1,6 @@
 import type { SiteUrlConfiguration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import {
   buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
@@ -45,24 +46,19 @@ function buildMenuContent(
   const canPlay = typeof port.play === "function";
 
   const handleCopyNumber = async () => {
-    if (!resultNumber) {
-      toast.error(t.scrape.numberEmpty);
-      return;
-    }
     try {
       await copyText(resultNumber);
-      toast.success(t.scrape.numberCopied);
+      toast.success(t.scrape.numberCopied, { id: "clipboard" });
     } catch {
-      toast.error(t.scrape.copyNumberFailed);
+      toast.error(t.scrape.copyNumberFailed, { id: "clipboard" });
     }
   };
 
   const handleRetryScrape = async () => {
     try {
       await port.retryFailed([result.fileId]);
-      toast.success(t.scrape.launch.retry);
     } catch (error) {
-      toast.error(toErrorMessage(error, t.scrape.rescrapeFailed));
+      toast.error(toErrorMessage(error, t.scrape.rescrapeFailed), { id: "scrape-launch" });
     }
   };
 
@@ -79,27 +75,13 @@ function buildMenuContent(
     if (!confirmed) return;
     try {
       await port.removeRecord?.(groupedTargets);
-      toast.success(t.scrape.removedSuccess);
     } catch (error) {
-      toast.error(toErrorMessage(error, t.scrape.operationFailed));
+      toast.error(toErrorMessage(error, t.scrape.operationFailed), { id: "scrape-remove" });
     }
   };
 
-  const handleOpenFolder = async () => {
-    const filePath = resultPath.trim();
-    if (!filePath) {
-      toast.info(t.scrape.noOpenablePath);
-      return;
-    }
-
-    try {
-      await port.openFolder?.(resultTarget);
-    } catch (error) {
-      toast.error(t.scrape.openFolderFailed(toErrorMessage(error)));
-    }
-  };
-
-  const handlePlay = () => void port.play?.(resultTarget);
+  const runFileAction = (action: ((file: RootFileRef) => Promise<void>) | undefined, file: RootFileRef) =>
+    void action?.(file).catch((error) => toast.error(toErrorMessage(error), { id: "file-action" }));
 
   const handleOpenNfo = () => {
     void port.openNfo(nfoPath);
@@ -109,9 +91,8 @@ function buildMenuContent(
     activateNewScrapeTask();
     try {
       await port.rescrape(groupedTargets, { unpin: true });
-      toast.success(t.scrape.launch.selection);
     } catch (error) {
-      toast.error(toErrorMessage(error, t.scrape.rescrapeFailed));
+      toast.error(toErrorMessage(error, t.scrape.rescrapeFailed), { id: "scrape-launch" });
     }
   };
 
@@ -125,7 +106,7 @@ function buildMenuContent(
 
   return (
     <>
-      <ContextMenuItem onClick={handleCopyNumber}>
+      <ContextMenuItem disabled={!resultNumber} onClick={handleCopyNumber}>
         {t.scrape.copyNumber}
         <ContextMenuShortcut>
           <Copy className="h-3.5 w-3.5" />
@@ -136,9 +117,9 @@ function buildMenuContent(
           onClick={async () => {
             try {
               await copyText(resultPath);
-              toast.success(t.scrape.pathCopied);
+              toast.success(t.common.pathCopied, { id: "clipboard" });
             } catch (error) {
-              toast.error(toErrorMessage(error, t.scrape.copyPathFailed));
+              toast.error(toErrorMessage(error, t.common.copyPathFailed), { id: "clipboard" });
             }
           }}
         >
@@ -165,7 +146,7 @@ function buildMenuContent(
       )}
       <ContextMenuSeparator />
       {canOpenFolder ? (
-        <ContextMenuItem onClick={handleOpenFolder}>
+        <ContextMenuItem onClick={() => runFileAction(port.openFolder, resultTarget.ref)}>
           {t.scrape.openSourceFolder}
           <ContextMenuShortcut>F</ContextMenuShortcut>
         </ContextMenuItem>
@@ -173,7 +154,7 @@ function buildMenuContent(
       {canOpenFolder && metadataRef && (
         <ContextMenuItem
           onClick={() => {
-            void port.openFolder?.({ filePath: metadataRef.relativePath, ref: metadataRef });
+            runFileAction(port.openFolder, metadataRef);
           }}
         >
           {t.scrape.openMetadataFolder}
@@ -186,7 +167,7 @@ function buildMenuContent(
         </ContextMenuShortcut>
       </ContextMenuItem>
       {canPlay ? (
-        <ContextMenuItem onClick={handlePlay}>
+        <ContextMenuItem onClick={() => runFileAction(port.play, resultTarget.ref)}>
           {t.scrape.play}
           <ContextMenuShortcut>P</ContextMenuShortcut>
         </ContextMenuItem>
@@ -256,9 +237,8 @@ export function ResultTreeAdapter({
         activateNewScrapeTask();
         try {
           await port.rescrape(target.targets, { manualUrl });
-          toast.success(t.scrape.launch.manualUrl);
         } catch (error) {
-          toast.error(toErrorMessage(error, t.scrape.rescrapeByUrlFailed));
+          toast.error(toErrorMessage(error, t.scrape.rescrapeByUrlFailed), { id: "scrape-launch" });
         }
       }}
     />

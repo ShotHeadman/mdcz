@@ -1,7 +1,6 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { LibraryRepository, ScrapeRunRepository } from "@mdcz/persistence";
 import { toCommittedMovie, writeCommittedMovie } from "@mdcz/runtime/publication/committedMovie";
 import { MoveOutput } from "@mdcz/runtime/publication/MoveOutput";
@@ -21,6 +20,7 @@ import {
   type TranslateService,
 } from "@mdcz/runtime/scrape";
 import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";
@@ -29,7 +29,6 @@ import { mediaRoots } from "../../../../packages/persistence/src/schema";
 import { createTestPersistenceDatabase } from "../../../../packages/persistence/src/testDatabase";
 import {
   createFileScraper,
-  mockConfigManager,
   preparedPublicationFiles,
   prepareFilePublication,
   testPublicationTarget,
@@ -171,7 +170,6 @@ const createScraper = (
     plan?: ReturnType<typeof vi.fn>;
   } = {},
 ) => {
-  mockConfigManager(config);
   const downloadAll =
     overrides.downloadAll ??
     vi.fn().mockResolvedValue({
@@ -211,6 +209,7 @@ const createScraper = (
       resolveOutputPlan,
       moveToFailedFolder,
     } as unknown as FileOrganizer,
+    getConfiguration: async () => config,
     signalService,
   });
 

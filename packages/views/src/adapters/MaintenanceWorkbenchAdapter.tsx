@@ -79,7 +79,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
     void ports.maintenance
       .updateDraft(previewId, { fieldSelections: selections })
       .then(async () => applyMaintenanceSessionSnapshot(await ports.maintenance.getActiveSession()))
-      .catch((error) => toast.error(t.maintenance.saveSelectionsFailed(toErrorMessage(error))));
+      .catch((error) => toast.error(t.maintenance.saveSelectionsFailed(toErrorMessage(error)), { id: "maintenance" }));
   };
   const detailItem = useMemo(() => {
     if (!activeGroup || !detailEntry) {

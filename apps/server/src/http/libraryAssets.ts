@@ -3,6 +3,8 @@ import { createReadStream } from "node:fs";
 import { mkdir, readdir, rename, rm, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import {
+  canonicalPath,
+  isPathInside,
   normalizeRootRelativePath,
   resolveRootRelativePath,
   StorageError,
@@ -16,11 +18,15 @@ import { getBearerToken } from "./auth";
 
 const assetContentTypes: Record<string, string> = {
   ".avif": "image/avif",
+  ".bmp": "image/bmp",
   ".gif": "image/gif",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
   ".png": "image/png",
+  ".svg": "image/svg+xml",
   ".webp": "image/webp",
+  ".m4v": "video/x-m4v",
+  ".mov": "video/quicktime",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
 };
@@ -252,8 +258,17 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
       if (sourceContentType.startsWith("video/") && (query.w !== undefined || query.format !== undefined)) {
         return sendError(reply, 400, "Video assets do not support image variants");
       }
-      const variant = parseVariant(query, sourceExtension);
-      const sourcePath = resolveRootRelativePath(root, relativePath);
+      // sharp cannot resize BMP or keep SVG vector; those are served as they are.
+      const variant = sharpFormats[sourceExtension] ? parseVariant(query, sourceExtension) : null;
+      // A link inside the root may point anywhere; only files whose real path stays inside the root are served.
+      const sourcePath = await canonicalPath(resolveRootRelativePath(root, relativePath));
+      if (!isPathInside(await canonicalPath(root.hostPath), sourcePath)) {
+        return sendError(reply, 403, "Library asset resolves outside its media root");
+      }
+      if (sourceExtension === ".svg") {
+        // An SVG opened on its own would run its scripts with the app's origin.
+        reply.header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      }
       if (!variant) {
         const etag = `"${variantCacheKey({
           format: sourceExtension,

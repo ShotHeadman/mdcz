@@ -1,4 +1,4 @@
-import type { MediaServerCheckStep, MediaServerConnectionCheckResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerCheckStep, MediaServerConnectionCheckResult } from "@mdcz/shared/toolTypes";
 import { Button, cn, Label, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
 import { getT, type Messages, useT } from "../../i18n";
 

@@ -29,10 +29,12 @@ export const applyActorSyncJob = (job: ActorSyncJobDto): void => {
 
   const t = getT();
   const summary = describeActorSync(t, job);
+  const id = `actor-sync-${job.runId}`;
   if (job.scanMissed.length > 0) {
     toast.warning(summary, {
+      id,
       description: t.workbench.actorSyncScanMissed(serverNames(job.scanMissed)),
     });
-  } else if (job.notFound > 0 || job.failed > 0) toast.warning(summary);
-  else toast.success(summary);
+  } else if (job.notFound > 0 || job.failed > 0) toast.warning(summary, { id });
+  else toast.success(summary, { id });
 };

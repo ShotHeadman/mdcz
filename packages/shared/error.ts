@@ -32,6 +32,7 @@ const summarizeImpitError = (message: string): string | null => {
 
 export const DomainErrorCode = {
   CONFIG_VALIDATION: "CONFIG_VALIDATION",
+  LIBRARY_TASK_CONFLICT: "LIBRARY_TASK_CONFLICT",
 } as const;
 
 export type DomainErrorCodeType = (typeof DomainErrorCode)[keyof typeof DomainErrorCode];
@@ -50,6 +51,12 @@ export interface ConfigValidationDomainErrorDetails extends Record<string, unkno
 export type ConfigValidationDomainError = DomainErrorShape<ConfigValidationDomainErrorDetails> & {
   code: typeof DomainErrorCode.CONFIG_VALIDATION;
 };
+
+/** Names the task kind already running, so the client can say what to stop. */
+export interface LibraryTaskConflictDomainError extends DomainErrorShape {
+  code: typeof DomainErrorCode.LIBRARY_TASK_CONFLICT;
+  details: { running: "scrape" | "maintenance" };
+}
 
 export const toConfigValidationDomainError = (input: {
   message: string;

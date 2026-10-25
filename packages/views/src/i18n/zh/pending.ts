@@ -64,7 +64,5 @@ export const pending: Messages["pending"] = {
     uncensored: "无码",
   },
   submitted: "已开始刮削",
-  confirmed: "已确认类型",
-  ignored: "已从待处理列表移除",
   chooseLibrary: "刮削到",
 };

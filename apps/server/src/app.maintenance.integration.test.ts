@@ -181,7 +181,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      payload: { sessionId },
     });
     expect(applied.statusCode).toBe(200);
     const completed = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
@@ -260,7 +260,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      payload: { sessionId },
     });
     expect(applied.statusCode).toBe(200);
     await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
@@ -268,7 +268,7 @@ describe("buildServer maintenance integration", () => {
     expect(crawl).not.toHaveBeenCalled();
   });
 
-  it("exposes paused and resumed previews through HTTP", async () => {
+  it("pauses and resumes previews through HTTP, refusing scrapes while one is live", async () => {
     const root = await createTempRoot("maintenance-pause-resume-root");
     await writeMaintenanceInput(root, "ABC-211", "Local Title ABC-211");
     await writeMaintenanceInput(root, "ABC-212", "Local Title ABC-212");
@@ -329,6 +329,17 @@ describe("buildServer maintenance integration", () => {
     releaseFirstCall();
     const pauseResponse = await pauseResponsePromise;
     expect(pauseResponse.statusCode).toBe(200);
+    const scrapeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { executionMode: "batch", libraryId, refs: [{ rootId, relativePath: "ABC-211.mp4" }] },
+    });
+    expect(scrapeResponse.statusCode).toBe(409);
+    expect(scrapeResponse.json().error.data.domainError).toMatchObject({
+      code: "LIBRARY_TASK_CONFLICT",
+      details: { running: "maintenance" },
+    });
 
     const resumeResponse = await fastify.inject({
       method: "POST",
@@ -391,7 +402,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      payload: { sessionId },
     });
     const applied = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
     expect(applied.currentBatch?.items[0]).toMatchObject({ status: "success" });
@@ -423,7 +434,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId: organize.sessionId, confirmationToken: `maintenance:${organize.sessionId}` },
+      payload: { sessionId: organize.sessionId },
     });
     await waitForMaintenanceSession(fastify, token, organize.sessionId, "apply", "completed");
     expect(await readdir(root)).toEqual(["JAV_output"]);
@@ -484,7 +495,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      payload: { sessionId },
     });
     const appliedSession = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
     const libraryResponse = await fastify.inject({
@@ -622,7 +633,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      payload: { sessionId },
     });
     if (scenario === "offline") {
       expect(applyResponse.statusCode).toBe(500);
@@ -783,7 +794,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/maintenance.execute",
       headers: { authorization: `Bearer ${token}` },
-      payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      payload: { sessionId },
     });
     expect(applied.statusCode).toBe(200);
     await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");

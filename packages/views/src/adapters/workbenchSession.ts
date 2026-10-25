@@ -1,3 +1,4 @@
+import { toErrorMessage } from "@mdcz/shared/error";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { LibraryEntryDto, LibraryHealthIssue } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
@@ -17,6 +18,7 @@ import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { getT } from "../i18n";
 import { HEALTH_FIX_PRESETS } from "../library/healthIssues";
 import type { MaintenanceActionPort } from "./ports";
@@ -140,55 +142,26 @@ export interface StartMaintenanceFlowOptions {
   presetId: MaintenancePresetId;
   libraryId?: string;
   port: MaintenanceActionPort;
-  isScraping: boolean;
   setWorkbenchMode?: (mode: WorkbenchMode) => void;
   onRefreshConfig?: () => Promise<void> | void;
-  toast: {
-    info(message: string): void;
-    success(message: string): void;
-    warning(message: string): void;
-    error(message: string): void;
-  };
-  toErrorMessage(error: unknown): string;
 }
 
 export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions): Promise<void> => {
-  const t = getT();
-  if (options.isScraping) {
-    options.toast.warning(t.maintenance.scrapeRunningCannotMaintain);
-    return;
-  }
-
   const executionStore = useMaintenanceStore.getState();
-
   try {
     options.setWorkbenchMode?.("maintenance");
     changeMaintenancePreset(options.presetId);
     executionStore.setPending(true);
-
-    const { refs } = options;
-    if (refs.length === 0) {
-      executionStore.setPending(false);
-      options.toast.info(t.maintenance.noMaintainableItems);
-      await options.onRefreshConfig?.();
-      return;
-    }
-
-    await options.port.preview(refs, options.presetId, options.libraryId);
+    await options.port.preview(options.refs, options.presetId, options.libraryId);
     await options.onRefreshConfig?.();
-    options.toast.success(
-      options.presetId === "import_local"
-        ? t.maintenance.localImportStarted(refs.length)
-        : t.maintenance.previewStarted,
-    );
   } catch (error) {
-    if (options.toErrorMessage(error) === "Operation aborted") {
+    const message = toErrorMessage(error);
+    if (message === "Operation aborted") {
       executionStore.setPending(false);
       return;
     }
-
-    executionStore.setError(options.toErrorMessage(error));
-    options.toast.error(t.maintenance.startFailed(options.toErrorMessage(error)));
+    executionStore.setError(message);
+    toast.error(getT().maintenance.startFailed(message), { id: "maintenance" });
   }
 };
 
@@ -198,9 +171,6 @@ export const startHealthFix = async (options: {
   libraryId?: string;
   entries: LibraryEntryDto[];
   port: MaintenanceActionPort;
-  isScraping: boolean;
-  toast: StartMaintenanceFlowOptions["toast"];
-  toErrorMessage(error: unknown): string;
 }): Promise<void> => {
   const t = getT();
   const presetId = HEALTH_FIX_PRESETS[options.issue];
@@ -215,9 +185,6 @@ export const startHealthFix = async (options: {
     presetId,
     libraryId: options.libraryId,
     port: options.port,
-    isScraping: options.isScraping,
     setWorkbenchMode: useUIStore.getState().setWorkbenchMode,
-    toast: options.toast,
-    toErrorMessage: options.toErrorMessage,
   });
 };

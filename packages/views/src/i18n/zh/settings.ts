@@ -186,7 +186,6 @@ export const settings: Messages["settings"] = {
   testFailed: (error) => `测试失败: ${error}`,
   verifying: "验证中...",
   verifyTranslation: "验证元数据翻译",
-  waitForAutosave: "请等待自动保存完成，再重启应用",
   relaunchFailed: (error) => `重启失败: ${error}`,
   relaunchApp: "重启应用",
   sitePriority: {
@@ -345,13 +344,6 @@ export const settings: Messages["settings"] = {
     selectOverwriteTarget: "选择要覆盖的档案",
     activeProfileRefreshHint: "当前活动档案会在导入完成后立即刷新为新内容。",
     importAction: "导入",
-    savingWait: (action) => `有配置正在自动保存，请稍候再${action}`,
-    actions: {
-      reset: "恢复默认设置",
-      switch: "切换档案",
-      export: "导出配置档案",
-      import: "导入配置档案",
-    },
     failed: {
       reset: "重置失败",
       create: "创建失败",
@@ -362,9 +354,6 @@ export const settings: Messages["settings"] = {
       import: "导入失败",
     },
     resetSucceeded: (name) => `已恢复档案 "${name}" 的默认设置`,
-    created: (name) => `配置档案 "${name}" 已创建`,
-    switched: (name) => `已切换到配置档案 "${name}"`,
-    deleted: "配置档案已删除",
     exported: (name) => `配置档案 "${name}" 已导出`,
     imported: (name) => `配置档案 "${name}" 已导入`,
     overwritten: (name) => `配置档案 "${name}" 已覆盖导入`,

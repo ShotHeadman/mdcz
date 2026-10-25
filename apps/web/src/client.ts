@@ -1,7 +1,9 @@
 import type { TaskNotificationDto } from "@mdcz/shared";
 import type { Configuration } from "@mdcz/shared/config";
+import { DomainErrorCode, type DomainErrorShape, type LibraryTaskConflictDomainError } from "@mdcz/shared/error";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
-import { createTRPCUntypedClient, httpLink } from "@trpc/client";
+import { getT } from "@mdcz/views/i18n";
+import { createTRPCUntypedClient, httpLink, TRPCClientError } from "@trpc/client";
 
 const FALLBACK_API_BASE = "http://127.0.0.1:3838";
 const TOKEN_KEY = "mdcz-admin-token";
@@ -22,7 +24,8 @@ export const resolveDefaultApiBase = ({
   if (!location?.origin || location.origin === "null") {
     return FALLBACK_API_BASE;
   }
-  if (development) {
+  // The Vite dev server runs beside the API; desktop's dev page is served same-origin through the API scheme.
+  if (development && location.protocol.startsWith("http")) {
     return `${location.protocol}//${location.hostname}:3838`;
   }
   return location.origin.replace(/\/+$/u, "");
@@ -115,11 +118,30 @@ const getTrpc = (): WebTrpcClient => {
   return client;
 };
 
-const trpcQuery = async <TOutput>(path: string, input?: unknown): Promise<TOutput> =>
-  (await getTrpc().query(path, input)) as TOutput;
+// The server refuses in English for its logs and API callers; the page says it in the reader's language.
+const localizeError = (error: unknown): unknown => {
+  const domainError: DomainErrorShape | undefined =
+    error instanceof TRPCClientError ? error.data?.domainError : undefined;
+  if (domainError?.code !== DomainErrorCode.LIBRARY_TASK_CONFLICT) return error;
+  const { running } = (domainError as LibraryTaskConflictDomainError).details;
+  return new Error(getT().workbench.taskConflict[running], { cause: error });
+};
 
-const trpcMutation = async <TOutput>(path: string, input?: unknown): Promise<TOutput> =>
-  (await getTrpc().mutation(path, input)) as TOutput;
+const trpcQuery = async <TOutput>(path: string, input?: unknown): Promise<TOutput> => {
+  try {
+    return (await getTrpc().query(path, input)) as TOutput;
+  } catch (error) {
+    throw localizeError(error);
+  }
+};
+
+const trpcMutation = async <TOutput>(path: string, input?: unknown): Promise<TOutput> => {
+  try {
+    return (await getTrpc().mutation(path, input)) as TOutput;
+  } catch (error) {
+    throw localizeError(error);
+  }
+};
 
 export const api: ServerApiContract = {
   auth: {

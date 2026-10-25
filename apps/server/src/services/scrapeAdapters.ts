@@ -14,6 +14,7 @@ import {
   registeredPosterCropContext,
   writeNfoPublication,
 } from "@mdcz/runtime/scrape";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   NfoReadInput,
   NfoReadResponse,
@@ -25,14 +26,6 @@ import type {
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
-
-export interface ServerScrapeArtifactRecord {
-  rootId: string;
-  relativePath: string;
-  nfoRootId: string | null;
-  outputRootId: string | null;
-  outputRelativePath: string | null;
-}
 
 const readExistingNfo = async (
   root: MediaRoot,
@@ -112,9 +105,9 @@ export class ServerPosterCropAdapter {
     private readonly persistence: ServerPersistenceService,
   ) {}
 
-  private async context(record: ServerScrapeArtifactRecord) {
-    const sourceRoot = await this.mediaRoots.get(record.outputRootId ?? record.rootId);
-    const videoPath = resolveRootRelativePath(sourceRoot, record.outputRelativePath ?? record.relativePath);
+  private async context(video: RootFileRef) {
+    const sourceRoot = await this.mediaRoots.get(video.rootId);
+    const videoPath = resolveRootRelativePath(sourceRoot, video.relativePath);
     const state = await this.persistence.getState();
     const context = await registeredPosterCropContext(videoPath, state.repositories.library, (id) =>
       this.mediaRoots.get(id),
@@ -122,8 +115,8 @@ export class ServerPosterCropAdapter {
     return { ...context, root: context.root ?? sourceRoot };
   }
 
-  async session(record: ServerScrapeArtifactRecord) {
-    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(record), this.config.get()]);
+  async session(video: RootFileRef) {
+    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(video), this.config.get()]);
     const session = await this.posterCropService.prepare(videoPath, configuration.naming.assetNamingMode, assets);
     return {
       rootId: root.id,
@@ -135,9 +128,9 @@ export class ServerPosterCropAdapter {
     } satisfies PosterCropSessionResponse;
   }
 
-  async save(record: ServerScrapeArtifactRecord, input: PosterCropSaveInput) {
+  async save(input: PosterCropSaveInput) {
     const [{ root, videoPath, assets, movieId }, configuration] = await Promise.all([
-      this.context(record),
+      this.context(input),
       this.config.get(),
     ]);
     const state = await this.persistence.getState();

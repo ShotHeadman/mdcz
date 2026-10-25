@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { configurationSchema } from "@main/services/config";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { type LlmApiClient, LlmTransportError, TranslateService } from "@mdcz/runtime/scrape";
 import type { RuntimeLogger } from "@mdcz/runtime/shared";
+import { configurationSchema } from "@mdcz/shared/config";
 import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

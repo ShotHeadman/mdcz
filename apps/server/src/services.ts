@@ -1,7 +1,7 @@
 import type { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type { ActorSyncFollowUp } from "@mdcz/runtime/mediaserver";
 import type { ActivityService } from "./services/activityService";
-import type { AuthService } from "./services/authService";
+import type { ServerAuth } from "./services/authService";
 import type { AutomationService } from "./services/automationService";
 import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
@@ -25,7 +25,7 @@ export interface ServerServices {
   activity: ActivityService;
   actorSync: ActorSyncFollowUp;
   automation: AutomationService;
-  auth: AuthService;
+  auth: ServerAuth;
   browser: BrowserService;
   config: ServerConfigService;
   libraries: MediaLibraryService;

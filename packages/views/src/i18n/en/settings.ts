@@ -206,7 +206,6 @@ export const settings = {
   testFailed: (error: string) => `Test failed: ${error}`,
   verifying: "Verifying…",
   verifyTranslation: "Verify metadata translation",
-  waitForAutosave: "Wait for autosave to finish before restarting the app",
   relaunchFailed: (error: string) => `Restart failed: ${error}`,
   relaunchApp: "Restart app",
   sitePriority: {
@@ -384,13 +383,6 @@ export const settings = {
     selectOverwriteTarget: "Select the profile to overwrite",
     activeProfileRefreshHint: "The active profile is refreshed with the new content as soon as the import finishes.",
     importAction: "Import",
-    savingWait: (action: string) => `Configuration is saving automatically. Please wait before you ${action}.`,
-    actions: {
-      reset: "reset defaults",
-      switch: "switch profiles",
-      export: "export the profile",
-      import: "import a profile",
-    },
     failed: {
       reset: "Reset failed",
       create: "Create failed",
@@ -401,9 +393,6 @@ export const settings = {
       import: "Import failed",
     },
     resetSucceeded: (name: string) => `Profile "${name}" reset to defaults`,
-    created: (name: string) => `Profile "${name}" created`,
-    switched: (name: string) => `Switched to profile "${name}"`,
-    deleted: "Profile deleted",
     exported: (name: string) => `Profile "${name}" exported`,
     imported: (name: string) => `Profile "${name}" imported`,
     overwritten: (name: string) => `Profile "${name}" overwritten and imported`,

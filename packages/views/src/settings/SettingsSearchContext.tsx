@@ -52,7 +52,7 @@ export function SettingsSearchProvider({
 }: SettingsSearchProviderProps) {
   const form = useFormContext<FieldValues>();
   const services = useSettingsServices();
-  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
+  const target = services.settingsTarget;
   const [query, setQuery] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const deferredQuery = useDeferredValue(query);

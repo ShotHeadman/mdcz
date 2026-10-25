@@ -20,4 +20,8 @@ export const shell: Messages["shell"] = {
   openMenu: "打开导航",
   closeMenu: "关闭导航",
   switchLanguage: "Switch to English",
+  renderErrorTitle: "渲染错误",
+  renderErrorDescription: "当前页面没有正常渲染。可以先重试当前界面，若仍然失败再刷新整个应用。",
+  retryView: "重试界面",
+  reloadApp: "刷新应用",
 };

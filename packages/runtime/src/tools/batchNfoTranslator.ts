@@ -7,7 +7,7 @@ import type {
   BatchTranslateField,
   BatchTranslateMode,
   BatchTranslateScanItem,
-} from "@mdcz/shared/ipcTypes";
+} from "@mdcz/shared/toolTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";

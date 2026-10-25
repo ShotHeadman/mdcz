@@ -39,7 +39,6 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["头像", "演员"],
     },
     "paths.sceneImagesFolder": { label: "剧照目录名" },
-    "paths.configDirectory": { label: "配置文件目录", aliases: ["配置目录"] },
     "scrape.sites": {
       label: "启用站点与优先级",
       description: "按分组显示 DMM/FANZA 系、厂商官网和常用聚合站点，并保持保存值仍为具体站点顺序。",

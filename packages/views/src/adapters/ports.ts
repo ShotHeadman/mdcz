@@ -14,12 +14,15 @@ export interface DetailNfoReadResponse {
   crawlerData: CrawlerData | null;
 }
 
-export interface DetailActionPort {
+/** Desktop only: hands a file to the system's player or file manager. */
+export interface FileActions {
+  play(file: RootFileRef): Promise<void>;
+  openFolder(file: RootFileRef): Promise<void>;
+}
+
+export interface DetailActionPort extends Partial<FileActions> {
   showFilePath: boolean;
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
-  play?(item: DetailViewItem): Promise<void> | void;
-  openFolder?(item: DetailViewItem): Promise<void> | void;
-  openMetadataFolder?(item: DetailViewItem): Promise<void> | void;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
   preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
@@ -38,22 +41,18 @@ export interface ScrapeActionTarget {
   ref: ScrapeFileRefDto;
 }
 
-export interface ScrapeActionPort {
+export interface ScrapeActionPort extends Partial<FileActions> {
   rerunDirectory(runId: string): Promise<void>;
   cancelActorSync(runId: string): Promise<void>;
   /** Re-scrapes from one detail page (pinning it), or by number with `unpin` (dropping a pinned page). */
   rescrape(targets: ScrapeActionTarget[], source: { manualUrl: string } | { unpin: true }): Promise<void>;
   retryFailed(itemIds?: readonly string[]): Promise<void>;
   removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;
-  openFolder?(target: ScrapeActionTarget): Promise<void> | void;
-  play?(target: ScrapeActionTarget): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
 }
 
-export interface MaintenanceActionPort {
+export interface MaintenanceActionPort extends Partial<FileActions> {
   rerunDirectory?(sessionId: string): Promise<void>;
-  openFolder?(filePath: string): Promise<void> | void;
-  play?(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
   getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
   updateDraft(
@@ -64,7 +63,7 @@ export interface MaintenanceActionPort {
   ): Promise<void>;
   discardSession(): Promise<void>;
   preview(refs: RootFileRef[], presetId: MaintenancePresetId, libraryId?: string): Promise<{ sessionId: string }>;
-  execute(selections: MaintenanceApplySelection[], presetId: MaintenancePresetId): Promise<void>;
+  execute(selections: MaintenanceApplySelection[]): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;

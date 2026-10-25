@@ -53,7 +53,6 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   const paused = executionStatus === "paused";
   const stopping = executionStatus === "stopping";
   const scanning = executionStatus === "scanning";
-  const previewing = executionStatus === "previewing";
   const canPauseMaintenance =
     executionStatus === "previewing" || executionStatus === "executing" || executionStatus === "paused";
   const hasPreviewResults = Object.values(previewResults).some(
@@ -98,39 +97,23 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   );
 
   const handlePreview = async (): Promise<void> => {
-    if (isScraping) {
-      toast.warning(t.maintenance.scrapeRunningCannotMaintain);
-      return;
-    }
-
-    if (selectedEntries.length === 0) {
-      toast.info(t.maintenance.selectItemsFirst);
-      return;
-    }
-
     useMaintenanceStore.getState().setPending(true);
     try {
       await port.preview(
         selectedEntries.map((entry) => entry.ref),
         presetId,
       );
-      toast.info(t.maintenance.previewStarted);
     } catch (error) {
       useMaintenanceStore.getState().setPending(false);
       if (toErrorMessage(error) === "Operation aborted") {
         return;
       }
       useMaintenanceStore.getState().setError(toErrorMessage(error));
-      toast.error(t.maintenance.previewFailed(toErrorMessage(error)));
+      toast.error(t.maintenance.previewFailed(toErrorMessage(error)), { id: "maintenance" });
     }
   };
 
   const handleExecute = async (previewMapOverride?: Record<string, MaintenancePreviewItem>) => {
-    if (isScraping) {
-      toast.warning(t.maintenance.scrapeRunningCannotMaintain);
-      return;
-    }
-
     const liveEntryState = useMaintenanceStore.getState();
     const effectivePreviewResults = previewMapOverride ?? previewResults;
     const latestSelectedEntries = selectMaintenanceEntries(liveEntryState).filter((entry) =>
@@ -146,21 +129,14 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       return { previewId: preview.previewId, fieldSelections: fieldSelections[entry.fileId] };
     });
 
-    if (selections.length === 0) {
-      toast.info(t.maintenance.noExecutableSelections);
-      return;
-    }
-
-    const displayCount = buildMaintenanceEntryViewModel(executableEntries).displayCount;
     useMaintenanceStore.getState().setPending(true);
     setCurrentPath(executableEntries[0]?.fileInfo.filePath ?? currentPath);
 
     try {
-      await port.execute(selections, presetId);
-      toast.success(t.maintenance.maintenanceStarted(displayCount));
+      await port.execute(selections);
     } catch (error) {
       useMaintenanceStore.getState().setError(toErrorMessage(error));
-      toast.error(t.maintenance.startFailed(toErrorMessage(error)));
+      toast.error(t.maintenance.startFailed(toErrorMessage(error)), { id: "maintenance" });
     }
   };
 
@@ -170,22 +146,12 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     }
 
     try {
-      const pausingPreview = previewing;
-      if (paused) {
-        await port.resume();
-        toast.success(
-          useMaintenanceStore.getState().snapshot?.phase === "preview"
-            ? t.maintenance.previewResumed
-            : t.maintenance.taskResumed,
-        );
-        return;
-      }
-
-      await port.pause();
-      toast.info(pausingPreview ? t.maintenance.previewPaused : t.maintenance.taskPaused);
+      if (paused) await port.resume();
+      else await port.pause();
     } catch (error) {
       toast.error(
         paused ? t.maintenance.resumeFailed(toErrorMessage(error)) : t.maintenance.pauseFailed(toErrorMessage(error)),
+        { id: "maintenance" },
       );
     }
   };
@@ -193,9 +159,8 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   const handleStop = async () => {
     try {
       await port.stop();
-      toast.info(t.maintenance.processStopped);
     } catch (error) {
-      toast.error(t.maintenance.stopFailed(toErrorMessage(error)));
+      toast.error(t.maintenance.stopFailed(toErrorMessage(error)), { id: "maintenance" });
     }
   };
 
@@ -205,17 +170,20 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       setExecuteDialogOpen(false);
       resetMaintenanceSession();
     } catch (error) {
-      toast.error(t.maintenance.discardSessionFailed(toErrorMessage(error)));
+      toast.error(t.maintenance.discardSessionFailed(toErrorMessage(error)), { id: "maintenance" });
     }
   };
 
   return (
     <MaintenanceBatchBarView
       activeExecution={activeExecution}
+      blockedReason={isScraping ? t.workbench.taskConflict.scrape : undefined}
       canPauseMaintenance={canPauseMaintenance}
       canReturnToSetup={canReturnToSetup}
       canRunPrimaryAction={!isScraping && !scanning && !previewPending && entriesCount > 0 && selectedCount > 0}
-      canRunReplacement={!scanning && !previewPending && hasPreviewResults && previewSummary.readyCount > 0}
+      canRunReplacement={
+        !isScraping && !scanning && !previewPending && hasPreviewResults && previewSummary.readyCount > 0
+      }
       entriesCount={entriesCount}
       executeDialogOpen={executeDialogOpen}
       groupedSelectedEntries={groupedSelectedEntries}
@@ -232,7 +200,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
               rerunning.current = true;
               void port
                 .rerunDirectory?.(directorySessionId)
-                .catch((error) => toast.error(toErrorMessage(error)))
+                .catch((error) => toast.error(toErrorMessage(error), { id: "maintenance" }))
                 .finally(() => {
                   rerunning.current = false;
                 });

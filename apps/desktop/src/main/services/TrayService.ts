@@ -1,7 +1,6 @@
-import type { WindowService } from "@main/services/WindowService";
 import { app, Menu, nativeImage, Tray } from "electron";
-
 import trayIconPath from "../../../build/tray_icon.png?asset";
+import type { WindowService } from "./WindowService";
 
 export class TrayService {
   private tray: Tray | null = null;

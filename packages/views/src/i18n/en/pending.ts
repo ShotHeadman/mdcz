@@ -67,7 +67,5 @@ export const pending = {
     uncensored: "Uncensored",
   },
   submitted: "Scrape started",
-  confirmed: "Type confirmed",
-  ignored: "Removed from the pending list",
   chooseLibrary: "Scrape into",
 };

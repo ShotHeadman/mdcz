@@ -17,11 +17,9 @@ RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/server apps/server
 COPY apps/web apps/web
-COPY apps/desktop/src/renderer/src/assets/fonts/Manrope-VariableFont_wght.ttf \
-    apps/desktop/src/renderer/src/assets/fonts/Manrope-VariableFont_wght.ttf
 COPY packages packages
 COPY scripts scripts
-COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.desktop-renderer.json tsconfig.test.json ./
+COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.test.json ./
 RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
     CI=true pnpm install --offline --frozen-lockfile --store-dir=/pnpm/store
 RUN pnpm --filter @mdcz/server build:webui

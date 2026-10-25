@@ -15,7 +15,6 @@ export interface AboutViewProps {
   updateCheckDisabled?: boolean;
   updateStatus?: ReactNode;
   onDebug?: () => void;
-  onOpenExternal: (url: string) => void;
   onUpdateCheckChange?: (checked: boolean) => void;
 }
 
@@ -42,6 +41,8 @@ const RELATED_PROJECTS = [
 
 const compactValue = (value: string | null | undefined): string => value || "dev";
 
+const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer");
+
 export const AboutView = ({
   about = fallbackAbout,
   loading = false,
@@ -52,7 +53,6 @@ export const AboutView = ({
   updateCheckDisabled = false,
   updateStatus,
   onDebug,
-  onOpenExternal,
   onUpdateCheckChange,
 }: AboutViewProps) => {
   const t = useT();
@@ -67,7 +67,7 @@ export const AboutView = ({
             <button
               className={`group relative flex h-20 w-20 items-center justify-center bg-surface-low shadow-xl shadow-primary/5 transition-all active:scale-[0.98] ${quietHeroRadiusClass}`}
               type="button"
-              onClick={() => homepage && onOpenExternal(homepage)}
+              onClick={() => homepage && openExternal(homepage)}
             >
               <div className="absolute inset-0 scale-125 rounded-full bg-primary/5 blur-2xl transition-colors group-hover:bg-primary/10" />
               <img alt={about.productName} className={`relative h-20 w-20 ${quietHeroRadiusClass}`} src={AppLogo} />
@@ -92,7 +92,7 @@ export const AboutView = ({
               <Button
                 className={`h-14 justify-start gap-3.5 border-border/30 bg-surface-low/30 px-4.5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
                 variant="outline"
-                onClick={() => onOpenExternal(FEEDBACK_URL)}
+                onClick={() => openExternal(FEEDBACK_URL)}
               >
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/5 transition-colors group-hover:bg-primary/10">
                   <Github className="h-4 w-4" />
@@ -142,7 +142,7 @@ export const AboutView = ({
                   className={`group flex w-full items-center justify-between border border-transparent bg-surface-low/20 p-4 text-left transition-all hover:border-border/40 hover:bg-surface-low/50 ${quietPanelRadiusClass}`}
                   key={link.url}
                   type="button"
-                  onClick={() => onOpenExternal(link.url)}
+                  onClick={() => openExternal(link.url)}
                 >
                   <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/10 bg-white/40 text-muted-foreground/60 transition-colors group-hover:text-primary dark:bg-black/10">

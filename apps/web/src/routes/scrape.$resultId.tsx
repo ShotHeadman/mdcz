@@ -17,7 +17,6 @@ export function ScrapeResultPage() {
   const detailQ = useQuery({
     queryFn: () => api.scrape.result({ id: resultId }),
     queryKey: queryKeys.scrape.result(resultId),
-    retry: false,
   });
   const detailItem = detailQ.data?.result ? toDetailViewItemFromScrapeResultDto(detailQ.data.result) : null;
 

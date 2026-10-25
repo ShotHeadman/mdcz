@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { ActorSourceName } from "@mdcz/shared/actorSource";
 import type { Configuration } from "@mdcz/shared/config";
-import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { ActorProfile } from "@mdcz/shared/types";
 import type { RuntimeNetworkClient } from "../network";
 import { pathExists } from "../scrape/utils/filesystem";

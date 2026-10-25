@@ -1,9 +1,16 @@
 export type LibraryTaskKind = "scrape" | "maintenance";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
-  scrape: "A maintenance task is running; stop it before starting a scrape",
-  maintenance: "A scrape task is running; stop it before starting maintenance",
+  maintenance: "A maintenance task is running; stop it before starting a scrape",
+  scrape: "A scrape task is running; stop it before starting maintenance",
 };
+
+export class LibraryTaskConflictError extends Error {
+  constructor(readonly running: LibraryTaskKind) {
+    super(CONFLICT_MESSAGES[running]);
+    this.name = "LibraryTaskConflictError";
+  }
+}
 
 /**
  * Scrapes and maintenance both move source files and rewrite library records, and the output directory mutex only
@@ -18,6 +25,6 @@ export class LibraryTaskGate {
 
   /** Call in the same synchronous step that registers the task, so a concurrent start of the other kind cannot slip in. */
   assertAvailable(kind: LibraryTaskKind): void {
-    for (const [holder, busy] of this.#busy) if (holder !== kind && busy()) throw new Error(CONFLICT_MESSAGES[kind]);
+    for (const [holder, busy] of this.#busy) if (holder !== kind && busy()) throw new LibraryTaskConflictError(holder);
   }
 }

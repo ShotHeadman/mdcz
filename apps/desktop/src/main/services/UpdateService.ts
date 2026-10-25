@@ -1,12 +1,10 @@
-import { isWindowsPortable } from "@main/appIdentity";
-import { configManager } from "@main/services/config";
-import { loggerService } from "@main/services/LoggerService";
-import type { SignalService } from "@main/services/SignalService";
-import { resolveManualDownloadUrl } from "@main/updateDelivery";
-import { toErrorMessage } from "@main/utils/common";
-import type { AppUpdateStatus } from "@mdcz/shared/ipcTypes";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import type { AppUpdateStatus } from "@mdcz/shared/desktopBridge";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { app, type Session, session } from "electron";
 import electronUpdater, { type BaseUpdater } from "electron-updater";
+import { isWindowsPortable } from "../appIdentity";
+import { resolveManualDownloadUrl } from "../updateDelivery";
 
 const LATEST_RELEASE_API_URL = "https://api.github.com/repos/ShotHeadman/mdcz/releases/latest";
 // electron-updater downloads through this fixed partition; checking through it too keeps both on one proxy route.
@@ -16,12 +14,15 @@ const isNewerVersion = (latest: string, current: string): boolean =>
   latest.localeCompare(current, undefined, { numeric: true }) > 0;
 
 export class UpdateService {
-  private readonly logger = loggerService.getLogger("UpdateService");
+  private readonly logger = runtimeLoggerService.getLogger("UpdateService");
   private status: AppUpdateStatus = { phase: "idle" };
   private updater: BaseUpdater | null = null;
   private restartAfterInstall = false;
 
-  constructor(private readonly signalService: SignalService) {}
+  constructor(
+    private readonly publish: (status: AppUpdateStatus) => void,
+    private readonly getProxyUrl: () => string | undefined,
+  ) {}
 
   getStatus(): AppUpdateStatus {
     return this.status;
@@ -111,7 +112,7 @@ export class UpdateService {
   /** Uses the configured proxy when set, otherwise the OS proxy settings. */
   private async prepareSession(): Promise<Session> {
     const updaterSession = session.fromPartition(UPDATER_SESSION_PARTITION, { cache: false });
-    const proxyUrl = configManager.getComputed().proxyUrl;
+    const proxyUrl = this.getProxyUrl();
     await updaterSession.setProxy(proxyUrl ? { proxyRules: proxyUrl } : { mode: "system" });
     return updaterSession;
   }
@@ -144,6 +145,6 @@ export class UpdateService {
 
   private setStatus(status: AppUpdateStatus): void {
     this.status = status;
-    this.signalService.publishUpdateStatus(status);
+    this.publish(status);
   }
 }

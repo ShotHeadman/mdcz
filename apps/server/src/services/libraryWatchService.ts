@@ -296,6 +296,7 @@ class LibraryWatcher {
 export class LibraryWatchService {
   private readonly watchers = new Map<string, LibraryWatcher>();
   private refreshing: Promise<void> = Promise.resolve();
+  private started = false;
   private closed = false;
   private readonly inFlight: InFlightSources;
   // A misconfigured CloudDrive2 webhook fails silently; these times make it visible. Kept in memory only.
@@ -309,13 +310,14 @@ export class LibraryWatchService {
   }
 
   async start(): Promise<void> {
+    this.started = true;
     await this.refresh();
   }
 
-  /** Brings watchers in line with the stored libraries; call after any library changes. */
+  /** Brings watchers in line with the stored libraries; call after any library changes. Watches nothing until started. */
   async refresh(): Promise<void> {
     this.refreshing = this.refreshing.then(async () => {
-      if (this.closed) return;
+      if (!this.started || this.closed) return;
       const libraries = (await this.deps.libraries.list()).filter((library) => library.automation !== "off");
       const wanted = new Map(libraries.map((library) => [library.id, library]));
       for (const [id, watcher] of this.watchers) {

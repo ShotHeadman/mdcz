@@ -296,7 +296,8 @@ export const scrapeResultIdInputSchema = z.object({
 
 export type ScrapeResultIdInput = z.infer<typeof scrapeResultIdInputSchema>;
 
-export const posterCropSaveInputSchema = scrapeResultIdInputSchema.extend({
+/** Poster editing addresses the video file, so maintenance items without a scrape result can be cropped too. */
+export const posterCropSaveInputSchema = rootFileRefSchema.extend({
   crop: normalizedCropRegionSchema,
 });
 
@@ -516,7 +517,6 @@ export const maintenanceMutationAckSchema = z.object({ sessionId: z.string() });
 export type MaintenanceMutationAckDto = z.infer<typeof maintenanceMutationAckSchema>;
 
 export const maintenanceApplyInputSchema = maintenanceSessionInputSchema.extend({
-  confirmationToken: z.string().trim().min(1).optional(),
   previewIds: z.array(z.string().trim().min(1)).optional(),
   selections: z
     .array(
@@ -805,7 +805,7 @@ export const overviewRecentAcquisitionSchema = z.object({
   actors: z.array(z.string()),
   thumbnailPath: z.string().nullable(),
   thumbnailRootId: z.string().nullable().optional(),
-  lastKnownPath: z.string().nullable(),
+  relativePath: z.string(),
   completedAt: z.string(),
   available: z.boolean().nullable(),
 });

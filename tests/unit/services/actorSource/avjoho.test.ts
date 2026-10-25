@@ -1,6 +1,6 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { AvjohoActorSource } from "@mdcz/runtime/actorSource";
 import type { NetworkClient, NetworkCookieJar, ResolvedCookie } from "@mdcz/runtime/network";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>

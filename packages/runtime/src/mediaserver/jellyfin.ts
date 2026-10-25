@@ -1,5 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { RuntimeNetworkClient } from "../network";
 import {
   buildMediaServerHeaders,

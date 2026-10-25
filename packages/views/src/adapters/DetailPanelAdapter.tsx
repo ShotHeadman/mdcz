@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { findScrapeResultGroup } from "@mdcz/shared/viewModels/scrapeResultGrouping";
@@ -161,10 +162,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
 
   const openNfoEditor = useCallback(
     async (path: string) => {
-      if (!item) {
-        toast.info(getT().scrape.selectItemFirst);
-        return;
-      }
+      if (!item) return;
       try {
         setNfoLoading(true);
         const response = await port.readNfo(item, path);
@@ -175,7 +173,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
         setNfoValidationErrors({});
         setNfoOpenRaw(true);
       } catch (error) {
-        toast.error(getT().scrape.loadNfoFailed(toErrorMessage(error)));
+        toast.error(getT().scrape.loadNfoFailed(toErrorMessage(error)), { id: "nfo" });
       } finally {
         setNfoLoading(false);
       }
@@ -189,18 +187,18 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     setNfoValidationErrors(validation.errors);
     if (!validation.valid || !validation.data) {
       const firstMessage = Object.values(validation.errors)[0] ?? getT().scrape.checkFormContent;
-      toast.error(firstMessage);
+      toast.error(firstMessage, { id: "nfo" });
       return;
     }
 
     try {
       setNfoSaving(true);
       await port.writeNfo(item, nfoPath, validation.data as CrawlerData);
-      toast.success(getT().scrape.nfoSaved);
+      toast.success(getT().scrape.nfoSaved, { id: "nfo" });
       setNfoInitialSnapshot(serializeEditableNfoData(normalizeEditableNfoData(validation.data)));
       setNfoOpenRaw(false);
     } catch (error) {
-      toast.error(getT().scrape.saveNfoFailed(toErrorMessage(error)));
+      toast.error(getT().scrape.saveNfoFailed(toErrorMessage(error)), { id: "nfo" });
     } finally {
       setNfoSaving(false);
     }
@@ -220,29 +218,16 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     [nfoDirty, nfoSaving],
   );
 
-  const handlePlay = useCallback(() => {
-    if (!item) {
-      toast.info(getT().scrape.selectItemFirst);
-      return;
-    }
-    void port.play?.(item);
-  }, [item, port]);
-
-  const handleOpenFolder = useCallback(() => {
-    if (!item) {
-      toast.info(getT().scrape.selectItemFirst);
-      return;
-    }
-    void port.openFolder?.(item);
-  }, [item, port]);
+  const handleFileAction = useCallback(
+    (action: ((file: RootFileRef) => Promise<void>) | undefined, file: RootFileRef | undefined) => {
+      if (action && file) void action(file).catch((error) => toast.error(toErrorMessage(error), { id: "file-action" }));
+    },
+    [],
+  );
 
   const handleOpenNfo = useCallback(async () => {
     const path = item?.nfoPath ?? item?.path;
-    if (!path) {
-      toast.info(getT().scrape.selectItemFirst);
-      return;
-    }
-    await openNfoEditor(path);
+    if (path) await openNfoEditor(path);
   }, [item?.nfoPath, item?.path, openNfoEditor]);
 
   const handleOpenPosterEditor = useCallback(() => {
@@ -272,7 +257,6 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
       const result = await port.savePosterCrop(item, posterCrop);
       setPosterOverride(result.posterUrl);
       setPosterEditorOpen(false);
-      toast.success(getT().scrape.coverSaved);
       void port
         .preparePosterCrop(item)
         .then((refreshed) => {
@@ -281,7 +265,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
         })
         .catch(() => undefined);
     } catch (error) {
-      toast.error(getT().scrape.saveCoverFailed(toErrorMessage(error)));
+      toast.error(getT().scrape.saveCoverFailed(toErrorMessage(error)), { id: "poster-crop" });
     } finally {
       setPosterCropSaving(false);
     }
@@ -289,11 +273,11 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
 
   const actions = useMemo(
     () => ({
-      play: typeof port.play === "function" ? handlePlay : undefined,
-      openFolder: typeof port.openFolder === "function" ? handleOpenFolder : undefined,
+      play: port.play ? () => handleFileAction(port.play, item?.fileRef) : undefined,
+      openFolder: port.openFolder ? () => handleFileAction(port.openFolder, item?.fileRef) : undefined,
       openNfo: handleOpenNfo,
     }),
-    [handleOpenFolder, handleOpenNfo, handlePlay, port.openFolder, port.play],
+    [handleFileAction, handleOpenNfo, item?.fileRef, port.openFolder, port.play],
   );
 
   useEffect(() => {
@@ -329,16 +313,13 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
       onPlay={actions.play}
       onOpenFolder={actions.openFolder}
       onOpenMetadataFolder={
-        item &&
-        port.openMetadataFolder &&
-        item.nfoRef &&
+        item?.nfoRef &&
         item.fileRef &&
+        port.openFolder &&
         (item.nfoRef.rootId !== item.fileRef.rootId ||
           item.nfoRef.relativePath.split("/").slice(0, -1).join("/") !==
             item.fileRef.relativePath.split("/").slice(0, -1).join("/"))
-          ? () => {
-              void port.openMetadataFolder?.(item);
-            }
+          ? () => handleFileAction(port.openFolder, item.nfoRef)
           : undefined
       }
       onOpenNfo={actions.openNfo}

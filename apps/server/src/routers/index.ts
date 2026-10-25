@@ -7,6 +7,7 @@ import {
   mediaLibrarySourceInputSchema,
   mediaLibraryUpdateInputSchema,
 } from "@mdcz/shared/mediaLibrary";
+import { rootFileRefSchema } from "@mdcz/shared/mediaRef";
 import {
   pendingConfirmUncensoredInputSchema,
   pendingIdInputSchema,
@@ -400,8 +401,8 @@ export const appRouter = t.router({
       .input(nfoWriteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.nfoWrite(input)),
     posterCropSession: protectedProcedure
-      .input(scrapeResultIdInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.scrape.posterCropSession(input.id)),
+      .input(rootFileRefSchema)
+      .query(async ({ ctx, input }) => await ctx.services.scrape.posterCropSession(input)),
     posterCropSave: protectedProcedure
       .input(posterCropSaveInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.posterCropSave(input)),

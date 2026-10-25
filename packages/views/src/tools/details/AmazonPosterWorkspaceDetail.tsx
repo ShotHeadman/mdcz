@@ -1,5 +1,9 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { AmazonPosterLookupResult, AmazonPosterScanItem } from "@mdcz/shared/ipcTypes";
+import type {
+  AmazonPosterApplyResultItem,
+  AmazonPosterLookupResult,
+  AmazonPosterScanItem,
+} from "@mdcz/shared/toolTypes";
 import {
   Badge,
   Button,
@@ -16,7 +20,7 @@ import {
   ScrollArea,
 } from "@mdcz/ui";
 import { ArrowRight, Check, FolderOpen, ImageIcon, LoaderCircle, Minus, Search } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { ImageOptionCard, type ResolveImageOptionCandidates } from "../../common";
 import { type Messages, useT } from "../../i18n";
@@ -38,6 +42,7 @@ type ItemState = {
   lookup: AmazonPosterLookupResult | null;
   lookupStatus: "pending" | "loading" | "done" | "error";
   selection: "current" | "amazon" | null;
+  applyError: string | null;
 };
 
 export interface AmazonPosterApplyItem {
@@ -45,40 +50,12 @@ export interface AmazonPosterApplyItem {
   nfoPath: string;
 }
 
-export interface AmazonPosterImageOptionProps {
-  baseDir?: string;
-  defaultAspectRatio?: number;
-  empty?: boolean;
-  emptyText?: string;
-  fallbackSrcs?: string[];
-  imageFrameClassName?: string;
-  label: string;
-  layout?: "inline" | "stacked";
-  loading?: boolean;
-  metadataClassName?: string;
-  onClick?: () => void;
-  resolveImageCandidates?: ResolveImageOptionCandidates;
-  selected?: boolean;
-  showDimensions?: boolean;
-  src: string;
-  subtitle?: string;
-  width?: number | null;
-  height?: number | null;
-}
-
 export interface AmazonPosterWorkspaceDetailProps {
-  dialogOpen: boolean;
-  items: AmazonPosterScanItem[];
-  scanning?: boolean;
-  onApply: (items: AmazonPosterApplyItem[]) => void | Promise<void>;
+  onApply: (items: AmazonPosterApplyItem[]) => Promise<AmazonPosterApplyResultItem[]>;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
-  onDialogOpenChange: (open: boolean) => void;
   onLookup: (item: AmazonPosterScanItem) => Promise<AmazonPosterLookupResult>;
-  onScan: (directory: string) => void | Promise<void>;
-  renderImageOption?: (props: AmazonPosterImageOptionProps) => ReactNode;
-  renderThumbnail?: (src: string | null | undefined, options?: { empty?: boolean; loading?: boolean }) => ReactNode;
+  onScan: (directory: string) => Promise<AmazonPosterScanItem[]>;
   resolveImageCandidates?: ResolveImageOptionCandidates;
-  showError?: (message: string) => void;
 }
 
 function formatElapsed(elapsedMs: number | null | undefined): string {
@@ -111,12 +88,13 @@ function getStatusBadge(
     return { label: t.tools.statusQuerying, variant: "secondary", icon: LoaderCircle };
   }
   if (state.lookupStatus === "error") return { label: t.tools.statusQueryFailed, variant: "destructive", icon: Minus };
+  if (state.applyError !== null) return { label: t.tools.statusReplaceFailed, variant: "destructive", icon: Minus };
   if (!state.lookup?.amazonPosterUrl) return { label: t.tools.statusNoResults, variant: "outline", icon: Minus };
   if (state.selection === "current") return { label: t.tools.statusKeepCurrent, variant: "outline", icon: Check };
   return { label: "✓ Amazon", variant: "default", icon: Check };
 }
 
-function DefaultSummaryThumb({
+function SummaryThumb({
   empty = false,
   loading = false,
   resolveImageCandidates,
@@ -157,30 +135,29 @@ function DefaultSummaryThumb({
 }
 
 export function AmazonPosterWorkspaceDetail({
-  dialogOpen,
-  items,
-  scanning = false,
   onApply,
   onBrowseDirectory,
-  onDialogOpenChange,
   onLookup,
   onScan,
-  renderImageOption,
-  renderThumbnail,
   resolveImageCandidates,
-  showError,
 }: AmazonPosterWorkspaceDetailProps) {
   const [directory, setDirectory] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [items, setItems] = useState<AmazonPosterScanItem[]>([]);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [itemStates, setItemStates] = useState<ItemState[]>([]);
   const t = useT();
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [applying, setApplying] = useState(false);
+  // Replacements accumulate across retries of the same scan; failures count only the latest attempt.
+  const [applyOutcome, setApplyOutcome] = useState<{ replaced: number; failed: number } | null>(null);
 
   useEffect(() => {
     if (!dialogOpen) {
       setItemStates([]);
-      setExpandedIndex(0);
+      setExpandedPath(null);
       setConfirmOpen(false);
       setApplying(false);
       return;
@@ -193,10 +170,11 @@ export function AmazonPosterWorkspaceDetail({
       lookup: null,
       lookupStatus: "pending" as const,
       selection: null,
+      applyError: null,
     }));
 
     setItemStates(initialStates);
-    setExpandedIndex(0);
+    setExpandedPath(items[0]?.nfoPath ?? null);
     setConfirmOpen(false);
 
     if (items.length === 0) return;
@@ -268,15 +246,30 @@ export function AmazonPosterWorkspaceDetail({
     [itemStates],
   );
   const progressValue = itemStates.length > 0 ? Math.round((completedCount / itemStates.length) * 100) : 0;
-  const ImageOption = renderImageOption ?? ((props: AmazonPosterImageOptionProps) => <ImageOptionCard {...props} />);
 
   const browseDirectory = async () => {
     const selected = await onBrowseDirectory?.();
     if (selected) setDirectory(selected);
   };
 
+  const handleScan = async () => {
+    setScanning(true);
+    setScanError(null);
+    setApplyOutcome(null);
+    try {
+      setItems(await onScan(directory.trim()));
+      setDialogOpen(true);
+    } catch (error) {
+      setScanError(toErrorMessage(error));
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const handleSelectionChange = (index: number, selection: "current" | "amazon") => {
-    setItemStates((prev) => prev.map((state, stateIndex) => (stateIndex === index ? { ...state, selection } : state)));
+    setItemStates((prev) =>
+      prev.map((state, stateIndex) => (stateIndex === index ? { ...state, selection, applyError: null } : state)),
+    );
   };
 
   const handleSearchTitleChange = (index: number, searchTitle: string) => {
@@ -298,14 +291,13 @@ export function AmazonPosterWorkspaceDetail({
   const handleLookup = async (index: number) => {
     const target = itemStates[index];
     const queryTitle = target?.searchTitle.trim();
-    if (!target || !queryTitle) {
-      showError?.(t.tools.enterSearchQuery);
-      return;
-    }
+    if (!target || !queryTitle) return;
 
     setItemStates((prev) =>
       prev.map((state, stateIndex) =>
-        stateIndex === index ? { ...state, lookupStatus: "loading", lookup: null, selection: null } : state,
+        stateIndex === index
+          ? { ...state, lookupStatus: "loading", lookup: null, selection: null, applyError: null }
+          : state,
       ),
     );
 
@@ -339,12 +331,33 @@ export function AmazonPosterWorkspaceDetail({
 
   const handleApply = async () => {
     setApplying(true);
+    const replacedPaths = new Set<string>();
+    const errorByPath = new Map<string, string>();
     try {
-      await onApply(selectedAmazonItems);
-      setConfirmOpen(false);
-    } finally {
-      setApplying(false);
+      for (const result of await onApply(selectedAmazonItems)) {
+        if (result.success) replacedPaths.add(result.nfoPath);
+        else errorByPath.set(result.nfoPath, result.error ?? "");
+      }
+    } catch (error) {
+      for (const item of selectedAmazonItems) errorByPath.set(item.nfoPath, toErrorMessage(error));
     }
+    setApplying(false);
+    setConfirmOpen(false);
+    setApplyOutcome((previous) => ({
+      replaced: (previous?.replaced ?? 0) + replacedPaths.size,
+      failed: errorByPath.size,
+    }));
+    if (errorByPath.size === 0) {
+      setDialogOpen(false);
+      return;
+    }
+    // Replaced items leave the list; failed ones stay selected so confirming again retries just them.
+    setItemStates((prev) =>
+      prev
+        .filter((state) => !replacedPaths.has(state.scan.nfoPath))
+        .map((state) => ({ ...state, applyError: errorByPath.get(state.scan.nfoPath) ?? null })),
+    );
+    setExpandedPath(selectedAmazonItems.find((item) => errorByPath.has(item.nfoPath))?.nfoPath ?? null);
   };
 
   return (
@@ -381,18 +394,24 @@ export function AmazonPosterWorkspaceDetail({
 
       <Button
         variant="secondary"
-        onClick={() => void onScan(directory)}
-        disabled={scanning}
+        onClick={() => void handleScan()}
+        disabled={scanning || !directory.trim()}
         className={cn(TOOL_SECONDARY_BUTTON_CLASS, "w-full sm:w-auto")}
       >
         {scanning ? t.tools.scanning : t.tools.startScan}
       </Button>
+      {scanError ? <p className="break-all text-sm text-destructive">{scanError}</p> : null}
+      {applyOutcome && !dialogOpen ? (
+        <p className={cn("text-sm", applyOutcome.failed > 0 ? "text-destructive" : "text-muted-foreground")}>
+          {t.tools.replaceOutcome(applyOutcome)}
+        </p>
+      ) : null}
 
       <Dialog
         open={dialogOpen}
         onOpenChange={(nextOpen) => {
           setConfirmOpen(false);
-          onDialogOpenChange(nextOpen);
+          setDialogOpen(nextOpen);
         }}
       >
         <DialogContent className="max-w-5xl gap-0 p-0 sm:max-w-5xl">
@@ -418,7 +437,7 @@ export function AmazonPosterWorkspaceDetail({
                 </div>
               ) : (
                 itemStates.map((state, index) => {
-                  const isExpanded = index === expandedIndex;
+                  const isExpanded = state.scan.nfoPath === expandedPath;
                   const statusBadge = getStatusBadge(state, t);
                   const StatusIcon = statusBadge.icon;
                   const thumbnailLoading = state.lookupStatus === "loading" || state.lookupStatus === "pending";
@@ -434,7 +453,9 @@ export function AmazonPosterWorkspaceDetail({
                     >
                       <button
                         type="button"
-                        onClick={() => setExpandedIndex((current) => (current === index ? null : index))}
+                        onClick={() =>
+                          setExpandedPath((current) => (current === state.scan.nfoPath ? null : state.scan.nfoPath))
+                        }
                         className={cn(
                           "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
                           isExpanded ? "bg-primary/5" : "hover:bg-muted/20",
@@ -448,29 +469,18 @@ export function AmazonPosterWorkspaceDetail({
                         </div>
 
                         <div className="flex shrink-0 items-center gap-2">
-                          {renderThumbnail ? (
-                            renderThumbnail(state.scan.currentPosterPath, { empty: !state.scan.currentPosterPath })
-                          ) : (
-                            <DefaultSummaryThumb
-                              src={state.scan.currentPosterPath}
-                              empty={!state.scan.currentPosterPath}
-                              resolveImageCandidates={resolveImageCandidates}
-                            />
-                          )}
+                          <SummaryThumb
+                            src={state.scan.currentPosterPath}
+                            empty={!state.scan.currentPosterPath}
+                            resolveImageCandidates={resolveImageCandidates}
+                          />
                           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                          {renderThumbnail ? (
-                            renderThumbnail(state.lookup?.amazonPosterUrl, {
-                              loading: thumbnailLoading,
-                              empty: amazonEmpty,
-                            })
-                          ) : (
-                            <DefaultSummaryThumb
-                              src={state.lookup?.amazonPosterUrl}
-                              loading={thumbnailLoading}
-                              empty={amazonEmpty}
-                              resolveImageCandidates={resolveImageCandidates}
-                            />
-                          )}
+                          <SummaryThumb
+                            src={state.lookup?.amazonPosterUrl}
+                            loading={thumbnailLoading}
+                            empty={amazonEmpty}
+                            resolveImageCandidates={resolveImageCandidates}
+                          />
                           <Badge variant={statusBadge.variant} className="h-6 gap-1 rounded-full px-2">
                             <StatusIcon className={cn("h-3 w-3", state.lookupStatus === "loading" && "animate-spin")} />
                             {statusBadge.label}
@@ -495,6 +505,10 @@ export function AmazonPosterWorkspaceDetail({
                                 {t.tools.elapsed(formatElapsed(state.lookup?.elapsedMs))}
                               </div>
                             </div>
+
+                            {state.applyError ? (
+                              <p className="break-all text-sm text-destructive">{state.applyError}</p>
+                            ) : null}
 
                             <div className="space-y-2">
                               <Label
@@ -529,7 +543,7 @@ export function AmazonPosterWorkspaceDetail({
                             </div>
 
                             <div className="grid gap-3 md:grid-cols-2">
-                              <ImageOption
+                              <ImageOptionCard
                                 layout="inline"
                                 defaultAspectRatio={2 / 3}
                                 src={state.scan.currentPosterPath ?? ""}
@@ -551,7 +565,7 @@ export function AmazonPosterWorkspaceDetail({
                                 emptyText={t.tools.noCurrentPoster}
                               />
 
-                              <ImageOption
+                              <ImageOptionCard
                                 layout="inline"
                                 defaultAspectRatio={2 / 3}
                                 src={state.lookup?.amazonPosterUrl ?? ""}
@@ -592,10 +606,11 @@ export function AmazonPosterWorkspaceDetail({
 
           <DialogFooter className="border-t px-6 py-4 sm:items-center sm:justify-between">
             <div className="text-sm text-muted-foreground">
-              {t.tools.selectedForReplace(selectedAmazonItems.length)}
+              {applyOutcome ? <p className="text-destructive">{t.tools.replaceOutcome(applyOutcome)}</p> : null}
+              <p>{t.tools.selectedForReplace(selectedAmazonItems.length)}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => onDialogOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 {t.common.cancel}
               </Button>
               <Button

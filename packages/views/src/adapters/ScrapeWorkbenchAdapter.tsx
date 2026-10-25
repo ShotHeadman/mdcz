@@ -118,7 +118,7 @@ export function ScrapeWorkbenchAdapter({
                   : () =>
                       void ports.scrape
                         .cancelActorSync(actorSync.runId)
-                        .catch((error) => toast.error(toErrorMessage(error))),
+                        .catch((error) => toast.error(toErrorMessage(error), { id: "actor-sync" })),
             }
           : undefined
       }
@@ -134,7 +134,7 @@ export function ScrapeWorkbenchAdapter({
               rerunning.current = true;
               void ports.scrape
                 .rerunDirectory(snapshot.task.id)
-                .catch((error) => toast.error(toErrorMessage(error)))
+                .catch((error) => toast.error(toErrorMessage(error), { id: "scrape-launch" }))
                 .finally(() => {
                   rerunning.current = false;
                 });

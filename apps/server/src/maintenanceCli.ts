@@ -1,8 +1,7 @@
 import { chmod, mkdir, open, realpath, rm, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { moveDatabaseAside } from "@mdcz/persistence";
 import Database from "better-sqlite3";
-import { acquireDatabaseLease } from "./databaseFiles";
+import { acquireDatabaseLease, rebuildDatabase } from "./databaseFiles";
 import { resolveServerRuntimePaths } from "./services/configService";
 
 const usage =
@@ -58,15 +57,9 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
     } finally {
       target.close();
     }
-    const lease = acquireDatabaseLease(filePath);
-    try {
-      const backupPath = moveDatabaseAside(await realpath(filePath));
-      console.log(
-        `Database moved to ${backupPath}. A new database is created on the next start; configuration and profiles were kept.`,
-      );
-    } finally {
-      lease.close();
-    }
+    console.log(
+      `Database moved to ${rebuildDatabase(filePath)}. A new database is created on the next start; configuration and profiles were kept.`,
+    );
     return;
   }
   if (action === "backup") {

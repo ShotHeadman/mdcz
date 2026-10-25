@@ -1,8 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getActorImageCacheDirectory } from "@main/appIdentity";
-import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
 import {
   type ActorLookupResult,
   ActorSourceProvider,
@@ -20,7 +18,7 @@ import {
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
-import { app } from "electron";
+import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const createSignalService = (): MediaServerSignalService => ({
@@ -35,12 +33,6 @@ const createTempDir = async (): Promise<string> => {
   const dirPath = await mkdtemp(join(tmpdir(), "mdcz-jellyfin-"));
   tempDirs.push(dirPath);
   return dirPath;
-};
-
-const createUserDataDir = async (): Promise<string> => {
-  const userDataDir = await createTempDir();
-  vi.spyOn(app, "getPath").mockReturnValue(userDataDir);
-  return userDataDir;
 };
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
@@ -69,19 +61,13 @@ class FakeNetworkClient {
   readonly postText = vi.fn(async (_url: string, _body: string) => "");
 }
 
-const createActorSourceProvider = (
-  networkClient: FakeNetworkClient,
-  actorMapUrl = "https://example.com/empty-map.json",
-) =>
+const createActorSourceProvider = (networkClient: FakeNetworkClient, cacheRoot: string) =>
   new ActorSourceProvider({
     registry: new ActorSourceRegistry([
-      // Local image resolution is rooted in the mocked desktop user data directory.
-      new LocalActorSource({
-        actorImageService: new ActorImageService({ cacheRoot: getActorImageCacheDirectory() }),
-      }),
+      new LocalActorSource({ actorImageService: new ActorImageService({ cacheRoot }) }),
       new GfriendsActorSource({
         networkClient: networkClient as unknown as NetworkClient,
-        actorMapUrl,
+        actorMapUrl: "https://example.com/empty-map.json",
       }),
     ]),
   });
@@ -521,7 +507,7 @@ describe("Jellyfin services", () => {
 
   it("uploads actor photos as base64 text and falls back to the indexed image endpoint", async () => {
     const root = await createTempDir();
-    await createUserDataDir();
+    const cacheRoot = join(await createTempDir(), "actor-image-cache");
     const photoPath = join(root, "Actor A.jpg");
     await writeFile(photoPath, "photo-bytes", "utf8");
 
@@ -545,7 +531,7 @@ describe("Jellyfin services", () => {
     const deps: MediaServerActorServiceDependencies = {
       signalService: createSignalService(),
       networkClient: networkClient as unknown as NetworkClient,
-      actorSourceProvider: createActorSourceProvider(networkClient),
+      actorSourceProvider: createActorSourceProvider(networkClient, cacheRoot),
       logger: { debug() {}, info() {}, warn() {}, error() {} },
     };
 

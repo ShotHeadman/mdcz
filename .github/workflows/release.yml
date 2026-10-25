@@ -16,7 +16,6 @@ on:
       - "tsconfig.json"
       - "tsconfig.node.json"
       - "tsconfig.web.json"
-      - "tsconfig.desktop-renderer.json"
       - "tsconfig.test.json"
       - "docker/**"
       - ".dockerignore"

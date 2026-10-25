@@ -1,7 +1,6 @@
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, relative } from "node:path";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { resolvePublicationAssetLayout } from "@mdcz/runtime/publication/assetLayout";
@@ -10,6 +9,7 @@ import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/as
 import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
 import { TrailerAssetDownloader } from "@mdcz/runtime/scrape/download/assets/TrailerAssetDownloader";
 import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
