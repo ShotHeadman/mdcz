@@ -67,5 +67,17 @@ export const pending = {
     uncensored: "Uncensored",
   },
   submitted: "Scrape started",
+  submittedMany: (tasks: number) => (tasks === 1 ? "Scrape started" : `${tasks} scrape tasks started`),
   chooseLibrary: "Scrape into",
+  kindFilter: "Filter by kind",
+  allKinds: "All kinds",
+  selectAll: (selected: number, total: number) => `Select all (${selected}/${total})`,
+  selectedCount: (count: number) => `${count} selected`,
+  clearSelection: "Clear selection",
+  ownLibraries: "Each file's own library",
+  retrySelected: (count: number) => `Retry ${count}`,
+  confirmSelectedAs: (count: number) => `Confirm ${count} as`,
+  ignoreSelected: (count: number) => `Ignore ${count}`,
+  ignoreSelectedConfirm: (count: number) =>
+    `Remove these ${count} files from the pending list? The files stay where they are.`,
 };

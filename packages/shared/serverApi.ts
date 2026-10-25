@@ -14,8 +14,11 @@ import type {
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
   PendingIdInput,
+  PendingIdsInput,
   PendingListResponse,
   PendingRetryInput,
+  PendingRetryManyInput,
+  PendingRetryManyResponse,
   PendingRetryResponse,
 } from "./pending";
 import type {
@@ -201,8 +204,9 @@ export interface ServerApiContract {
     list(): Promise<PendingListResponse>;
     detail(input: PendingIdInput): Promise<PendingDetailResponse>;
     retry(input: PendingRetryInput): Promise<PendingRetryResponse>;
+    retryMany(input: PendingRetryManyInput): Promise<PendingRetryManyResponse>;
     confirmUncensored(input: PendingConfirmUncensoredInput): Promise<{ success: true }>;
-    ignore(input: PendingIdInput): Promise<{ success: true }>;
+    ignore(input: PendingIdsInput): Promise<{ success: true }>;
   };
   apiKeys: {
     list(): Promise<ApiKeyListResponse>;

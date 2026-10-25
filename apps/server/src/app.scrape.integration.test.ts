@@ -974,7 +974,7 @@ describe("buildServer scrape integration", () => {
         method: "POST",
         url: "/trpc/pending.confirmUncensored",
         headers,
-        payload: { id: item.id, choice: "leak" },
+        payload: { ids: [item.id], choice: "leak" },
       });
     const confirmResponse = await confirm();
 
@@ -1036,14 +1036,72 @@ describe("buildServer scrape integration", () => {
     ]);
 
     for (const [procedure, payload] of [
-      ["pending.confirmUncensored", { id: "missing-item", choice: "uncensored" }],
+      ["pending.confirmUncensored", { ids: ["missing-item"], choice: "uncensored" }],
       ["pending.retry", { id: "missing-item", number: "ABC-123" }],
-      ["pending.ignore", { id: "missing-item" }],
+      ["pending.retryMany", { ids: ["missing-item"] }],
+      ["pending.ignore", { ids: ["missing-item"] }],
     ] as const) {
       const response = await fastify.inject({ method: "POST", url: `/trpc/${procedure}`, headers, payload });
       if (procedure === "pending.ignore") expect(response.statusCode).toBe(200);
       else expect(response.json().error.message).toContain("Pending item not found");
     }
+  });
+
+  it("scrapes selected pending entries again in one task per library and ignores a selection at once", async () => {
+    const roots = [await createTempRoot("pending-batch-a"), await createTempRoot("pending-batch-b")];
+    const imageServer = await startTestImageServer();
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
+    const token = await loginAsAdmin(fastify);
+    const headers = { authorization: `Bearer ${token}` };
+    const [first, second] = [
+      await createTestLibrary(fastify, token, roots[0]),
+      await createTestLibrary(fastify, token, roots[1]),
+    ];
+    const pending = (await services.persistence.getState()).repositories.pending;
+    const files = [
+      { library: first, root: roots[0], name: "ABC-201.mp4", kind: "not_found" },
+      { library: first, root: roots[0], name: "ABC-202.mp4", kind: "failed" },
+      { library: second, root: roots[1], name: "ABC-203.mp4", kind: "new_file" },
+    ] as const;
+    for (const file of files) {
+      await writeFile(join(file.root, file.name), "video");
+      pending.upsert({
+        kind: file.kind,
+        rootId: file.library.rootId,
+        relativePath: file.name,
+        libraryId: file.library.libraryId,
+      });
+    }
+    pending.upsert({
+      kind: "uncensored",
+      rootId: first.rootId,
+      relativePath: "ABC-204.mp4",
+      libraryId: first.libraryId,
+    });
+    const pendingItems = async (): Promise<Array<{ id: string; kind: string; fileName: string }>> =>
+      (await fastify.inject({ method: "GET", url: "/trpc/pending.list", headers })).json().result.data.items;
+    const mutate = async (procedure: string, payload: Record<string, unknown>) =>
+      await fastify.inject({ method: "POST", url: `/trpc/pending.${procedure}`, headers, payload });
+    const listed = await pendingItems();
+    const scrapable = listed.filter((item) => item.kind !== "uncensored").map((item) => item.id);
+    const published = listed.filter((item) => item.kind === "uncensored").map((item) => item.id);
+
+    expect((await mutate("retryMany", { ids: [...scrapable, ...published] })).json().error.message).toContain(
+      "confirm its type instead",
+    );
+    const retried = await mutate("retryMany", { ids: scrapable });
+    expect(retried.statusCode, retried.body).toBe(200);
+    const { taskIds } = retried.json().result.data as { taskIds: string[] };
+    expect(taskIds).toHaveLength(2);
+    for (const taskId of taskIds) await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+    const scraped = await Promise.all(taskIds.map(async (taskId) => await services.scrape.snapshot({ taskId })));
+    expect(scraped.map((snapshot) => snapshot.items.length).sort()).toEqual([1, 2]);
+    expect((await pendingItems()).map((item) => item.fileName)).toEqual(["ABC-204.mp4"]);
+
+    expect((await mutate("ignore", { ids: published })).statusCode).toBe(200);
+    expect(await pendingItems()).toEqual([]);
   });
 
   it("accepts scrape refs that span multiple registered media roots", async () => {

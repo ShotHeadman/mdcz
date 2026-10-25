@@ -8,6 +8,8 @@ import type {
   SiteResultRepository,
 } from "@mdcz/persistence";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import { toErrorMessage } from "@mdcz/shared/error";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import {
   type AmbiguousCandidate,
   ambiguousCandidateSchema,
@@ -16,6 +18,8 @@ import {
   type PendingItemDto,
   type PendingListResponse,
   type PendingRetryInput,
+  type PendingRetryManyInput,
+  type PendingRetryManyResponse,
   type PendingRetryResponse,
   pendingSiteResultSchema,
 } from "@mdcz/shared/pending";
@@ -99,60 +103,98 @@ export class PendingService {
     return { taskId };
   }
 
-  async confirmUncensored(input: PendingConfirmUncensoredInput): Promise<void> {
+  /** Scrapes the files again as they are, in one task per library they go into. */
+  async retryMany(input: PendingRetryManyInput): Promise<PendingRetryManyResponse> {
     const repositories = await this.deps.repositories();
-    const item = repositories.pending.get(input.id);
-    if (item.kind !== "uncensored" || !item.movieId) throw new Error("This entry has no uncensored type to confirm");
+    const refsByLibrary = new Map<string, RootFileRef[]>();
+    for (const id of input.ids) {
+      const item = repositories.pending.get(id);
+      if (item.kind === "uncensored") throw new Error(`${item.relativePath} is published; confirm its type instead`);
+      const libraryId = input.libraryId ?? item.libraryId;
+      if (!libraryId) throw new Error(`Choose a library to scrape ${item.relativePath} into`);
+      refsByLibrary.set(libraryId, [
+        ...(refsByLibrary.get(libraryId) ?? []),
+        { rootId: item.rootId, relativePath: item.relativePath },
+      ]);
+    }
+    const taskIds: string[] = [];
+    for (const [libraryId, refs] of refsByLibrary)
+      taskIds.push((await this.deps.startScrape({ executionMode: "batch", libraryId, refs })).taskId);
+    return { taskIds };
+  }
+
+  /** Confirms every entry it can; one movie that fails to reorganize does not hold back the others. */
+  async confirmUncensored(input: PendingConfirmUncensoredInput): Promise<void> {
     const configuration = await this.deps.getConfiguration();
     if (!configuration.download.generateNfo)
       throw new Error("NFO generation is disabled; cannot confirm uncensored type");
-    const entry = await repositories.library.getEntryById(item.movieId);
-    const library = item.libraryId ? toMediaLibrary(repositories.mediaLibraries.get(item.libraryId)) : undefined;
-    // A library that placed the files reorganizes them under the new name; others only rewrite the NFO in place.
-    const reorganize = library && ["move", "hardlink", "copy"].includes(library.placement);
-    const roots = await this.deps.mediaRoots.listRoots();
-    const root = roots.find((candidate) => candidate.id === entry.files[0]?.rootId);
-    if (!root) throw new Error("Movie is missing valid media files");
-    await this.deps.mediaRoots.assertRootIntegrity(
-      new Set([...entry.files.map((file) => file.rootId), ...entry.assets.flatMap((asset) => asset.rootId ?? [])]),
-    );
-    const result = await this.deps.maintenanceRuntime.applyLibraryEntry({
-      root,
-      presetId: reorganize ? "local_organize" : "remerge",
-      target:
-        reorganize && item.libraryId ? toPublicationTarget(repositories.mediaLibraries.get(item.libraryId)) : undefined,
-      entry,
-      localState: { uncensoredChoice: input.choice },
-      publication: {
-        roots,
-        identity: {
-          movieId: entry.id,
-          assets: entry.assets.flatMap((asset) =>
-            asset.rootId && asset.relativePath
-              ? [
-                  {
-                    rootId: asset.rootId,
-                    relativePath: asset.relativePath,
-                    fileId: asset.fileId,
-                    kind: asset.kind,
-                    published: asset.published,
-                  },
-                ]
-              : [],
-          ),
-        },
-        commit: (movie) => {
-          const rows = committedMovieRows(movie);
-          repositories.pending.confirmUncensored(item.id, rows.movie, rows.files);
-        },
-      },
-    });
-    if (result.status === "failed") throw new Error(result.error);
-    this.deps.onChanged?.();
+    const repositories = await this.deps.repositories();
+    const failures: unknown[] = [];
+    for (const id of input.ids) {
+      try {
+        const item = repositories.pending.get(id);
+        if (item.kind !== "uncensored" || !item.movieId)
+          throw new Error("This entry has no uncensored type to confirm");
+        const entry = await repositories.library.getEntryById(item.movieId);
+        const library = item.libraryId ? toMediaLibrary(repositories.mediaLibraries.get(item.libraryId)) : undefined;
+        // A library that placed the files reorganizes them under the new name; others only rewrite the NFO in place.
+        const reorganize = library && ["move", "hardlink", "copy"].includes(library.placement);
+        const roots = await this.deps.mediaRoots.listRoots();
+        const root = roots.find((candidate) => candidate.id === entry.files[0]?.rootId);
+        if (!root) throw new Error("Movie is missing valid media files");
+        await this.deps.mediaRoots.assertRootIntegrity(
+          new Set([...entry.files.map((file) => file.rootId), ...entry.assets.flatMap((asset) => asset.rootId ?? [])]),
+        );
+        const result = await this.deps.maintenanceRuntime.applyLibraryEntry({
+          root,
+          presetId: reorganize ? "local_organize" : "remerge",
+          target:
+            reorganize && item.libraryId
+              ? toPublicationTarget(repositories.mediaLibraries.get(item.libraryId))
+              : undefined,
+          entry,
+          localState: { uncensoredChoice: input.choice },
+          publication: {
+            roots,
+            identity: {
+              movieId: entry.id,
+              assets: entry.assets.flatMap((asset) =>
+                asset.rootId && asset.relativePath
+                  ? [
+                      {
+                        rootId: asset.rootId,
+                        relativePath: asset.relativePath,
+                        fileId: asset.fileId,
+                        kind: asset.kind,
+                        published: asset.published,
+                      },
+                    ]
+                  : [],
+              ),
+            },
+            commit: (movie) => {
+              const rows = committedMovieRows(movie);
+              repositories.pending.confirmUncensored(item.id, rows.movie, rows.files);
+            },
+          },
+        });
+        if (result.status === "failed") throw new Error(result.error);
+      } catch (error) {
+        logger.warn(`Failed to confirm the uncensored type of pending entry ${id}: ${toErrorMessage(error)}`);
+        failures.push(error);
+      }
+    }
+    if (failures.length < input.ids.length) this.deps.onChanged?.();
+    if (input.ids.length === 1 && failures.length === 1) throw failures[0];
+    if (failures.length)
+      throw new Error(
+        `${failures.length} of ${input.ids.length} entries were not confirmed: ${toErrorMessage(failures[0])}`,
+        { cause: failures[0] },
+      );
   }
 
-  async ignore(id: string): Promise<void> {
-    (await this.deps.repositories()).pending.delete([id]);
+  async ignore(ids: readonly string[]): Promise<void> {
+    (await this.deps.repositories()).pending.delete(ids);
     this.deps.onChanged?.();
   }
 

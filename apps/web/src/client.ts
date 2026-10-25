@@ -243,6 +243,7 @@ export const api: ServerApiContract = {
     list: () => trpcQuery("pending.list"),
     detail: (input) => trpcQuery("pending.detail", input),
     retry: (input) => trpcMutation("pending.retry", input),
+    retryMany: (input) => trpcMutation("pending.retryMany", input),
     confirmUncensored: (input) => trpcMutation("pending.confirmUncensored", input),
     ignore: (input) => trpcMutation("pending.ignore", input),
   },

@@ -11,7 +11,9 @@ import { rootFileRefSchema } from "@mdcz/shared/mediaRef";
 import {
   pendingConfirmUncensoredInputSchema,
   pendingIdInputSchema,
+  pendingIdsInputSchema,
   pendingRetryInputSchema,
+  pendingRetryManyInputSchema,
 } from "@mdcz/shared/pending";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
@@ -281,14 +283,17 @@ export const appRouter = t.router({
     retry: protectedProcedure
       .input(pendingRetryInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.pending.retry(input)),
+    retryMany: protectedProcedure
+      .input(pendingRetryManyInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.retryMany(input)),
     confirmUncensored: protectedProcedure
       .input(pendingConfirmUncensoredInputSchema)
       .mutation(async ({ ctx, input }) => {
         await ctx.services.pending.confirmUncensored(input);
         return { success: true as const };
       }),
-    ignore: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
-      await ctx.services.pending.ignore(input.id);
+    ignore: protectedProcedure.input(pendingIdsInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.pending.ignore(input.ids);
       return { success: true as const };
     }),
   }),

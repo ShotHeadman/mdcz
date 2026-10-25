@@ -50,8 +50,15 @@ export function PendingPage() {
           toast.success(t.pending.submitted, { id: "pending" });
         })
       }
+      onRetryMany={async (input) =>
+        await act(async () => {
+          const { taskIds } = await api.pending.retryMany(input);
+          requestScrapeLiveRunsRefresh();
+          toast.success(t.pending.submittedMany(taskIds.length), { id: "pending" });
+        })
+      }
       onConfirmUncensored={async (input) => await act(() => api.pending.confirmUncensored(input))}
-      onIgnore={async (id) => await act(() => api.pending.ignore({ id }))}
+      onIgnore={async (ids) => await act(() => api.pending.ignore({ ids }))}
     />
   );
 }
