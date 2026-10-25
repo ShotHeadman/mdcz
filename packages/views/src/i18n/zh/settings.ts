@@ -304,6 +304,8 @@ export const settings: Messages["settings"] = {
     scrapeSitesDescription: "启用网站与优先级",
     scrapePacing: "刮削节奏",
     filenameFiltering: "文件过滤",
+    filenameMarkers: "文件名标记识别",
+    filenameMarkersDescription: "在内置识别词之外追加；按完整的词匹配，不区分大小写，前后的 - _ . 可省略。",
     proxyAndRequests: "代理与请求",
     siteAccess: "站点访问",
     assetDownloads: "资源下载",

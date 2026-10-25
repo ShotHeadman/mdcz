@@ -87,11 +87,7 @@ const inspectMember = async (
   const filePath = resolveRootRelativePath(root, ref.relativePath);
   const entryPath = await inventory.entryPath(filePath);
   const entryIdentity = filesystemPathKey(entryPath);
-  const parsed = parseFileInfo(
-    filePath,
-    configuration.scrape.filenameIgnoreTokens,
-    configuration.scrape.numberMappings,
-  );
+  const parsed = parseFileInfo(filePath, configuration.scrape);
   const fileInfo = ref.number ? { ...parsed, number: ref.number.trim().toUpperCase() } : parsed;
   const member: MovieMember = {
     source: { rootId: ref.rootId, relativePath: ref.relativePath },
@@ -131,11 +127,7 @@ const expandLocalParts = async (
   const manualScrape = JSON.stringify(member.manualScrape ?? null);
   for (const sibling of await inventory.mediaEntries(dirname(filePath))) {
     const siblingPath = join(dirname(filePath), sibling.name);
-    const parsed = parseFileInfo(
-      siblingPath,
-      configuration.scrape.filenameIgnoreTokens,
-      configuration.scrape.numberMappings,
-    );
+    const parsed = parseFileInfo(siblingPath, configuration.scrape);
     if (parsed.number.trim().toUpperCase() !== member.fileInfo.number.trim().toUpperCase()) continue;
     const relativePath = toRootRelativePath(root, siblingPath);
     const queued = pending.some(

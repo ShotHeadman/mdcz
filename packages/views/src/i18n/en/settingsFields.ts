@@ -117,6 +117,24 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "Files and folders (with everything inside) whose names contain these words are excluded from automatic scans; matching is case-insensitive. Add with Enter, comma or space.",
   },
+  "scrape.filenameSubtitleTokens": {
+    label: "Chinese subtitle words",
+    description:
+      "A file whose name contains one of these words has Chinese subtitles. Built in: C, CH, CHS, UC, 中文, 中字, 中文字幕 and more. Add with Enter, comma or space.",
+  },
+  "scrape.filenameUmrTokens": {
+    label: "Cracked (UMR) words",
+    description:
+      "A file whose name contains one of these words is cracked uncensored, e.g. LTX or restored. Built in: UMR, 破解, C-U.",
+  },
+  "scrape.filenameLeakTokens": {
+    label: "Leak words",
+    description: "A file whose name contains one of these words is a leaked uncensored release. None built in.",
+  },
+  "scrape.filenameUncensoredTokens": {
+    label: "Uncensored words",
+    description: "A file whose name contains one of these words is uncensored. Built in: U, UC.",
+  },
   "scrape.minVideoSizeMb": {
     label: "Minimum video size (MB)",
     description:
@@ -346,10 +364,26 @@ const fields: Record<FieldKey, FieldText> = {
   "naming.releaseRule": { label: "Release date format" },
   "naming.folderNameMax": { label: "Maximum folder name length" },
   "naming.fileNameMax": { label: "Maximum file name length" },
-  "naming.cnwordStyle": { label: "Chinese subtitle marker" },
-  "naming.umrStyle": { label: "UMR marker" },
-  "naming.leakStyle": { label: "Leak marker" },
-  "naming.uncensoredStyle": { label: "Uncensored marker" },
+  "naming.cnwordStyle": {
+    label: "Chinese subtitle marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
+  "naming.umrStyle": {
+    label: "UMR marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
+  "naming.leakStyle": {
+    label: "Leak marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
+  "naming.uncensoredStyle": {
+    label: "Uncensored marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
   "naming.censoredStyle": { label: "Censored marker" },
   "naming.partStyle": {
     label: "Part style",

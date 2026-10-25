@@ -341,6 +341,9 @@ export const settings = {
     scrapeSitesDescription: "Enabled sites and priority",
     scrapePacing: "Scrape pacing",
     filenameFiltering: "File filtering",
+    filenameMarkers: "File name markers",
+    filenameMarkersDescription:
+      "Added to the built-in words. A word matches only as a whole word, case-insensitively; surrounding - _ . are optional.",
     proxyAndRequests: "Proxy and requests",
     siteAccess: "Site access",
     assetDownloads: "Asset downloads",

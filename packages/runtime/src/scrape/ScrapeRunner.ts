@@ -671,7 +671,7 @@ export class ScrapeRunner {
       directories.set(item.id, filesystemPathKey(await inventory.canonicalDirectory(directory)));
     }
     const retryIds = new Set(
-      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape.filenameIgnoreTokens, (item) => {
+      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape, (item) => {
         const directory = directories.get(item.id);
         if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
         return directory;

@@ -203,6 +203,17 @@ export function FilenameFilteringSection() {
   );
 }
 
+export function FilenameMarkersSection() {
+  return (
+    <>
+      <ChipArrayFieldWrapper name="scrape.filenameSubtitleTokens" />
+      <ChipArrayFieldWrapper name="scrape.filenameUmrTokens" />
+      <ChipArrayFieldWrapper name="scrape.filenameLeakTokens" />
+      <ChipArrayFieldWrapper name="scrape.filenameUncensoredTokens" />
+    </>
+  );
+}
+
 export function NetworkConnectionSection() {
   return (
     <>

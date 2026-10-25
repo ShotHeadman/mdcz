@@ -14,7 +14,6 @@ export interface FileInfoWithSubtitles {
 }
 
 export interface ResolveFileInfoWithSubtitlesOptions {
-  escapeStrings?: string[];
   parsedFileInfo?: FileInfo;
   subtitleSidecars?: SubtitleSidecarMatch[];
   inventory?: DirectoryInventory;
@@ -24,7 +23,7 @@ export const resolveFileInfoWithSubtitles = async (
   filePath: string,
   options: ResolveFileInfoWithSubtitlesOptions = {},
 ): Promise<FileInfoWithSubtitles> => {
-  const parsedFileInfo = options.parsedFileInfo ?? parseFileInfo(filePath, options.escapeStrings ?? []);
+  const parsedFileInfo = options.parsedFileInfo ?? parseFileInfo(filePath);
   const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(filePath, options.inventory));
   const subtitleTag = preferSubtitleTag(
     parsedFileInfo.subtitleTag,

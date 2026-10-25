@@ -54,6 +54,27 @@ export const settingsFields: Messages["settingsFields"] = {
       description:
         "自动扫描时排除名称包含这些文字的文件和文件夹（含其下所有内容）；匹配时不区分大小写。支持 Enter、逗号或空格分割添加。",
     },
+    "scrape.filenameSubtitleTokens": {
+      label: "中文字幕识别词",
+      description:
+        "文件名含这些词时视为中文字幕。内置：C、CH、CHS、UC、中文、中字、中文字幕 等。支持 Enter、逗号或空格分割添加。",
+      aliases: ["字幕", "识别词"],
+    },
+    "scrape.filenameUmrTokens": {
+      label: "破解识别词",
+      description: "文件名含这些词时视为无码破解，例如 LTX、restored。内置：UMR、破解、C-U。",
+      aliases: ["UMR", "识别词"],
+    },
+    "scrape.filenameLeakTokens": {
+      label: "流出识别词",
+      description: "文件名含这些词时视为无码流出。没有内置词。",
+      aliases: ["识别词"],
+    },
+    "scrape.filenameUncensoredTokens": {
+      label: "无码识别词",
+      description: "文件名含这些词时视为无码。内置：U、UC。",
+      aliases: ["识别词"],
+    },
     "scrape.minVideoSizeMb": {
       label: "最小视频大小 (MB)",
       description: "小于该大小的视频不进入刮削候选，0 表示不限制；STRM 文件不受影响。",
@@ -258,10 +279,22 @@ export const settingsFields: Messages["settingsFields"] = {
     "naming.releaseRule": { label: "发行日期格式" },
     "naming.folderNameMax": { label: "文件夹名最大长度" },
     "naming.fileNameMax": { label: "文件名最大长度" },
-    "naming.cnwordStyle": { label: "中文字幕标记" },
-    "naming.umrStyle": { label: "UMR 标记" },
-    "naming.leakStyle": { label: "流出标记" },
-    "naming.uncensoredStyle": { label: "无码标记" },
+    "naming.cnwordStyle": {
+      label: "中文字幕标记",
+      description: "整理命名时追加的后缀；识别文件名用的词在「刮削 › 文件名标记识别」中设置。",
+    },
+    "naming.umrStyle": {
+      label: "UMR 标记",
+      description: "整理命名时追加的后缀；识别文件名用的词在「刮削 › 文件名标记识别」中设置。",
+    },
+    "naming.leakStyle": {
+      label: "流出标记",
+      description: "整理命名时追加的后缀；识别文件名用的词在「刮削 › 文件名标记识别」中设置。",
+    },
+    "naming.uncensoredStyle": {
+      label: "无码标记",
+      description: "整理命名时追加的后缀；识别文件名用的词在「刮削 › 文件名标记识别」中设置。",
+    },
     "naming.censoredStyle": { label: "有码标记" },
     "naming.partStyle": {
       label: "分盘样式",

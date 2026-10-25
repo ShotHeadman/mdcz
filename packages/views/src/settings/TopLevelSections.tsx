@@ -14,6 +14,7 @@ import {
   AggregationScrapeSection,
   AssetDownloadsSection,
   FilenameFilteringSection,
+  FilenameMarkersSection,
   NamingSection,
   NetworkConnectionSection,
   NetworkSiteAccessSection,
@@ -74,6 +75,13 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
       </Subsection>
       <Subsection title={t.settings.subsections.filenameFiltering} className="mb-6 last:mb-0">
         <FilenameFilteringSection />
+      </Subsection>
+      <Subsection
+        title={t.settings.subsections.filenameMarkers}
+        description={t.settings.subsections.filenameMarkersDescription}
+        className="mb-6 last:mb-0"
+      >
+        <FilenameMarkersSection />
       </Subsection>
     </SectionAnchor>
   );
