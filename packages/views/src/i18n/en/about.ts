@@ -11,7 +11,7 @@ export const about = {
   updateDownload: "Download",
   updateOpenDownload: "Get from GitHub",
   updateDownloading: (version: string, percent: number) => `Downloading v${version}… ${percent}%`,
-  updateDownloaded: (version: string) => `v${version} is ready. It installs when MDCz restarts or quits.`,
+  updateDownloaded: (version: string) => `v${version} is ready. Restart MDCz to finish installing.`,
   updateInstall: "Restart now",
   updateFailed: (error: string) => `Update failed: ${error}`,
   relatedProjectsTitle: "Related projects",

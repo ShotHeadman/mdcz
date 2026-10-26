@@ -18,9 +18,9 @@ export const shell = {
   openMenu: "Open navigation",
   closeMenu: "Close navigation",
   switchLanguage: "切换到中文",
-  renderErrorTitle: "Rendering error",
+  renderErrorTitle: "Page load error",
   renderErrorDescription:
-    "The page failed to render properly. You can retry the current view, or reload the application if the issue persists.",
-  retryView: "Retry view",
+    "This page failed to load properly. You can reload the page, or reload the entire app if the issue persists.",
+  retryView: "Reload page",
   reloadApp: "Reload app",
 };

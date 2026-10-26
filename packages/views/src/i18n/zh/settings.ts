@@ -151,10 +151,10 @@ export const settings: Messages["settings"] = {
   },
   actorAliases: {
     name: "规范名称",
-    namePlaceholder: "刮削写入的名字，如 河北彩花",
+    namePlaceholder: "统一写入的演员名，如 河北彩伽",
     aliases: "别名",
     aliasesPlaceholder: "其他写法，按 Enter 或逗号添加",
-    draftHint: "填写规范名称并添加至少一个别名后保存",
+    draftHint: "填写规范名称及至少一个别名后自动生效",
     add: "添加演员",
     remove: "删除演员",
   },
@@ -299,9 +299,9 @@ export const settings: Messages["settings"] = {
     detail: (field, message) => `${field}：${message}`,
     issues: {
       actorCanonicalNameEmpty: "演员规范名称不能为空",
-      actorAliasListNoValidAlias: "演员别名列表至少需要一个有效别名",
+      actorAliasListNoValidAlias: "请至少添加一个有效别名",
       actorAliasEmpty: "演员别名不能为空",
-      actorAliasConflict: "演员名称与其他别名组冲突",
+      actorAliasConflict: "该别名已被添加或与已有演员冲突",
       globalTimeoutNotGreater: "全局超时必须大于单爬虫超时",
       actorPhotoFolderNotAbsolute: "本地演员照片目录必须使用绝对路径",
       jellyfinUserIdNotUuid: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
@@ -313,7 +313,8 @@ export const settings: Messages["settings"] = {
     scrapePacing: "刮削节奏",
     filenameFiltering: "文件过滤",
     filenameMarkers: "文件名标记识别",
-    filenameMarkersDescription: "在内置识别词之外追加；按完整的词匹配，不区分大小写，前后的 - _ . 可省略。",
+    filenameMarkersDescription:
+      "除内置词外额外追加的识别词。系统会自动按独立分词匹配（不区分大小写），无需输入前后的连接符号（如 -、_、. 等）。",
     proxyAndRequests: "代理与请求",
     siteAccess: "站点访问",
     assetDownloads: "资源下载",
@@ -321,7 +322,8 @@ export const settings: Messages["settings"] = {
     shortcuts: "快捷键",
     advanced: "高级设置",
     sharedPersonSources: "共享人物同步",
-    sharedPersonSourcesHint: "同时服务 Jellyfin 和 Emby。人物简介会按顺序选择一个质量达标的主资料源。",
+    sharedPersonSourcesHint:
+      "配置 Jellyfin 与 Emby 共享的人物数据源及同步行为。抓取人物简介时会按设定的优先级选取最佳资料源。",
   },
   profiles: {
     menuTitle: "配置档案",

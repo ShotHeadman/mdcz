@@ -60,7 +60,9 @@ export const pending = {
   ignoreTokenPlaceholder: "e.g. hhd800.com@",
   saveIgnoreToken: "Save and retry",
   ignore: "Ignore",
-  ignoreConfirm: "Remove this file from the pending list? The file stays where it is.",
+  ignoreConfirmTitle: "Ignore this item?",
+  ignoreConfirmDescription: "This only removes the record from the pending list; the local file will not be deleted.",
+  ignoreSelectedConfirmTitle: (count: number) => `Ignore ${count} selected items?`,
   confirmTypes: {
     umr: "Cracked (UMR)",
     leak: "Leaked",
@@ -71,13 +73,11 @@ export const pending = {
   chooseLibrary: "Scrape into",
   kindFilter: "Filter by kind",
   allKinds: "All kinds",
-  selectAll: (selected: number, total: number) => `Select all (${selected}/${total})`,
+  selectAll: "Select all",
   selectedCount: (count: number) => `${count} selected`,
   clearSelection: "Clear selection",
-  ownLibraries: "Each file's own library",
+  ownLibraries: "Keep original library",
   retrySelected: (count: number) => `Retry ${count}`,
   confirmSelectedAs: (count: number) => `Confirm ${count} as`,
   ignoreSelected: (count: number) => `Ignore ${count}`,
-  ignoreSelectedConfirm: (count: number) =>
-    `Remove these ${count} files from the pending list? The files stay where they are.`,
 };

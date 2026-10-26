@@ -336,9 +336,9 @@ export const settings = {
     detail: (field: string, message: string) => `${field}: ${message}`,
     issues: {
       actorCanonicalNameEmpty: "Canonical actor name cannot be empty",
-      actorAliasListNoValidAlias: "Actor alias list requires at least one valid alias",
+      actorAliasListNoValidAlias: "Please provide at least one valid alias",
       actorAliasEmpty: "Actor alias cannot be empty",
-      actorAliasConflict: "Actor name conflicts with another alias group",
+      actorAliasConflict: "This alias is already added or conflicts with another actor",
       globalTimeoutNotGreater: "Global timeout must be greater than per-crawler timeout",
       actorPhotoFolderNotAbsolute: "The actor photo directory must be an absolute path",
       jellyfinUserIdNotUuid: "Jellyfin user ID must be a UUID, or leave empty for server default",
@@ -351,7 +351,7 @@ export const settings = {
     filenameFiltering: "File filtering",
     filenameMarkers: "File name markers",
     filenameMarkersDescription:
-      "Added to the built-in words. A word matches only as a whole word, case-insensitively; surrounding - _ . are optional.",
+      "Added to the built-in words. Words are matched as separate tokens (case-insensitive); surrounding separators like - _ . can be omitted.",
     proxyAndRequests: "Proxy and requests",
     siteAccess: "Site access",
     assetDownloads: "Asset downloads",
@@ -360,7 +360,7 @@ export const settings = {
     advanced: "Advanced settings",
     sharedPersonSources: "Shared person sync",
     sharedPersonSourcesHint:
-      "Used by both Jellyfin and Emby. The person biography comes from the first source in order that meets the quality bar.",
+      "Used by both Jellyfin and Emby to configure shared person data sources and sync behavior. The biography is chosen from the first source in order that meets the quality bar.",
   },
   profiles: {
     menuTitle: "Profiles",

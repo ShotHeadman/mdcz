@@ -57,23 +57,24 @@ export const settingsFields: Messages["settingsFields"] = {
     "scrape.filenameSubtitleTokens": {
       label: "中文字幕识别词",
       description:
-        "文件名含这些词时视为中文字幕。内置：C、CH、CHS、UC、中文、中字、中文字幕 等。支持 Enter、逗号或空格分割添加。",
+        "文件名包含这些词时判定为中文字幕。内置：C、CH、CHS、UC、中文、中字、中文字幕 等。支持 Enter、逗号或空格分割添加。",
       aliases: ["字幕", "识别词"],
     },
     "scrape.filenameUmrTokens": {
-      label: "破解识别词",
-      description: "文件名含这些词时视为无码破解，例如 LTX、restored。内置：UMR、破解、C-U。",
-      aliases: ["UMR", "识别词"],
+      label: "无码破解识别词 (UMR)",
+      // A non-breaking hyphen keeps the built-in word C-U on one line.
+      description: "文件名包含这些词时判定为无码破解（如 LTX、restored）。内置：UMR、破解、C\u2011U。",
+      aliases: ["UMR", "破解", "识别词"],
     },
     "scrape.filenameLeakTokens": {
       label: "流出识别词",
-      description: "文件名含这些词时视为无码流出。没有内置词。",
-      aliases: ["识别词"],
+      description: "文件名包含这些词时判定为无码流出版本。默认无内置词，可按需添加。",
+      aliases: ["流出", "识别词"],
     },
     "scrape.filenameUncensoredTokens": {
       label: "无码识别词",
-      description: "文件名含这些词时视为无码。内置：U、UC。",
-      aliases: ["识别词"],
+      description: "文件名包含这些词时判定为无码。内置：U、UC。",
+      aliases: ["无码", "识别词"],
     },
     "scrape.minVideoSizeMb": {
       label: "最小视频大小 (MB)",
@@ -277,10 +278,10 @@ export const settingsFields: Messages["settingsFields"] = {
         "开启后，{actor} 在没有演员名时会回退到片商或卖家名称；如需显示来源，可在模板中使用 {actorFallbackPrefix}{actor}。",
     },
     "personSync.actorAliases": {
-      label: "演员别名归一",
+      label: "演员别名映射",
       description:
-        "把同一演员在各站点的不同写法统一为规范名称。之后刮削的演员名、{actor} 路径和 NFO 都使用规范名称，原写法保留为人物别名，用于查询头像和简介；已有影片不会自动改名。",
-      aliases: ["别名", "演员别名", "改名", "统一演员名"],
+        "将同一位演员在不同站点的不同译名或曾用名（如：河北彩花 / 河北彩伽）统一为规范名称。后续刮削写入的演员名、{actor} 路径与 NFO 均会使用规范名称，原写法保留为别名用于检索头像与简介；已刮削的影片不会自动重命名。",
+      aliases: ["别名", "演员别名", "别名映射", "统一演员名"],
     },
     "naming.releaseRule": { label: "发行日期格式" },
     "naming.folderNameMax": { label: "文件夹名最大长度" },
@@ -290,7 +291,7 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "整理命名时追加的后缀；识别文件名用的词在「刮削 › 文件名标记识别」中设置。",
     },
     "naming.umrStyle": {
-      label: "UMR 标记",
+      label: "无码破解标记 (UMR)",
       description: "整理命名时追加的后缀；识别文件名用的词在「刮削 › 文件名标记识别」中设置。",
     },
     "naming.leakStyle": {
@@ -363,7 +364,7 @@ export const settingsFields: Messages["settingsFields"] = {
     "personSync.syncAfterPublish": {
       label: "刮削后同步人物",
       description:
-        "刮削任务结束后，等待各服务器扫描新影片，再同步其中的人物。本次新增的人物会以 MDCz 的简介与头像取代服务器按名字匹配到的资料并锁定；服务器原有的人物只补全缺失的部分。仅作用于已开启入库后增量刷新目录的服务器。",
+        "刮削完成后自动等待媒体服务器入库新影片，随后同步关联的人物简介与头像。本次新增的人物将优先使用 MDCz 的数据并锁定；已有的人物仅补全缺失资料。（需在上方媒体服务器中开启「入库后增量刷新目录」方可生效）",
     },
     "personSync.bioLabelLanguage": {
       label: "人物简介标签语言",

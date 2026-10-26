@@ -112,6 +112,10 @@ export function PendingView({
   const t = useT();
   const [kindFilter, setKindFilter] = useState<PendingKindDto | "all">("all");
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const kindCounts = new Map<PendingKindDto, number>();
+  for (const item of items) kindCounts.set(item.kind, (kindCounts.get(item.kind) ?? 0) + 1);
+  // Once the filtered kind runs out, every kind shows again instead of an empty list under a blank filter.
+  if (kindFilter !== "all" && !kindCounts.has(kindFilter)) setKindFilter("all");
   const visibleItems = kindFilter === "all" ? items : items.filter((item) => item.kind === kindFilter);
   // Entries that left the list or the filter drop out of the selection on their own.
   const selected = visibleItems.filter((item) => selectedIds.has(item.id));
@@ -155,8 +159,8 @@ export function PendingView({
             <SelectContent>
               <SelectItem value="all">{`${t.pending.allKinds} (${items.length})`}</SelectItem>
               {PENDING_KINDS.map((kind) => {
-                const count = items.filter((item) => item.kind === kind).length;
-                return count > 0 ? (
+                const count = kindCounts.get(kind);
+                return count ? (
                   <SelectItem key={kind} value={kind}>{`${t.pending.kinds[kind]} (${count})`}</SelectItem>
                 ) : null;
               })}
@@ -165,6 +169,7 @@ export function PendingView({
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Checkbox
               id="pending-select-all"
+              aria-label={t.pending.selectAll}
               checked={
                 selected.length > 0 && selected.length === visibleItems.length
                   ? true
@@ -180,19 +185,9 @@ export function PendingView({
               }
             />
             <label htmlFor="pending-select-all" className="cursor-pointer select-none">
-              {t.pending.selectAll(selected.length, visibleItems.length)}
+              {t.pending.selectAll}
             </label>
           </div>
-          {selected.length > 0 ? (
-            <BatchActions
-              items={selected}
-              libraries={libraries}
-              onDone={() => setSelectedIds(new Set())}
-              onRetryMany={onRetryMany}
-              onConfirmUncensored={onConfirmUncensored}
-              onIgnore={onIgnore}
-            />
-          ) : null}
         </div>
         <ul className="space-y-2">
           {visibleItems.map((item) => {
@@ -237,6 +232,19 @@ export function PendingView({
             );
           })}
         </ul>
+        {selected.length > 0 ? (
+          // Pinned below the list: the actions stay in reach while scrolling, and showing them moves no row.
+          <div className="sticky bottom-0 -mx-4 -mb-4 bg-surface-canvas px-4 pt-3 pb-4">
+            <BatchActions
+              items={selected}
+              libraries={libraries}
+              onDone={() => setSelectedIds(new Set())}
+              onRetryMany={onRetryMany}
+              onConfirmUncensored={onConfirmUncensored}
+              onIgnore={onIgnore}
+            />
+          </div>
+        ) : null}
       </section>
       <section className="min-h-0 overflow-y-auto p-6 lg:p-8">
         {detailLoading && !detail ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : null}
@@ -349,8 +357,10 @@ function BatchActions({
         onClick={async () => {
           if (
             await confirmDialog({
-              title: t.pending.ignoreSelectedConfirm(items.length),
+              title: t.pending.ignoreSelectedConfirmTitle(items.length),
+              description: t.pending.ignoreConfirmDescription,
               confirmLabel: t.pending.ignore,
+              destructive: true,
             })
           )
             await run(() => onIgnore(items.map((item) => item.id)));
@@ -427,7 +437,14 @@ function PendingDetail({
             className="h-8 shrink-0 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             disabled={busy}
             onClick={async () => {
-              if (await confirmDialog({ title: t.pending.ignoreConfirm, confirmLabel: t.pending.ignore }))
+              if (
+                await confirmDialog({
+                  title: t.pending.ignoreConfirmTitle,
+                  description: t.pending.ignoreConfirmDescription,
+                  confirmLabel: t.pending.ignore,
+                  destructive: true,
+                })
+              )
                 await run(() => onIgnore([item.id]));
             }}
           >
