@@ -55,24 +55,6 @@ const buildPrestigeMediaUrl = (path: string | undefined): string | undefined => 
   return new URL(`/api/media/${normalized}`, PRESTIGE_BASE_URL).toString();
 };
 
-const buildPrestigeDescription = (detail: PrestigeActressDetailResponse): string | undefined => {
-  return buildFieldDescription(
-    [
-      ["生年月日", formatIsoDate(toNonEmptyString(detail.birthday))],
-      ["出身地", toNonEmptyString(detail.birthPlace)],
-      ["血液型", toNonEmptyString(detail.bloodType)],
-      ["身長", toNonEmptyString(detail.height)],
-      ["B", toNonEmptyString(detail.breastSize)],
-      ["W", toNonEmptyString(detail.waistSize)],
-      ["H", toNonEmptyString(detail.hipSize)],
-      ["趣味", toNonEmptyString(detail.hobby)],
-      ["X", toNonEmptyString(detail.twitterId)],
-      ["Instagram", toNonEmptyString(detail.instagramId)],
-    ],
-    detail.body ?? undefined,
-  );
-};
-
 export class PrestigeOfficialAdapter extends BaseStudioOfficialAdapter<PrestigeActressSummary[]> {
   constructor(deps: OfficialActorSourceDependencies) {
     super(deps, {
@@ -114,13 +96,28 @@ export class PrestigeOfficialAdapter extends BaseStudioOfficialAdapter<PrestigeA
       birth_date: parseActorDate(toNonEmptyString(detail.birthday)),
       birth_place: toNonEmptyString(detail.birthPlace),
       blood_type: parseActorBloodType(toNonEmptyString(detail.bloodType)),
-      description: buildPrestigeDescription(detail),
       height_cm: parseActorMetricCm(toNonEmptyString(detail.height)),
       bust_cm: parseActorMetricCm(toNonEmptyString(detail.breastSize)),
       waist_cm: parseActorMetricCm(toNonEmptyString(detail.waistSize)),
       hip_cm: parseActorMetricCm(toNonEmptyString(detail.hipSize)),
       photo_url: buildPrestigeMediaUrl(detail.media?.path ?? actress.media?.path ?? undefined),
     };
+    profile.description = buildFieldDescription(
+      profile,
+      [
+        ["生年月日", formatIsoDate(toNonEmptyString(detail.birthday))],
+        ["出身地", toNonEmptyString(detail.birthPlace)],
+        ["血液型", toNonEmptyString(detail.bloodType)],
+        ["身長", toNonEmptyString(detail.height)],
+        ["B", toNonEmptyString(detail.breastSize)],
+        ["W", toNonEmptyString(detail.waistSize)],
+        ["H", toNonEmptyString(detail.hipSize)],
+        ["趣味", toNonEmptyString(detail.hobby)],
+        ["X", toNonEmptyString(detail.twitterId)],
+        ["Instagram", toNonEmptyString(detail.instagramId)],
+      ],
+      detail.body ?? undefined,
+    );
 
     return hasActorProfileContent(profile)
       ? {

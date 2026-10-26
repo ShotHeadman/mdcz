@@ -18,7 +18,7 @@ vi.mock("node:timers/promises", () => {
 
 import { CrawlerProvider } from "@mdcz/runtime/crawler/CrawlerProvider";
 import { FetchGateway } from "@mdcz/runtime/crawler/FetchGateway";
-import { NetworkClient, runWithCrawlerSource } from "@mdcz/runtime/network";
+import { NetworkClient, runWithCrawlerSource, runWithNetworkSignal } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 
 const createProbeResponse = (
@@ -127,6 +127,23 @@ describe("NetworkClient retry policy", () => {
 
     await expect(client.getText("https://example.com/aborted")).rejects.toBe(abortError);
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sleepMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts a request made inside a network signal scope while it waits on the server, without retrying", async () => {
+    fetchMock.mockImplementation(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason))),
+    );
+    const controller = new AbortController();
+    const client = new NetworkClient({ getRetryCount: () => 3 });
+
+    const request = runWithNetworkSignal(controller.signal, () => client.getText("https://example.com/hanging"));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+
+    await expect(request).rejects.toThrow("aborted");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(sleepMock).not.toHaveBeenCalled();
   });

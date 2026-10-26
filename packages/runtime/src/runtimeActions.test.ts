@@ -2,7 +2,7 @@ import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
-import { FetchNetworkClient } from "./network";
+import { NetworkClient } from "./network";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { buildCrawlerOptions } from "./scrape/crawlerOptions";
 import { TranslateService } from "./scrape/TranslateService";
@@ -157,7 +157,7 @@ describe("settings parity runtime helpers", () => {
     const config = cloneConfig();
     config.translate.llmOutputFormat = outputFormat;
     config.translate.llmApiKey = "test-key";
-    const networkClient = new FetchNetworkClient();
+    const networkClient = new NetworkClient();
     const llmApiClient = {
       generateText: vi
         .fn()
@@ -226,7 +226,7 @@ describe("settings parity runtime helpers", () => {
   ] as const)("verifies %s using submitted settings and guards credentials", async (engine) => {
     const config = cloneConfig();
     const original = structuredClone(config);
-    const network = new FetchNetworkClient();
+    const network = new NetworkClient();
     const translateMetadata = vi.spyOn(TranslateService.prototype, "translateMetadata").mockResolvedValue({
       title: "某天傍晚",
       plot: "某天傍晚的故事。",

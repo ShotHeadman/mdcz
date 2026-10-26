@@ -1,4 +1,5 @@
 import { basename, extname } from "node:path";
+import type { Configuration } from "@mdcz/shared/config";
 import type { FileInfo } from "@mdcz/shared/types";
 import {
   CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS,
@@ -355,34 +356,66 @@ const detectAlphabeticPart = (
   };
 };
 
+/** Cuts whole delimited words, matched case-insensitively; delimiters typed around a word (`-LTX`) are not part of it. */
+const cutMarkerWords = (stem: string, words: readonly string[] = []): string => {
+  const alternation = joinRegexAlternation(
+    words.map((word) => word.normalize("NFC").replace(/^[-_.\s]+|[-_.\s]+$/gu, "")).filter(Boolean),
+  );
+  return alternation
+    ? stem.replace(
+        new RegExp(`(?:^|${FILENAME_DELIMITER_SOURCE})(?:${alternation})(?=$|${FILENAME_DELIMITER_SOURCE})`, "giu"),
+        "",
+      )
+    : stem;
+};
+
+export type FilenameRules = Partial<
+  Pick<
+    Configuration["scrape"],
+    | "filenameIgnoreTokens"
+    | "numberMappings"
+    | "filenameSubtitleTokens"
+    | "filenameUmrTokens"
+    | "filenameLeakTokens"
+    | "filenameUncensoredTokens"
+  >
+>;
+
 /** `numberMappings` (file name keyword -> number) wins over parsing, for names no rule can read. */
-export const parseFileInfo = (
-  filePath: string,
-  escapeStrings: readonly string[] = [],
-  numberMappings: Readonly<Record<string, string>> = {},
-): FileInfo => {
+export const parseFileInfo = (filePath: string, rules: FilenameRules = {}): FileInfo => {
   const extension = extname(filePath);
   const stem = basename(filePath, extension);
   const normalizedStem = stem.normalize("NFC");
   const normalizedUpper = normalizedStem.toUpperCase();
-  const mapped = Object.entries(numberMappings).find(([match]) =>
+  const mapped = Object.entries(rules.numberMappings ?? {}).find(([match]) =>
     normalizedUpper.includes(match.normalize("NFC").toUpperCase()),
   )?.[1];
 
-  const crackedCuMatch = normalizedUpper.match(CRACKED_CU_PATTERN);
-  const subtitleTag = detectChineseSubtitleTagInFileName(
-    crackedCuMatch ? normalizedStem.replace(CRACKED_CU_PATTERN, "") : normalizedStem,
-  );
-  const uncensoredMatch = normalizedUpper.match(UNCENSORED_PATTERN);
-  const umrMatch = normalizedStem.match(UMR_PATTERN);
+  // Configured marker words are cut out before the number and part are read, so `ABC-123-A-LTX` still has part A.
+  const withoutSubtitleWords = cutMarkerWords(normalizedStem, rules.filenameSubtitleTokens);
+  const withoutUmrWords = cutMarkerWords(withoutSubtitleWords, rules.filenameUmrTokens);
+  const withoutLeakWords = cutMarkerWords(withoutUmrWords, rules.filenameLeakTokens);
+  const markerFreeStem = cutMarkerWords(withoutLeakWords, rules.filenameUncensoredTokens);
+
+  const crackedCuMatch = markerFreeStem.toUpperCase().match(CRACKED_CU_PATTERN);
+  const subtitleTag =
+    withoutSubtitleWords !== normalizedStem
+      ? "中文字幕"
+      : detectChineseSubtitleTagInFileName(
+          crackedCuMatch ? markerFreeStem.replace(CRACKED_CU_PATTERN, "") : markerFreeStem,
+        );
+  const umr = withoutUmrWords !== withoutSubtitleWords || UMR_PATTERN.test(normalizedStem);
+  const leak = withoutLeakWords !== withoutUmrWords;
+  const uncensored = markerFreeStem !== withoutLeakWords || UNCENSORED_PATTERN.test(normalizedUpper);
+  const uncensoredChoice = umr ? "umr" : leak ? "leak" : uncensored ? "uncensored" : undefined;
   const resolutionMatch = RESOLUTION_PATTERNS.map((pattern) => normalizedUpper.match(pattern)).find(Boolean);
-  const tokens = [...escapeStrings];
-  const number = mapped?.trim().toUpperCase() ?? extractNumber(normalizedStem, tokens);
+  const tokens = rules.filenameIgnoreTokens ?? [];
+  const number = mapped?.trim().toUpperCase() ?? extractNumber(markerFreeStem, tokens);
   const part =
-    detectNamedPart(normalizedStem, number) ??
-    detectBareNumericPart(normalizedStem, number, tokens) ??
-    detectAlphabeticPart(normalizedStem, number, tokens) ??
-    detectCircledPart(normalizedStem, number, tokens);
+    detectNamedPart(markerFreeStem, number) ??
+    detectBareNumericPart(markerFreeStem, number, tokens) ??
+    detectAlphabeticPart(markerFreeStem, number, tokens) ??
+    detectCircledPart(markerFreeStem, number, tokens);
 
   return {
     filePath,
@@ -391,8 +424,8 @@ export const parseFileInfo = (
     number,
     isSubtitled: Boolean(subtitleTag),
     subtitleTag,
-    isUncensored: Boolean(uncensoredMatch || umrMatch),
-    filenameUncensoredChoice: umrMatch ? "umr" : uncensoredMatch ? "uncensored" : undefined,
+    isUncensored: Boolean(uncensoredChoice),
+    filenameUncensoredChoice: uncensoredChoice,
     resolution: resolutionMatch?.[0],
     part,
   };
@@ -407,9 +440,9 @@ const relativeRetryDirectory = (item: { rootId: string; relativePath: string }):
 export const scrapeRetryMovieKey = (
   item: { relativePath: string; manualUrl?: string | null },
   directoryIdentity: string,
-  ignoreTokens: readonly string[] = [],
+  rules: FilenameRules = {},
 ): string => {
-  const parsed = parseFileInfo(item.relativePath, [...ignoreTokens]);
+  const parsed = parseFileInfo(item.relativePath, rules);
   const movieIdentity = parsed.number.trim().toUpperCase() || item.relativePath;
   return JSON.stringify([directoryIdentity, movieIdentity, item.manualUrl ?? ""]);
 };
@@ -419,10 +452,10 @@ export const expandScrapeRetryItems = <
 >(
   items: readonly T[],
   itemIds: readonly string[],
-  ignoreTokens: readonly string[] = [],
+  rules: FilenameRules = {},
   directoryOf: (item: T) => string = relativeRetryDirectory,
 ): string[] => {
-  const keyOf = (item: T) => scrapeRetryMovieKey(item, directoryOf(item), ignoreTokens);
+  const keyOf = (item: T) => scrapeRetryMovieKey(item, directoryOf(item), rules);
   const keys = new Set(items.filter((item) => itemIds.includes(item.id)).map(keyOf));
   return items.filter((item) => keys.has(keyOf(item))).map((item) => item.id);
 };

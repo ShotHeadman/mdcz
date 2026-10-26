@@ -413,10 +413,10 @@ describe("buildServer scrape integration", () => {
       ],
     });
     expect(scrapeHistoryResponse.json().result.data.runs[0].executionMode).toBe("batch");
-    const scrapeResultId = scrapeResult.id;
+    const video = { rootId, relativePath: "JAV_output/Actor A/ABC-123/ABC-123.mp4" };
     const cropSessionResponse = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: scrapeResultId }))}`,
+      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify(video))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     const cropSession = cropSessionResponse.json().result.data;
@@ -424,7 +424,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.posterCropSave",
       headers: { authorization: `Bearer ${token}` },
-      payload: { id: scrapeResultId, crop: cropSession.initialCrop },
+      payload: { ...video, crop: cropSession.initialCrop },
     });
 
     const libraryResponse = await fastify.inject({
@@ -525,7 +525,7 @@ describe("buildServer scrape integration", () => {
       url: "https://example.com/runtime-trailer-source.mp4",
     });
     expect(nfoContent).toContain("Runtime Title ABC-123");
-    expect(nfoContent).toContain(".actors/Actor A.jpg");
+    expect(nfoContent).not.toContain(".actors/");
     expect(nfoContent).not.toContain("<director>Runtime Director</director>");
     expect(actorPhotoContent.length).toBeGreaterThan(8000);
     expect(posterContent.length).toBeGreaterThan(0);
@@ -569,13 +569,13 @@ describe("buildServer scrape integration", () => {
           { type: "local", kind: "poster", file: { rootId, relativePath: entry.thumbnailPath } },
         ]),
       });
-      const crop = await restarted.services.scrape.posterCropSession(entry.displayFileId);
+      const crop = await restarted.services.scrape.posterCropSession(video);
       expect(crop).toMatchObject({
         sourceRelativePath: cropSession.sourceRelativePath,
         targetRelativePath: cropSession.targetRelativePath,
       });
       await expect(
-        restarted.services.scrape.posterCropSave({ id: entry.displayFileId, crop: crop.initialCrop }),
+        restarted.services.scrape.posterCropSave({ ...video, crop: crop.initialCrop }),
       ).resolves.toMatchObject({ revision: expect.any(String) });
     } finally {
       await restarted.fastify.close();
@@ -837,9 +837,10 @@ describe("buildServer scrape integration", () => {
       title: "Edited independent output",
       crawlerDataJson: expect.stringContaining("Edited independent output"),
     });
+    const video = { rootId, relativePath: outputRelativePath };
     const crop = await fastify.inject({
       method: "GET",
-      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify({ id: result.id }))}`,
+      url: `/trpc/scrape.posterCropSession?input=${encodeURIComponent(JSON.stringify(video))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(crop.statusCode).toBe(200);
@@ -848,7 +849,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/scrape.posterCropSave",
       headers: { authorization: `Bearer ${token}` },
-      payload: { id: result.id, crop: crop.json().result.data.initialCrop },
+      payload: { ...video, crop: crop.json().result.data.initialCrop },
     });
     expect(savedCrop.statusCode).toBe(200);
     const retainedPath = `${directory}/checksum.txt`;
@@ -973,7 +974,7 @@ describe("buildServer scrape integration", () => {
         method: "POST",
         url: "/trpc/pending.confirmUncensored",
         headers,
-        payload: { id: item.id, choice: "leak" },
+        payload: { ids: [item.id], choice: "leak" },
       });
     const confirmResponse = await confirm();
 
@@ -1035,14 +1036,72 @@ describe("buildServer scrape integration", () => {
     ]);
 
     for (const [procedure, payload] of [
-      ["pending.confirmUncensored", { id: "missing-item", choice: "uncensored" }],
+      ["pending.confirmUncensored", { ids: ["missing-item"], choice: "uncensored" }],
       ["pending.retry", { id: "missing-item", number: "ABC-123" }],
-      ["pending.ignore", { id: "missing-item" }],
+      ["pending.retryMany", { ids: ["missing-item"] }],
+      ["pending.ignore", { ids: ["missing-item"] }],
     ] as const) {
       const response = await fastify.inject({ method: "POST", url: `/trpc/${procedure}`, headers, payload });
       if (procedure === "pending.ignore") expect(response.statusCode).toBe(200);
       else expect(response.json().error.message).toContain("Pending item not found");
     }
+  });
+
+  it("scrapes selected pending entries again in one task per library and ignores a selection at once", async () => {
+    const roots = [await createTempRoot("pending-batch-a"), await createTempRoot("pending-batch-b")];
+    const imageServer = await startTestImageServer();
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+    });
+    const token = await loginAsAdmin(fastify);
+    const headers = { authorization: `Bearer ${token}` };
+    const [first, second] = [
+      await createTestLibrary(fastify, token, roots[0]),
+      await createTestLibrary(fastify, token, roots[1]),
+    ];
+    const pending = (await services.persistence.getState()).repositories.pending;
+    const files = [
+      { library: first, root: roots[0], name: "ABC-201.mp4", kind: "not_found" },
+      { library: first, root: roots[0], name: "ABC-202.mp4", kind: "failed" },
+      { library: second, root: roots[1], name: "ABC-203.mp4", kind: "new_file" },
+    ] as const;
+    for (const file of files) {
+      await writeFile(join(file.root, file.name), "video");
+      pending.upsert({
+        kind: file.kind,
+        rootId: file.library.rootId,
+        relativePath: file.name,
+        libraryId: file.library.libraryId,
+      });
+    }
+    pending.upsert({
+      kind: "uncensored",
+      rootId: first.rootId,
+      relativePath: "ABC-204.mp4",
+      libraryId: first.libraryId,
+    });
+    const pendingItems = async (): Promise<Array<{ id: string; kind: string; fileName: string }>> =>
+      (await fastify.inject({ method: "GET", url: "/trpc/pending.list", headers })).json().result.data.items;
+    const mutate = async (procedure: string, payload: Record<string, unknown>) =>
+      await fastify.inject({ method: "POST", url: `/trpc/pending.${procedure}`, headers, payload });
+    const listed = await pendingItems();
+    const scrapable = listed.filter((item) => item.kind !== "uncensored").map((item) => item.id);
+    const published = listed.filter((item) => item.kind === "uncensored").map((item) => item.id);
+
+    expect((await mutate("retryMany", { ids: [...scrapable, ...published] })).json().error.message).toContain(
+      "confirm its type instead",
+    );
+    const retried = await mutate("retryMany", { ids: scrapable });
+    expect(retried.statusCode, retried.body).toBe(200);
+    const { taskIds } = retried.json().result.data as { taskIds: string[] };
+    expect(taskIds).toHaveLength(2);
+    for (const taskId of taskIds) await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+    const scraped = await Promise.all(taskIds.map(async (taskId) => await services.scrape.snapshot({ taskId })));
+    expect(scraped.map((snapshot) => snapshot.items.length).sort()).toEqual([1, 2]);
+    expect((await pendingItems()).map((item) => item.fileName)).toEqual(["ABC-204.mp4"]);
+
+    expect((await mutate("ignore", { ids: published })).statusCode).toBe(200);
+    expect(await pendingItems()).toEqual([]);
   });
 
   it("accepts scrape refs that span multiple registered media roots", async () => {

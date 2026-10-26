@@ -11,6 +11,7 @@ import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
 import {
   getCrawlerExecutionSource,
+  getNetworkSignal,
   isUnrecoverableNetworkError,
   preserveNetworkExecutionContext,
 } from "./networkExecution";
@@ -182,6 +183,10 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
   async postText(url: string, body: string, init: Omit<ImpitRequestInit, "method" | "body"> = {}): Promise<string> {
     return await this.requestText(url, { ...init, method: "POST", body });
+  }
+
+  async deleteText(url: string, init: Omit<ImpitRequestInit, "method" | "body"> = {}): Promise<string> {
+    return await this.requestText(url, { ...init, method: "DELETE" });
   }
 
   async postJson<TResponse>(
@@ -467,10 +472,17 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
   private async executeRequest<TResult = RawNetworkResponse>(
     url: string,
-    init: ImpitRequestInit,
+    requestInit: ImpitRequestInit,
     client?: Impit,
     behavior: RequestBehavior<TResult> = {},
   ): Promise<TResult> {
+    const scopeSignal = getNetworkSignal();
+    const init = scopeSignal
+      ? {
+          ...requestInit,
+          signal: requestInit.signal ? AbortSignal.any([requestInit.signal, scopeSignal]) : scopeSignal,
+        }
+      : requestInit;
     const budget = getCrawlerExecutionSource()?.budget;
     let dispatched = false;
     budget?.pause();

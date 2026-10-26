@@ -2,7 +2,6 @@ import { constants, type Dirent, type Stats } from "node:fs";
 import { access, lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { MediaLibraryService } from "@mdcz/runtime/library";
-import type { Configuration } from "@mdcz/shared/config";
 import type {
   ServerPathSuggestInput,
   ServerPathSuggestionEntryDto,
@@ -143,7 +142,7 @@ export class ServerPathService {
       this.libraries.list().catch(() => []),
     ]);
     const configuredPathValues = [
-      ...(configuration ? this.collectConfigPathValues(configuration) : []),
+      ...(configuration ? [configuration.paths.actorPhotoFolder.trim()] : []),
       ...libraries.flatMap((library) => [library.sourcePath, library.outputPath]),
     ];
     const candidates = [...mediaRootList.roots.map((root) => root.hostPath), ...configuredPathValues];
@@ -157,14 +156,6 @@ export class ServerPathService {
       }),
     );
     return checked.filter(Boolean);
-  }
-
-  private collectConfigPathValues(configuration: Configuration): string[] {
-    return [
-      configuration.paths.actorPhotoFolder,
-      configuration.paths.outputSummaryPath,
-      configuration.paths.configDirectory,
-    ].map((value) => value.trim());
   }
 
   private async listDirectoryEntries(

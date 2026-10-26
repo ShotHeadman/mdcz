@@ -1,13 +1,15 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { isRemoteAssetUrl } from "@mdcz/shared/mediaRef";
+import type { PersonSyncJobDto, PersonSyncStartInput } from "@mdcz/shared/serverDtos";
+import type { ToolId } from "@mdcz/shared/toolCatalog";
 import type {
+  AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
   BatchTranslateApplyResultItem,
   BatchTranslateScanItem,
   MediaServerConnectionCheckResult,
-} from "@mdcz/shared/ipcTypes";
-import type { PersonSyncJobDto, PersonSyncStartInput } from "@mdcz/shared/serverDtos";
-import type { ToolId } from "@mdcz/shared/toolCatalog";
+} from "@mdcz/shared/toolTypes";
 import { useT } from "@mdcz/views/i18n";
 import {
   AmazonPosterWorkspaceDetail,
@@ -24,11 +26,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { api, getLibraryAssetSrc, subscribeTaskNotifications } from "../../client";
+import { browseDirectory, browseMediaFile } from "../../desktop";
 import { queryKeys } from "../../lib/queryKeys";
 import { AppLink, ErrorBanner } from "../../routeCommon";
 import { toRunState } from "../toolsController";
-
-const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
 
 const normalizePath = (value: string): string => value.trim().replace(/\\/gu, "/").replace(/\/+$/u, "");
 
@@ -44,7 +45,7 @@ const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPat
       if (!trimmed) {
         return "";
       }
-      if (isRemoteImageCandidate(trimmed)) {
+      if (isRemoteAssetUrl(trimmed)) {
         return trimmed;
       }
 
@@ -69,9 +70,6 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [singleFileRootId, setSingleFileRootId] = useState("");
-  const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
-  const [amazonDialogOpen, setAmazonDialogOpen] = useState(false);
-  const [amazonItems, setAmazonItems] = useState<AmazonPosterScanItem[]>([]);
   const [personServer, setPersonServer] = useState<PersonServer | null>(null);
   const [jellyfinInfoMode, setJellyfinInfoMode] = useState<PersonSyncMode>("missing");
   const [jellyfinPhotoMode, setJellyfinPhotoMode] = useState<PersonSyncMode>("missing");
@@ -79,13 +77,12 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const [embyPhotoMode, setEmbyPhotoMode] = useState<PersonSyncMode>("missing");
   const [jellyfinCheckResult, setJellyfinCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
   const [embyCheckResult, setEmbyCheckResult] = useState<MediaServerConnectionCheckResult | null>(null);
-  const rootsQ = useQuery({ queryKey: queryKeys.mediaRoots.list, queryFn: () => api.mediaRoots.list(), retry: false });
-  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
+  const rootsQ = useQuery({ queryKey: queryKeys.mediaRoots.list, queryFn: () => api.mediaRoots.list() });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list() });
   const browserQ = useQuery({
     queryKey: queryKeys.browser.list(singleFileRootId),
     queryFn: () => api.browser.list({ rootId: singleFileRootId, relativePath: "" }),
     enabled: Boolean(singleFileRootId),
-    retry: false,
   });
   const executeM = useMutation({
     mutationFn: (input: Parameters<typeof api.tools.execute>[0]) => api.tools.execute(input),
@@ -99,7 +96,6 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
     queryKey: queryKeys.personSync,
     queryFn: () => api.tools.personSyncStatus(),
     enabled: toolId === "media-library-tools",
-    retry: false,
   });
   useEffect(() => {
     if (toolId !== "media-library-tools") return;
@@ -156,6 +152,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
             roots={roots}
             libraries={librariesQ.data?.libraries ?? []}
             state={state}
+            onBrowseFile={browseMediaFile}
             workbenchLink={
               <AppLink className="text-sm font-medium underline-offset-4 hover:underline" to="/workbench">
                 {t.web.openWorkbench}
@@ -170,21 +167,23 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
         <CrawlerTesterDetail state={state} onRun={(input) => void executeM.mutate({ toolId, ...input })} />
       )}
       {toolId === "symlink-manager" && (
-        <SymlinkManagerDetail state={state} onRun={(input) => void executeM.mutate({ toolId, ...input })} />
+        <SymlinkManagerDetail
+          state={state}
+          onBrowseSourceDir={browseDirectory}
+          onBrowseDestDir={browseDirectory}
+          onRun={(input) => void executeM.mutate({ toolId, ...input })}
+        />
       )}
       {toolId === "batch-nfo-translator" && (
         <BatchNfoTranslatorWorkspaceDetail
-          items={batchItems}
           onApply={async (items, batchSize, mode) => {
-            const response = await executeM.mutateAsync({ toolId, action: "apply", mode, batchSize, items });
-            const data = response.data as { results?: BatchTranslateApplyResultItem[] } | undefined;
-            return data?.results ?? [];
+            const response = await api.tools.execute({ toolId, action: "apply", mode, batchSize, items });
+            return (response.data as { results: BatchTranslateApplyResultItem[] }).results;
           }}
-          scanning={executeM.isPending && executeM.variables?.toolId === toolId && executeM.variables.action === "scan"}
+          onBrowseDirectory={browseDirectory}
           onScan={async (directory, mode) => {
-            const response = await executeM.mutateAsync({ toolId, action: "scan", mode, directory });
-            const data = response.data as { items?: BatchTranslateScanItem[] } | undefined;
-            setBatchItems(data?.items ?? []);
+            const response = await api.tools.execute({ toolId, action: "scan", mode, directory });
+            return (response.data as { items: BatchTranslateScanItem[] }).items;
           }}
         />
       )}
@@ -220,6 +219,14 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
               const result = response.data as MediaServerConnectionCheckResult;
               if (server === "jellyfin") setJellyfinCheckResult(result);
               else setEmbyCheckResult(result);
+            }}
+            onStopPersonNameMatching={async () => {
+              const response = await executeM.mutateAsync({
+                toolId,
+                server: "jellyfin",
+                action: "stopPersonNameMatching",
+              });
+              setJellyfinCheckResult(response.data as MediaServerConnectionCheckResult);
             }}
             onInfoModeChange={(server, mode) => {
               if (server === "jellyfin") setJellyfinInfoMode(mode);
@@ -257,21 +264,16 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
       )}
       {toolId === "amazon-poster" && (
         <AmazonPosterWorkspaceDetail
-          dialogOpen={amazonDialogOpen}
-          items={amazonItems}
-          scanning={executeM.isPending}
+          onBrowseDirectory={browseDirectory}
           onApply={async (items) => {
-            await executeM.mutateAsync({ toolId, action: "apply", items });
-            setAmazonDialogOpen(false);
+            const response = await api.tools.execute({ toolId, action: "apply", items });
+            return (response.data as { results: AmazonPosterApplyResultItem[] }).results;
           }}
-          onDialogOpenChange={setAmazonDialogOpen}
           onLookup={lookupAmazonPoster}
           resolveImageCandidates={resolveAmazonPosterImageCandidates}
           onScan={async (rootDir) => {
-            const response = await executeM.mutateAsync({ toolId, action: "scan", rootDir });
-            const data = response.data as { items?: AmazonPosterScanItem[] } | undefined;
-            setAmazonItems(data?.items ?? []);
-            setAmazonDialogOpen(true);
+            const response = await api.tools.execute({ toolId, action: "scan", rootDir });
+            return (response.data as { items: AmazonPosterScanItem[] }).items;
           }}
         />
       )}

@@ -20,7 +20,6 @@ export const maintenancePresetIdSchema = z.enum([
   "local_organize",
   "rebuild_all",
 ]);
-export type MaintenancePresetIdDto = z.infer<typeof maintenancePresetIdSchema>;
 
 export const mediaRootAvailabilitySchema = z.object({
   available: z.boolean(),
@@ -46,13 +45,6 @@ export const mediaRootListResponseSchema = z.object({
 });
 
 export type MediaRootListResponse = z.infer<typeof mediaRootListResponseSchema>;
-
-export const mediaRootCreateInputSchema = z.object({
-  displayName: z.string().trim().min(1),
-  hostPath: z.string().trim().min(1),
-});
-
-export type MediaRootCreateInput = z.infer<typeof mediaRootCreateInputSchema>;
 
 export const mediaRootEnsurePathInputSchema = z.object({
   displayName: z.string().trim().min(1).optional(),
@@ -97,8 +89,6 @@ export type RootBrowserResponse = z.infer<typeof rootBrowserResponseSchema>;
 
 export const serverPathIntentSchema = z.enum(["settings", "workbench-scan", "workbench-output", "media-root"]);
 
-export type ServerPathIntentDto = z.infer<typeof serverPathIntentSchema>;
-
 export const serverPathSuggestInputSchema = z.object({
   path: z.string().optional().default(""),
   kind: z.literal("directory").optional().default("directory"),
@@ -128,10 +118,8 @@ export const serverPathSuggestResponseSchema = z.object({
 export type ServerPathSuggestResponse = z.infer<typeof serverPathSuggestResponseSchema>;
 
 export const taskKindSchema = z.enum(["scan", "scrape", "maintenance"]);
-export type TaskKind = z.infer<typeof taskKindSchema>;
 
 export const scanStatusSchema = z.enum(["queued", "running", "completed", "failed", "paused", "stopping"]);
-export type ScanStatus = z.infer<typeof scanStatusSchema>;
 
 export const taskStatusSchema = z.enum([
   "queued",
@@ -237,8 +225,6 @@ export const scrapeRunTaskSchema = z.object({
   libraryId: z.string().nullable(),
 });
 
-export type ScrapeRunTaskDto = z.infer<typeof scrapeRunTaskSchema>;
-
 export const scanTaskListResponseSchema = z.object({
   tasks: z.array(scanTaskSchema),
 });
@@ -310,7 +296,8 @@ export const scrapeResultIdInputSchema = z.object({
 
 export type ScrapeResultIdInput = z.infer<typeof scrapeResultIdInputSchema>;
 
-export const posterCropSaveInputSchema = scrapeResultIdInputSchema.extend({
+/** Poster editing addresses the video file, so maintenance items without a scrape result can be cropped too. */
+export const posterCropSaveInputSchema = rootFileRefSchema.extend({
   crop: normalizedCropRegionSchema,
 });
 
@@ -425,12 +412,6 @@ export const scrapeLiveItemSchema = z.object({
 
 export type ScrapeLiveItemDto = z.infer<typeof scrapeLiveItemSchema>;
 
-export const scrapeResultListResponseSchema = z.object({
-  results: z.array(scrapeResultSchema),
-});
-
-export type ScrapeResultListResponse = z.infer<typeof scrapeResultListResponseSchema>;
-
 export const scrapeResultDetailResponseSchema = z.object({
   result: scrapeResultSchema,
 });
@@ -536,7 +517,6 @@ export const maintenanceMutationAckSchema = z.object({ sessionId: z.string() });
 export type MaintenanceMutationAckDto = z.infer<typeof maintenanceMutationAckSchema>;
 
 export const maintenanceApplyInputSchema = maintenanceSessionInputSchema.extend({
-  confirmationToken: z.string().trim().min(1).optional(),
   previewIds: z.array(z.string().trim().min(1)).optional(),
   selections: z
     .array(
@@ -635,6 +615,26 @@ export const personSyncJobSchema = personSyncStartInputSchema.extend({
 
 export type PersonSyncJobDto = z.infer<typeof personSyncJobSchema>;
 
+/** The actor sync that follows a scrape run; counts are actors times servers. */
+export const actorSyncJobSchema = z.object({
+  runId: z.string(),
+  servers: z.array(z.enum(["emby", "jellyfin"])),
+  status: z.enum(["queued", "waiting", "syncing", "completed", "cancelled"]),
+  total: z.number().int(),
+  found: z.number().int(),
+  synced: z.number().int(),
+  failed: z.number().int(),
+  notFound: z.number().int(),
+  /** Servers on which none of the actors missing at the first check appeared before the deadline. */
+  scanMissed: z.array(z.enum(["emby", "jellyfin"])),
+});
+
+export type ActorSyncJobDto = z.infer<typeof actorSyncJobSchema>;
+
+export const actorSyncCancelInputSchema = z.object({ runId: z.string().trim().min(1) });
+
+export type ActorSyncCancelInput = z.infer<typeof actorSyncCancelInputSchema>;
+
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
@@ -642,6 +642,7 @@ export const taskNotificationSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),
   z.object({ kind: z.literal("person-sync"), job: personSyncJobSchema }),
+  z.object({ kind: z.literal("actor-sync"), job: actorSyncJobSchema }),
 ]);
 
 export type TaskNotificationDto = z.infer<typeof taskNotificationSchema>;
@@ -804,7 +805,7 @@ export const overviewRecentAcquisitionSchema = z.object({
   actors: z.array(z.string()),
   thumbnailPath: z.string().nullable(),
   thumbnailRootId: z.string().nullable().optional(),
-  lastKnownPath: z.string().nullable(),
+  relativePath: z.string(),
   completedAt: z.string(),
   available: z.boolean().nullable(),
 });
@@ -815,8 +816,6 @@ export const overviewOutputSummarySchema = z.object({
   fileCount: z.number(),
   totalBytes: z.number(),
 });
-
-export type OverviewOutputSummaryDto = z.infer<typeof overviewOutputSummarySchema>;
 
 export const overviewSummaryResponseSchema = z.object({
   output: overviewOutputSummarySchema,
@@ -889,8 +888,6 @@ export const automationRecentInputSchema = z
     limit: z.coerce.number().int().min(1).max(100).optional(),
   })
   .optional();
-
-export type AutomationRecentInput = z.infer<typeof automationRecentInputSchema>;
 
 export const automationRecentResponseSchema = z.object({
   tasks: z.array(automationWebhookEventSchema),
@@ -1226,6 +1223,8 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
   z.object({
     toolId: z.literal("media-library-tools"),
     server: z.enum(["emby", "jellyfin"]).default("jellyfin"),
+    /** `stopPersonNameMatching` applies to Jellyfin only; both actions answer with the connection check. */
+    action: z.enum(["check", "stopPersonNameMatching"]).default("check"),
   }),
   z.object({
     toolId: z.literal("symlink-manager"),

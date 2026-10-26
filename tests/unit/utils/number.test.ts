@@ -57,7 +57,7 @@ describe("parseFileInfo", () => {
     const filePath = "/tmp/[7SiS-001]+ ABF-252-CD2.mkv";
 
     expect(parseFileInfo(filePath).number).toBe("7SIS-001");
-    expect(parseFileInfo(filePath, ["[7sis-001]+"])).toMatchObject({
+    expect(parseFileInfo(filePath, { filenameIgnoreTokens: ["[7sis-001]+"] })).toMatchObject({
       filePath,
       fileName: "[7SiS-001]+ ABF-252-CD2",
       number: "ABF-252",
@@ -66,6 +66,31 @@ describe("parseFileInfo", () => {
         suffix: "-CD2",
       },
     });
+  });
+
+  it("recognizes configured marker words as whole words and reads the number and part without them", () => {
+    const rules = {
+      filenameSubtitleTokens: ["-sub"],
+      filenameUmrTokens: ["LTX", "restored"],
+      filenameLeakTokens: ["流出"],
+      filenameUncensoredTokens: ["無碼"],
+    };
+    const cases = [
+      { name: "ABC-123-ltx.mp4", expected: { number: "ABC-123", isSubtitled: false, filenameUncensoredChoice: "umr" } },
+      {
+        name: "ABC-123-A-Restored.mp4",
+        expected: { number: "ABC-123", filenameUncensoredChoice: "umr", part: { number: 1, suffix: "-A" } },
+      },
+      { name: "ABC-123.sub.mp4", expected: { number: "ABC-123", subtitleTag: "中文字幕" } },
+      { name: "ABC-123-流出.mp4", expected: { isUncensored: true, filenameUncensoredChoice: "leak" } },
+      { name: "ABC-123 [無碼].mp4", expected: { isUncensored: true, filenameUncensoredChoice: "uncensored" } },
+      { name: "ABC-123-U-LTX.mp4", expected: { filenameUncensoredChoice: "umr" } },
+      { name: "ABC-123-LTXS.mp4", expected: { isUncensored: false, filenameUncensoredChoice: undefined } },
+    ];
+
+    for (const { name, expected } of cases) {
+      expect(parseFileInfo(`/tmp/${name}`, rules), name).toMatchObject(expected);
+    }
   });
 
   it("parses multipart suffixes and preserves their raw text", () => {
@@ -240,7 +265,7 @@ describe("parseFileInfo", () => {
         { id: "one", rootId: "r", relativePath: "clip.mp4", manualUrl },
         { id: "two", rootId: "r", relativePath: "other.mp4", manualUrl },
       ];
-      expect(expandScrapeRetryItems(unnamed, ["one"], ["clip", "other"])).toEqual(["one"]);
+      expect(expandScrapeRetryItems(unnamed, ["one"], { filenameIgnoreTokens: ["clip", "other"] })).toEqual(["one"]);
     }
     const scoped = [
       { id: "one", rootId: "r", relativePath: "ABC-123-CD1.mp4", manualUrl: "one" },

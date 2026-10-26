@@ -1,11 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getActorImageCacheDirectory } from "@main/appIdentity";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { ActorImageService } from "@mdcz/runtime/scrape";
-import { app } from "electron";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -14,12 +12,6 @@ const createTempDir = async (): Promise<string> => {
   const dirPath = await mkdtemp(join(tmpdir(), "mdcz-actor-image-"));
   tempDirs.push(dirPath);
   return dirPath;
-};
-
-const createUserDataDir = async (): Promise<string> => {
-  const userDataDir = await createTempDir();
-  vi.spyOn(app, "getPath").mockReturnValue(userDataDir);
-  return userDataDir;
 };
 
 const createConfig = (root: string) =>
@@ -31,12 +23,10 @@ const createConfig = (root: string) =>
     },
   });
 
-const createActorLibrary = async (): Promise<{ root: string; cacheRoot: string }> => {
-  await createUserDataDir();
-  const root = await createTempDir();
-  const cacheRoot = getActorImageCacheDirectory();
-  return { root, cacheRoot };
-};
+const createActorLibrary = async (): Promise<{ root: string; cacheRoot: string }> => ({
+  root: await createTempDir(),
+  cacheRoot: join(await createTempDir(), "actor-image-cache"),
+});
 
 const readValidPngBytes = async (): Promise<Buffer> => readFile(join(process.cwd(), "apps/desktop/build/icon.png"));
 
@@ -51,7 +41,7 @@ describe("ActorImageService", () => {
   it("creates cache skeleton and indexes manual root images during local resolve", async () => {
     const { root, cacheRoot } = await createActorLibrary();
     const config = createConfig(root);
-    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
+    const service = new ActorImageService({ cacheRoot });
     const manualPath = join(root, "Actor A.jpg");
     await writeFile(manualPath, "manual", "utf8");
 
@@ -69,10 +59,10 @@ describe("ActorImageService", () => {
   });
 
   it("materializes actor images for movie NFOs and leaves missing actors empty", async () => {
-    const { root } = await createActorLibrary();
+    const { root, cacheRoot } = await createActorLibrary();
     const movieDir = join(root, "Movie");
     const config = createConfig(root);
-    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
+    const service = new ActorImageService({ cacheRoot });
     const manualPath = join(root, "Actor A.jpg");
 
     await writeFile(manualPath, "manual", "utf8");
@@ -94,10 +84,10 @@ describe("ActorImageService", () => {
   });
 
   it("skips actor source lookup when a local actor image already exists", async () => {
-    const { root } = await createActorLibrary();
+    const { root, cacheRoot } = await createActorLibrary();
     const movieDir = join(root, "Movie");
     const config = createConfig(root);
-    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
+    const service = new ActorImageService({ cacheRoot });
     const manualPath = join(root, "Actor A.jpg");
     const actorSourceProvider = {
       lookup: vi.fn(),
@@ -118,7 +108,7 @@ describe("ActorImageService", () => {
   it("returns fallback on corrupt index.json without overwriting the file", async () => {
     const { root, cacheRoot } = await createActorLibrary();
     const config = createConfig(root);
-    const service = new ActorImageService({ cacheRoot: getActorImageCacheDirectory() });
+    const service = new ActorImageService({ cacheRoot });
 
     await mkdir(cacheRoot, { recursive: true });
     await writeFile(join(cacheRoot, "index.json"), "not valid json", "utf8");
@@ -138,7 +128,7 @@ describe("ActorImageService", () => {
       getContent: vi.fn(async () => validPngBytes),
     };
     const service = new ActorImageService({
-      cacheRoot: getActorImageCacheDirectory(),
+      cacheRoot,
       networkClient,
     });
 
@@ -159,14 +149,14 @@ describe("ActorImageService", () => {
   });
 
   it("prefers manual actor library images over cached remote images", async () => {
-    const { root } = await createActorLibrary();
+    const { root, cacheRoot } = await createActorLibrary();
     const config = createConfig(root);
     const validPngBytes = await readValidPngBytes();
     const networkClient = {
       getContent: vi.fn(async () => validPngBytes),
     };
     const service = new ActorImageService({
-      cacheRoot: getActorImageCacheDirectory(),
+      cacheRoot,
       networkClient,
     });
     const manualPath = join(root, "Actor B.jpg");
@@ -190,7 +180,7 @@ describe("ActorImageService", () => {
       getContent: vi.fn(async () => Buffer.from("<html>blocked</html>", "utf8")),
     };
     const service = new ActorImageService({
-      cacheRoot: getActorImageCacheDirectory(),
+      cacheRoot,
       networkClient,
     });
 
@@ -208,7 +198,7 @@ describe("ActorImageService", () => {
   });
 
   it("retries actor source lookup after a crawler-provided photo fails to cache", async () => {
-    const { root } = await createActorLibrary();
+    const { root, cacheRoot } = await createActorLibrary();
     const movieDir = join(root, "Movie");
     const config = defaultConfiguration;
     const validPngBytes = await readValidPngBytes();
@@ -234,7 +224,7 @@ describe("ActorImageService", () => {
       }),
     } as unknown as ActorSourceProvider;
     const service = new ActorImageService({
-      cacheRoot: getActorImageCacheDirectory(),
+      cacheRoot,
       networkClient,
     });
 
@@ -257,7 +247,7 @@ describe("ActorImageService", () => {
   });
 
   it("reuses cached remote actor images after the actor photo folder path changes", async () => {
-    const userDataDir = await createUserDataDir();
+    const cacheRoot = join(await createTempDir(), "actor-image-cache");
     const firstRoot = await createTempDir();
     const secondRoot = await createTempDir();
     const validPngBytes = await readValidPngBytes();
@@ -265,7 +255,7 @@ describe("ActorImageService", () => {
       getContent: vi.fn(async () => validPngBytes),
     };
     const service = new ActorImageService({
-      cacheRoot: getActorImageCacheDirectory(),
+      cacheRoot,
       networkClient,
     });
 
@@ -281,7 +271,6 @@ describe("ActorImageService", () => {
       actorProfiles: [{ name: "Actor D", photo_url: "https://img.example.com/actor-d.png" }],
     });
 
-    expect(userDataDir).toBeTruthy();
     expect(profiles).toEqual([{ name: "Actor D", photo_url: ".actors/Actor D.png" }]);
     expect(await readFile(join(secondRoot, "Movie", ".actors", "Actor D.png"))).toEqual(validPngBytes);
     expect(networkClient.getContent).toHaveBeenCalledTimes(1);

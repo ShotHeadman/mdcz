@@ -1,4 +1,4 @@
-import type { AmazonPosterLookupReason } from "@mdcz/shared/ipcTypes";
+import type { AmazonPosterLookupReason } from "@mdcz/shared/toolTypes";
 import { load } from "cheerio";
 import type { NetworkCookieJar, NetworkSession, RuntimeNetworkClient } from "../network";
 import { InMemoryCookieJar } from "../network/InMemoryCookieJar";

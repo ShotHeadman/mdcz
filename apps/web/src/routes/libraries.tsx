@@ -1,32 +1,31 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { prepareMaintenanceSetup } from "@mdcz/views/adapters";
-import { useT } from "@mdcz/views/i18n";
 import { LibrariesView } from "@mdcz/views/libraries";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "../client";
+import { browseDirectory, desktop } from "../desktop";
 import { queryKeys } from "../lib/queryKeys";
 
 export function LibrariesPage() {
-  const t = useT();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list() });
   const libraries = librariesQ.data?.libraries ?? [];
   const summaryQs = useQueries({
     queries: libraries.map((library) => ({
       queryKey: queryKeys.library.summary(library.id),
       queryFn: () => api.library.summary({ libraryId: library.id }),
-      retry: false,
     })),
   });
-  const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list(), retry: false });
+  const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list() });
+  // Library watching and downloader callbacks are server automation; desktop runs none.
   const integrationsQ = useQuery({
     queryKey: queryKeys.integrations.status,
     queryFn: () => api.integrations.status(),
     refetchInterval: 30_000,
-    retry: false,
+    enabled: !desktop,
   });
   const pendingCounts: Record<string, number> = {};
   for (const item of pendingQ.data?.items ?? [])
@@ -47,25 +46,22 @@ export function LibrariesPage() {
       onViewPending={() => void navigate({ to: "/pending" })}
       loading={librariesQ.isLoading}
       errorMessage={librariesQ.error ? toErrorMessage(librariesQ.error) : null}
-      showAutomation
+      showAutomation={!desktop}
       onCreate={async (settings) => {
         const created = await api.libraries.create(settings);
-        toast.success(t.libraries.saved);
         await refresh();
         return created;
       }}
       onUpdate={async (id, settings) => {
         await api.libraries.update({ id, settings });
-        toast.success(t.libraries.saved);
         await refresh();
       }}
       onDelete={async (id) => {
         try {
           await api.libraries.delete({ id });
-          toast.success(t.libraries.deleted);
           await refresh();
         } catch (error) {
-          toast.error(toErrorMessage(error));
+          toast.error(toErrorMessage(error), { id: "library-settings" });
         }
       }}
       onPreviewNaming={async (settings) => (await api.libraries.previewNaming(settings)).items}
@@ -77,6 +73,7 @@ export function LibrariesPage() {
           entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
         };
       }}
+      browseDirectory={browseDirectory}
       probeStubs={async (sourcePath) => (await api.libraries.probeStubs({ sourcePath })).hasStubs}
     />
   );

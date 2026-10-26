@@ -89,6 +89,10 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
     return await this.register(this.host.rerunDirectory(runId));
   }
 
+  get busy(): boolean {
+    return this.entries.size > 0 || this.registrations.size > 0;
+  }
+
   liveRuns(): Array<{ run: TRun; snapshot: ScrapeRunSnapshot<TItem>; startedAt: Date | null }> {
     return this.orderedEntries().map((entry) => ({
       run: entry.run,

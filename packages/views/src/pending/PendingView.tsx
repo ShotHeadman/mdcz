@@ -1,12 +1,14 @@
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
-import type {
-  AmbiguousCandidate,
-  PendingConfirmUncensoredInput,
-  PendingDetailResponse,
-  PendingItemDto,
-  PendingKindDto,
-  PendingRetryInput,
-  PendingSiteResultDto,
+import {
+  type AmbiguousCandidate,
+  PENDING_KINDS,
+  type PendingConfirmUncensoredInput,
+  type PendingDetailResponse,
+  type PendingItemDto,
+  type PendingKindDto,
+  type PendingRetryInput,
+  type PendingRetryManyInput,
+  type PendingSiteResultDto,
 } from "@mdcz/shared/pending";
 import {
   Badge,
@@ -75,6 +77,8 @@ const KIND_BADGE_META: Record<PendingKindDto, { className: string; icon: LucideI
 };
 
 const ACTION_ROW_CLASS = "grid grid-cols-1 gap-2.5 sm:grid-cols-[minmax(0,1fr)_8.5rem]";
+const UNCENSORED_CHOICES = ["uncensored", "umr", "leak"] as const;
+const OWN_LIBRARIES = "own";
 
 export interface PendingViewProps {
   items: PendingItemDto[];
@@ -86,8 +90,9 @@ export interface PendingViewProps {
   detailLoading?: boolean;
   libraries: MediaLibraryDto[];
   onRetry: (input: PendingRetryInput) => Promise<void>;
+  onRetryMany: (input: PendingRetryManyInput) => Promise<void>;
   onConfirmUncensored: (input: PendingConfirmUncensoredInput) => Promise<void>;
-  onIgnore: (id: string) => Promise<void>;
+  onIgnore: (ids: string[]) => Promise<void>;
 }
 
 export function PendingView({
@@ -100,10 +105,26 @@ export function PendingView({
   detailLoading = false,
   libraries,
   onRetry,
+  onRetryMany,
   onConfirmUncensored,
   onIgnore,
 }: PendingViewProps) {
   const t = useT();
+  const [kindFilter, setKindFilter] = useState<PendingKindDto | "all">("all");
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const kindCounts = new Map<PendingKindDto, number>();
+  for (const item of items) kindCounts.set(item.kind, (kindCounts.get(item.kind) ?? 0) + 1);
+  // Once the filtered kind runs out, every kind shows again instead of an empty list under a blank filter.
+  if (kindFilter !== "all" && !kindCounts.has(kindFilter)) setKindFilter("all");
+  const visibleItems = kindFilter === "all" ? items : items.filter((item) => item.kind === kindFilter);
+  // Entries that left the list or the filter drop out of the selection on their own.
+  const selected = visibleItems.filter((item) => selectedIds.has(item.id));
+  const toggleSelected = (id: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   if (!loading && items.length === 0 && !errorMessage) {
     return (
       <main className="flex h-full min-h-0 flex-col bg-surface-canvas p-4 text-foreground">
@@ -130,18 +151,62 @@ export function PendingView({
             {t.pending.loadFailed(errorMessage)}
           </div>
         ) : null}
+        <div className="mb-3 space-y-2.5 px-1">
+          <Select value={kindFilter} onValueChange={(value) => setKindFilter(value as PendingKindDto | "all")}>
+            <SelectTrigger aria-label={t.pending.kindFilter} className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{`${t.pending.allKinds} (${items.length})`}</SelectItem>
+              {PENDING_KINDS.map((kind) => {
+                const count = kindCounts.get(kind);
+                return count ? (
+                  <SelectItem key={kind} value={kind}>{`${t.pending.kinds[kind]} (${count})`}</SelectItem>
+                ) : null;
+              })}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Checkbox
+              id="pending-select-all"
+              aria-label={t.pending.selectAll}
+              checked={
+                selected.length > 0 && selected.length === visibleItems.length
+                  ? true
+                  : selected.length > 0
+                    ? "indeterminate"
+                    : false
+              }
+              disabled={visibleItems.length === 0}
+              onCheckedChange={() =>
+                setSelectedIds(
+                  new Set(selected.length === visibleItems.length ? [] : visibleItems.map((item) => item.id)),
+                )
+              }
+            />
+            <label htmlFor="pending-select-all" className="cursor-pointer select-none">
+              {t.pending.selectAll}
+            </label>
+          </div>
+        </div>
         <ul className="space-y-2">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const active = item.id === selectedId;
             return (
-              <li key={item.id}>
+              <li key={item.id} className="flex items-start gap-2.5">
+                <Checkbox
+                  aria-label={item.fileName}
+                  className="mt-3.5"
+                  checked={selectedIds.has(item.id)}
+                  onCheckedChange={() => toggleSelected(item.id)}
+                />
                 <button
                   type="button"
                   aria-pressed={active}
                   onClick={() => onSelect(item.id)}
                   className={cn(
                     quietPanelSurfaceClass,
-                    "w-full rounded-quiet-lg px-3.5 py-3 text-left transition-all",
+                    "min-w-0 flex-1 rounded-quiet-lg px-3.5 py-3 text-left transition-all",
                     active
                       ? "border-foreground/35 bg-surface-floating shadow-sm ring-1 ring-foreground/10"
                       : "bg-surface/60 hover:border-border hover:bg-surface-floating/80",
@@ -167,6 +232,19 @@ export function PendingView({
             );
           })}
         </ul>
+        {selected.length > 0 ? (
+          // Pinned below the list: the actions stay in reach while scrolling, and showing them moves no row.
+          <div className="sticky bottom-0 -mx-4 -mb-4 bg-surface-canvas px-4 pt-3 pb-4">
+            <BatchActions
+              items={selected}
+              libraries={libraries}
+              onDone={() => setSelectedIds(new Set())}
+              onRetryMany={onRetryMany}
+              onConfirmUncensored={onConfirmUncensored}
+              onIgnore={onIgnore}
+            />
+          </div>
+        ) : null}
       </section>
       <section className="min-h-0 overflow-y-auto p-6 lg:p-8">
         {detailLoading && !detail ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : null}
@@ -182,6 +260,116 @@ export function PendingView({
         ) : null}
       </section>
     </main>
+  );
+}
+
+/** Each action applies to the selected entries it fits: scraping again skips published movies, confirming takes only them. */
+function BatchActions({
+  items,
+  libraries,
+  onDone,
+  onRetryMany,
+  onConfirmUncensored,
+  onIgnore,
+}: {
+  items: PendingItemDto[];
+  libraries: MediaLibraryDto[];
+  onDone: () => void;
+  onRetryMany: PendingViewProps["onRetryMany"];
+  onConfirmUncensored: PendingViewProps["onConfirmUncensored"];
+  onIgnore: PendingViewProps["onIgnore"];
+}) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [libraryId, setLibraryId] = useState(OWN_LIBRARIES);
+  const scrapable = items.filter((item) => item.kind !== "uncensored").map((item) => item.id);
+  const uncensored = items.filter((item) => item.kind === "uncensored").map((item) => item.id);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await action();
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={cn(quietPanelSurfaceClass, "space-y-2.5 rounded-quiet-lg p-3 text-xs")}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-foreground">{t.pending.selectedCount(items.length)}</span>
+        <Button variant="ghost" size="xs" className="h-6 px-2 text-[11px]" disabled={busy} onClick={onDone}>
+          {t.pending.clearSelection}
+        </Button>
+      </div>
+      {scrapable.length > 0 ? (
+        <div className="flex gap-2">
+          {libraries.length > 0 ? (
+            <Select value={libraryId} onValueChange={setLibraryId}>
+              <SelectTrigger aria-label={t.pending.chooseLibrary} className="h-8 min-w-0 flex-1 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={OWN_LIBRARIES}>{t.pending.ownLibraries}</SelectItem>
+                {libraries.map((library) => (
+                  <SelectItem key={library.id} value={library.id}>
+                    {library.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0"
+            disabled={busy}
+            onClick={() =>
+              void run(() => onRetryMany({ ids: scrapable, ...(libraryId === OWN_LIBRARIES ? {} : { libraryId }) }))
+            }
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t.pending.retrySelected(scrapable.length)}
+          </Button>
+        </div>
+      ) : null}
+      {uncensored.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">{t.pending.confirmSelectedAs(uncensored.length)}</span>
+          {UNCENSORED_CHOICES.map((choice) => (
+            <Button
+              key={choice}
+              size="sm"
+              className="h-7"
+              disabled={busy}
+              onClick={() => void run(() => onConfirmUncensored({ ids: uncensored, choice }))}
+            >
+              {t.pending.confirmTypes[choice]}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        disabled={busy}
+        onClick={async () => {
+          if (
+            await confirmDialog({
+              title: t.pending.ignoreSelectedConfirmTitle(items.length),
+              description: t.pending.ignoreConfirmDescription,
+              confirmLabel: t.pending.ignore,
+              destructive: true,
+            })
+          )
+            await run(() => onIgnore(items.map((item) => item.id)));
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        {t.pending.ignoreSelected(items.length)}
+      </Button>
+    </div>
   );
 }
 
@@ -249,8 +437,15 @@ function PendingDetail({
             className="h-8 shrink-0 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
             disabled={busy}
             onClick={async () => {
-              if (await confirmDialog({ title: t.pending.ignoreConfirm, confirmLabel: t.pending.ignore }))
-                await run(() => onIgnore(item.id));
+              if (
+                await confirmDialog({
+                  title: t.pending.ignoreConfirmTitle,
+                  description: t.pending.ignoreConfirmDescription,
+                  confirmLabel: t.pending.ignore,
+                  destructive: true,
+                })
+              )
+                await run(() => onIgnore([item.id]));
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -265,11 +460,11 @@ function PendingDetail({
         ) : null}
         {item.kind === "uncensored" ? (
           <div className="flex flex-wrap gap-2 pt-1">
-            {(["uncensored", "umr", "leak"] as const).map((choice) => (
+            {UNCENSORED_CHOICES.map((choice) => (
               <Button
                 key={choice}
                 disabled={busy}
-                onClick={() => void run(() => onConfirmUncensored({ id: item.id, choice }))}
+                onClick={() => void run(() => onConfirmUncensored({ ids: [item.id], choice }))}
               >
                 {t.pending.confirmTypes[choice]}
               </Button>

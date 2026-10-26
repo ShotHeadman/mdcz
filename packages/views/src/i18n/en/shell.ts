@@ -18,4 +18,9 @@ export const shell = {
   openMenu: "Open navigation",
   closeMenu: "Close navigation",
   switchLanguage: "切换到中文",
+  renderErrorTitle: "Page load error",
+  renderErrorDescription:
+    "This page failed to load properly. You can reload the page, or reload the entire app if the issue persists.",
+  retryView: "Reload page",
+  reloadApp: "Reload app",
 };

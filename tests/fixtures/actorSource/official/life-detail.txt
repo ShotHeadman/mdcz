@@ -1,0 +1,20 @@
+<main>
+<article>
+  <h1 class="move">楓カレン<span>Karen Kaede</span></h1>
+  <div class="wrap">
+    <div class="image-video">
+      <img class="model fade-in" src="/images/model/kaede-karen.webp" alt="楓カレン" width="800" height="1200">
+    </div>
+    <div class="profile">
+      <div class="profile_child">
+        <h2 class="fade-in-up">PROFILE</h2>
+        <p>生年月日：1999年8月25日</p>
+        <p>身長　　：162cm</p>
+        <p>サイズ　：B79（D） W59 H81</p>
+        <p>趣味　　：散歩</p>
+        <p>特技　　：料理</p>
+      </div>
+    </div>
+  </div>
+</article>
+</main>

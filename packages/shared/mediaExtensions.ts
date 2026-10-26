@@ -13,6 +13,4 @@ export const SUPPORTED_MEDIA_EXTENSIONS = [
   "strm",
 ] as const;
 
-export type SupportedMediaExtension = (typeof SUPPORTED_MEDIA_EXTENSIONS)[number];
-
 export const SUPPORTED_MEDIA_EXTENSIONS_WITH_DOT = SUPPORTED_MEDIA_EXTENSIONS.map((extension) => `.${extension}`);

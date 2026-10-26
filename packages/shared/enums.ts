@@ -48,6 +48,11 @@ export enum UiLanguage {
   EN_US = "en-US",
 }
 
+/** The interface languages. MDCz's own labels in what it writes for the user, such as actor bios, follow it. */
+export const UI_LOCALES = ["zh-CN", "en-US"] as const;
+
+export type UiLocale = (typeof UI_LOCALES)[number];
+
 export const TRANSLATION_TARGET_OPTIONS = [UiLanguage.ZH_CN, UiLanguage.ZH_TW] as const;
 
 export type TranslationTarget = (typeof TRANSLATION_TARGET_OPTIONS)[number];

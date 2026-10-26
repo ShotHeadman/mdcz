@@ -39,6 +39,7 @@ interface ExecutionStore {
   source?: CrawlerExecutionSource & { active: boolean };
   channel?: { name: string; active: boolean };
   sharedData?: { active: boolean };
+  abort?: { signal: AbortSignal; active: boolean };
 }
 
 const storage = new AsyncLocalStorage<ExecutionStore>();
@@ -87,6 +88,15 @@ export const runWithNetworkChannel = async <T>(channel: string, run: () => Promi
 
 export const runWithSharedNetworkData = async <T>(run: () => Promise<T>): Promise<T> =>
   await runScoped("sharedData", { active: true }, run);
+
+/** Ends every request made inside `run` once the signal aborts, whether it waits in the rate limiter or on the server. */
+export const runWithNetworkSignal = async <T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> =>
+  await runScoped("abort", { signal, active: true }, run);
+
+export const getNetworkSignal = (): AbortSignal | undefined => {
+  const abort = storage.getStore()?.abort;
+  return abort?.active ? abort.signal : undefined;
+};
 
 export const reportSiteResult = (result: SiteResult): void => {
   const item = storage.getStore()?.item;

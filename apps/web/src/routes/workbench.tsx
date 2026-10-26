@@ -14,12 +14,11 @@ import {
   type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import { confirmDialog } from "@mdcz/views/common";
-import { getT, useT } from "@mdcz/views/i18n";
+import { useT } from "@mdcz/views/i18n";
 import { ScrapeStartErrorDialog } from "@mdcz/views/scrape";
 import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import {
   runScrapeRequest,
-  selectIsScraping,
   selectScrapeResults,
   selectScrapeTaskId,
   useScrapeStore,
@@ -33,6 +32,7 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
+import { browseDirectory } from "../desktop";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
@@ -45,10 +45,7 @@ export const Route = createFileRoute("/workbench")({
 });
 
 const createWebSetupPort = (): WorkbenchSetupPort => ({
-  browseDirectory: async (currentPath) => {
-    return currentPath || null;
-  },
-  isServer: true,
+  browseDirectory,
   suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
   cancelCandidates: async (scanId) => {
     await api.scans.cancelCandidates({ scanId });
@@ -79,15 +76,10 @@ function WorkbenchPage() {
   const [startError, setStartError] = useState<unknown>(null);
   const refreshError = useWorkbenchTaskStore((state) => state.refreshError);
   const activeScrapeTaskId = useScrapeStore(selectScrapeTaskId);
-  const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: queryKeys.config.current, retry: false });
-  const librariesQ = useQuery({ queryFn: () => api.libraries.list(), queryKey: queryKeys.libraries.all, retry: false });
+  const configQ = useQuery({ queryFn: () => api.config.read(), queryKey: queryKeys.config.current });
+  const librariesQ = useQuery({ queryFn: () => api.libraries.list(), queryKey: queryKeys.libraries.all });
 
-  const { isScraping, results } = useScrapeStore(
-    useShallow((state) => ({
-      isScraping: selectIsScraping(state),
-      results: selectScrapeResults(state),
-    })),
-  );
+  const results = useScrapeStore(selectScrapeResults);
   const { workbenchMode, setWorkbenchMode } = useUIStore(
     useShallow((state) => ({
       workbenchMode: state.workbenchMode,
@@ -117,7 +109,6 @@ function WorkbenchPage() {
   ) => {
     try {
       if (workbenchMode === "maintenance") {
-        if (isScraping) throw new Error(t.web.stopScrapeFirst);
         changeMaintenancePreset(presetId);
         useMaintenanceStore.getState().setPending(true);
         await api.maintenance.start({ source, libraryId, presetId });
@@ -130,7 +121,6 @@ function WorkbenchPage() {
           requestScrapeLiveRunsRefresh();
         });
       }
-      toast.success(t.web.taskSubmitted);
     } catch (error) {
       if (workbenchMode === "maintenance") useMaintenanceStore.getState().setPending(false);
       throw error;
@@ -148,7 +138,6 @@ function WorkbenchPage() {
         });
         requestScrapeLiveRunsRefresh();
       });
-      toast.success(t.web.selectedScrapeStarted);
     } catch (error) {
       useScrapeStore.getState().setError(toErrorMessage(error));
       setStartError(error);
@@ -165,54 +154,41 @@ function WorkbenchPage() {
       presetId,
       libraryId,
       port: ports.maintenance,
-      isScraping,
       setWorkbenchMode,
       onRefreshConfig: async () => {
         await queryClient.invalidateQueries({ queryKey: queryKeys.config.all });
       },
-      toast,
-      toErrorMessage,
     });
   };
 
-  const requireActiveScrapeTaskId = () => {
-    if (!activeScrapeTaskId) {
-      toast.info(t.web.noControllableScrapeTask);
-      return null;
-    }
-    return activeScrapeTaskId;
-  };
-
   const handlePauseScrape = async () => {
-    const taskId = requireActiveScrapeTaskId();
+    const taskId = activeScrapeTaskId;
     if (!taskId) return;
     try {
       await runScrapeRequest(async () => {
         await api.scrape.pause({ taskId });
         requestScrapeLiveRunsRefresh();
       });
-      toast.info(t.web.taskPaused);
     } catch (error) {
-      toast.error(t.web.pauseFailed(toErrorMessage(error)));
+      toast.error(t.web.pauseFailed(toErrorMessage(error)), { id: "scrape-control" });
     }
   };
 
   const handleResumeScrape = async () => {
-    const taskId = requireActiveScrapeTaskId();
+    const taskId = activeScrapeTaskId;
     if (!taskId) return;
     try {
       await runScrapeRequest(async () => {
         await api.scrape.resume({ taskId });
         requestScrapeLiveRunsRefresh();
       });
-      toast.success(t.web.taskResumed);
     } catch (error) {
-      toast.error(t.web.resumeFailed(toErrorMessage(error)));
+      toast.error(t.web.resumeFailed(toErrorMessage(error)), { id: "scrape-control" });
     }
   };
 
   const handleStopScrape = async () => {
-    const taskId = requireActiveScrapeTaskId();
+    const taskId = activeScrapeTaskId;
     if (!taskId) return;
     if (!(await confirmDialog({ title: t.web.stopScrapeConfirm, destructive: true }))) return;
     try {
@@ -220,17 +196,12 @@ function WorkbenchPage() {
         await api.scrape.stop({ taskId });
         requestScrapeLiveRunsRefresh();
       });
-      toast.info(t.web.stopping);
     } catch (error) {
-      toast.error(t.web.stopFailed(toErrorMessage(error)));
+      toast.error(t.web.stopFailed(toErrorMessage(error)), { id: "scrape-control" });
     }
   };
 
   const handleRetryFailed = async () => {
-    if (failedCount === 0) {
-      toast.info(t.web.noFailedItemsToRetry);
-      return;
-    }
     if (
       !(await confirmDialog({
         title: t.web.retryFailedConfirm(failedCount),
@@ -241,7 +212,6 @@ function WorkbenchPage() {
     }
     try {
       await ports.scrape.retryFailed();
-      toast.success(getT().scrape.launch.retry);
     } catch (error) {
       setStartError(error);
     }
@@ -281,10 +251,3 @@ function WorkbenchPage() {
     </div>
   );
 }
-
-export const __workbenchTestHooks = {
-  getRetryFailedConfirmMessage: (failedCount: number): string => getT().web.retryFailedConfirm(failedCount),
-  get STOP_SCRAPE_CONFIRM_MESSAGE() {
-    return getT().web.stopScrapeConfirm;
-  },
-};

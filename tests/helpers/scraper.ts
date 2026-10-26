@@ -1,5 +1,4 @@
 import { dirname, join } from "node:path";
-import { type Configuration, configManager } from "@main/services/config";
 import {
   ActorImageService,
   type CreateFileScraperOptions,
@@ -9,8 +8,8 @@ import {
   type FileScraperDependencies,
   type ScrapeGroupResult,
 } from "@mdcz/runtime/scrape";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
-import { vi } from "vitest";
 import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
 
 type TestFileScraperDependencies = Omit<
@@ -33,7 +32,7 @@ export const createFileScraper = (
           cacheRoot: "/tmp/actor-image-cache",
           logger: "debug" in logger ? logger : { ...logger, debug: () => undefined },
         }),
-      getConfiguration: deps.getConfiguration ?? (async () => await configManager.getValidated()),
+      getConfiguration: deps.getConfiguration ?? (async () => defaultConfiguration),
       logger,
       signalService: deps.signalService ?? {
         setProgress: () => {},
@@ -44,33 +43,6 @@ export const createFileScraper = (
     },
     options,
   );
-};
-
-const getByPath = (target: Record<string, unknown>, path: string): unknown => {
-  let cursor: unknown = target;
-  for (const segment of path.split(".")) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor) || !(segment in cursor)) {
-      return undefined;
-    }
-    cursor = (cursor as Record<string, unknown>)[segment];
-  }
-  return cursor;
-};
-
-export const mockConfigManager = (config: Configuration): void => {
-  const ensureLoadedSpy = vi.isMockFunction(configManager.ensureLoaded)
-    ? vi.mocked(configManager.ensureLoaded)
-    : vi.spyOn(configManager, "ensureLoaded");
-  ensureLoadedSpy.mockResolvedValue(undefined);
-
-  const getSpy = vi.isMockFunction(configManager.get) ? vi.mocked(configManager.get) : vi.spyOn(configManager, "get");
-  getSpy.mockImplementation(async (path?: string) => {
-    if (!path) {
-      return config;
-    }
-
-    return getByPath(config as unknown as Record<string, unknown>, path);
-  });
 };
 
 const testFileOrganizer = new FileOrganizer();

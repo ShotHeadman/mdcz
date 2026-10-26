@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import {
-  EmbyActorInfoService,
-  EmbyActorPhotoService,
-  JellyfinActorInfoService,
-  JellyfinActorPhotoService,
   type MediaServerSignalService,
+  type PersonSyncLock,
+  syncEmbyPersons,
+  syncJellyfinPersons,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { runtimeLoggerService, toErrorMessage } from "@mdcz/runtime/shared";
@@ -23,7 +22,12 @@ export class PersonSyncService {
   constructor(
     private readonly config: ServerConfigService,
     private readonly taskEvents: TaskEventBus,
-    private readonly deps: { networkClient: NetworkClient; actorSourceProvider: ActorSourceProvider },
+    private readonly deps: {
+      networkClient: NetworkClient;
+      actorSourceProvider: ActorSourceProvider;
+      /** Held for the whole sync; a post-scrape actor sync in progress finishes first. */
+      lock: PersonSyncLock;
+    },
   ) {}
 
   status(): PersonSyncJobDto | null {
@@ -58,17 +62,12 @@ export class PersonSyncService {
       showLogText: (message, level = "info") => logger[level](message),
     };
     const deps = { ...this.deps, signalService, logger };
+    const sync = job.server === "emby" ? syncEmbyPersons : syncJellyfinPersons;
     try {
-      const configuration = await this.config.get();
-      const service =
-        job.server === "emby"
-          ? job.kind === "info"
-            ? new EmbyActorInfoService(deps)
-            : new EmbyActorPhotoService(deps)
-          : job.kind === "info"
-            ? new JellyfinActorInfoService(deps)
-            : new JellyfinActorPhotoService(deps);
-      this.#finish({ status: "completed", result: await service.run(configuration, job.mode) });
+      const result = await this.deps.lock.run(
+        async () => await sync(deps, await this.config.get(), job.kind, job.mode),
+      );
+      this.#finish({ status: "completed", result });
     } catch (error) {
       const message = toErrorMessage(error);
       logger.error(`Person sync failed: ${message}`);

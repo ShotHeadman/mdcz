@@ -7,10 +7,10 @@ describe("canonicalizeCrawlerDataActorAliases", () => {
   it("canonicalizes actors and keeps original spellings as profile aliases", () => {
     const configuration = configurationSchema.parse({
       personSync: {
-        actorAliases: {
-          河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"],
-          三上悠亚: ["鬼頭桃菜"],
-        },
+        actorAliases: [
+          { name: "河北彩花", aliases: ["河北彩伽", "河北彩花（河北彩伽）"] },
+          { name: "三上悠亚", aliases: ["鬼頭桃菜"] },
+        ],
       },
     });
     const crawlerData = canonicalizeCrawlerDataActorAliases(

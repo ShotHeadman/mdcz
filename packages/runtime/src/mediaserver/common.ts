@@ -32,9 +32,6 @@ export const toStringRecord = (value: unknown): Record<string, string> => {
 
 export const toBooleanValue = (value: unknown): boolean | undefined => (typeof value === "boolean" ? value : undefined);
 
-export const normalizeMediaServerPersonName = (value: string): string =>
-  value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-
 export const pickAutoResolvedUserId = (
   users: ReadonlyArray<{
     Id?: unknown;

@@ -1,5 +1,4 @@
-import { toErrorMessage } from "@main/utils/common";
-import { toErrorMessage as toSharedErrorMessage } from "@mdcz/shared/error";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { describe, expect, it } from "vitest";
 
 describe("toErrorMessage", () => {
@@ -50,13 +49,12 @@ Reason: Custom {
 
     for (const { input, expected } of cases) {
       expect(toErrorMessage(input)).toBe(expected);
-      expect(toSharedErrorMessage(input)).toBe(expected);
     }
   });
 
   it("falls back for empty or nullish messages when requested", () => {
     expect(toErrorMessage(null, "未知错误")).toBe("未知错误");
-    expect(toSharedErrorMessage(undefined, "未知错误")).toBe("未知错误");
+    expect(toErrorMessage(undefined, "未知错误")).toBe("未知错误");
     expect(toErrorMessage({ message: "   " }, "未知错误")).toBe("未知错误");
   });
 

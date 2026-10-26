@@ -8,7 +8,7 @@ import {
   toDetailViewItemFromMaintenanceEntry,
   toDetailViewItemFromScrapeResult,
 } from "@mdcz/views/detail";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Original Title",
@@ -207,6 +207,8 @@ describe("detail panel adapter contract", () => {
   });
 
   it("builds the same poster and thumbnail fallback candidates as the desktop detail controller", () => {
+    // Packaged desktop pages had a `file://` origin; relative asset paths must not resolve against it.
+    vi.stubGlobal("location", { origin: "file://" });
     expect(
       buildDetailArtworkCandidates({
         id: "file:/library/ABC-123/ABC-123.mp4",
@@ -221,6 +223,7 @@ describe("detail panel adapter contract", () => {
       poster: ["/output/ABC-123/custom-poster.jpg", "/output/ABC-123/ABC-123-poster.jpg", "/output/ABC-123/poster.jpg"],
       thumb: ["/output/ABC-123/relative-thumb.jpg", "/output/ABC-123/ABC-123-thumb.jpg", "/output/ABC-123/thumb.jpg"],
     });
+    vi.unstubAllGlobals();
   });
 
   it("keeps maintenance scan errors minimal but can fall back to successful preview data", () => {

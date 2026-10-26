@@ -23,6 +23,7 @@ export const settings = {
     noActor: "No actors",
   } as Record<NamingPreviewSampleId, string>,
   options: {
+    bioLabelLanguage: { "zh-CN": "Simplified Chinese", "en-US": "English" },
     translateEngine: {
       openai: "LLM translation",
       google: "Google Translate (free)",
@@ -164,6 +165,15 @@ export const settings = {
     add: "Add mapping",
     remove: "Remove mapping",
   },
+  actorAliases: {
+    name: "Canonical name",
+    namePlaceholder: "The name scrapes write, e.g. 河北彩花",
+    aliases: "Aliases",
+    aliasesPlaceholder: "Other spellings; add with Enter or comma",
+    draftHint: "Saved once it has a canonical name and at least one alias",
+    add: "Add actor",
+    remove: "Remove actor",
+  },
   integrations: {
     access: "Downloader access",
     accessDescription: "Allows downloaders and cloud tools to access automation APIs (cannot log into the web UI).",
@@ -205,7 +215,6 @@ export const settings = {
   testFailed: (error: string) => `Test failed: ${error}`,
   verifying: "Verifying…",
   verifyTranslation: "Verify metadata translation",
-  waitForAutosave: "Wait for autosave to finish before restarting the app",
   relaunchFailed: (error: string) => `Restart failed: ${error}`,
   relaunchApp: "Restart app",
   sitePriority: {
@@ -326,11 +335,10 @@ export const settings = {
       details.length > 0 ? `Configuration validation failed: ${details.join("; ")}` : "Configuration validation failed",
     detail: (field: string, message: string) => `${field}: ${message}`,
     issues: {
-      actorAliasListEmpty: "Actor alias list cannot be empty",
       actorCanonicalNameEmpty: "Canonical actor name cannot be empty",
-      actorAliasListNoValidAlias: "Actor alias list requires at least one valid alias",
+      actorAliasListNoValidAlias: "Please provide at least one valid alias",
       actorAliasEmpty: "Actor alias cannot be empty",
-      actorAliasConflict: "Actor name conflicts with another alias group",
+      actorAliasConflict: "This alias is already added or conflicts with another actor",
       globalTimeoutNotGreater: "Global timeout must be greater than per-crawler timeout",
       actorPhotoFolderNotAbsolute: "The actor photo directory must be an absolute path",
       jellyfinUserIdNotUuid: "Jellyfin user ID must be a UUID, or leave empty for server default",
@@ -341,15 +349,18 @@ export const settings = {
     scrapeSitesDescription: "Enabled sites and priority",
     scrapePacing: "Scrape pacing",
     filenameFiltering: "File filtering",
+    filenameMarkers: "File name markers",
+    filenameMarkersDescription:
+      "Added to the built-in words. Words are matched as separate tokens (case-insensitive); surrounding separators like - _ . can be omitted.",
     proxyAndRequests: "Proxy and requests",
     siteAccess: "Site access",
     assetDownloads: "Asset downloads",
     interface: "Interface",
     shortcuts: "Shortcuts",
     advanced: "Advanced settings",
-    sharedPersonSources: "Shared person sources",
+    sharedPersonSources: "Shared person sync",
     sharedPersonSourcesHint:
-      "Used by both Jellyfin and Emby. The person biography comes from the first source in order that meets the quality bar.",
+      "Used by both Jellyfin and Emby to configure shared person data sources and sync behavior. The biography is chosen from the first source in order that meets the quality bar.",
   },
   profiles: {
     menuTitle: "Profiles",
@@ -383,13 +394,6 @@ export const settings = {
     selectOverwriteTarget: "Select the profile to overwrite",
     activeProfileRefreshHint: "The active profile is refreshed with the new content as soon as the import finishes.",
     importAction: "Import",
-    savingWait: (action: string) => `Configuration is saving automatically. Please wait before you ${action}.`,
-    actions: {
-      reset: "reset defaults",
-      switch: "switch profiles",
-      export: "export the profile",
-      import: "import a profile",
-    },
     failed: {
       reset: "Reset failed",
       create: "Create failed",
@@ -400,9 +404,6 @@ export const settings = {
       import: "Import failed",
     },
     resetSucceeded: (name: string) => `Profile "${name}" reset to defaults`,
-    created: (name: string) => `Profile "${name}" created`,
-    switched: (name: string) => `Switched to profile "${name}"`,
-    deleted: "Profile deleted",
     exported: (name: string) => `Profile "${name}" exported`,
     imported: (name: string) => `Profile "${name}" imported`,
     overwritten: (name: string) => `Profile "${name}" overwritten and imported`,

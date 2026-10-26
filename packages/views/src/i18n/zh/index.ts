@@ -2,7 +2,6 @@ import type { Messages } from "../en";
 import { about } from "./about";
 import { common } from "./common";
 import { configForm } from "./configForm";
-import { desktop } from "./desktop";
 import { detail } from "./detail";
 import { domain } from "./domain";
 import { libraries } from "./libraries";
@@ -46,5 +45,4 @@ export const zh: Messages = {
   path,
   media,
   web,
-  desktop,
 };

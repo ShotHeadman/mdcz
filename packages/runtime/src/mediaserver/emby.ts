@@ -1,10 +1,10 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { RuntimeNetworkClient } from "../network";
-import type { RuntimeLogger } from "../shared";
 import {
   buildMediaServerHeaders,
   buildMediaServerUrl,
+  deleteMediaServerPrimaryImage,
   fetchMediaServerMetadataEditorInfo,
   fetchMediaServerPersons,
   fetchMediaServerResolvedUserId,
@@ -12,53 +12,26 @@ import {
   type MediaServerHeadersInit,
   type MediaServerItemDetail,
   type MediaServerMode,
-  normalizeMediaServerBaseUrl,
   normalizeMediaServerPersons,
-  parseMediaServerMode,
-  refreshMediaServerPerson,
   updateMediaServerItem,
   uploadMediaServerPrimaryImage,
 } from "./client";
 import { isRecord, isString, pickAutoResolvedUserId, toStringArray, toStringRecord, toStringValue } from "./common";
 import { runMediaServerConnectionCheck } from "./connectionCheck";
+import { type MediaServerErrorMapping, MediaServerServiceError, toMediaServerServiceError } from "./errors";
 import {
-  getHttpStatus,
-  type MediaServerErrorMapping,
-  MediaServerServiceError,
-  toMediaServerServiceError,
-} from "./errors";
-import type { RuntimeInfoActorSourceProvider } from "./infoSync";
-import { runMediaServerInfoSync } from "./infoSync";
-import type { MediaServerSignalService } from "./jellyfin";
-import type { RuntimePhotoActorSourceProvider } from "./photoSync";
-import { runMediaServerPhotoSync } from "./photoSync";
+  findPersonNamed,
+  type MediaServerActorServiceDependencies,
+  type MediaServerPerson,
+  type MediaServerPersonTarget,
+  type PersonSyncKind,
+  runMediaServerPersonSync,
+} from "./personSync";
 import type { PlannedPersonSyncState } from "./planner";
 
-export type EmbyMode = MediaServerMode;
-export type EmbyBatchResult = PersonSyncResult;
-export type EmbyItemDetail = MediaServerItemDetail;
-
-export interface EmbyPerson {
-  Id: string;
-  Name: string;
-  ServerId?: string;
-  Overview?: string;
-  ImageTags?: Record<string, string>;
-}
+export type EmbyPerson = MediaServerPerson;
 
 export class EmbyServiceError extends MediaServerServiceError {}
-
-export interface EmbyActorServiceDependencies {
-  signalService: MediaServerSignalService;
-  networkClient: RuntimeNetworkClient;
-  actorSourceProvider: RuntimeInfoActorSourceProvider & RuntimePhotoActorSourceProvider;
-  logger: RuntimeLogger;
-}
-
-export const normalizeEmbyBaseUrl = normalizeMediaServerBaseUrl;
-export const parseEmbyMode = parseMediaServerMode;
-
-export { getHttpStatus };
 
 export const toEmbyServiceError = (
   error: unknown,
@@ -75,17 +48,17 @@ export const buildEmbyUrl = (
 export const buildEmbyHeaders = (configuration: Configuration, headers: MediaServerHeadersInit = {}): Headers =>
   buildMediaServerHeaders(configuration, "emby", headers);
 
-export const hasEmbyPrimaryImage = (person: EmbyPerson): boolean =>
-  typeof person.ImageTags?.Primary === "string" && person.ImageTags.Primary.trim().length > 0;
-
 const ACTOR_PERSON_TYPES = ["Actor", "GuestStar"] as const;
 
-type EmbyFetchPersonsOptions = {
-  limit?: number;
-  fields?: string[];
-  userId?: string;
+interface PublicSystemInfo {
+  ServerName?: string;
+  Version?: string;
+}
+
+interface EmbyPersonQuery {
+  userId: string;
   personTypes?: string[];
-};
+}
 
 const fetchAutoResolvedEmbyUserId = async (
   networkClient: RuntimeNetworkClient,
@@ -96,8 +69,8 @@ const fetchAutoResolvedEmbyUserId = async (
       networkClient,
       configuration,
       serverKey: "emby",
-      path: "/Users/Query",
-      extractUsers: (response) => (isRecord(response) && Array.isArray(response.Items) ? response.Items : []),
+      path: "/Users",
+      extractUsers: (response) => (Array.isArray(response) ? response : []),
       pickUserId: (users) => pickAutoResolvedUserId(users),
       createMissingUserContextError: () =>
         new EmbyServiceError(
@@ -118,32 +91,49 @@ const fetchAutoResolvedEmbyUserId = async (
     },
   );
 
-export const resolveEmbyUserId = async (
+const fetchEmbyPublicSystemInfo = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
-  overrideUserId?: string,
-): Promise<string> => {
-  const resolvedUserId = overrideUserId?.trim() || configuration.emby.userId.trim();
-  return resolvedUserId || (await fetchAutoResolvedEmbyUserId(networkClient, configuration));
+): Promise<PublicSystemInfo> => {
+  try {
+    return await networkClient.getJson<PublicSystemInfo>(buildEmbyUrl(configuration, "/System/Info/Public"), {
+      headers: { accept: "application/json" },
+    });
+  } catch (error) {
+    throw toEmbyServiceError(error, {}, { code: "EMBY_UNREACHABLE", message: "Failed to read Emby server info" });
+  }
+};
+
+const resolveEmbyPersonQuery = async (
+  networkClient: RuntimeNetworkClient,
+  configuration: Configuration,
+): Promise<EmbyPersonQuery> => {
+  const [userId, { Version }] = await Promise.all([
+    configuration.emby.userId.trim() || fetchAutoResolvedEmbyUserId(networkClient, configuration),
+    fetchEmbyPublicSystemInfo(networkClient, configuration),
+  ]);
+  // Emby 4.5 returns nobody for any PersonTypes filter, and 4.8 is the oldest seen filtering correctly, so older
+  // servers list every person, directors included.
+  const ignoresPersonTypes = typeof Version === "string" && Version.localeCompare("4.8", "en", { numeric: true }) < 0;
+  return { userId, personTypes: ignoresPersonTypes ? undefined : [...ACTOR_PERSON_TYPES] };
 };
 
 export const fetchEmbyPersons = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
-  options: EmbyFetchPersonsOptions = {},
-): Promise<EmbyPerson[]> => {
-  const userId = options.userId?.trim() || configuration.emby.userId.trim() || undefined;
-
-  return await fetchMediaServerPersons(
+  options: EmbyPersonQuery & { limit?: number; fields?: string[]; searchTerm?: string },
+): Promise<EmbyPerson[]> =>
+  await fetchMediaServerPersons(
     {
       networkClient,
       configuration,
       serverKey: "emby",
       query: {
-        userid: userId,
+        userid: options.userId,
         Limit: options.limit !== undefined ? String(options.limit) : undefined,
         Fields: options.fields?.join(","),
         PersonTypes: options.personTypes?.join(","),
+        SearchTerm: options.searchTerm,
       },
       extractItems: (response) => {
         if (!isRecord(response) || !Array.isArray(response.Items)) {
@@ -152,20 +142,10 @@ export const fetchEmbyPersons = async (
         return response.Items;
       },
       parsePerson: (item) => {
-        if (!isRecord(item)) {
-          return null;
-        }
-
-        const id = item.Id;
-        const name = item.Name;
-        if (!isString(id) || !isString(name)) {
-          return null;
-        }
-
+        if (!isRecord(item) || !isString(item.Id) || !isString(item.Name)) return null;
         return {
-          Id: id,
-          Name: name,
-          ServerId: isString(item.ServerId) ? item.ServerId : undefined,
+          Id: item.Id,
+          Name: item.Name,
           Overview: toStringValue(item.Overview),
           ImageTags: isRecord(item.ImageTags) ? toStringRecord(item.ImageTags) : undefined,
         };
@@ -185,28 +165,14 @@ export const fetchEmbyPersons = async (
       },
     },
   );
-};
-
-export const fetchEmbyActorPersons = async (
-  networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
-  options: Omit<EmbyFetchPersonsOptions, "personTypes"> = {},
-): Promise<EmbyPerson[]> => {
-  const userId = await resolveEmbyUserId(networkClient, configuration, options.userId);
-  return await fetchEmbyPersons(networkClient, configuration, {
-    ...options,
-    userId,
-    personTypes: [...ACTOR_PERSON_TYPES],
-  });
-};
 
 export const fetchEmbyPersonDetail = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
   person: EmbyPerson,
   userId: string,
-): Promise<EmbyItemDetail> =>
-  await fetchMediaServerUserScopedItemDetail(
+): Promise<MediaServerItemDetail> => {
+  const { TagItems: tagItems, ...detail } = await fetchMediaServerUserScopedItemDetail(
     {
       networkClient,
       configuration,
@@ -238,41 +204,11 @@ export const fetchEmbyPersonDetail = async (
       },
     },
   );
-
-export const buildEmbyPersonUpdatePayload = (
-  person: EmbyPerson,
-  detail: EmbyItemDetail,
-  synced: PlannedPersonSyncState,
-): Record<string, unknown> => {
-  const hasOwn = (key: string): boolean => Object.hasOwn(detail, key);
-  const payload: Record<string, unknown> = {
-    Id: person.Id,
-    Name: toStringValue(detail.Name) ?? person.Name,
-    Overview: synced.overview ?? toStringValue(detail.Overview) ?? "",
-    Tags: synced.tags,
-    Taglines: synced.taglines,
+  // Emby returns tags only as TagItems, and 4.8+ would apply TagItems over Tags when the detail is written back.
+  return {
+    ...detail,
+    Tags: Array.isArray(tagItems) ? toStringArray(tagItems.map((tag) => (isRecord(tag) ? tag.Name : undefined))) : [],
   };
-
-  if (hasOwn("ProviderIds")) payload.ProviderIds = toStringRecord(detail.ProviderIds);
-  if (hasOwn("LockedFields")) payload.LockedFields = toStringArray(detail.LockedFields);
-  if (typeof detail.LockData === "boolean") payload.LockData = detail.LockData;
-
-  const serverId = toStringValue(detail.ServerId) ?? person.ServerId;
-  if (serverId) payload.ServerId = serverId;
-
-  const genres = toStringArray(detail.Genres);
-  if (genres.length > 0) payload.Genres = genres;
-
-  const type = toStringValue(detail.Type);
-  if (type) payload.Type = type;
-
-  if (synced.productionLocations && synced.productionLocations.length > 0) {
-    payload.ProductionLocations = synced.productionLocations;
-  }
-  if (synced.premiereDate) payload.PremiereDate = synced.premiereDate;
-  if (synced.productionYear !== undefined) payload.ProductionYear = synced.productionYear;
-
-  return payload;
 };
 
 export const fetchEmbyMetadataEditorInfo = async (
@@ -304,12 +240,12 @@ export const fetchEmbyMetadataEditorInfo = async (
     },
   );
 
-export const refreshEmbyPerson = async (
+export const deleteEmbyPrimaryImage = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
   personId: string,
 ): Promise<void> => {
-  await refreshMediaServerPerson(
+  await deleteMediaServerPrimaryImage(
     {
       networkClient,
       configuration,
@@ -319,14 +255,15 @@ export const refreshEmbyPerson = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person refresh request" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby credentials are invalid; cannot refresh person" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person refresh permissions" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot refresh specified person" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot remove person photo" },
+        403: {
+          code: "EMBY_ADMIN_KEY_REQUIRED",
+          message: "Removing an Emby person photo requires an administrator API key",
+        },
       },
       fallback: {
-        code: "EMBY_REFRESH_FAILED",
-        message: "Failed to refresh Emby person",
+        code: "EMBY_WRITE_FAILED",
+        message: "Failed to remove Emby person photo",
       },
     },
   );
@@ -336,17 +273,26 @@ export const updateEmbyPersonInfo = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
   person: EmbyPerson,
-  detail: EmbyItemDetail,
+  detail: MediaServerItemDetail,
   synced: PlannedPersonSyncState,
 ): Promise<void> => {
-  const payload = buildEmbyPersonUpdatePayload(person, detail, synced);
   await updateMediaServerItem(
     {
       networkClient,
       configuration,
       serverKey: "emby",
       personId: person.Id,
-      payload,
+      // Emby clears every field an update leaves out, and 4.5 rejects one without Genres or ProviderIds, so the person
+      // goes back whole with only the synced fields replaced.
+      payload: {
+        ...detail,
+        Overview: synced.overview ?? toStringValue(detail.Overview) ?? "",
+        Tags: synced.tags,
+        Taglines: synced.taglines,
+        ...(synced.productionLocations?.length ? { ProductionLocations: synced.productionLocations } : {}),
+        ...(synced.premiereDate ? { PremiereDate: synced.premiereDate } : {}),
+        ...(synced.productionYear !== undefined ? { ProductionYear: synced.productionYear } : {}),
+      },
       toServiceError: toEmbyServiceError,
     },
     {
@@ -407,31 +353,16 @@ export const uploadEmbyPrimaryImage = async (
   );
 };
 
-interface PublicSystemInfo {
-  ServerName?: string;
-  Version?: string;
-}
-
 export const checkEmbyConnection = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
-): Promise<MediaServerConnectionCheckResult> => {
-  let resolvedUserId: string | undefined;
-  const getResolvedUserId = async (): Promise<string> => {
-    if (!resolvedUserId) {
-      resolvedUserId = await resolveEmbyUserId(networkClient, configuration);
-    }
-    return resolvedUserId;
-  };
-
-  return await runMediaServerConnectionCheck({
+): Promise<MediaServerConnectionCheckResult> =>
+  await runMediaServerConnectionCheck({
     includeAdminKeyStep: true,
     unreachableCode: "EMBY_UNREACHABLE",
     authFailedCode: "EMBY_AUTH_FAILED",
     fetchPublicServerInfo: async () => {
-      const info = await networkClient.getJson<PublicSystemInfo>(buildEmbyUrl(configuration, "/System/Info/Public"), {
-        headers: { accept: "application/json" },
-      });
+      const info = await fetchEmbyPublicSystemInfo(networkClient, configuration);
       return {
         serverName: typeof info.ServerName === "string" ? info.ServerName : undefined,
         version: typeof info.Version === "string" ? info.Version : undefined,
@@ -444,97 +375,66 @@ export const checkEmbyConnection = async (
     },
     // Reads people exactly as the sync does, so a server whose actor filter comes back empty fails here, not silently in sync.
     fetchPersons: async () =>
-      await fetchEmbyActorPersons(networkClient, configuration, {
+      await fetchEmbyPersons(networkClient, configuration, {
+        ...(await resolveEmbyPersonQuery(networkClient, configuration)),
         limit: 1,
         fields: ["Overview"],
-        userId: await getResolvedUserId(),
       }),
     getPersonId: (person) => person.Id,
     verifyWritePermission: async (personId) => {
       await fetchEmbyMetadataEditorInfo(networkClient, configuration, personId);
     },
   });
+
+/**
+ * The person query is resolved on first use, since a follow-up looks people up many times; a failed resolve is retried
+ * on the next use instead of failing every later lookup.
+ */
+export const createEmbyPersonTarget = (
+  deps: MediaServerActorServiceDependencies,
+  configuration: Configuration,
+  query?: EmbyPersonQuery,
+): MediaServerPersonTarget<EmbyPerson> => {
+  let resolvedQuery = query && Promise.resolve(query);
+  const getQuery = async () => {
+    resolvedQuery ??= resolveEmbyPersonQuery(deps.networkClient, configuration).catch((error: unknown) => {
+      resolvedQuery = undefined;
+      throw error;
+    });
+    return await resolvedQuery;
+  };
+  return {
+    ...deps,
+    serviceName: "Emby",
+    configuration,
+    findPerson: async (name) =>
+      findPersonNamed(
+        await fetchEmbyPersons(deps.networkClient, configuration, { ...(await getQuery()), searchTerm: name }),
+        name,
+      ),
+    fetchPersonDetail: async (person) =>
+      await fetchEmbyPersonDetail(deps.networkClient, configuration, person, (await getQuery()).userId),
+    updatePersonInfo: async (person, detail, synced) =>
+      await updateEmbyPersonInfo(deps.networkClient, configuration, person, detail, synced),
+    uploadPrimaryImage: async (personId, bytes, contentType) =>
+      await uploadEmbyPrimaryImage(deps.networkClient, configuration, personId, bytes, contentType),
+    deletePrimaryImage: async (personId) => await deleteEmbyPrimaryImage(deps.networkClient, configuration, personId),
+  };
 };
 
-export class EmbyActorInfoService {
-  private readonly networkClient: RuntimeNetworkClient;
-
-  constructor(private readonly deps: EmbyActorServiceDependencies) {
-    this.networkClient = deps.networkClient;
-  }
-
-  async run(configuration: Configuration, mode: EmbyMode): Promise<EmbyBatchResult> {
-    const resolvedUserId = await resolveEmbyUserId(this.networkClient, configuration);
-    return await runMediaServerInfoSync({
-      configuration,
-      mode,
-      serviceName: "Emby",
-      signalService: this.deps.signalService,
-      actorSourceProvider: this.deps.actorSourceProvider,
-      logger: this.deps.logger,
-      fetchPersons: async () =>
-        await fetchEmbyActorPersons(this.networkClient, configuration, {
-          fields: ["Overview"],
-          userId: resolvedUserId,
-        }),
-      getPersonName: (person) => person.Name,
-      getPersonId: (person) => person.Id,
-      fetchPersonDetail: async (person) =>
-        await fetchEmbyPersonDetail(this.networkClient, configuration, person, resolvedUserId),
-      buildExistingState: (person, detail) => ({
-        overview: toStringValue(detail.Overview) ?? person.Overview,
-        tags: toStringArray(detail.Tags),
-        taglines: toStringArray(detail.Taglines),
-        premiereDate: toStringValue(detail.PremiereDate),
-        productionYear: typeof detail.ProductionYear === "number" ? detail.ProductionYear : undefined,
-        productionLocations: toStringArray(detail.ProductionLocations),
-      }),
-      updatePersonInfo: async (person, detail, synced) => {
-        await updateEmbyPersonInfo(this.networkClient, configuration, person, detail, synced);
-      },
-      shouldRefreshPerson: configuration.emby.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshEmbyPerson(this.networkClient, configuration, personId);
-      },
-      buildCompletionMessage: (result, total) =>
-        `Emby actor info sync completed. Total: ${total}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
-    });
-  }
-}
-
-export class EmbyActorPhotoService {
-  private readonly networkClient: RuntimeNetworkClient;
-
-  constructor(private readonly deps: EmbyActorServiceDependencies) {
-    this.networkClient = deps.networkClient;
-  }
-
-  async run(configuration: Configuration, mode: EmbyMode): Promise<EmbyBatchResult> {
-    const resolvedUserId = await resolveEmbyUserId(this.networkClient, configuration);
-    return await runMediaServerPhotoSync({
-      configuration,
-      mode,
-      serviceName: "Emby",
-      signalService: this.deps.signalService,
-      networkClient: this.networkClient,
-      actorSourceProvider: this.deps.actorSourceProvider,
-      logger: this.deps.logger,
-      fetchPersons: async () =>
-        await fetchEmbyActorPersons(this.networkClient, configuration, {
-          userId: resolvedUserId,
-        }),
-      getPersonName: (person) => person.Name,
-      getPersonId: (person) => person.Id,
-      hasPrimaryImage: hasEmbyPrimaryImage,
-      uploadPrimaryImage: async (personId, bytes, contentType) => {
-        await uploadEmbyPrimaryImage(this.networkClient, configuration, personId, bytes, contentType);
-      },
-      shouldRefreshPerson: configuration.emby.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshEmbyPerson(this.networkClient, configuration, personId);
-      },
-      buildCompletionMessage: (result, total) =>
-        `Emby actor photo sync completed. Total: ${total}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
-    });
-  }
-}
+export const syncEmbyPersons = async (
+  deps: MediaServerActorServiceDependencies,
+  configuration: Configuration,
+  kind: PersonSyncKind,
+  mode: MediaServerMode,
+): Promise<PersonSyncResult> => {
+  const query = await resolveEmbyPersonQuery(deps.networkClient, configuration);
+  return await runMediaServerPersonSync(
+    createEmbyPersonTarget(deps, configuration, query),
+    kind === "info" ? { info: mode } : { photo: mode },
+    await fetchEmbyPersons(deps.networkClient, configuration, {
+      ...query,
+      fields: kind === "info" ? ["Overview"] : undefined,
+    }),
+  );
+};

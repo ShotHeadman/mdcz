@@ -1,8 +1,11 @@
+import { dedupeMediaSources } from "@mdcz/shared/imageSource";
+import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
-import { LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
+import { isRemoteAssetUrl, LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
   DetailActionPort,
+  FileActions,
   MaintenanceActionPort,
   ScrapeActionPort,
   SharedWorkbenchPorts,
@@ -21,15 +24,12 @@ import {
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc } from "../client";
+import { desktop } from "../desktop";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 
-const dedupeValues = (values: string[]): string[] =>
-  values
-    .map((value) => value.trim())
-    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);
-
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+const fileActions: Partial<FileActions> = desktop
+  ? { play: desktop.playMedia, openFolder: desktop.showItemInFolder }
+  : {};
 
 const getDirName = (path: string): string => {
   const normalized = path.replace(/[\\/]+$/u, "");
@@ -95,8 +95,6 @@ const toRelativePath = (item: DetailViewItem, path: string): string => {
 const getRootId = (item: DetailViewItem): string => item.fileRef?.rootId ?? item.id.split(":")[0] ?? "";
 const getMetadataRootId = (item: DetailViewItem): string => item.nfoRef?.rootId ?? getRootId(item);
 
-const isRemoteImageCandidate = (value: string): boolean => /^(?:https?:\/\/|data:|blob:)/iu.test(value.trim());
-
 const shouldResolveAgainstBaseDir = (candidate: string, item: DetailViewItem): boolean => {
   if (isAbsoluteLocalPath(candidate)) {
     return false;
@@ -125,7 +123,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (!trimmed) {
     return "";
   }
-  if (isRemoteImageCandidate(trimmed)) {
+  if (isRemoteAssetUrl(trimmed)) {
     return trimmed;
   }
   if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
@@ -150,9 +148,10 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
-  showFilePath: false,
+  ...fileActions,
+  showFilePath: Boolean(desktop),
   resolveImageCandidates: async (candidates, baseDir, item) =>
-    dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
+    dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
@@ -173,16 +172,16 @@ export const createWebDetailPort = (): DetailActionPort => ({
     await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
   },
   preparePosterCrop: async (item) => {
-    if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
-    const response = await api.scrape.posterCropSession({ id: item.resultId });
+    if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
+    const response = await api.scrape.posterCropSession(item.fileRef);
     return {
       ...response,
       sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
     };
   },
   savePosterCrop: async (item, crop) => {
-    if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
-    const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
+    if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
+    const response = await api.scrape.posterCropSave({ ...item.fileRef, crop });
     const posterUrl = new URL(getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }));
     if (response.revision) posterUrl.searchParams.set("revision", response.revision);
     return { posterUrl: posterUrl.toString() };
@@ -190,6 +189,7 @@ export const createWebDetailPort = (): DetailActionPort => ({
 });
 
 export const createWebScrapeActionPort = (): ScrapeActionPort => ({
+  ...fileActions,
   rescrape: async (targets, source) => {
     const refs = targets.map((target) => target.ref);
     if (!refs[0]) throw new Error(getT().web.selectFileToScrape);
@@ -203,6 +203,9 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
   rerunDirectory: async (taskId) => {
     await api.scrape.rerunDirectory({ taskId });
     requestScrapeLiveRunsRefresh();
+  },
+  cancelActorSync: async (runId) => {
+    await api.scrape.cancelActorSync({ runId });
   },
   retryFailed: async (itemIds) => {
     const runId = selectScrapeTaskId(useScrapeStore.getState());
@@ -233,6 +236,7 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
   };
 
   return {
+    ...fileActions,
     openNfo: (path) => {
       window.dispatchEvent(new CustomEvent("app:open-nfo", { detail: { path } }));
     },
@@ -260,7 +264,6 @@ export const createWebMaintenanceActionPort = (): MaintenanceActionPort => {
       const sessionId = requireSessionId();
       await api.maintenance.execute({
         sessionId,
-        confirmationToken: `maintenance:${sessionId}`,
         previewIds: selections.map((selection) => selection.previewId),
         selections,
       });

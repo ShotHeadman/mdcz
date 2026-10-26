@@ -154,7 +154,7 @@ describe("web detail action port", () => {
     );
   });
 
-  it("prepares and saves poster crops through result-scoped Web APIs", async () => {
+  it("prepares and saves poster crops for the item's video file", async () => {
     setAdminToken("token-1");
     const initialCrop = { x: 0.4, y: 0, width: 0.3, height: 0.9 };
     vi.spyOn(api.scrape, "posterCropSession").mockResolvedValue({
@@ -176,9 +176,9 @@ describe("web detail action port", () => {
     });
     const item = {
       id: "root-1:ABC-001.mp4",
-      resultId: "result-1",
       number: "ABC-001",
       path: "ABC-001.mp4",
+      fileRef: { rootId: "root-1", relativePath: "ABC-001.mp4" },
       status: "success" as const,
     };
     const port = createWebDetailPort();
@@ -188,7 +188,7 @@ describe("web detail action port", () => {
     expect(session.sourceUrl).toBe(
       "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
-    expect(save).toHaveBeenCalledWith({ id: "result-1", crop: initialCrop });
+    expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
     expect(result.posterUrl).toContain("revision=42");
   });

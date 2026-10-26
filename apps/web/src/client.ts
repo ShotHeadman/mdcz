@@ -1,10 +1,11 @@
 import type { TaskNotificationDto } from "@mdcz/shared";
 import type { Configuration } from "@mdcz/shared/config";
+import { DomainErrorCode, type DomainErrorShape, type LibraryTaskConflictDomainError } from "@mdcz/shared/error";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
-import { createTRPCUntypedClient, httpLink } from "@trpc/client";
+import { getT } from "@mdcz/views/i18n";
+import { createTRPCUntypedClient, httpLink, TRPCClientError } from "@trpc/client";
 
 const FALLBACK_API_BASE = "http://127.0.0.1:3838";
-const API_BASE_KEY = "mdcz-web-api-base";
 const TOKEN_KEY = "mdcz-admin-token";
 
 export const resolveDefaultApiBase = ({
@@ -23,23 +24,11 @@ export const resolveDefaultApiBase = ({
   if (!location?.origin || location.origin === "null") {
     return FALLBACK_API_BASE;
   }
-  if (development) {
+  // The Vite dev server runs beside the API; desktop's dev page is served same-origin through the API scheme.
+  if (development && location.protocol.startsWith("http")) {
     return `${location.protocol}//${location.hostname}:3838`;
   }
   return location.origin.replace(/\/+$/u, "");
-};
-
-export const getApiBase = (): string => localStorage.getItem(API_BASE_KEY) ?? resolveDefaultApiBase();
-
-export const setApiBase = (baseUrl: string): void => {
-  const trimmed = baseUrl.trim().replace(/\/+$/u, "");
-  if (!trimmed) {
-    localStorage.removeItem(API_BASE_KEY);
-    trpcCache = null;
-    return;
-  }
-  localStorage.setItem(API_BASE_KEY, trimmed);
-  trpcCache = null;
 };
 
 export const getAdminToken = (): string | null => localStorage.getItem(TOKEN_KEY);
@@ -81,7 +70,7 @@ export const getLibraryAssetSrc = (input: {
   }
   const url = new URL(
     `/api/library/assets/${encodeURIComponent(rootId)}/${encodePathSegments(assetPath)}`,
-    getApiBase(),
+    resolveDefaultApiBase(),
   );
   const token = getAdminToken();
   if (token) {
@@ -112,7 +101,7 @@ type WebTrpcClient = ReturnType<typeof createTRPCUntypedClient>;
 let trpcCache: { baseUrl: string; client: WebTrpcClient } | null = null;
 
 const getTrpc = (): WebTrpcClient => {
-  const baseUrl = getApiBase();
+  const baseUrl = resolveDefaultApiBase();
   if (trpcCache?.baseUrl === baseUrl) {
     return trpcCache.client;
   }
@@ -129,11 +118,30 @@ const getTrpc = (): WebTrpcClient => {
   return client;
 };
 
-const trpcQuery = async <TOutput>(path: string, input?: unknown): Promise<TOutput> =>
-  (await getTrpc().query(path, input)) as TOutput;
+// The server refuses in English for its logs and API callers; the page says it in the reader's language.
+const localizeError = (error: unknown): unknown => {
+  const domainError: DomainErrorShape | undefined =
+    error instanceof TRPCClientError ? error.data?.domainError : undefined;
+  if (domainError?.code !== DomainErrorCode.LIBRARY_TASK_CONFLICT) return error;
+  const { running } = (domainError as LibraryTaskConflictDomainError).details;
+  return new Error(getT().workbench.taskConflict[running], { cause: error });
+};
 
-const trpcMutation = async <TOutput>(path: string, input?: unknown): Promise<TOutput> =>
-  (await getTrpc().mutation(path, input)) as TOutput;
+const trpcQuery = async <TOutput>(path: string, input?: unknown): Promise<TOutput> => {
+  try {
+    return (await getTrpc().query(path, input)) as TOutput;
+  } catch (error) {
+    throw localizeError(error);
+  }
+};
+
+const trpcMutation = async <TOutput>(path: string, input?: unknown): Promise<TOutput> => {
+  try {
+    return (await getTrpc().mutation(path, input)) as TOutput;
+  } catch (error) {
+    throw localizeError(error);
+  }
+};
 
 export const api: ServerApiContract = {
   auth: {
@@ -235,6 +243,7 @@ export const api: ServerApiContract = {
     list: () => trpcQuery("pending.list"),
     detail: (input) => trpcQuery("pending.detail", input),
     retry: (input) => trpcMutation("pending.retry", input),
+    retryMany: (input) => trpcMutation("pending.retryMany", input),
     confirmUncensored: (input) => trpcMutation("pending.confirmUncensored", input),
     ignore: (input) => trpcMutation("pending.ignore", input),
   },
@@ -272,6 +281,8 @@ export const api: ServerApiContract = {
     start: (input) => trpcMutation("scans.start", input),
   },
   scrape: {
+    actorSyncStatus: () => trpcQuery("scrape.actorSyncStatus"),
+    cancelActorSync: (input) => trpcMutation("scrape.cancelActorSync", input),
     liveRuns: () => trpcQuery("scrape.liveRuns"),
     snapshot: (input) => trpcQuery("scrape.snapshot", input),
     removeRecord: (input) => trpcMutation("scrape.removeRecord", input),
@@ -303,7 +314,7 @@ export const api: ServerApiContract = {
 
 const taskEventsUrl = (): string => {
   const token = getAdminToken();
-  return `${getApiBase()}/events/tasks${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+  return `${resolveDefaultApiBase()}/events/tasks${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 };
 
 export const subscribeTaskNotifications = (handlers: {

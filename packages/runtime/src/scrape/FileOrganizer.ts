@@ -75,8 +75,6 @@ export interface OrganizePlanOptions {
   versionLabel?: string;
 }
 
-export type ScrapeExecutionMode = "single" | "batch";
-
 /** Several movies in one folder share fixed asset names, so they need names that follow the video. */
 export const assertTargetLayout = (config: Configuration, target: PublicationTarget): void => {
   if (!isSharedDirectoryTarget(target)) return;
@@ -256,5 +254,3 @@ export class FileOrganizer {
     };
   }
 }
-
-export const fileOrganizer = new FileOrganizer();

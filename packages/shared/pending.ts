@@ -57,12 +57,14 @@ export type PendingDetailResponse = z.infer<typeof pendingDetailResponseSchema>;
 export const pendingIdInputSchema = z.object({ id: z.string().trim().min(1) });
 export type PendingIdInput = z.infer<typeof pendingIdInputSchema>;
 
+export const pendingIdsInputSchema = z.object({ ids: z.array(z.string().trim().min(1)).min(1) });
+export type PendingIdsInput = z.infer<typeof pendingIdsInputSchema>;
+
 /** A repair learned from one file, so files named the same way parse on their own next time. */
 export const pendingRuleSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ignoreToken"), token: z.string().trim().min(1) }),
   z.object({ kind: z.literal("numberMapping"), match: z.string().trim().min(1) }),
 ]);
-export type PendingRule = z.infer<typeof pendingRuleSchema>;
 
 export const pendingRetryInputSchema = z.object({
   id: z.string().trim().min(1),
@@ -76,8 +78,17 @@ export const pendingRetryInputSchema = z.object({
 });
 export type PendingRetryInput = z.infer<typeof pendingRetryInputSchema>;
 
-export const pendingConfirmUncensoredInputSchema = z.object({
-  id: z.string().trim().min(1),
+/** Scrapes several files again as they are; repairs such as a corrected number go through `retry`, one file each. */
+export const pendingRetryManyInputSchema = pendingIdsInputSchema.extend({
+  /** Scrape every file into this library instead of the one each was found for. */
+  libraryId: z.string().trim().min(1).optional(),
+});
+export type PendingRetryManyInput = z.infer<typeof pendingRetryManyInputSchema>;
+
+export const pendingRetryManyResponseSchema = z.object({ taskIds: z.array(z.string()) });
+export type PendingRetryManyResponse = z.infer<typeof pendingRetryManyResponseSchema>;
+
+export const pendingConfirmUncensoredInputSchema = pendingIdsInputSchema.extend({
   choice: z.enum(["umr", "leak", "uncensored"]),
 });
 export type PendingConfirmUncensoredInput = z.infer<typeof pendingConfirmUncensoredInputSchema>;

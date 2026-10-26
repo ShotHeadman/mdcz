@@ -20,7 +20,7 @@ const DEFAULT_AVJOHO_HEADERS = {
   "accept-language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
 };
 const EMPTY_FIELD_PATTERN = /^[-–—―ー]+$/u;
-const PROFILE_FIELD_ORDER = ["デビュー", "趣味・特技", "専属メーカー", "X"] as const;
+const PROFILE_FIELD_ORDER = ["デビュー", "趣味・特技", "専属メーカー", "X (旧Twitter)", "Instagram"] as const;
 const AGENCY_FIELD_NAMES = ["所属事務所", "所属プロダクション", "所属", "事務所"] as const;
 
 export interface AvjohoActorSourceDependencies {
@@ -71,14 +71,6 @@ const parseActorTitle = (value: string): ParsedActorTitle => {
     primaryName: primaryName || displayName,
     aliases: alias ? [alias] : [],
   };
-};
-
-const splitAliases = (value: string): string[] => {
-  if (!value || EMPTY_FIELD_PATTERN.test(value)) {
-    return [];
-  }
-
-  return toUniqueActorNames(value.split(/[、,/／]/u), normalizeText);
 };
 
 const resolveUrl = (baseUrl: string, value: string | undefined): string | undefined => {
@@ -214,40 +206,48 @@ const getHtml = async (
   return handleChallengeWithCookieResolver(context, url, requestHeaders, sessionRetry.html, sessionRetry.warnings);
 };
 
-const readProfileFields = (html: string): Map<string, string> => {
+// A cell can hold one entry per line, each optionally annotated with years "（2021年）" or a note "※別名". Lines end at
+// <br>, or at the <p>/<div> blocks of a "fukusuu" list.
+const readProfileFields = (html: string): Map<string, string[]> => {
   const $ = load(html);
-  const fields = new Map<string, string>();
+  const fields = new Map<string, string[]>();
 
   $("article .entry-content table tr").each((_, row) => {
     const label = normalizeText($(row).find("th").first().text());
-    const value = normalizeText($(row).find("td").first().text());
-    if (!label || !value || EMPTY_FIELD_PATTERN.test(value)) {
-      return;
+    const cellHtml = $(row).find("td").first().html() ?? "";
+    const lines = load(cellHtml.replace(/<br\s*\/?>|<\/?(?:p|div)\b[^>]*>/giu, "\n"))
+      .root()
+      .text()
+      .split("\n")
+      .map((line) => normalizeText(line))
+      .filter((line) => line && !EMPTY_FIELD_PATTERN.test(line));
+    if (label && lines.length > 0) {
+      fields.set(label, lines);
     }
-
-    fields.set(label, value);
   });
 
   return fields;
 };
 
-const buildDescription = (_displayName: string, fields: Map<string, string>): string | undefined => {
+const buildDescription = (fields: Map<string, string[]>): string | undefined => {
   const lines: string[] = [];
 
   for (const label of PROFILE_FIELD_ORDER) {
-    const value = fields.get(label);
-    if (!value) {
+    const values = fields.get(label);
+    if (!values) {
       continue;
     }
+    // デビュー lists a debut per stage name; the one without a note is the current name's.
+    const value = label === "デビュー" ? (values.find((line) => !line.includes("※")) ?? values[0]) : values.join(" / ");
     lines.push(`${label}: ${value}`);
   }
 
-  return lines.length > 0 ? lines.join("\n\n") : undefined;
+  return lines.length > 0 ? lines.join("\n") : undefined;
 };
 
-const pickFieldValue = (fields: Map<string, string>, labels: readonly string[]): string | undefined => {
+const pickFieldValue = (fields: Map<string, string[]>, labels: readonly string[]): string | undefined => {
   for (const label of labels) {
-    const value = fields.get(label);
+    const value = fields.get(label)?.join(" ");
     if (value) {
       return value;
     }
@@ -310,31 +310,40 @@ const parseDetailProfile = (baseUrl: string, html: string) => {
 
   const parsedTitle = parseActorTitle(title);
   const fields = readProfileFields(html);
+  const field = (label: string) => fields.get(label)?.join(" ");
   const aliases = toUniqueActorNames(
-    [...parsedTitle.aliases, ...splitAliases(fields.get("別名") ?? "")],
+    [
+      ...parsedTitle.aliases,
+      ...(fields.get("別名") ?? []).flatMap((line) =>
+        line
+          .replace(/※.*$/u, "")
+          .replace(/[（(][^）)]*[）)]/gu, "")
+          .split(/[、,/／]/u),
+      ),
+    ],
     normalizeText,
   );
-  const measurements = parseActorMeasurements(fields.get("スリーサイズ"));
+  const measurements = parseActorMeasurements(field("スリーサイズ"));
 
   return {
     name: parsedTitle.primaryName,
     aliases: aliases.length > 0 ? aliases : undefined,
-    birth_date: parseActorDate(fields.get("生年月日")),
-    birth_place: fields.get("出身地"),
-    blood_type: parseActorBloodType(fields.get("血液型")),
-    description: buildDescription(parsedTitle.displayName, fields),
-    height_cm: parseActorMetricCm(fields.get("身長")),
+    birth_date: parseActorDate(field("生年月日")),
+    birth_place: field("出身地"),
+    blood_type: parseActorBloodType(field("血液型")),
+    description: buildDescription(fields),
+    height_cm: parseActorMetricCm(field("身長")),
     bust_cm: measurements.bust_cm,
     waist_cm: measurements.waist_cm,
     hip_cm: measurements.hip_cm,
-    cup_size: fields.get("カップ") ?? measurements.cup_size,
+    cup_size: field("カップ") ?? measurements.cup_size,
     photo_url:
       resolveUrl(baseUrl, $("meta[property='og:image']").attr("content")) ??
       resolveUrl(baseUrl, $(".gazou img").attr("src")),
     sourceHints: mergeActorSourceHints([
       {
         agency: pickFieldValue(fields, AGENCY_FIELD_NAMES),
-        studio: fields.get("専属メーカー"),
+        studio: field("専属メーカー"),
       },
     ]),
   };

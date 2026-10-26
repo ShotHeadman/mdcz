@@ -17,9 +17,6 @@ const getMediaServerConfig = (configuration: Configuration, serverKey: MediaServ
 
 export const normalizeMediaServerBaseUrl = (value: string): string => value.trim().replace(/\/+$/u, "");
 
-export const parseMediaServerMode = (value: unknown): MediaServerMode | null =>
-  value === "all" || value === "missing" ? value : null;
-
 export const buildMediaServerUrl = (
   configuration: Configuration,
   serverKey: MediaServerKey,
@@ -234,25 +231,18 @@ export const fetchMediaServerMetadataEditorInfo = async <TError extends MediaSer
   }
 };
 
-export const refreshMediaServerPerson = async <TError extends MediaServerServiceError>(
+export const deleteMediaServerPrimaryImage = async <TError extends MediaServerServiceError>(
   options: MediaServerRequestOptions<TError>,
   errorMappings: MediaServerRequestErrorMappings,
 ): Promise<void> => {
   const url = buildMediaServerUrl(
     options.configuration,
     options.serverKey,
-    `/Items/${encodeURIComponent(options.personId)}/Refresh`,
-    {
-      Recursive: "false",
-      MetadataRefreshMode: "FullRefresh",
-      ImageRefreshMode: "FullRefresh",
-      ReplaceAllMetadata: "false",
-      ReplaceAllImages: "false",
-    },
+    `/Items/${encodeURIComponent(options.personId)}/Images/Primary`,
   );
 
   try {
-    await options.networkClient.postText(url, "", {
+    await options.networkClient.deleteText(url, {
       headers: buildMediaServerHeaders(options.configuration, options.serverKey),
     });
   } catch (error) {

@@ -1,7 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type {
   AggregationService,
   DownloadManager,
@@ -10,12 +9,12 @@ import type {
   OrganizePlan,
   TranslateService,
 } from "@mdcz/runtime/scrape";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   createFileScraper,
-  mockConfigManager,
   preparedPublicationFiles,
   prepareFilePublication,
   resolveTestOutputPlan,
@@ -86,8 +85,8 @@ const createScraper = ({
   plan: OrganizePlan;
   writeNfo: ReturnType<typeof vi.fn>;
 }) => {
-  mockConfigManager(config);
   return createFileScraper({
+    getConfiguration: async () => config,
     aggregationService: {
       aggregate: vi.fn().mockResolvedValue(createAggregationResult(crawlerData)),
     } as unknown as AggregationService,
@@ -187,8 +186,8 @@ describe("FileScraper .strm support", () => {
       join(root, "ABC-123-U.nfo"),
       "<movie><title>Local title</title><num>ABC-123</num><tag>破解</tag></movie>",
     );
-    mockConfigManager(config);
     const scraper = createFileScraper({
+      getConfiguration: async () => config,
       aggregationService: {
         aggregate: vi.fn().mockResolvedValue(createAggregationResult(crawlerData)),
       } as unknown as AggregationService,

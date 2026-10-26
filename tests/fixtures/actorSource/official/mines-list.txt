@@ -1,0 +1,11 @@
+<div class="modelColumn">
+  <a href="/model/10218">
+    <div class="photo">
+      <img src="/talent_images/thumb_sakura_10218_0.jpg" alt="">
+    </div>
+    <h4 class="name">紗倉まな</h4>
+  </a>
+  <div class="snsBox uaSnsJs">
+    <a href="https://twitter.com/sakuramanaTeee" target="_blank" class="notHover" rel="nofollow"><span class="iconBox twitter">Twitter</span></a>
+  </div>
+</div>

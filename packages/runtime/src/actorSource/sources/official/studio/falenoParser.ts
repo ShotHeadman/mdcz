@@ -36,7 +36,6 @@ export const parseFalenoDetail = (html: string, baseUrl: string, fallbackName: s
     aliases: toUniqueNames([heading.find("span").first().text()]),
     birth_date: parseActorDate(fields.get("誕生日")),
     birth_place: fields.get("出身地"),
-    description: buildFieldDescription(Array.from(fields.entries())),
     height_cm: parseActorMetricCm(fields.get("身長")),
     bust_cm: measurements.bust_cm,
     waist_cm: measurements.waist_cm,
@@ -44,6 +43,7 @@ export const parseFalenoDetail = (html: string, baseUrl: string, fallbackName: s
     cup_size: measurements.cup_size,
     photo_url: toAbsoluteUrl(baseUrl, $(".box_actress02_left img").first().attr("src")),
   };
+  profile.description = buildFieldDescription(profile, Array.from(fields.entries()));
 
   return hasActorProfileContent(profile) ? profile : null;
 };

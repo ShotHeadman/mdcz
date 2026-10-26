@@ -1,15 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import {
-  findExistingNfoPath,
-  getNfoReadCandidates,
-  NfoGenerator,
-  type NfoOptions,
-  resolveFilenameNfoPath,
-} from "@mdcz/runtime/scrape";
-import { pathExists } from "@mdcz/runtime/scrape/utils/filesystem";
+import { getNfoReadCandidates, NfoGenerator, type NfoOptions, resolveFilenameNfoPath } from "@mdcz/runtime/scrape";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
@@ -265,15 +258,6 @@ describe("NfoGenerator", () => {
     await expect(readFile(movieNfoPath, "utf8")).resolves.toBe(await readFile(nfoPath, "utf8"));
   });
 
-  it("finds an existing movie.nfo when movie naming mode is enabled", async () => {
-    const root = await createTempDir();
-    const nfoPath = join(root, "ABC-123.nfo");
-    const movieNfoPath = join(root, "movie.nfo");
-
-    await writeFile(movieNfoPath, "<movie />", "utf8");
-
-    await expect(findExistingNfoPath(nfoPath, "movie", pathExists)).resolves.toBe(movieNfoPath);
-  });
   it.each([
     ["POSIX", posix, "/media"],
     ["Windows", win32, "C:\\media"],
@@ -285,6 +269,7 @@ describe("NfoGenerator", () => {
     expect(resolveFilenameNfoPath(movieNfoPath, videoPath)).toBe(filenameNfoPath);
     expect(getNfoReadCandidates(movieNfoPath, "filename", videoPath)).toEqual([filenameNfoPath, movieNfoPath]);
     expect(getNfoReadCandidates(filenameNfoPath, "movie", videoPath)).toEqual([movieNfoPath, filenameNfoPath]);
+    expect(getNfoReadCandidates(videoPath, "filename", videoPath)).toEqual([filenameNfoPath, movieNfoPath]);
   });
   it("merges editable fields without dropping unmanaged nodes or attributes", () => {
     const existingXml = `<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="dmm" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><fileinfo><streamdetails><video><width>1920</width></video></streamdetails></fileinfo><providerid source="local">keep-me</providerid><mdcz><custom keep="yes">value</custom></mdcz></movie>`;

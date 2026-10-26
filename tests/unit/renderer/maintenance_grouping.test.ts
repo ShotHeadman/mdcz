@@ -2,8 +2,6 @@ import type { LocalScanEntry } from "@mdcz/shared/types";
 import {
   buildMaintenanceEntryGroups,
   buildMaintenanceEntryViewModel,
-  countMaintenanceDisplayItems,
-  summarizeMaintenanceExecutionGroups,
 } from "@mdcz/shared/viewModels/maintenanceGrouping";
 import { describe, expect, it } from "vitest";
 import {
@@ -58,7 +56,7 @@ describe("maintenance multipart grouping", () => {
       "entry-1",
       "entry-2",
     ]);
-    expect(countMaintenanceDisplayItems([part1, part2])).toBe(1);
+    expect(buildMaintenanceEntryViewModel([part1, part2]).displayCount).toBe(1);
   });
 
   it("marks the whole group as failed immediately when any child file fails", () => {
@@ -224,16 +222,18 @@ describe("maintenance multipart grouping", () => {
     };
 
     expect(
-      summarizeMaintenanceExecutionGroups([part1, part2], {
-        "entry-1": {
-          fileId: "entry-1",
-          status: "success",
+      buildMaintenanceEntryViewModel([part1, part2], {
+        itemResults: {
+          "entry-1": {
+            fileId: "entry-1",
+            status: "success",
+          },
+          "entry-2": {
+            fileId: "entry-2",
+            status: "success",
+          },
         },
-        "entry-2": {
-          fileId: "entry-2",
-          status: "success",
-        },
-      }),
+      }).executionSummary,
     ).toEqual({
       totalCount: 1,
       completedCount: 1,
@@ -303,7 +303,7 @@ describe("maintenance multipart grouping", () => {
       },
     };
 
-    expect(countMaintenanceDisplayItems([part1, part2], { itemResults })).toBe(1);
+    expect(buildMaintenanceEntryViewModel([part1, part2], { itemResults }).displayCount).toBe(1);
     expect(buildMaintenanceEntryGroups([part1, part2], { itemResults })).toHaveLength(1);
   });
 });

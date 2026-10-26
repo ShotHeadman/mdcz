@@ -341,21 +341,6 @@ export const buildMaintenanceEntryViewModel = (
   };
 };
 
-export const countMaintenanceDisplayItems = (
-  entries: LocalScanEntry[],
-  options: BuildMaintenanceEntryGroupsOptions = {},
-): number => buildMaintenanceEntryViewModel(entries, options).displayCount;
-
-export const summarizeMaintenancePreviewGroups = (
-  entries: LocalScanEntry[],
-  previewResults: Record<string, MaintenancePreviewItem>,
-): MaintenancePreviewGroupSummary => buildMaintenanceEntryViewModel(entries, { previewResults }).previewSummary;
-
-export const summarizeMaintenanceExecutionGroups = (
-  entries: LocalScanEntry[],
-  itemResults: Record<string, MaintenanceItemResult>,
-): MaintenanceExecutionGroupSummary => buildMaintenanceEntryViewModel(entries, { itemResults }).executionSummary;
-
 export const findMaintenanceEntryGroup = (
   entries: LocalScanEntry[],
   id: string | null | undefined,

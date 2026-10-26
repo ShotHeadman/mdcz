@@ -12,16 +12,6 @@ import { isAbsoluteHostPath } from "./mediaCandidate";
 export const PLACEMENT_MODES = ["move", "hardlink", "copy", "symlink", "strm", "metadataOnly", "inPlace"] as const;
 export type PlacementMode = (typeof PLACEMENT_MODES)[number];
 
-/** Placements that leave the source video where it is. */
-export const SOURCE_KEEPING_PLACEMENTS: ReadonlySet<PlacementMode> = new Set([
-  "hardlink",
-  "copy",
-  "symlink",
-  "strm",
-  "metadataOnly",
-  "inPlace",
-]);
-
 /** Placements whose output directory must not overlap the source directory: the output would be scanned as media. */
 export const SEPARATE_OUTPUT_PLACEMENTS: ReadonlySet<PlacementMode> = new Set(["symlink", "strm", "metadataOnly"]);
 

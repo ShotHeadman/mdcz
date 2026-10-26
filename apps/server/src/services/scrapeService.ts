@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
+import { type ActorSyncFollowUp, notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   type ActorImageService,
@@ -15,8 +15,10 @@ import {
   ScrapeRunner,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   FileActionInput,
   FileActionResponse,
@@ -40,7 +42,7 @@ import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
-import { ServerNfoAdapter, ServerPosterCropAdapter, type ServerScrapeArtifactRecord } from "./scrapeAdapters";
+import { ServerNfoAdapter, ServerPosterCropAdapter } from "./scrapeAdapters";
 
 export interface ScrapeServiceResources {
   networkClient: NetworkClient;
@@ -48,7 +50,9 @@ export interface ScrapeServiceResources {
   imageHostCooldownStore: ImageHostCooldownStore & { clear?: () => void; flush?: () => Promise<void> };
   actorImageService: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
+  actorSync?: Pick<ActorSyncFollowUp, "collect" | "finish">;
   mappingStore?: TranslationMappingStore;
+  taskGate: LibraryTaskGate;
   aggregationService?: Pick<AggregationService, "aggregate">;
   prepareScrapeItem?: PrepareScrapeItem;
 }
@@ -63,7 +67,9 @@ export class ScrapeService {
   private readonly imageHostCooldownStore: ImageHostCooldownStore & { clear?: () => void; flush?: () => Promise<void> };
   private readonly actorImageService: ActorImageService;
   private readonly actorSourceProvider?: ActorSourceProvider;
+  private readonly actorSync?: ScrapeServiceResources["actorSync"];
   private readonly mappingStore?: TranslationMappingStore;
+  private readonly taskGate: LibraryTaskGate;
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
   private readonly prepareScrapeItem?: PrepareScrapeItem;
   private posterWatermarkService: PosterWatermarkService | null = null;
@@ -85,7 +91,9 @@ export class ScrapeService {
     this.imageHostCooldownStore = resources.imageHostCooldownStore;
     this.actorImageService = resources.actorImageService;
     this.actorSourceProvider = resources.actorSourceProvider;
+    this.actorSync = resources.actorSync;
     this.mappingStore = resources.mappingStore;
+    this.taskGate = resources.taskGate;
     this.aggregationService = resources.aggregationService;
     this.prepareScrapeItem = resources.prepareScrapeItem;
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, new NfoGenerator(), this.persistence);
@@ -114,13 +122,15 @@ export class ScrapeService {
           mediaRoots: this.mediaRoots,
           downloaders: state.repositories.downloaders,
         },
-        onPublished: (directories, configuration) =>
+        onPublished: ({ runId, directories, actors, configuration }) => {
           void notifyMediaServersOfPublish(
             this.networkClient,
             configuration,
             directories,
             runtimeLoggerService.getLogger("MediaServerNotify"),
-          ),
+          );
+          this.actorSync?.collect(runId, { actors, directories }, configuration);
+        },
         onPending: (count) => {
           this.onPending?.(count);
           this.taskEvents.invalidate("pending");
@@ -133,6 +143,7 @@ export class ScrapeService {
         actorImageService: this.actorImageService,
         actorSourceProvider: this.actorSourceProvider,
         mappingStore: this.mappingStore,
+        taskGate: this.taskGate,
         aggregationService: this.aggregationService,
         prepareScrapeItem: this.prepareScrapeItem,
         postProcessAssets: async ({
@@ -191,6 +202,13 @@ export class ScrapeService {
         },
         onTerminal: async (run, snapshot) => {
           this.announcedRunIds.delete(run.id);
+          void this.actorSync
+            ?.finish(run.id)
+            .catch((error) =>
+              runtimeLoggerService
+                .getLogger("ActorSync")
+                .error(`Actor sync after scrape failed: ${toErrorMessage(error)}`),
+            );
           const summary = (await this.persistence.getState()).repositories.scrapeRuns.summary(run);
           const terminalStatus = summary?.disposition ?? snapshot.task.status;
           this.addEvent(
@@ -292,14 +310,12 @@ export class ScrapeService {
     return await this.nfoAdapter.write(input);
   }
 
-  async posterCropSession(id: string): Promise<PosterCropSessionResponse> {
-    const record = await this.toArtifactRecord(id);
-    return await this.posterCropAdapter.session(record);
+  async posterCropSession(video: RootFileRef): Promise<PosterCropSessionResponse> {
+    return await this.posterCropAdapter.session(video);
   }
 
   async posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
-    const record = await this.toArtifactRecord(input.id);
-    return await this.posterCropAdapter.save(record, input);
+    return await this.posterCropAdapter.save(input);
   }
 
   async removeRecord(input: FileActionInput): Promise<FileActionResponse> {
@@ -324,36 +340,6 @@ export class ScrapeService {
     this.closed = true;
     await this.runnerInitPromise?.catch(() => undefined);
     await this.runnerInstance?.shutdown();
-  }
-
-  private async toArtifactRecord(id: string): Promise<ServerScrapeArtifactRecord> {
-    const state = await this.persistence.getState();
-    let entry =
-      (await state.repositories.library.getEntryByFileId(id).catch(() => null)) ??
-      (await state.repositories.library.getEntryById(id).catch(() => null));
-    if (!entry) {
-      const runnerResult = await (await this.runner()).result(id).catch(() => null);
-      if (runnerResult?.result?.outputRootId && runnerResult.result.outputRelativePath) {
-        entry = await state.repositories.library
-          .getEntry(runnerResult.result.outputRootId, runnerResult.result.outputRelativePath)
-          .catch(() => null);
-      }
-    }
-    if (!entry) {
-      throw new Error("Poster editing requires a successful scrape outcome with local output");
-    }
-    const file = entry.files.find((candidate) => candidate.id === id) ?? entry.files[0];
-    const nfoAsset = entry.assets.find((asset) => asset.kind === "nfo");
-    if (!file?.rootRelativePath) {
-      throw new Error("Poster editing requires a successful scrape outcome with local output");
-    }
-    return {
-      rootId: file.rootId,
-      relativePath: file.rootRelativePath,
-      nfoRootId: nfoAsset?.rootId ?? null,
-      outputRootId: file.rootId,
-      outputRelativePath: file.rootRelativePath,
-    };
   }
 
   private addEvent(runId: string, type: string, message: string, itemId?: string): TaskEventDto {

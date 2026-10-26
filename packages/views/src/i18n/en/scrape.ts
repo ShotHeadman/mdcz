@@ -10,12 +10,6 @@ export const scrape = {
     download: "Downloading assets",
     completed: "No processable videos found",
   } as Record<ScrapeRunStage, string>,
-  launch: {
-    selection: "Selected file scraping started",
-    singleFile: "Single file scrape task started",
-    retry: "Retry started",
-    manualUrl: "Manual URL scrape started",
-  },
 
   // ScrapeStartErrorDialog
   incompleteTitle: "Scrape Task Incomplete",
@@ -48,20 +42,14 @@ export const scrape = {
   taskInterruptedHint: "The task was interrupted before it finished. Rescrape this directory to run it again.",
 
   // ResultTreeAdapter
-  numberEmpty: "Movie code is empty",
   numberCopied: "Code copied",
   copyNumberFailed: "Failed to copy code",
   rescrapeFailed: "Failed to rescrape",
   confirmRemoveGroup: (count: number, number: string) => `Remove ${count} records from the library?\n${number}`,
   confirmRemoveSingle: (path: string) => `Remove this record from the library?\n${path}`,
-  removedSuccess: "Removed from the library",
   operationFailed: "Operation failed",
-  noOpenablePath: "No openable file path",
-  openFolderFailed: (error: string) => `Failed to open directory: ${error}`,
   unrecognizedNumber: "Unrecognized code",
   copyNumber: "Copy code",
-  pathCopied: "Path copied",
-  copyPathFailed: "Failed to copy path",
   copyPath: "Copy path",
   rescrape: "Rescrape",
   rescrapeByUrl: "Rescrape by URL",
@@ -80,13 +68,11 @@ export const scrape = {
 
   // DetailPanelAdapter
   emptyMessage: "Select an item to view details",
-  selectItemFirst: "Please select an item first",
   loadNfoFailed: (error: string) => `Failed to load NFO: ${error}`,
   checkFormContent: "Please check form content",
   nfoSaved: "NFO saved",
   saveNfoFailed: (error: string) => `Failed to save NFO: ${error}`,
   discardNfoChanges: "Discard unsaved NFO changes?",
   discardPosterChanges: "Discard unsaved thumbnail changes?",
-  coverSaved: "Thumbnail saved",
   saveCoverFailed: (error: string) => `Failed to save thumbnail: ${error}`,
 };

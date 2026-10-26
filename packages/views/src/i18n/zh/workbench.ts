@@ -1,6 +1,11 @@
 import type { Messages } from "../en";
 
 export const workbench: Messages["workbench"] = {
+  taskConflict: {
+    scrape: "刮削任务正在运行中，无法同时执行维护或修复。请等待刮削完成或先停止当前任务。",
+    maintenance: "维护任务正在运行中，无法启动新的刮削。请等待维护完成或先停止任务。",
+  },
+
   // Return button
   returnDialogDescription: "返回后会清空当前工作台内容，确定继续吗？",
   returnDialogTitle: "返回工作台初始页面",
@@ -22,6 +27,18 @@ export const workbench: Messages["workbench"] = {
   taskStateSkipped: "跳过",
   taskStateInaccessiblePaths: "部分路径无法访问",
   retryFailed: "重试失败",
+  actorSyncQueued: (servers: string) => `${servers} · 人物同步排队中`,
+  actorSyncWaiting: (servers: string, found: number, total: number) =>
+    `${servers} · 等待媒体服务器识别（人物 ${found}/${total}）`,
+  actorSyncSyncing: (servers: string, done: number, total: number) => `${servers} · 正在同步人物 ${done}/${total}`,
+  actorSyncSummary: (synced: number, notFound: number, failed: number) =>
+    [`人物同步完成：已更新 ${synced}`, notFound ? `未识别 ${notFound}` : "", failed ? `失败 ${failed}` : ""]
+      .filter(Boolean)
+      .join(" · "),
+  actorSyncCancelled: "人物同步已取消",
+  actorSyncScanMissed: (servers: string) =>
+    `${servers} 未能及时识别到新人物。请检查该服务器中的媒体库路径是否与 MDCz 一致。`,
+  cancelActorSync: "取消",
 
   // Setup view
   browse: "浏览",

@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
+import { toast } from "sonner";
 import { getT } from "../i18n";
 import {
   buildAutoSaveFlatPayload,
@@ -23,7 +24,7 @@ import {
   toConfigErrorMessage,
   valuesEqual,
 } from "./autoSaveUtils";
-import { useSettingsNotifier, useSettingsServices } from "./SettingsServices";
+import { useSettingsServices } from "./SettingsServices";
 import { unflattenConfig } from "./settingsRegistry";
 
 export {
@@ -76,7 +77,6 @@ export function SettingsEditorAutosaveProvider({
 }: SettingsEditorAutosaveProviderProps) {
   const form = useFormContext<FieldValues>();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [registeredFields, setRegisteredFields] = useState<Record<string, RegisteredAutoSaveField>>({});
   const [fieldStatuses, setFieldStatuses] = useState<Record<string, AutoSaveStatus>>({});
   const watchedPaths = useMemo(() => Object.keys(registeredFields), [registeredFields]);
@@ -90,8 +90,6 @@ export function SettingsEditorAutosaveProvider({
 
   const servicesRef = useRef(services);
   servicesRef.current = services;
-  const notifierRef = useRef(notifier);
-  notifierRef.current = notifier;
 
   const fieldStatusesRef = useRef(fieldStatuses);
   fieldStatusesRef.current = fieldStatuses;
@@ -230,7 +228,9 @@ export function SettingsEditorAutosaveProvider({
                     type: "server",
                     message,
                   });
-                  notifierRef.current.error(getT().settings.autoSave.fieldSaveFailed(formatFieldLabel(path), message));
+                  toast.error(getT().settings.autoSave.fieldSaveFailed(formatFieldLabel(path), message), {
+                    id: `settings-field-${path}`,
+                  });
                 }
 
                 setFieldStatus(path, "error");
@@ -298,7 +298,8 @@ export function SettingsEditorAutosaveProvider({
                 servicesRef.current.updateCurrentConfigCache?.({ [path]: defaultValue });
                 markFieldSaved(path);
 
-                notifierRef.current.success(getT().settings.autoSave.fieldReset(fieldLabel), {
+                toast.success(getT().settings.autoSave.fieldReset(fieldLabel), {
+                  id: `settings-field-${path}`,
                   action: {
                     label: getT().settings.autoSave.undo,
                     onClick: () => {
@@ -321,11 +322,12 @@ export function SettingsEditorAutosaveProvider({
                   message: toConfigErrorMessage(error, getT().settings.autoSave.resetFailed),
                 });
                 setFieldStatus(path, "error");
-                notifierRef.current.error(
+                toast.error(
                   getT().settings.autoSave.fieldResetFailed(
                     fieldLabel,
                     toConfigErrorMessage(error, getT().common.unknownError),
                   ),
+                  { id: `settings-field-${path}` },
                 );
               }
             },

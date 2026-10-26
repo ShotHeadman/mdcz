@@ -1,6 +1,6 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { AvbaseActorSource } from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>
@@ -69,7 +69,14 @@ describe("AvbaseActorSource", () => {
                     name: "北川美玖",
                     ruby: "きたがわみく",
                     image_url: "https://example.com/actor.jpg",
-                    note: "みく",
+                    note: "AI加工",
+                  },
+                  {
+                    id: 49046,
+                    name: "北川みく",
+                    ruby: "きたがわみく",
+                    image_url: "",
+                    note: "イメージビデオ",
                   },
                 ],
               };
@@ -84,7 +91,8 @@ describe("AvbaseActorSource", () => {
             success: true,
             profile: {
               name: "北川美玖",
-              aliases: ["きたがわみく", "みく"],
+              // Other stage names are aliases; notes describe a name and are not.
+              aliases: ["きたがわみく", "北川みく"],
               birth_date: "1996-01-31",
               birth_place: "東京都",
               blood_type: "AB",

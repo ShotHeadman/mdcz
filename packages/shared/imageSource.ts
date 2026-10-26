@@ -1,31 +1,16 @@
-const isSupportedImageScheme = (value: string): boolean => /^(?:https?:|data:|blob:|local-file:|file:)/u.test(value);
+import { isAbsoluteLocalPath } from "./localPath";
 
-const isAbsoluteLocalPath = (value: string): boolean =>
-  /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("/") || value.startsWith("\\\\") || value.startsWith("//");
+const isSupportedImageScheme = (value: string): boolean => /^(?:https?:|data:|blob:|local-file:|file:)/u.test(value);
 
 export const normalizeImageSourcePath = (rawPath: string): string => {
   const value = rawPath.trim();
-  if (!value) return "";
-
-  try {
-    const parsed = new URL(
-      value,
-      (globalThis as { location?: { origin?: string } }).location?.origin ?? "http://localhost",
-    );
-    if (parsed.pathname.endsWith("/api/v1/files/image") || parsed.pathname.endsWith("/api/v1/crop/image")) {
-      return parsed.searchParams.get("path") ?? value;
-    }
-    if (parsed.protocol === "local-file:") return value;
-    if (parsed.protocol === "file:") {
-      if (parsed.host) return `//${parsed.host}${decodeURIComponent(parsed.pathname)}`;
-      const pathname = decodeURIComponent(parsed.pathname);
-      return /^\/[A-Za-z]:\//u.test(pathname) ? pathname.slice(1) : pathname;
-    }
-  } catch {
-    return value;
-  }
-
-  return value;
+  // Only a value that is itself a file URL is rewritten: resolving a relative path against a `file://` page would
+  // turn `ABC-123/poster.jpg` into `/ABC-123/poster.jpg`, which no media root contains.
+  const parsed = /^file:/iu.test(value) ? URL.parse(value) : null;
+  if (!parsed) return value;
+  if (parsed.host) return `//${parsed.host}${decodeURIComponent(parsed.pathname)}`;
+  const pathname = decodeURIComponent(parsed.pathname);
+  return /^\/[A-Za-z]:\//u.test(pathname) ? pathname.slice(1) : pathname;
 };
 
 export const hasExplicitUnsupportedImageScheme = (value: string): boolean =>
@@ -49,3 +34,8 @@ export const resolveImagePath = (rawPath: string | undefined, baseDir?: string):
   if (!normalizedRelative) return normalizedBase;
   return `${normalizedBase}${separator}${normalizedRelative}`;
 };
+
+export const dedupeMediaSources = (values: string[]): string[] =>
+  values
+    .map((value) => value.trim())
+    .filter((value, index, items) => value.length > 0 && items.indexOf(value) === index);

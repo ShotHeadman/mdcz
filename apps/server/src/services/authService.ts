@@ -27,6 +27,20 @@ export class AuthenticationError extends Error {
 
 const hashSecret = (secret: string): string => createHash("sha256").update(secret).digest("hex");
 
+/** What the API asks of authentication. The server checks sessions and API keys; desktop admits its one window. */
+export type ServerAuth = Pick<
+  AuthService,
+  | "status"
+  | "login"
+  | "logout"
+  | "assertAuthenticated"
+  | "assertAutomation"
+  | "listApiKeys"
+  | "createApiKey"
+  | "deleteApiKey"
+  | "completeSetup"
+>;
+
 /**
  * WebUI sessions and API keys are stored as hashes in the database, so sessions survive restarts and container
  * updates. API keys authorize only the automation endpoints, never the WebUI.

@@ -3,14 +3,14 @@ import type { ApiKeyDto, IntegrationStatusResponse } from "@mdcz/shared/serverDt
 import { Button, copyText, Input } from "@mdcz/ui";
 import { Copy, Loader2, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useT } from "../../i18n";
-import { type SettingsIntegrationServices, useSettingsNotifier } from "../SettingsServices";
+import type { SettingsIntegrationServices } from "../SettingsServices";
 
 const STATUS_REFRESH_MS = 5_000;
 
 /** Polls the integrations' liveness while mounted; settings autosave, so a fix shows within seconds. */
 export function useIntegrationStatus(integrations?: SettingsIntegrationServices): IntegrationStatusResponse | null {
-  const notifier = useSettingsNotifier();
   const [status, setStatus] = useState<IntegrationStatusResponse | null>(null);
   useEffect(() => {
     if (!integrations) return;
@@ -18,7 +18,7 @@ export function useIntegrationStatus(integrations?: SettingsIntegrationServices)
     const refresh = () =>
       integrations.status().then(
         (next) => active && setStatus(next),
-        (error: unknown) => notifier.error(toErrorMessage(error)),
+        (error: unknown) => toast.error(toErrorMessage(error), { id: "integration-status" }),
       );
     void refresh();
     const timer = window.setInterval(refresh, STATUS_REFRESH_MS);
@@ -26,7 +26,7 @@ export function useIntegrationStatus(integrations?: SettingsIntegrationServices)
       active = false;
       window.clearInterval(timer);
     };
-  }, [integrations, notifier]);
+  }, [integrations]);
   return status;
 }
 
@@ -66,7 +66,6 @@ export function IntegrationAccessPanel({
   cloudDriveLastEventAt: string | null;
 }) {
   const t = useT();
-  const notifier = useSettingsNotifier();
   const [keys, setKeys] = useState<ApiKeyDto[]>([]);
   const [name, setName] = useState("qBittorrent");
   const [secret, setSecret] = useState<string | null>(null);
@@ -79,13 +78,15 @@ export function IntegrationAccessPanel({
       await action();
       setKeys(await integrations.listApiKeys());
     } catch (error) {
-      notifier.error(toErrorMessage(error));
+      toast.error(toErrorMessage(error), { id: "api-keys" });
     }
   };
 
   useEffect(() => {
-    integrations.listApiKeys().then(setKeys, (error: unknown) => notifier.error(toErrorMessage(error)));
-  }, [integrations, notifier]);
+    integrations
+      .listApiKeys()
+      .then(setKeys, (error: unknown) => toast.error(toErrorMessage(error), { id: "api-keys" }));
+  }, [integrations]);
 
   return (
     <div className="space-y-5 py-2">

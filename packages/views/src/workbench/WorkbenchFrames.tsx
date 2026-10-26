@@ -16,6 +16,8 @@ export interface ScrapeWorkbenchFrameProps {
   showCompletedActions: boolean;
   /** What the finished run did; shown beside the follow-up actions. */
   runSummary?: string;
+  /** Progress of the actor sync that follows the finished run. */
+  actorSync?: { text: string; onCancel?: () => void };
   failedCount: number;
   onPauseScrape: () => void;
   onResumeScrape: () => void;
@@ -35,6 +37,7 @@ export function ScrapeWorkbenchFrame({
   stageMessage,
   showCompletedActions,
   runSummary,
+  actorSync,
   failedCount,
   onPauseScrape,
   onResumeScrape,
@@ -125,6 +128,16 @@ export function ScrapeWorkbenchFrame({
 
           {showCompletedActions ? (
             <>
+              {actorSync ? (
+                <div className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground">
+                  <span role="status">{actorSync.text}</span>
+                  {actorSync.onCancel ? (
+                    <Button type="button" variant="ghost" size="sm" onClick={actorSync.onCancel}>
+                      {t.workbench.cancelActorSync}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               {runSummary ? <span className="px-1 text-xs text-muted-foreground">{runSummary}</span> : null}
               <ReturnToWorkbenchSetupButton
                 dialogDescription={t.workbench.scrapeReturnDescription}

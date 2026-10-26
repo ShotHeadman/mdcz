@@ -1,0 +1,27 @@
+<section class="modelProfileLayout">
+  <div class="profilePhoto">
+    <img src="/talent_images/sakura_mana_10218_1.jpg" alt="" />
+  </div>
+  <div class="profileName">
+    <h1 class="profileName_name">紗倉まな</h1>
+    <p class="profileName_kana">Mana Sakura</p>
+  </div>
+  <dl class="profileData">
+    <dt>生年月日</dt>
+    <dd>1993年03月23日　33歳</dd>
+    <dt>出身地</dt>
+    <dd>神奈川県</dd>
+    <dt>身長</dt>
+    <dd>160cm</dd>
+    <dt>スリーサイズ</dt>
+    <dd>Ｂ： 89cm(Fcup)<br>Ｗ： 58cm<br>Ｈ： 89cm</dd>
+    <dt>趣味</dt>
+    <dd>工場・機械ウォッチング</dd>
+    <dt>SNS</dt>
+    <dd>
+      <ul class="snsList">
+        <li class="uaSnsJs -twitter"><a href="https://twitter.com/sakuramanaTeee" target="_blank"><span class="txt">@sakuramanaTeee をフォロー！</span></a></li>
+      </ul>
+    </dd>
+  </dl>
+</section>

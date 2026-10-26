@@ -1,10 +1,42 @@
+import type { UiLocale } from "@mdcz/shared/enums";
 import type { ActorProfile } from "@mdcz/shared/types";
 
 const MANAGED_TAG_PREFIX = "mdcz:";
 const MANAGED_TAGLINE_PREFIX = "MDCz: ";
-const PROFILE_SECTION_TITLE = "基本资料";
-const ALIASES_PREFIX = "别名：";
-const PROFILE_FIELD_PREFIXES = ["生日：", "出生地：", "血型：", "身高：", "三围：", "罩杯："] as const;
+const BIO_LABELS: Record<
+  UiLocale,
+  { profile: string; bloodType: string; height: string; measurements: string; cup: string; aliases: string }
+> = {
+  "zh-CN": {
+    profile: "基本资料",
+    bloodType: "血型：{}型",
+    height: "身高：{}cm",
+    measurements: "三围：{}",
+    cup: "罩杯：{}杯",
+    aliases: "别名：",
+  },
+  "en-US": {
+    profile: "Profile",
+    bloodType: "Blood type: {}",
+    height: "Height: {} cm",
+    measurements: "Measurements: {}",
+    cup: "Cup: {}",
+    aliases: "Also known as: ",
+  },
+};
+const ALL_BIO_LABELS = Object.values(BIO_LABELS);
+// A bio MDCz wrote in another language, or with the birth lines older versions wrote, is still MDCz's own block.
+const MANAGED_PROFILE_LINE_PREFIXES = [
+  "生日：",
+  "出生地：",
+  ...ALL_BIO_LABELS.flatMap((labels) =>
+    [labels.bloodType, labels.height, labels.measurements, labels.cup].map((label) =>
+      label.slice(0, label.indexOf("{}")),
+    ),
+  ),
+];
+
+const fillLabel = (label: string, value: string | number): string => label.replace("{}", String(value));
 
 const normalizeText = (value: string | undefined): string => value?.trim().replace(/\s+/gu, " ") ?? "";
 
@@ -43,42 +75,39 @@ const normalizeOverview = (value: string | undefined): string | undefined => {
   return normalized || undefined;
 };
 
-const buildAliasesLine = (profile: Pick<ActorProfile, "name" | "aliases">): string | undefined => {
+const buildAliasesLine = (
+  profile: Pick<ActorProfile, "name" | "aliases">,
+  labels: (typeof BIO_LABELS)[UiLocale],
+): string | undefined => {
   const aliases = toUniqueActorNames(profile.aliases ?? []).filter(
     (alias) => normalizeActorName(alias) !== normalizeActorName(profile.name),
   );
 
-  return aliases.length > 0 ? `${ALIASES_PREFIX}${aliases.join(" / ")}` : undefined;
+  return aliases.length > 0 ? `${labels.aliases}${aliases.join(" / ")}` : undefined;
 };
 
-const buildMeasurementsLine = (profile: Pick<ActorProfile, "bust_cm" | "waist_cm" | "hip_cm">): string | undefined => {
-  const parts = [
+// Birth date and birthplace go to the server's own fields, which Jellyfin and Emby show as born and birthplace.
+const buildProfileSummaryBlock = (
+  profile: Pick<ActorProfile, "blood_type" | "height_cm" | "bust_cm" | "waist_cm" | "hip_cm" | "cup_size">,
+  labels: (typeof BIO_LABELS)[UiLocale],
+): string | undefined => {
+  const measurements = [
     profile.bust_cm !== undefined ? `B${profile.bust_cm}` : undefined,
     profile.waist_cm !== undefined ? `W${profile.waist_cm}` : undefined,
     profile.hip_cm !== undefined ? `H${profile.hip_cm}` : undefined,
   ].filter((entry): entry is string => Boolean(entry));
-
-  return parts.length > 0 ? `三围：${parts.join(" ")}` : undefined;
-};
-
-const buildProfileSummaryBlock = (
-  profile: Pick<
-    ActorProfile,
-    "birth_date" | "birth_place" | "blood_type" | "height_cm" | "bust_cm" | "waist_cm" | "hip_cm" | "cup_size"
-  >,
-): string | undefined => {
   const lines = [
-    profile.blood_type ? `血型：${profile.blood_type}型` : undefined,
-    profile.height_cm !== undefined ? `身高：${profile.height_cm}cm` : undefined,
-    buildMeasurementsLine(profile),
-    profile.cup_size ? `罩杯：${profile.cup_size}杯` : undefined,
+    profile.blood_type ? fillLabel(labels.bloodType, profile.blood_type) : undefined,
+    profile.height_cm !== undefined ? fillLabel(labels.height, profile.height_cm) : undefined,
+    measurements.length > 0 ? fillLabel(labels.measurements, measurements.join(" ")) : undefined,
+    profile.cup_size ? fillLabel(labels.cup, profile.cup_size) : undefined,
   ].filter((entry): entry is string => Boolean(entry));
 
-  return lines.length > 0 ? `${PROFILE_SECTION_TITLE}\n${lines.join("\n")}` : undefined;
+  return lines.length > 0 ? `${labels.profile}\n${lines.join("\n")}` : undefined;
 };
 
 const isManagedProfileLine = (line: string): boolean =>
-  PROFILE_FIELD_PREFIXES.some((prefix) => line.startsWith(prefix));
+  MANAGED_PROFILE_LINE_PREFIXES.some((prefix) => line.startsWith(prefix));
 
 const stripManagedProfileBlock = (overview: string | undefined): string | undefined => {
   if (!overview) {
@@ -91,7 +120,7 @@ const stripManagedProfileBlock = (overview: string | undefined): string | undefi
     cursor += 1;
   }
 
-  if (lines[cursor] !== PROFILE_SECTION_TITLE) {
+  if (!ALL_BIO_LABELS.some((labels) => labels.profile === lines[cursor])) {
     return overview;
   }
 
@@ -129,7 +158,8 @@ const stripManagedPersonOverview = (overview: string | undefined): string | unde
     endIndex--;
   }
 
-  if (endIndex === 0 || !lines[endIndex - 1]?.startsWith(ALIASES_PREFIX)) {
+  const lastLine = lines[endIndex - 1] ?? "";
+  if (endIndex === 0 || !ALL_BIO_LABELS.some((labels) => lastLine.startsWith(labels.aliases))) {
     return normalizedOverview;
   }
 
@@ -142,10 +172,14 @@ const stripManagedPersonOverview = (overview: string | undefined): string | unde
   return strippedOverview || undefined;
 };
 
-const buildPersonOverview = (overview: string | undefined, profile: ActorProfile): string | undefined => {
+const buildPersonOverview = (
+  overview: string | undefined,
+  profile: ActorProfile,
+  locale: UiLocale,
+): string | undefined => {
   const normalizedOverview = normalizeOverview(overview);
-  const profileSummary = buildProfileSummaryBlock(profile);
-  const aliasesLine = buildAliasesLine(profile);
+  const profileSummary = buildProfileSummaryBlock(profile, BIO_LABELS[locale]);
+  const aliasesLine = buildAliasesLine(profile, BIO_LABELS[locale]);
 
   const sections = [profileSummary, normalizedOverview, aliasesLine].filter((entry): entry is string => Boolean(entry));
   return sections.length > 0 ? sections.join("\n\n") : undefined;
@@ -216,7 +250,7 @@ const toProductionYear = (birthDate: string | undefined): number | undefined => 
   return Number.isFinite(year) ? year : undefined;
 };
 
-export const normalizeExistingPersonSyncState = (existing: ExistingPersonSyncState): ExistingPersonSyncState => ({
+const normalizeExistingPersonSyncState = (existing: ExistingPersonSyncState): ExistingPersonSyncState => ({
   overview: toTrimmedString(existing.overview),
   tags: toStringArray(existing.tags),
   taglines: toStringArray(existing.taglines),
@@ -253,6 +287,7 @@ const resolveOverview = (
   currentOverview: string | undefined,
   sourceProfile: ActorProfile,
   mode: PersonSyncMode,
+  locale: UiLocale,
 ): string | undefined => {
   const currentOverviewBase = stripManagedPersonOverview(currentOverview) ?? currentOverview;
   const preferredOverview =
@@ -260,7 +295,7 @@ const resolveOverview = (
       ? (sourceProfile.description ?? currentOverviewBase)
       : (currentOverviewBase ?? sourceProfile.description);
 
-  return buildPersonOverview(preferredOverview, sourceProfile) ?? currentOverviewBase ?? currentOverview;
+  return buildPersonOverview(preferredOverview, sourceProfile, locale) ?? currentOverviewBase ?? currentOverview;
 };
 
 const resolvePremiereDate = (
@@ -313,18 +348,11 @@ const resolveProductionLocations = (
   return [sourceBirthPlace, ...currentProductionLocations.filter((location) => location !== sourceBirthPlace)];
 };
 
-export const hasManagedActorTags = (tags: string[] | undefined): boolean => {
-  return toStringArray(tags).some(isActorManagedTag);
-};
-
-export const hasManagedActorSummary = (taglines: string[] | undefined): boolean => {
-  return toStringArray(taglines).some(isActorManagedTagline);
-};
-
 export const planPersonSync = (
   sourceProfile: ActorProfile,
   existing: ExistingPersonSyncState,
   mode: PersonSyncMode,
+  locale: UiLocale,
 ): PlannedPersonSyncState => {
   const normalizedExisting = normalizeExistingPersonSyncState(existing);
   const currentOverview = normalizedExisting.overview;
@@ -337,7 +365,7 @@ export const planPersonSync = (
   const retainedTags = currentTags.filter((tag) => !isActorManagedTag(tag));
   const retainedTaglines = currentTaglines.filter((tagline) => !isActorManagedTagline(tagline));
 
-  const overview = resolveOverview(currentOverview, sourceProfile, mode);
+  const overview = resolveOverview(currentOverview, sourceProfile, mode, locale);
   const tags = retainedTags;
   const taglines = retainedTaglines;
 
@@ -377,21 +405,4 @@ export const planPersonSync = (
     productionYear,
     productionLocations: productionLocations.length > 0 ? productionLocations : undefined,
   };
-};
-
-export const hasMissingActorInfo = (
-  existing: ExistingPersonSyncState,
-  sourceProfile: Partial<ActorProfile> = {},
-): boolean => {
-  const normalizedExisting = normalizeExistingPersonSyncState(existing);
-
-  if (!normalizedExisting.overview) {
-    return true;
-  }
-
-  if (hasManagedActorTags(normalizedExisting.tags) || hasManagedActorSummary(normalizedExisting.taglines)) {
-    return true;
-  }
-
-  return planPersonSync({ name: "", ...sourceProfile }, normalizedExisting, "missing").shouldUpdate;
 };

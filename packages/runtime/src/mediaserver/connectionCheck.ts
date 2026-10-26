@@ -4,7 +4,7 @@ import type {
   MediaServerCheckKey,
   MediaServerCheckStep,
   MediaServerConnectionCheckResult,
-} from "@mdcz/shared/ipcTypes";
+} from "@mdcz/shared/toolTypes";
 import { toErrorMessage } from "../shared";
 import { getHttpStatus } from "./errors";
 

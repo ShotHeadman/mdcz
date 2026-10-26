@@ -1,0 +1,26 @@
+<div id="ProfileBox">
+<div class="imagebox">
+<div class="swiper">
+<div class="swiper-wrapper">
+<div class="swiper-slide">
+  <figure class="slide">
+    <div class="slide-media">
+    <img width="800" height="1200" src="https://alive-pro.tokyo/official/wp-content/uploads/2025/04/ishikawa03.jpg" class="attachment-profile-thumb">    </div>
+  </figure>
+</div>
+</div>
+</div>
+</div>
+<section class="texbox">
+<header>
+<h2>石川 澪<span>いしかわ みお</span></h2>
+</header>
+<p>MIO ISHIKAWA</p>
+<ul>
+<li><span>身　長</span><b>158</b></li><li><span>サイズ</span><b>B78（B）W56 H88</b></li><li><span>誕生日</span><b>3月20日</b></li>
+<li><span>出演情報</span>
+<b>テレビ番組【月ともぐら】</b>
+</li>
+</ul>
+</section>
+</div>

@@ -220,9 +220,7 @@ export class FileScraper {
     const inventory = this.options.inventory ?? new DirectoryInventory();
     const members = entries.map(
       ({ filePath, fileInfo: providedFileInfo, groupMovieId, groupFileId, groupAssets, options, progress }, index) => {
-        const fileInfo =
-          providedFileInfo ??
-          parseFileInfo(filePath, configuration.scrape.filenameIgnoreTokens, configuration.scrape.numberMappings);
+        const fileInfo = providedFileInfo ?? parseFileInfo(filePath, configuration.scrape);
         const fileId = groupFileId ?? buildFileId(fileInfo.filePath);
         return {
           options,
@@ -261,9 +259,7 @@ export class FileScraper {
         const directory = path.dirname(parsedFileInfo.filePath);
         const videos = await inventory.mediaEntries(directory);
         const singleMovie = videos.every(
-          (entry) =>
-            parseFileInfo(entry.name, configuration.scrape.filenameIgnoreTokens, configuration.scrape.numberMappings)
-              .number === parsedFileInfo.number,
+          (entry) => parseFileInfo(entry.name, configuration.scrape).number === parsedFileInfo.number,
         );
         const candidates = preferredLocalNfoBaseNames(
           parsedFileInfo.fileName,

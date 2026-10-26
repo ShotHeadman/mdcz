@@ -1,3 +1,4 @@
+export * from "./actorSync";
 export * from "./DetailPanelAdapter";
 export * from "./MaintenanceBatchBarAdapter";
 export * from "./MaintenanceEntryListAdapter";

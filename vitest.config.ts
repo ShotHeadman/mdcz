@@ -6,7 +6,6 @@ const browserExecutablePath = process.env.MDCZ_BROWSER_EXECUTABLE?.trim() || und
 
 export const workspaceAliases = [
   { find: "@main", replacement: resolve(__dirname, "apps/desktop/src/main") },
-  { find: "@renderer", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
   {
     find: /^@mdcz\/persistence\/test$/,
     replacement: resolve(__dirname, "packages/persistence/src/testDatabase.ts"),
@@ -14,6 +13,7 @@ export const workspaceAliases = [
   { find: /^@mdcz\/persistence$/, replacement: resolve(__dirname, "packages/persistence/src/index.ts") },
   { find: /^@mdcz\/runtime\/(.+)$/, replacement: resolve(__dirname, "packages/runtime/src/$1") },
   { find: /^@mdcz\/runtime$/, replacement: resolve(__dirname, "packages/runtime/src/index.ts") },
+  { find: /^@mdcz\/server\/(.+)$/, replacement: resolve(__dirname, "apps/server/src/$1") },
   { find: /^@mdcz\/shared\/(.+)$/, replacement: resolve(__dirname, "packages/shared/$1") },
   { find: /^@mdcz\/shared$/, replacement: resolve(__dirname, "packages/shared") },
   { find: /^@mdcz\/media-store$/, replacement: resolve(__dirname, "packages/media-store/src/index.ts") },
@@ -27,7 +27,6 @@ export const unitRuntimeAliases = [
   { find: "electron", replacement: resolve(__dirname, "tests/unit/electronMock.ts") },
   { find: "impit", replacement: resolve(__dirname, "tests/unit/impitMock.ts") },
   { find: "mediainfo.js", replacement: resolve(__dirname, "tests/unit/mediaInfoMock.ts") },
-  { find: "@", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
 ] as const;
 
 export default defineConfig({
@@ -83,11 +82,6 @@ export default defineConfig({
           functions: 90,
           lines: 86,
         },
-      },
-    },
-    server: {
-      deps: {
-        inline: ["@egoist/tipc"],
       },
     },
     projects: [
@@ -152,9 +146,6 @@ export default defineConfig({
       },
       {
         extends: true,
-        resolve: {
-          alias: [{ find: "@", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") }],
-        },
         optimizeDeps: {
           include: ["react/jsx-dev-runtime", "vitest-browser-react"],
         },

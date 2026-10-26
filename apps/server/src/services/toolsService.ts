@@ -2,7 +2,11 @@ import { registeredMediaLocations } from "@mdcz/runtime";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
-import { checkEmbyConnection, checkJellyfinConnection } from "@mdcz/runtime/mediaserver";
+import {
+  checkEmbyConnection,
+  checkJellyfinConnection,
+  stopJellyfinPersonNameMatching,
+} from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
@@ -82,6 +86,10 @@ export class ToolsService {
       }
       case "media-library-tools": {
         const config = await this.config.get();
+        if (input.action === "stopPersonNameMatching") {
+          if (input.server !== "jellyfin") throw new Error("Only Jellyfin searches new actors by name");
+          await stopJellyfinPersonNameMatching(this.networkClient, config);
+        }
         const check =
           input.server === "emby"
             ? await checkEmbyConnection(this.networkClient, config)

@@ -1,0 +1,8 @@
+<li>
+  <a class="model" href="/model/kaede-karen.php">
+    <div class="box_model fade-in">
+      <img class="model_image" src="/images/model_kaede_karen.webp" alt="AV女優 楓カレン ライフプロモーション所属" width="600" height="375">
+      <h3>楓 カレン　<span class="text_size_s">Karen Kaede</span></h3>
+    </div>
+  </a>
+</li>

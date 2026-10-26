@@ -42,7 +42,6 @@ export const tools: Messages["tools"] = {
     image_unreachable: "Amazon 图片地址不可用",
     query_failed: "查询失败",
   },
-  symlinkStarted: "软链接任务已启动",
   personSyncSummary: (result) =>
     result.processedCount + result.failedCount + result.skippedCount === 0
       ? "媒体服务器未返回可同步的演员"
@@ -61,6 +60,9 @@ export const tools: Messages["tools"] = {
   connectionSettings: "连接设置",
   checkingConnection: "诊断中...",
   runConnectionCheck: "连接诊断",
+  personNameMatchingNotice:
+    "Jellyfin 会按名字在 TMDb 上为每个新人物搜索资料，常把 JAV 演员匹配成无关的人。MDCz 会替换刮削新增人物的这些资料，但覆盖不到它遗漏的人物。关闭搜索会作用于整个服务器：其他媒体库的人物也不再获取 TMDb 的头像与简介。",
+  stopPersonNameMatching: "关闭人物搜索",
   stepPassed: "通过",
   actorInfoSync: "演员资料同步",
   syncMissingOnly: "仅补全空白资料",
@@ -80,7 +82,6 @@ export const tools: Messages["tools"] = {
   amazonPosterScanNote: "扫描完成后会打开批量处理弹窗，便于集中确认需要替换的海报条目。",
   startScan: "开始扫描",
   scanning: "正在扫描...",
-  enterSearchQuery: "请输入标题 / URL / ASIN",
   amazonPosterEnhance: "Amazon 海报增强",
   amazonProgress: ({ completed, total, hits }: { completed: number; total: number; hits: number }) =>
     `已完成 ${completed}/${total}，命中 ${hits} 条`,
@@ -90,6 +91,7 @@ export const tools: Messages["tools"] = {
   statusQueryFailed: "查询失败",
   statusNoResults: "无结果",
   statusKeepCurrent: "保留当前",
+  statusReplaceFailed: "替换失败",
   elapsed: (time: string) => `耗时 ${time}`,
   titleUrlOrAsin: "标题 / URL / ASIN",
   reQuery: "重新查询",
@@ -103,6 +105,7 @@ export const tools: Messages["tools"] = {
   confirmReplaceTitle: "确认替换海报",
   confirmReplaceDescription: (count: number) => `即将替换 ${count} 个条目的海报文件。此操作会覆盖现有海报。`,
   replacing: "替换中...",
+  replaceOutcome: ({ replaced, failed }) => `已替换 ${replaced} 张海报${failed > 0 ? `，${failed} 张失败` : ""}`,
 
   mediaDirectory: "媒体目录",
   selectMediaDirectory: "选择媒体目录",
@@ -138,9 +141,9 @@ export const tools: Messages["tools"] = {
   processing: "正在处理...",
   createMappingNow: "立即建立映射",
 
+  browseFile: "浏览…",
+  mediaFiles: "媒体文件",
   filePath: "文件路径",
-  singleFileScrapeNote: "适合针对单个失败样本重试，任务启动后会自动跳转到日志页面。",
-  scraping: "正在刮削...",
   batchTranslateDirPlaceholder: "输入已刮削完成的媒体目录",
   browseDirectory: "浏览目录",
   batchTranslateMode: "处理方式",

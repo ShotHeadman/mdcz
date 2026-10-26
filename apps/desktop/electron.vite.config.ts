@@ -2,20 +2,12 @@ import { cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
-import type { Plugin } from "vite";
+import { createServer, type Plugin } from "vite";
 import pkg from "./package.json" with { type: "json" };
-import { buildRendererContentSecurityPolicy } from "./src/shared/rendererCsp";
 
 const appResolve = (subpath: string): string => resolve(__dirname, subpath);
 const workspaceResolve = (subpath: string): string => resolve(__dirname, "../..", subpath);
-const workspacePackages = [
-  "@mdcz/persistence",
-  "@mdcz/runtime",
-  "@mdcz/shared",
-  "@mdcz/media-store",
-  "@mdcz/ui",
-  "@mdcz/views",
-];
+const workspacePackages = ["@mdcz/persistence", "@mdcz/runtime", "@mdcz/shared", "@mdcz/media-store"];
 const externalDependencies = Object.keys(pkg.dependencies).filter(
   (dependency) => !workspacePackages.includes(dependency),
 );
@@ -31,48 +23,50 @@ const desktopDistributionAssets = (): Plugin => ({
   },
 });
 
-const rendererContentSecurityPolicy = (): Plugin => ({
-  name: "mdcz-renderer-csp",
-  transformIndexHtml: {
-    order: "pre",
-    handler() {
-      return [
-        {
-          tag: "meta",
-          attrs: {
-            "http-equiv": "Content-Security-Policy",
-            content: buildRendererContentSecurityPolicy(process.env.ELECTRON_RENDERER_URL, "meta"),
-          },
-          injectTo: "head-prepend",
-        },
-      ];
-    },
+let webDevServer: Promise<unknown> | undefined;
+// Its own port, so web's dev server can run beside it.
+const WEB_DEV_PORT = 5183;
+
+/** The window shows web's app; in development web's own Vite server provides it, started once before Electron. */
+const webDevServerPlugin = (): Plugin => ({
+  name: "mdcz-web-dev-server",
+  async buildStart() {
+    webDevServer ??= createServer({
+      root: workspaceResolve("apps/web"),
+      configFile: workspaceResolve("apps/web/vite.config.ts"),
+      // The page's origin is the API scheme, so Vite's client cannot derive its HMR socket from the page's address.
+      server: { port: WEB_DEV_PORT, strictPort: true, hmr: { host: "localhost", clientPort: WEB_DEV_PORT } },
+    })
+      .then(async (server) => await server.listen())
+      .then((server) => {
+        const url = server.resolvedUrls?.local[0];
+        if (!url) throw new Error("Web's Vite server did not report a local URL");
+        // Electron inherits this environment when electron-vite starts it after the build.
+        process.env.MDCZ_WEB_DEV_URL = url;
+      });
+    await webDevServer;
   },
 });
-
-const isIgnorableUseClientWarning = (message: string): boolean =>
-  message.includes("Module level directives cause errors when bundled") && message.includes('"use client"');
-
-const isIgnorableUseClientSourcemapWarning = (message: string): boolean =>
-  message.includes("Error when using sourcemap for reporting an error") &&
-  message.includes("Can't resolve original location of error");
 
 // The dev app records every scrape for replay; packaged builds use the plain network client.
 export default defineConfig(({ command }) => ({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: workspacePackages }), desktopDistributionAssets()],
+    plugins: [
+      externalizeDepsPlugin({ exclude: workspacePackages }),
+      desktopDistributionAssets(),
+      // electron-vite compiles main with Vite's build even in dev, so `apply: "serve"` would never match.
+      ...(command === "serve" ? [webDevServerPlugin()] : []),
+    ],
     resolve: {
       alias: {
         "@main/networkComposition": appResolve(
           command === "serve" ? "src/main/networkFixtureComposition.ts" : "src/main/networkComposition.ts",
         ),
-        "@main": appResolve("src/main"),
         "@mdcz/persistence": workspaceResolve("packages/persistence/src/index.ts"),
         "@mdcz/runtime": workspaceResolve("packages/runtime/src"),
+        "@mdcz/server": workspaceResolve("apps/server/src"),
         "@mdcz/shared": workspaceResolve("packages/shared"),
         "@mdcz/media-store": workspaceResolve("packages/media-store/src/index.ts"),
-        "@mdcz/ui": workspaceResolve("packages/ui/src/index.ts"),
-        "@mdcz/views": workspaceResolve("packages/views/src"),
       },
     },
     build: {
@@ -96,36 +90,6 @@ export default defineConfig(({ command }) => ({
         output: {
           format: "cjs",
           entryFileNames: "index.js",
-        },
-      },
-    },
-  },
-  renderer: {
-    plugins: [rendererContentSecurityPolicy()],
-    root: appResolve("src/renderer"),
-    base: "./",
-    resolve: {
-      alias: {
-        "@": appResolve("src/renderer/src"),
-        "@renderer": appResolve("src/renderer/src"),
-        "@mdcz/shared": workspaceResolve("packages/shared"),
-        "@mdcz/runtime": workspaceResolve("packages/runtime/src"),
-        "@mdcz/views": workspaceResolve("packages/views/src"),
-      },
-    },
-    build: {
-      rollupOptions: {
-        input: {
-          index: appResolve("src/renderer/index.html"),
-        },
-        onwarn(warning, warn) {
-          if (isIgnorableUseClientWarning(warning.message)) {
-            return;
-          }
-          if (isIgnorableUseClientSourcemapWarning(warning.message)) {
-            return;
-          }
-          warn(warning);
         },
       },
     },

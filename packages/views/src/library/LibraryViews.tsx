@@ -1,5 +1,7 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
+import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/serverDtos";
 import {
   Badge,
@@ -70,7 +72,7 @@ export interface LibraryIndexViewProps {
   browse?: LibraryBrowseControls;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (path: string) => void;
+  onOpenFolder?: (file: RootFileRef) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
   onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
   onLoadMore?: () => void;
@@ -396,7 +398,7 @@ function LibraryEntryRow({
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (path: string) => void;
+  onOpenFolder?: LibraryIndexViewProps["onOpenFolder"];
   onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
   onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
 }) {
@@ -409,7 +411,7 @@ function LibraryEntryRow({
   const [filesOpen, setFilesOpen] = useState(false);
   const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
-  const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile?.lastKnownPath);
+  const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile);
   const isMultiFile = entry.fileRefs.length > 1;
   const missingFileCount = entry.fileRefs.filter((file) => file.available === false).length;
   const fileActionProps = { entry, onOpenFolder, onRemoveFile, onRelinkFile };
@@ -489,7 +491,7 @@ function LibraryEntryRow({
                   <Button
                     aria-label={t.library.openFolder}
                     className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
-                    onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
+                    onClick={() => displayFile && onOpenFolder?.(displayFile)}
                     size="icon"
                     type="button"
                     variant="ghost"
@@ -677,7 +679,10 @@ function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkF
             className={menuItemClass}
             onClick={() => {
               setMenuOpen(false);
-              copyText(path).catch((cause) => toast.error(String(cause)));
+              copyText(path).then(
+                () => toast.success(t.common.pathCopied, { id: "clipboard" }),
+                (error: unknown) => toast.error(toErrorMessage(error, t.common.copyPathFailed), { id: "clipboard" }),
+              );
             }}
             type="button"
             variant="ghost"
@@ -690,7 +695,7 @@ function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkF
               className={menuItemClass}
               onClick={() => {
                 setMenuOpen(false);
-                onOpenFolder(path);
+                onOpenFolder(file);
               }}
               type="button"
               variant="ghost"

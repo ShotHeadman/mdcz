@@ -32,6 +32,21 @@ export interface ServerPersistenceRepositories {
   siteResults: SiteResultRepository;
 }
 
+/** A schema migration failed; this version opens the database only after `rebuildDatabase` moves it aside. */
+export class DatabaseUpgradeRequiredError extends Error {
+  override readonly name = "DatabaseUpgradeRequiredError";
+
+  constructor(
+    readonly databasePath: string,
+    options: ErrorOptions,
+  ) {
+    super(
+      `Database ${databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept, libraries and API keys must be created again.`,
+      options,
+    );
+  }
+}
+
 export interface ServerPersistenceState {
   database: PersistenceDatabase;
   repositories: ServerPersistenceRepositories;
@@ -43,7 +58,10 @@ export class ServerPersistenceService {
   private closed = false;
   private lease: Database.Database | null = null;
 
-  constructor(private readonly paths: Pick<ServerRuntimePaths, "databasePath">) {}
+  constructor(
+    private readonly paths: Pick<ServerRuntimePaths, "databasePath">,
+    private readonly options: { nativeBinding?: string } = {},
+  ) {}
 
   get initialized(): boolean {
     return this.state !== null;
@@ -71,10 +89,13 @@ export class ServerPersistenceService {
   }
 
   private async open(): Promise<ServerPersistenceState> {
-    this.lease = acquireDatabaseLease(this.paths.databasePath);
+    this.lease = acquireDatabaseLease(this.paths.databasePath, this.options.nativeBinding);
     let database: PersistenceDatabase | undefined;
     try {
-      database = createPersistenceDatabase({ path: this.paths.databasePath });
+      database = createPersistenceDatabase({
+        path: this.paths.databasePath,
+        nativeBinding: this.options.nativeBinding,
+      });
       runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
       scrapeRuns.interruptUnfinished();
@@ -99,12 +120,8 @@ export class ServerPersistenceService {
       database?.close();
       this.lease.close();
       this.lease = null;
-      if (isSchemaMigrationFailure(error)) {
-        throw new Error(
-          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept, libraries and API keys must be created again.`,
-          { cause: error },
-        );
-      }
+      if (isSchemaMigrationFailure(error))
+        throw new DatabaseUpgradeRequiredError(this.paths.databasePath, { cause: error });
       throw error;
     }
   }

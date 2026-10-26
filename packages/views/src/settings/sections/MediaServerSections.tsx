@@ -1,8 +1,10 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@mdcz/shared/actorSource";
+import { UI_LOCALES } from "@mdcz/shared/enums";
 import {
   BoolField,
   ChipArrayFieldWrapper,
   CookieFieldWrapper,
+  EnumField,
   TextField,
   UrlField,
 } from "../../config-form/FieldRenderer";
@@ -17,7 +19,6 @@ export function MediaServerSection() {
         <UrlField name="jellyfin.url" />
         <CookieFieldWrapper name="jellyfin.apiKey" />
         <TextField name="jellyfin.userId" />
-        <BoolField name="jellyfin.refreshPersonAfterSync" />
         <BoolField name="jellyfin.lockOverviewAfterSync" />
         <BoolField name="jellyfin.notifyAfterPublish" />
       </Subsection>
@@ -25,7 +26,6 @@ export function MediaServerSection() {
         <UrlField name="emby.url" />
         <CookieFieldWrapper name="emby.apiKey" />
         <TextField name="emby.userId" />
-        <BoolField name="emby.refreshPersonAfterSync" />
         <BoolField name="emby.notifyAfterPublish" />
       </Subsection>
       <Subsection
@@ -35,6 +35,11 @@ export function MediaServerSection() {
       >
         <ChipArrayFieldWrapper name="personSync.personOverviewSources" options={[...ACTOR_OVERVIEW_SOURCE_OPTIONS]} />
         <ChipArrayFieldWrapper name="personSync.personImageSources" options={[...ACTOR_IMAGE_SOURCE_OPTIONS]} />
+        <BoolField name="personSync.syncAfterPublish" />
+        <EnumField
+          name="personSync.bioLabelLanguage"
+          options={UI_LOCALES.map((value) => ({ value, label: t.settings.options.bioLabelLanguage[value] }))}
+        />
       </Subsection>
     </>
   );

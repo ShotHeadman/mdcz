@@ -1,6 +1,6 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { ScanTaskDto } from "@mdcz/shared/serverDtos";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { TaskEventBus, type TaskLifecycleEvent } from "../taskEvents";
 import { AutomationService, applyPathMappings } from "./automationService";
 
@@ -32,11 +32,14 @@ const createAutomationService = (taskEvents: TaskEventBus, channels: Array<"ntfy
       ntfyUrl: "http://ntfy.test/mdcz",
     },
   };
-  return new AutomationService({
+  const service = new AutomationService({
     config: { get: async () => configuration },
     taskEvents,
     logger: { warn: vi.fn() },
   } as unknown as ConstructorParameters<typeof AutomationService>[0]);
+  service.start();
+  onTestFinished(() => service.close());
+  return service;
 };
 
 const publishTask = (taskEvents: TaskEventBus, task: TaskLifecycleEvent): void => {

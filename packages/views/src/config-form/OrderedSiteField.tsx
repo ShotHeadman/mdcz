@@ -1,7 +1,6 @@
 import { Button, Checkbox, cn, FormControl } from "@mdcz/ui";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ReactNode } from "react";
-import type { ControllerRenderProps, FieldValues } from "react-hook-form";
 import { useT } from "../i18n";
 import { normalizeEnabledSites } from "../settings/orderedSite";
 
@@ -34,11 +33,6 @@ interface OrderedSiteFieldProps<RowId extends string = string> {
   onMoveRow?: (rowId: RowId, direction: -1 | 1) => void;
   onSelectAll?: () => void;
   onClearAll?: () => void;
-}
-
-interface OrderedSiteFieldWrapperProps {
-  field: ControllerRenderProps<FieldValues, string>;
-  options: string[];
 }
 
 const getChipClassName = (chip: OrderedSiteFieldChip): string =>
@@ -222,15 +216,5 @@ export function OrderedSiteFieldEditor<RowId extends string = string>({
         })}
       </div>
     </FormControl>
-  );
-}
-
-export function OrderedSiteField({ field, options }: OrderedSiteFieldWrapperProps) {
-  return (
-    <OrderedSiteFieldEditor
-      value={Array.isArray(field.value) ? (field.value as string[]) : []}
-      options={options}
-      onChange={field.onChange}
-    />
   );
 }

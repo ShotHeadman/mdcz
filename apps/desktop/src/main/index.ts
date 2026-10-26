@@ -1,202 +1,161 @@
-import { bootstrap } from "@main/bootstrap";
-import type { ServiceContainer } from "@main/container";
-import { createContainer } from "@main/createContainer";
-import { registerIpcHandlers } from "@main/ipc";
-import { registerLocalFileHandler, registerLocalFileScheme } from "@main/localFileProtocol";
+import { join } from "node:path";
 import { createAppNetworkClient, prepareAppScrapeItem } from "@main/networkComposition";
-import { configManager } from "@main/services/config";
-import { loggerService } from "@main/services/LoggerService";
-import { ShortcutService } from "@main/services/ShortcutService";
-import { SignalService } from "@main/services/SignalService";
-import { TrayService } from "@main/services/TrayService";
-import { type MainWindowCreationOptions, WindowService } from "@main/services/WindowService";
 import { resolveSiteProxyUrl } from "@mdcz/runtime/config";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
-import { app, BrowserWindow, dialog } from "electron";
-import sharp from "sharp";
+import { FileTranslationMappingStore } from "@mdcz/runtime/translate";
+import { buildServer, type ServerApp } from "@mdcz/server/app";
+import { ServerConfigService } from "@mdcz/server/services/configService";
+import { ServerPersistenceService } from "@mdcz/server/services/persistenceService";
+import { RuntimeLogService } from "@mdcz/server/services/runtimeLogService";
+import { createTaskEventBus } from "@mdcz/server/taskEvents";
+import type { Configuration } from "@mdcz/shared/config";
+import { app, BrowserWindow, dialog, protocol } from "electron";
+import { createApiRequestHandler, registerApiScheme } from "./apiProtocol";
+import { applyDesktopAppIdentity } from "./appIdentity";
+import { registerDesktopBridge } from "./desktopBridge";
+import { localAuth } from "./localAuth";
+import { createLogFile } from "./logFile";
+import { openDatabase } from "./openDatabase";
+import { API_SCHEME } from "./rendererTrust";
+import { createElectronCookieResolver } from "./services/CookieResolver";
+import { ShortcutService } from "./services/ShortcutService";
+import { TrayService } from "./services/TrayService";
+import { UpdateService } from "./services/UpdateService";
+import { WindowService } from "./services/WindowService";
 
 const QUIT_FORCE_EXIT_TIMEOUT_MS = 15_000;
+// Set by the dev config once web's Vite server listens; packaged builds serve web's build from the asar.
+const devServerUrl = process.env.MDCZ_WEB_DEV_URL;
+const userData = applyDesktopAppIdentity();
+const nativeBinding = app.isPackaged
+  ? join(process.resourcesPath, "native", "better_sqlite3.node")
+  : join(app.getAppPath(), "native", "better_sqlite3.node");
 
-runtimeLoggerService.setFactory((name) => loggerService.getLogger(name));
-// libvips keeps cached WebP inputs open, and Windows refuses to rename or delete an open file, failing publication.
-sharp.cache({ files: 0 });
+registerApiScheme();
 
-const signalService = new SignalService();
-const sharedNetworkClient = createAppNetworkClient({
-  getProxyUrl: (site) => resolveSiteProxyUrl(configManager.getComputed(), site),
-  getTimeoutMs: () => configManager.getComputed().networkTimeoutMs,
-  getRetryCount: () => configManager.getComputed().networkRetryCount,
-});
-let windowService: WindowService | null = null;
-let serviceContainer: ServiceContainer | null = null;
+const windowService = new WindowService();
 const trayService = new TrayService();
 const shortcutService = new ShortcutService();
-let cleanupPromise: Promise<void> | null = null;
-let cleanupFinished = false;
+let server: ServerApp | null = null;
+let updateService: UpdateService | null = null;
+let closeLogFile: (() => Promise<void>) | null = null;
 let quitRequested = false;
-let disposeShortcutConfigListener: (() => void) | null = null;
-let disposeLoggerListener: (() => void) | null = loggerService.onLog((payload) => {
-  signalService.forwardLoggerLog(payload);
-});
+let cleanupFinished = false;
 
-const scheduleForceExit = (): void => {
-  const timer = setTimeout(() => {
-    app.exit(typeof process.exitCode === "number" && process.exitCode !== 0 ? process.exitCode : 1);
-  }, QUIT_FORCE_EXIT_TIMEOUT_MS);
-  timer.unref?.();
+const openMainWindow = async (configuration: Configuration): Promise<void> => {
+  windowService.createMainWindow({ useCustomTitleBar: configuration.ui.useCustomTitleBar });
+  shortcutService.initialize(windowService, configuration);
+  windowService.applyUiConfig(configuration.ui);
+  await windowService.loadMainWindow();
 };
 
-const ensureWindowService = (): WindowService => {
-  if (!windowService) {
-    windowService = new WindowService();
-  }
-
-  return windowService;
-};
-
-const toMainWindowCreationOptions = (
-  config: Awaited<ReturnType<typeof configManager.getValidated>>,
-): MainWindowCreationOptions => ({
-  useCustomTitleBar: config.ui.useCustomTitleBar,
-});
-
-const ensureServiceContainer = async (): Promise<ServiceContainer> => {
-  if (serviceContainer) {
-    return serviceContainer;
-  }
-
-  const container = createContainer({
-    windowService: ensureWindowService(),
-    signalService,
-    networkClient: sharedNetworkClient,
-    prepareScrapeItem: prepareAppScrapeItem,
-  });
-  // Recovery must finish before IPC and renderer load; getState() can otherwise race the first window requests.
-  await container.persistenceService.initialize();
-  // Settings that moved into libraries become the first library before the profile is saved without them.
-  const legacy = await configManager.takeLegacyConversion();
-  if (legacy) {
-    await container.libraries.adoptLegacyConfiguration(legacy);
-    await configManager.saveCurrent();
-  }
-  registerLocalFileHandler({
-    getRoot: async (rootId) => {
-      const state = await container.persistenceService.getState();
-      const roots = await state.repositories.mediaRoots.list();
-      return roots.find((root) => root.id === rootId) ?? null;
+const start = async (): Promise<void> => {
+  const paths = {
+    configDir: join(userData, "config"),
+    dataDir: userData,
+    configPath: join(userData, "config", "default.toml"),
+    databasePath: join(userData, "mdcz.sqlite"),
+  };
+  const logFile = createLogFile(join(userData, "logs"));
+  closeLogFile = logFile.close;
+  const config = new ServerConfigService(paths);
+  const persistence = new ServerPersistenceService(paths, { nativeBinding });
+  const taskEvents = createTaskEventBus();
+  server = buildServer({
+    backgroundAutomation: false,
+    webStaticDir: devServerUrl ? false : join(__dirname, "../web"),
+    services: {
+      auth: localAuth,
+      config,
+      persistence,
+      runtimeLogs: new RuntimeLogService(1000, taskEvents, logFile.sink),
+      taskEvents,
+    },
+    resources: {
+      networkClient: createAppNetworkClient({
+        getProxyUrl: (site) => resolveSiteProxyUrl(config.getComputed(), site),
+        getTimeoutMs: () => config.getComputed().networkTimeoutMs,
+        getRetryCount: () => config.getComputed().networkRetryCount,
+      }),
+      prepareScrapeItem: prepareAppScrapeItem,
+      mappingStore: new FileTranslationMappingStore(
+        app.isPackaged
+          ? join(process.resourcesPath, "mapping_table")
+          : join(app.getAppPath(), "../../packages/runtime/resources/mapping_table"),
+      ),
+      avjohoCookieResolver: createElectronCookieResolver({ expectedCookieNames: ["wsidchk"] }),
     },
   });
-  registerIpcHandlers(container);
-  serviceContainer = container;
-  return container;
-};
-
-const ensureMainWindow = async (options: MainWindowCreationOptions): Promise<void> => {
-  await ensureServiceContainer();
-  const currentWindowService = ensureWindowService();
-  const mainWindow = currentWindowService.createMainWindow(options);
-  signalService.setMainWindow(mainWindow);
-  await currentWindowService.loadMainWindow();
-};
-
-const cleanupResources = async (): Promise<void> => {
-  if (cleanupPromise) {
-    return cleanupPromise;
+  if (!(await openDatabase(persistence, nativeBinding))) {
+    app.quit();
+    return;
   }
+  await server.fastify.ready();
+  const handleApiRequest = createApiRequestHandler(server.fastify, devServerUrl);
+  // A closing page still resyncs when its event stream drops, after the server has begun shutting down.
+  protocol.handle(API_SCHEME, async (request) =>
+    quitRequested ? new Response(null, { status: 503 }) : await handleApiRequest(request),
+  );
+  updateService = new UpdateService(
+    (status) => windowService.send("updateStatus", status),
+    () => config.getComputed().proxyUrl,
+  );
+  registerDesktopBridge({ services: server.services, updateService, windowService });
 
-  cleanupPromise = (async () => {
-    const logger = loggerService.getLogger("Main");
-    try {
-      await serviceContainer?.shutdown();
-    } catch (error) {
-      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      logger.error(`Failed to shutdown services cleanly: ${message}`);
-      process.exitCode = 1;
-    }
-    try {
-      serviceContainer?.updateService.installDownloadedUpdate();
-    } catch (error) {
-      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      logger.error(`Failed to start update installer: ${message}`);
-      process.exitCode = 1;
-    }
-
-    disposeLoggerListener?.();
-    disposeLoggerListener = null;
-    disposeShortcutConfigListener?.();
-    disposeShortcutConfigListener = null;
-    shortcutService.dispose();
-    await loggerService.close();
-    trayService.dispose();
-  })();
-
-  return cleanupPromise;
+  const configuration = await config.get();
+  await openMainWindow(configuration);
+  trayService.initialize(windowService);
+  config.onChange((event) => {
+    shortcutService.initialize(windowService, event.configuration);
+    windowService.applyUiConfig(event.configuration.ui);
+  });
+  if (configuration.behavior.updateCheck && app.isPackaged) {
+    setTimeout(() => void updateService?.check(), 5000);
+  }
 };
 
-// Must be called before app.whenReady()
-registerLocalFileScheme();
+const cleanup = async (): Promise<void> => {
+  for (const window of BrowserWindow.getAllWindows()) window.destroy();
+  try {
+    await server?.fastify.close();
+  } catch (error) {
+    runtimeLoggerService.getLogger("Main").error(`Failed to shut down cleanly: ${String(error)}`);
+    process.exitCode = 1;
+  }
+  try {
+    updateService?.installDownloadedUpdate();
+  } catch (error) {
+    runtimeLoggerService.getLogger("Main").error(`Failed to start the update installer: ${String(error)}`);
+    process.exitCode = 1;
+  }
+  shortcutService.dispose();
+  trayService.dispose();
+  await closeLogFile?.();
+};
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!windowService) {
-      return;
-    }
-
-    windowService.showMainWindow();
-  });
+  app.on("second-instance", () => windowService.showMainWindow());
 
   app
     .whenReady()
-    .then(async () => {
-      await bootstrap();
-      const initialConfig = await configManager.getValidated();
-      await ensureMainWindow(toMainWindowCreationOptions(initialConfig));
-
-      if (windowService) {
-        trayService.initialize(windowService);
-        shortcutService.initialize(windowService, initialConfig);
-        windowService.applyUiConfig(initialConfig.ui);
-
-        disposeShortcutConfigListener?.();
-        disposeShortcutConfigListener = configManager.onChange((configuration) => {
-          if (!windowService) {
-            return;
-          }
-          shortcutService.initialize(windowService, configuration);
-          windowService.applyUiConfig(configuration.ui);
-        });
-
-        if (initialConfig.behavior.updateCheck && app.isPackaged) {
-          const { updateService } = await ensureServiceContainer();
-          setTimeout(() => void updateService.check(), 5000);
-        }
-      }
-
-      app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-          void (async () => {
-            const config = await configManager.getValidated();
-            await ensureMainWindow(toMainWindowCreationOptions(config));
-            if (windowService) {
-              shortcutService.initialize(windowService, config);
-            }
-          })();
-          return;
-        }
-
-        windowService?.showMainWindow();
-      });
-    })
+    .then(start)
     .catch((error) => {
-      const logger = loggerService.getLogger("Main");
       const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      logger.error(`Failed to initialize main process: ${message}`);
+      runtimeLoggerService.getLogger("Main").error(`Failed to start: ${message}`);
       // Startup fails before any window exists, so without this the app just vanishes.
       dialog.showErrorBox("MDCz failed to start", message);
       app.quit();
     });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length > 0) {
+      windowService.showMainWindow();
+      return;
+    }
+    if (server) void server.services.config.get().then(openMainWindow);
+  });
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
@@ -209,16 +168,10 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     if (quitRequested) return;
     quitRequested = true;
-    scheduleForceExit();
-    void cleanupResources()
-      .catch((error) => {
-        const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-        loggerService.getLogger("Main").error(`Failed to clean up main process resources: ${message}`);
-        process.exitCode = 1;
-      })
-      .finally(() => {
-        cleanupFinished = true;
-        app.quit();
-      });
+    setTimeout(() => app.exit(Number(process.exitCode) || 1), QUIT_FORCE_EXIT_TIMEOUT_MS).unref();
+    void cleanup().finally(() => {
+      cleanupFinished = true;
+      app.quit();
+    });
   });
 }

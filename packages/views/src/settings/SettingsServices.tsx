@@ -17,16 +17,6 @@ export interface SettingsBrowseFilter {
   extensions: string[];
 }
 
-export interface SettingsBrowseResult {
-  canceled?: boolean;
-  paths?: string[];
-}
-
-export interface SettingsPathSuggestion {
-  label: string;
-  path: string;
-}
-
 export interface SettingsCrawlerSiteInfo {
   site: Website;
   name: string;
@@ -63,11 +53,11 @@ export interface SettingsIntegrationServices {
 }
 
 export interface SettingsServices {
-  browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
-  getPathSuggestions?: (kind: "file" | "directory") => SettingsPathSuggestion[];
+  /** A native picker; only the desktop app has one. */
+  browsePath?: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<string | null>;
   integrations?: SettingsIntegrationServices;
-  isServer?: boolean;
-  settingsTarget?: "desktop" | "server";
+  /** Desktop shows its window and shortcut settings, the server its automation. */
+  settingsTarget: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
   watermarkDirectoryActionLabel?: string;
   checkCookies: () => Promise<NetworkCheckCookiesResponse>;
@@ -86,27 +76,10 @@ export interface SettingsServices {
   updateCurrentConfigCache?: (flatPayload: Record<string, unknown>) => void;
 }
 
-export interface SettingsNotifier {
-  error: (message: string) => void;
-  info: (message: string) => void;
-  success: (message: string, options?: { action?: { label: string; onClick: () => void } }) => void;
-}
-
-interface SettingsServicesProviderProps {
-  children?: ReactNode;
-  notifier: SettingsNotifier;
-  services: SettingsServices;
-}
-
 const SettingsServicesContext = createContext<SettingsServices | null>(null);
-const SettingsNotifierContext = createContext<SettingsNotifier | null>(null);
 
-export function SettingsServicesProvider({ children, notifier, services }: SettingsServicesProviderProps) {
-  return (
-    <SettingsServicesContext.Provider value={services}>
-      <SettingsNotifierContext.Provider value={notifier}>{children}</SettingsNotifierContext.Provider>
-    </SettingsServicesContext.Provider>
-  );
+export function SettingsServicesProvider({ children, services }: { children?: ReactNode; services: SettingsServices }) {
+  return <SettingsServicesContext.Provider value={services}>{children}</SettingsServicesContext.Provider>;
 }
 
 export function useSettingsServices(): SettingsServices {
@@ -115,14 +88,6 @@ export function useSettingsServices(): SettingsServices {
     throw new Error("Settings views must be wrapped in <SettingsServicesProvider>");
   }
   return services;
-}
-
-export function useSettingsNotifier(): SettingsNotifier {
-  const notifier = useContext(SettingsNotifierContext);
-  if (!notifier) {
-    throw new Error("Settings views must be wrapped in <SettingsServicesProvider>");
-  }
-  return notifier;
 }
 
 export function useSettingsInFlightSaves(): number {

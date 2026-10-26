@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { type Configuration, configurationSchema, defaultConfiguration } from "@main/services/config";
+import { type Configuration, configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type { CrawlerData, FileInfo } from "@mdcz/shared/types";

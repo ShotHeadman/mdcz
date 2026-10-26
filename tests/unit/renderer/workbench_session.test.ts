@@ -1,16 +1,12 @@
 import { MaintenanceSession } from "@mdcz/runtime/maintenance";
-import {
-  getWorkbenchSessionSnapshot,
-  openNewWorkbenchTask,
-  resetScrapeWorkbenchToSetup,
-} from "@mdcz/views/adapters/workbenchSession";
+import { openNewWorkbenchTask, resetScrapeWorkbenchToSetup } from "@mdcz/views/adapters/workbenchSession";
 import {
   changeMaintenancePreset,
   selectMaintenanceEntries,
   selectMaintenanceProgress,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeHasWork, selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +25,7 @@ describe("workbench session scrape setup", () => {
 
   it("keeps the processing queue after a scrape completes in this window", () => {
     useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
-    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(false);
+    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(true);
     expect(selectScrapeResults(useScrapeStore.getState())).toHaveLength(1);
   });
 
@@ -39,11 +35,11 @@ describe("workbench session scrape setup", () => {
     useUIStore.getState().setSelectedResultId("root-1:ABC-001.mp4");
 
     resetScrapeWorkbenchToSetup();
-    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(false);
     expect(useUIStore.getState().selectedResultId).toBeNull();
 
     useScrapeStore.getState().setSnapshot(null);
-    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(false);
     expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
   });
 
@@ -106,7 +102,7 @@ describe("workbench session scrape setup", () => {
     const discard = vi.fn(async () => undefined);
     useScrapeStore.getState().setSnapshot(buildScrapeSnapshot());
     await openNewWorkbenchTask("maintenance", discard);
-    expect(getWorkbenchSessionSnapshot("scrape").showSetup).toBe(true);
+    expect(selectScrapeHasWork(useScrapeStore.getState())).toBe(false);
     expect(useUIStore.getState().workbenchMode).toBe("maintenance");
     expect(discard).not.toHaveBeenCalled();
 

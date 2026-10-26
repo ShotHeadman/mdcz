@@ -47,6 +47,7 @@ import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import { WriteOutput } from "../publication/WriteOutput";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
+import type { LibraryTaskGate } from "../tasks/LibraryTaskGate";
 import {
   ScrapeCoordinator,
   type ScrapeHostPort,
@@ -152,11 +153,17 @@ export interface ScrapeRunnerDependencies {
     /** Polled downloaders; only the server has them. */
     downloaders?: Pick<DownloaderRepository, "ownsPath">;
   };
-  /** Directories that received published movies, for media servers to scan. */
-  onPublished?: (directories: readonly string[], configuration: Configuration) => void;
+  /** One published movie: the directories for media servers to scan and the actors its NFO lists. */
+  onPublished?: (published: {
+    runId: string;
+    directories: readonly string[];
+    actors: readonly string[];
+    configuration: Configuration;
+  }) => void;
   /** Files that newly entered the pending list. */
   onPending?: (count: number) => void;
   recordSiteResults: SiteResultSink;
+  taskGate: LibraryTaskGate;
   getConfiguration: () => Promise<Configuration>;
   networkClient: NetworkClient;
   crawlerProvider: CrawlerPort;
@@ -228,6 +235,7 @@ export class ScrapeRunner {
       warn: (msg: string, error?: unknown) => rawLogger.warn(msg, error),
       error: (msg: string, error?: unknown) => rawLogger.error(msg, error),
     };
+    deps.taskGate.track("scrape", () => this.coordinatorInstance?.busy ?? false);
     this.probeVideo = createVideoProbe(deps.mediaInfoWasmPath);
     this.translateService = new TranslateService(deps.networkClient, {
       logger: this.logger,
@@ -274,12 +282,13 @@ export class ScrapeRunner {
     if (this.closed) throw new Error("Scrape queue is closing");
     const configuration = structuredClone(await this.deps.getConfiguration());
     const normalized = await this.normalizeStartInput(input, configuration);
-    const snapshot = await (await this.coordinator()).start({ normalized, configuration });
+    const snapshot = await this.claimCoordinator().start({ normalized, configuration });
     return await this.accepted(snapshot.runId, "start", snapshot.progress.totalItems);
   }
 
   async retry(runId: string, itemIds?: readonly string[]): Promise<StartScrapeResult> {
-    const snapshot = await (await this.bindExistingRun(runId)).retry(runId, itemIds);
+    await this.bindExistingRun(runId);
+    const snapshot = await this.claimCoordinator().retry(runId, itemIds);
     return await this.accepted(
       snapshot.runId,
       "retry",
@@ -290,7 +299,8 @@ export class ScrapeRunner {
   }
 
   async rerunDirectory(runId: string): Promise<StartScrapeResult> {
-    const snapshot = await (await this.bindExistingRun(runId)).rerunDirectory(runId);
+    await this.bindExistingRun(runId);
+    const snapshot = await this.claimCoordinator().rerunDirectory(runId);
     return await this.accepted(snapshot.runId, "rerun", null);
   }
 
@@ -503,10 +513,11 @@ export class ScrapeRunner {
     this.coordinatorInstance?.recordLog(runId, log);
   }
 
-  private async coordinator() {
+  /** Synchronous so the gate check and the queue's registration of the run happen in one step. */
+  private claimCoordinator(): RunnerCoordinator {
     if (this.closed) throw new Error("Scrape queue is closing");
-    if (this.coordinatorInstance) return this.coordinatorInstance;
-    this.coordinatorInstance = new ScrapeCoordinator(this.deps.persistence.scrapeRuns, this.host);
+    this.deps.taskGate.assertAvailable("scrape");
+    this.coordinatorInstance ??= new ScrapeCoordinator(this.deps.persistence.scrapeRuns, this.host);
     return this.coordinatorInstance;
   }
 
@@ -660,7 +671,7 @@ export class ScrapeRunner {
       directories.set(item.id, filesystemPathKey(await inventory.canonicalDirectory(directory)));
     }
     const retryIds = new Set(
-      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape.filenameIgnoreTokens, (item) => {
+      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape, (item) => {
         const directory = directories.get(item.id);
         if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
         return directory;
@@ -1074,12 +1085,15 @@ export class ScrapeRunner {
         if (uncensoredPendingAdded) this.deps.onPending?.(1);
         const publishedDirectory = (ref: RootFileRef) =>
           dirname(resolveRootRelativePath(requireRoot(ref.rootId), ref.relativePath));
-        this.deps.onPublished?.(
-          output.scrape.nfo
+        this.deps.onPublished?.({
+          runId: manifest.id,
+          directories: output.scrape.nfo
             ? [publishedDirectory(output.scrape.nfo)]
             : [...new Set(output.files.map((file) => publishedDirectory(file.target)))],
+          // Media servers create people from the NFO, so without one there is nobody to sync.
+          actors: output.scrape.nfo ? output.scrape.crawlerData.actors : [],
           configuration,
-        );
+        });
 
         return entries.map((entry) => {
           const video = output.files.find((f) => f.scrape?.itemId === entry.item.id);
@@ -1177,14 +1191,13 @@ export class ScrapeRunner {
     return runId ? runs.find(({ run }) => run.id === runId) : runs[0];
   }
 
-  private async bindExistingRun(runId: string): Promise<RunnerCoordinator> {
+  private async bindExistingRun(runId: string): Promise<void> {
     if (!runId.trim()) throw new ScrapeRunnerError("NO_FILES", "No scrape run selected");
     if (this.closed) throw new Error("Scrape queue is closing");
     this.deps.imageHostCooldownStore.clear?.();
     const previousRun = await this.deps.persistence.scrapeRuns.get(runId);
     const root = await this.deps.persistence.mediaRoots.get(previousRun.rootId);
     this.rootDisplayNames.set(root.id, root.displayName);
-    return await this.coordinator();
   }
 
   private async accepted(runId: string, action: string, totalFiles: number | null): Promise<StartScrapeResult> {

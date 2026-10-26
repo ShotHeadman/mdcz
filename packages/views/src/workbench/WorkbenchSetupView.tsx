@@ -53,10 +53,9 @@ export interface WorkbenchSetupViewProps {
   supportedExtensions: string[];
   presetId: MaintenancePresetId;
   primaryDisabled: boolean;
-  isServer?: boolean;
   onSuggestScanDir?: (path: string) => Promise<PathAutocompleteResult>;
   formatBytes: (value: number, options?: { trimTrailingZeros?: boolean }) => string;
-  onBrowseScanDir: () => void;
+  onBrowseScanDir?: () => void;
   onScanDirChange?: (value: string) => void;
   refreshDisabled?: boolean;
   onRefreshScan: () => void;
@@ -316,7 +315,6 @@ export function WorkbenchSetupView({
   supportedExtensions,
   presetId,
   primaryDisabled,
-  isServer = false,
   onSuggestScanDir,
   formatBytes,
   onBrowseScanDir,
@@ -522,7 +520,7 @@ export function WorkbenchSetupView({
                   value={scanDir}
                   error={scanDirError}
                   placeholder={configLoading ? t.workbench.loadingConfig : t.workbench.scanDirPlaceholder}
-                  onBrowse={isServer ? undefined : onBrowseScanDir}
+                  onBrowse={onBrowseScanDir}
                   onChange={onScanDirChange}
                   onCommit={onCommitScanDir}
                   loadSuggestions={onSuggestScanDir}

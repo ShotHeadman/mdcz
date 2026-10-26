@@ -40,6 +40,7 @@ export class QbittorrentService {
   #polling?: Promise<void>;
   #pollAgain = false;
   #closed = false;
+  #started = false;
   #unsubscribe?: () => void;
   #session?: { credentials: string; cookie: string };
   #status = idleStatus();
@@ -57,6 +58,7 @@ export class QbittorrentService {
   ) {}
 
   start(): void {
+    this.#started = true;
     // Settings autosave per field; polling at once shows whether the connection works.
     this.#unsubscribe = this.deps.config.onChange(() => this.schedule(0));
     this.schedule(0);
@@ -71,7 +73,7 @@ export class QbittorrentService {
 
   /** Polls again now, e.g. after the libraries changed under the category's save path. */
   refresh(): void {
-    this.schedule(0);
+    if (this.#started) this.schedule(0);
   }
 
   status(): QbittorrentStatus {

@@ -23,15 +23,11 @@ export const web: Messages["web"] = {
   scrapeResultNotFound: "未找到刮削结果",
 
   goToWorkbench: "去工作台",
-  goToSettings: "前往设置",
   recentAcquisitions: "最近入库",
-  removedFromRecent: "已从最近入库移除",
 
   copiedWatermarkDir: "已复制服务器角标图片目录路径。",
   browserCannotOpenFolder: "浏览器无法打开服务器文件夹，请复制上方服务器路径。",
   copyServerPath: "复制服务器路径",
-
-  removedFromLibrary: "已从媒体库移除",
 
   openWorkbench: "打开工作台",
   jellyfinInfoMissing: "仅补全缺失的演员简介与基础资料。",
@@ -46,44 +42,19 @@ export const web: Messages["web"] = {
 
   stopScrapeConfirm: "确定要停止刮削吗？",
   retryFailedConfirm: (count: number) => `确定要批量重试 ${count} 个失败项目吗？`,
-  stopScrapeFirst: "请先停止当前刮削任务",
-  taskSubmitted: "任务已提交",
-  selectedScrapeStarted: "已启动选中文件刮削",
-  noControllableScrapeTask: "当前没有可控制的刮削任务",
-  taskPaused: "任务已暂停",
   pauseFailed: (error: string) => `暂停失败: ${error}`,
-  taskResumed: "任务已恢复",
   resumeFailed: (error: string) => `恢复失败: ${error}`,
   stopping: "正在停止...",
   stopFailed: (error: string) => `停止失败: ${error}`,
-  noFailedItemsToRetry: "当前没有可重试的失败项目",
-  updatedUncensoredTypes: "已更新无码类型",
   taskRefreshFailed: (error: string) => `任务状态刷新失败: ${error}`,
 
   logsEmpty: "暂无日志。刮削或维护任务开始后，运行日志会显示在这里。",
   logsNoMatch: "没有匹配的日志。",
-  autoScrollEnabled: "已开启自动滚动",
-  autoScrollDisabled: "已关闭自动滚动",
   clearAllLogsTitle: "清空所有日志",
   clearAllLogsDescription: "确定要清空所有日志内容吗？",
   confirmClear: "确定清空",
-  logsCleared: "日志已成功清空",
 
-  taskStatus: {
-    queued: "排队中",
-    running: "运行中",
-    completed: "已完成",
-    failed: "失败",
-    paused: "已暂停",
-    stopping: "停止中",
-  },
-  taskType: {
-    maintenance: "维护",
-    scan: "扫描",
-    scrape: "刮削",
-  },
-
-  missingScrapeResultId: "缺少刮削结果标识",
+  missingVideoFile: "该条目没有视频文件",
   selectFileToScrape: "请选择要刮削的文件",
   noScrapeTaskToRetry: "没有可重试的刮削任务",
   noControllableMaintenanceSession: "当前没有可控制的维护会话",

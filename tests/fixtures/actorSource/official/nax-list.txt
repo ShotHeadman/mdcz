@@ -1,0 +1,14 @@
+<article class="c-ArticleCard_Model">
+  <header class="c-ArticleCard_Model_Header">
+    <a href="https://official.nax-pro.com/model/56" class="c-ArticleCard_Model_Header-Link">
+      <div class="c-ArticleCard_Model_Thumbnail">
+        <img src="https://official.nax-pro.com/naxwp/wp-content/uploads/2021/04/ito-250x329.jpg" class="c-ArticleCard_Model_Thumbnail-Img">
+      </div>
+    </a>
+  </header>
+  <footer class="c-ArticleCard_Model_Footer">
+    <h3 class="c-ArticleCard_Model_Title">
+      <a class="c-ArticleCard_Model_Title-Link" href="https://official.nax-pro.com/model/56">伊藤 舞雪</a>
+    </h3>
+  </footer>
+</article>

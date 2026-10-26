@@ -1,7 +1,6 @@
 import { about } from "./about";
 import { common } from "./common";
 import { configForm } from "./configForm";
-import { desktop } from "./desktop";
 import { detail } from "./detail";
 import { domain } from "./domain";
 import { libraries } from "./libraries";
@@ -45,7 +44,6 @@ export const en = {
   path,
   media,
   web,
-  desktop,
 };
 
 export type Messages = typeof en;

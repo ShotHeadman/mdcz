@@ -52,6 +52,15 @@ const hasOverviewContent = (profile: ActorProfile): boolean => {
   return OVERVIEW_PROFILE_FIELDS.some((field) => hasActorProfileFieldValue(profile[field]));
 };
 
+// Sources search by name, so one that contradicts the primary on a fact both list found another actress of that name.
+const agreesWith = (primary: ActorProfile, other: ActorProfile): boolean =>
+  STRUCTURED_OVERVIEW_FIELDS.every(
+    (field) =>
+      !hasActorProfileFieldValue(primary[field]) ||
+      !hasActorProfileFieldValue(other[field]) ||
+      primary[field] === other[field],
+  );
+
 const pickPrimaryOverviewResult = (
   results: ActorSourceResult[],
   order: readonly ActorSourceName[],
@@ -91,16 +100,23 @@ export class ActorProfileAggregator {
 
     const profileSources: Partial<Record<(typeof ACTOR_PROFILE_METADATA_FIELDS)[number], ActorSourceName>> = {};
 
+    // A field the primary source lacks comes from the next agreeing source that has it: an agency profile without a
+    // birthplace still gets avjoho's, and one that lists only facts still gets a bio text.
+    const fillResults = results.filter(
+      (result) => !primaryProfile || !result.profile || agreesWith(primaryProfile, result.profile),
+    );
     for (const field of OVERVIEW_PROFILE_FIELDS) {
-      const value = primaryProfile?.[field];
-      if (!hasActorProfileFieldValue(value)) {
+      const primaryValue = primaryProfile?.[field];
+      const { source, value } =
+        primaryOverviewResult && hasActorProfileFieldValue(primaryValue)
+          ? { source: primaryOverviewResult.source, value: primaryValue }
+          : pickProfileField(fillResults, configuration.personSync.personOverviewSources, field);
+      if (!source || !hasActorProfileFieldValue(value)) {
         continue;
       }
 
       Object.assign(profile, { [field]: value });
-      if (primaryOverviewResult) {
-        profileSources[field] = primaryOverviewResult.source;
-      }
+      profileSources[field] = source;
     }
 
     if (typeof photoSource.value === "string" && photoSource.value.trim().length > 0) {

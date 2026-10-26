@@ -27,7 +27,8 @@ export interface CandidateScanResult {
 }
 
 export interface WorkbenchSetupPort {
-  browseDirectory(currentPath: string): Promise<string | null>;
+  /** A native picker; only the desktop app has one. */
+  browseDirectory?: () => Promise<string | null>;
   scanCandidates(
     scanDir: string,
     recursive: boolean,
@@ -35,7 +36,6 @@ export interface WorkbenchSetupPort {
     scanId?: string,
   ): Promise<CandidateScanResult>;
   cancelCandidates(scanId: string): Promise<void>;
-  isServer?: boolean;
   suggestDirectory?: (path: string) => Promise<ServerPathSuggestResponse>;
 }
 
@@ -202,15 +202,18 @@ export function WorkbenchSetupAdapter({
   useEffect(() => {
     return () => {
       scanRequestRef.current += 1;
-      void stopPreview().catch((error) => toast.error(getT().workbench.cancelScanFailed(toErrorMessage(error))));
+      void stopPreview().catch((error) =>
+        toast.error(getT().workbench.cancelScanFailed(toErrorMessage(error)), { id: "workbench-scan" }),
+      );
       if (useWorkbenchSetupStore.getState().scanStatus === "scanning")
         useWorkbenchSetupStore.setState({ scanStatus: "idle" });
     };
   }, [scanPlan.scanKey, draftDir, stopPreview]);
 
-  const handleChooseScanDir = async () => {
+  const browseDirectory = port.browseDirectory;
+  const handleChooseScanDir = async (browse: () => Promise<string | null>) => {
     try {
-      const selectedPath = (await port.browseDirectory(scanDir))?.trim() ?? "";
+      const selectedPath = (await browse())?.trim() ?? "";
       if (!selectedPath) {
         return;
       }
@@ -218,7 +221,7 @@ export function WorkbenchSetupAdapter({
       setDraftDir(selectedPath);
       setDirectoryError("");
     } catch (error) {
-      toast.error(getT().workbench.selectScanDirFailed(toErrorMessage(error)));
+      toast.error(getT().workbench.selectScanDirFailed(toErrorMessage(error)), { id: "workbench-scan" });
     }
   };
 
@@ -286,7 +289,7 @@ export function WorkbenchSetupAdapter({
             setPreviewMode(false);
             useWorkbenchSetupStore.setState({ scanStatus: "idle" });
           })
-          .catch((error) => toast.error(toErrorMessage(error)));
+          .catch((error) => toast.error(toErrorMessage(error), { id: "workbench-scan" }));
       }}
       configLoading={configLoading}
       scanDir={draftDir}
@@ -309,12 +312,11 @@ export function WorkbenchSetupAdapter({
       supportedExtensions={supportedExtensions}
       presetId={presetId}
       primaryDisabled={primaryDisabled}
-      isServer={port.isServer}
       onSuggestScanDir={
         suggestDirectory ? async (path) => toPathAutocompleteResult(await suggestDirectory(path)) : undefined
       }
       formatBytes={formatBytes}
-      onBrowseScanDir={handleChooseScanDir}
+      onBrowseScanDir={browseDirectory ? () => void handleChooseScanDir(browseDirectory) : undefined}
       onScanDirChange={(value) => {
         setDraftDir(value);
         setDirectoryError("");

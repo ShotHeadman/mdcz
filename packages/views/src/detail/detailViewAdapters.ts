@@ -140,9 +140,6 @@ const buildDetailViewMetadata = (input: {
 export const getScrapeResultTitle = (result: ScrapeResult): string | undefined =>
   result.crawlerData?.title_zh ?? result.crawlerData?.title;
 
-export const getMaintenanceDetailTitle = (entry: LocalScanEntry) =>
-  entry.crawlerData?.title_zh ?? entry.crawlerData?.title ?? entry.fileInfo.fileName;
-
 export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailViewItem => {
   const fileRef: RootFileRef = result.output ?? { rootId: result.rootId, relativePath: result.relativePath };
   return {

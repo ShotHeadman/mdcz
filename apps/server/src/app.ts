@@ -5,9 +5,12 @@ import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
-import { NetworkClient } from "@mdcz/runtime/network";
+import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { ActorSyncFollowUp, PersonSyncLock } from "@mdcz/runtime/mediaserver";
+import { type CookieResolver, NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
 import {
   automationRecentInputSchema,
@@ -56,15 +59,22 @@ export interface ServerResourceOverrides {
   imageHostCooldownStore?: PersistentCooldownStore;
   actorImageService?: ActorImageService;
   actorSourceProvider?: ActorSourceProvider;
+  avjohoCookieResolver?: CookieResolver;
   mappingStore?: FileTranslationMappingStore;
   aggregationService?: ScrapeServiceResources["aggregationService"];
   prepareScrapeItem?: PrepareScrapeItem;
+  maintenanceRuntime?: MaintenanceRuntime;
 }
 
 export interface BuildServerOptions {
   services?: Partial<ServerServices>;
   resources?: ServerResourceOverrides;
   webStaticDir?: string | false;
+  /**
+   * The library watcher, qBittorrent polling and outbound notifications. Desktop turns them off: it quits with its
+   * window and does not launch at login, and an imported server profile must not start polling or messaging.
+   */
+  backgroundAutomation?: boolean;
 }
 
 export interface ServerApp {
@@ -124,9 +134,24 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     });
   const actorSourceProvider =
     options.resources?.actorSourceProvider ??
-    createServerActorSourceProvider(networkClient, actorImageService, async () =>
-      (await libraries.list()).flatMap((library) => [library.sourcePath, library.outputPath].filter(Boolean)),
+    createServerActorSourceProvider(
+      networkClient,
+      actorImageService,
+      async () =>
+        (await libraries.list()).flatMap((library) => [library.sourcePath, library.outputPath].filter(Boolean)),
+      options.resources?.avjohoCookieResolver,
     );
+  const taskGate = new LibraryTaskGate();
+  const personSyncLock = new PersonSyncLock();
+  const actorSync =
+    options.services?.actorSync ??
+    new ActorSyncFollowUp({
+      networkClient,
+      actorSourceProvider,
+      logger: runtimeLoggerService.getLogger("ActorSync"),
+      lock: personSyncLock,
+      onChange: (job) => taskEvents.actorSync(job),
+    });
   const scrape =
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
@@ -135,27 +160,32 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       imageHostCooldownStore,
       actorImageService,
       actorSourceProvider,
+      actorSync,
       mappingStore,
+      taskGate,
       aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
   const library =
     options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get());
-  const maintenanceRuntime = createServerMaintenanceRuntime({
-    config,
-    prepareScrapeItem: options.resources?.prepareScrapeItem,
-    networkClient,
-    crawlerProvider,
-    imageHostCooldownStore,
-    actorImageService,
-    actorSourceProvider,
-    mappingStore,
-    recordSiteResults: async (number, results) =>
-      (await persistence.getState()).repositories.siteResults.record(number, results),
-    loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
-  });
+  const maintenanceRuntime =
+    options.resources?.maintenanceRuntime ??
+    createServerMaintenanceRuntime({
+      config,
+      prepareScrapeItem: options.resources?.prepareScrapeItem,
+      networkClient,
+      crawlerProvider,
+      imageHostCooldownStore,
+      actorImageService,
+      actorSourceProvider,
+      mappingStore,
+      recordSiteResults: async (number, results) =>
+        (await persistence.getState()).repositories.siteResults.record(number, results),
+      loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
+    });
   const maintenance =
-    options.services?.maintenance ?? new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime);
+    options.services?.maintenance ??
+    new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime, taskGate);
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents, config);
   const system = options.services?.system ?? new SystemService();
   const notePending = (count: number) => {
@@ -202,6 +232,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     });
   const services: ServerServices = {
     activity,
+    actorSync,
     automation,
     auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
@@ -213,7 +244,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     mediaRoots,
     persistence,
     personSync:
-      options.services?.personSync ?? new PersonSyncService(config, taskEvents, { networkClient, actorSourceProvider }),
+      options.services?.personSync ??
+      new PersonSyncService(config, taskEvents, { networkClient, actorSourceProvider, lock: personSyncLock }),
     runtimeLogs,
     runtimeActions:
       options.services?.runtimeActions ?? new RuntimeActionService(config, networkClient, crawlerProvider),
@@ -263,6 +295,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     }
     await services.scans.recoverInterrupted();
     await services.auth.status();
+    if (options.backgroundAutomation === false) return;
     await services.libraryWatch.start();
     services.automation.start();
     services.qbittorrent.start();
@@ -277,6 +310,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (closed) return;
     closed = true;
     services.automation.close();
+    services.actorSync.close();
     // An in-flight poll submits through library watch, so it ends first.
     const results = await Promise.allSettled([services.qbittorrent.close()]);
     results.push(...(await Promise.allSettled([services.libraryWatch.close()])));

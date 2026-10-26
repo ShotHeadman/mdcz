@@ -87,7 +87,9 @@ const buildActorNodes = (actors: string[], profiles: CrawlerData["actor_profiles
       return {
         name,
         type: "Actor",
-        thumb: profile?.photo_url,
+        // Jellyfin ignores a relative actor thumb and Emby stores it as a broken primary image, which also makes
+        // "missing" photo sync skip the actor; only URLs the server can fetch itself belong here.
+        thumb: profile?.photo_url && /^https?:\/\//iu.test(profile.photo_url) ? profile.photo_url : undefined,
         order: index,
         sortorder: index,
       };
@@ -295,9 +297,6 @@ export class NfoGenerator {
 
 export const nfoGenerator = new NfoGenerator();
 
-export const resolveCanonicalNfoPath = (nfoPath: string, nfoNaming: NfoNamingMode = "both"): string =>
-  getNfoWritePaths(nfoPath, nfoNaming).canonicalPath;
-
 export const resolveFilenameNfoPath = (nfoPath: string, videoPath?: string): string =>
   videoPath && dirname(resolve(nfoPath)) !== dirname(resolve(videoPath))
     ? replaceExtension(nfoPath, ".nfo")
@@ -310,20 +309,8 @@ export const getNfoReadCandidates = (
 ): string[] => {
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
   const { primaryPath, moviePath, canonicalPath } = getNfoWritePaths(plannedPath, nfoNaming);
-  return Array.from(new Set([canonicalPath, primaryPath, moviePath, nfoPath]));
-};
-
-export const findExistingNfoPath = async (
-  nfoPath: string,
-  nfoNaming: NfoNamingMode = "both",
-  pathExists: PathExists,
-  videoPath?: string,
-): Promise<string | undefined> => {
-  const candidates = getNfoReadCandidates(nfoPath, nfoNaming, videoPath);
-  for (const candidatePath of candidates) {
-    if (await pathExists(candidatePath)) return candidatePath;
-  }
-  return undefined;
+  // Callers may hand over the video itself when no NFO is known yet; it must never be read as one.
+  return Array.from(new Set([canonicalPath, primaryPath, moviePath, replaceExtension(nfoPath, ".nfo")]));
 };
 
 const EDITABLE_MOVIE_FIELDS = [

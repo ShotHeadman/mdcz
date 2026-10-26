@@ -1,16 +1,21 @@
 import { type FieldAnchor, isFieldAnchor, SettingsPage } from "@mdcz/views/settings";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { useConfigProfiles, useCurrentConfig, useDefaultConfig } from "../hooks/configQueries";
+import { api } from "../client";
+import { queryKeys } from "../lib/queryKeys";
 import { createProfileActions, createSettingsServices } from "./settingsController";
 
 const SettingsRoute = () => {
   const { section } = Route.useSearch();
   const queryClient = useQueryClient();
-  const configQ = useCurrentConfig();
-  const defaultsQ = useDefaultConfig();
-  const profilesQ = useConfigProfiles();
+  const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read() });
+  const defaultsQ = useQuery({
+    queryKey: queryKeys.config.defaults,
+    queryFn: () => api.config.defaults(),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const profilesQ = useQuery({ queryKey: queryKeys.config.profiles, queryFn: () => api.config.profiles.list() });
   const services = useMemo(() => createSettingsServices(queryClient), [queryClient]);
   const profileActions = useMemo(() => createProfileActions(queryClient), [queryClient]);
 

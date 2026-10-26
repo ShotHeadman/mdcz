@@ -4,8 +4,15 @@ import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
+const mediaFolders = async (value: string): Promise<PathAutocompleteResult> => ({
+  entries: [
+    { label: "电影", path: "D:/Media/Movies" },
+    { label: "剧集", path: "D:/Media/Series" },
+  ].filter((entry) => entry.path.toLocaleLowerCase().includes(value.trim().toLocaleLowerCase())),
+});
+
 function PathHarness({
-  loadSuggestions,
+  loadSuggestions = mediaFolders,
   onCommit,
 }: {
   loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
@@ -22,10 +29,6 @@ function PathHarness({
         onChange={setValue}
         onBlur={() => onCommit?.(value)}
         loadSuggestions={loadSuggestions}
-        staticSuggestions={[
-          { label: "电影", path: "D:/Media/Movies" },
-          { label: "剧集", path: "D:/Media/Series" },
-        ]}
       />
       <button type="button">完成</button>
     </div>
@@ -38,10 +41,11 @@ test("path autocomplete supports keyboard selection with semantic listbox option
   const input = screen.getByLabelText("媒体目录");
 
   await input.click();
-  await expect.element(screen.getByRole("listbox")).toBeVisible();
+  await expect.element(screen.getByRole("option", { name: /剧集/u })).toBeVisible();
   await userEvent.keyboard("{ArrowDown}{Enter}");
   await expect.element(input).toHaveValue("D:/Media/Series");
   await input.fill("D:/Media");
+  await expect.element(screen.getByRole("option", { name: /电影/u })).toBeVisible();
   await userEvent.keyboard("{Tab}");
   expect(onCommit).not.toHaveBeenCalled();
   await userEvent.keyboard("{Enter}");

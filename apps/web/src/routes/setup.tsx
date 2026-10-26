@@ -18,7 +18,7 @@ export const SetupPage = () => {
   const [pending, setPending] = useState(false);
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-surface-canvas px-6 py-12 text-foreground">
+    <main className="flex min-h-full items-center justify-center bg-surface-canvas px-6 py-12 text-foreground">
       <Card className="w-full max-w-xl">
         <CardHeader>
           <CardTitle>{t.web.initAdminTitle}</CardTitle>

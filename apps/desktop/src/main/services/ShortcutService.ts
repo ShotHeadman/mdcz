@@ -1,9 +1,8 @@
-import type { Configuration } from "@main/services/config";
-import { loggerService } from "@main/services/LoggerService";
-import type { WindowService } from "@main/services/WindowService";
-import { IpcChannel } from "@mdcz/shared/IpcChannel";
-import type { RendererShortcutAction, ShortcutPayload } from "@mdcz/shared/ipcEvents";
-import type { BrowserWindow, Event, Input } from "electron";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import type { Configuration } from "@mdcz/shared/config";
+import type { DesktopShortcutAction } from "@mdcz/shared/desktopBridge";
+import type { Event, Input } from "electron";
+import type { WindowService } from "./WindowService";
 
 const DEFAULT_SHORTCUTS = {
   startOrStopScrape: "S",
@@ -31,8 +30,7 @@ interface ShortcutMatcher {
 }
 
 interface BoundRendererShortcut {
-  action: RendererShortcutAction;
-  shortcut: string;
+  action: DesktopShortcutAction;
   matcher: ShortcutMatcher;
 }
 
@@ -176,8 +174,6 @@ const matchesShortcut = (input: Input, matcher: ShortcutMatcher): boolean => {
 };
 
 export class ShortcutService {
-  private readonly logger = loggerService.getLogger("ShortcutService");
-
   private disposeRendererListener: (() => void) | null = null;
 
   initialize(windowService: WindowService, configuration: Configuration): void {
@@ -198,14 +194,12 @@ export class ShortcutService {
       }
       const matcher = parseShortcutMatcher(normalizedShortcut);
       if (!matcher) {
-        this.logger.warn(`Ignored invalid shortcut for ${binding.key}: ${configuredShortcut}`);
+        runtimeLoggerService
+          .getLogger("ShortcutService")
+          .warn(`Ignored invalid shortcut for ${binding.key}: ${configuredShortcut}`);
         continue;
       }
-      rendererShortcuts.push({
-        action: binding.action,
-        shortcut: normalizedShortcut,
-        matcher,
-      });
+      rendererShortcuts.push({ action: binding.action, matcher });
     }
 
     const listener = (_event: Event, input: Input) => {
@@ -217,10 +211,7 @@ export class ShortcutService {
         if (!matchesShortcut(input, binding.matcher)) {
           continue;
         }
-        this.emitShortcut(window, {
-          action: binding.action,
-          shortcut: binding.shortcut,
-        });
+        windowService.send("shortcut", binding.action);
         break;
       }
     };
@@ -237,12 +228,5 @@ export class ShortcutService {
   dispose(): void {
     this.disposeRendererListener?.();
     this.disposeRendererListener = null;
-  }
-
-  private emitShortcut(window: BrowserWindow, payload: ShortcutPayload): void {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) {
-      return;
-    }
-    window.webContents.send(IpcChannel.Event_Shortcut, payload);
   }
 }

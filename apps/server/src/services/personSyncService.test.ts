@@ -1,4 +1,5 @@
 import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import { PersonSyncLock } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import type { PersonSyncJobDto } from "@mdcz/shared/serverDtos";
@@ -67,6 +68,7 @@ const createSubject = (networkClient = new FakeNetworkClient()) => {
   const service = new PersonSyncService(config, taskEvents, {
     networkClient: networkClient as unknown as NetworkClient,
     actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
+    lock: new PersonSyncLock(),
   });
   const settled = async () => {
     await expect.poll(() => service.status()?.status).not.toBe("running");

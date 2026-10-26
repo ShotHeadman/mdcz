@@ -1,3 +1,4 @@
+import type { ActorAliasGroup } from "@mdcz/shared/actorAliases";
 import {
   type Configuration,
   NFO_FIELD_OPTIONS,
@@ -28,12 +29,15 @@ import {
   DialogTrigger,
   FormControl,
   Input,
+  Label,
   Switch,
 } from "@mdcz/ui";
 import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import type { FieldValues } from "react-hook-form";
-import { useFormContext, useWatch } from "react-hook-form";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { FieldError, FieldValues } from "react-hook-form";
+import { useFormContext, useFormState, useWatch } from "react-hook-form";
+import { toast } from "sonner";
+import { ChipArrayField } from "../config-form/ChipArrayField";
 import {
   BaseField,
   BoolField,
@@ -54,12 +58,7 @@ import { useT } from "../i18n";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
-import {
-  type SettingsIntegrationServices,
-  useSettingsInFlightSaves,
-  useSettingsNotifier,
-  useSettingsServices,
-} from "./SettingsServices";
+import { type SettingsIntegrationServices, useSettingsInFlightSaves, useSettingsServices } from "./SettingsServices";
 import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_KEYS, isRecord } from "./settingsRegistry";
@@ -100,6 +99,7 @@ const NAMING_SECTION_FIELD_KEYS = [
   "naming.actorNameMax",
   "naming.actorNameMore",
   "naming.actorFallbackToStudio",
+  "personSync.actorAliases",
   "naming.releaseRule",
   "naming.folderNameMax",
   "naming.fileNameMax",
@@ -183,8 +183,6 @@ export function PathsSection() {
       <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" />
       <PathFieldWrapper name="paths.actorPhotoFolder" isDirectory />
       <TextField name="paths.sceneImagesFolder" />
-      <PathFieldWrapper name="paths.outputSummaryPath" isDirectory />
-      <PathFieldWrapper name="paths.configDirectory" isDirectory />
     </>
   );
 }
@@ -205,6 +203,17 @@ export function FilenameFilteringSection() {
       <ChipArrayFieldWrapper name="scrape.filenameIgnoreTokens" />
       <ChipArrayFieldWrapper name="scrape.filenameBlacklistTokens" />
       <NumberField name="scrape.minVideoSizeMb" min={0} max={10240} />
+    </>
+  );
+}
+
+export function FilenameMarkersSection() {
+  return (
+    <>
+      <ChipArrayFieldWrapper name="scrape.filenameSubtitleTokens" />
+      <ChipArrayFieldWrapper name="scrape.filenameUmrTokens" />
+      <ChipArrayFieldWrapper name="scrape.filenameLeakTokens" />
+      <ChipArrayFieldWrapper name="scrape.filenameUncensoredTokens" />
     </>
   );
 }
@@ -307,7 +316,6 @@ export function AssetDownloadsSection() {
 function PosterBadgeImageOverridesField() {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [watermarkDirectoryPath, setWatermarkDirectoryPath] = useState("");
   const [openingDirectory, setOpeningDirectory] = useState(false);
@@ -319,8 +327,9 @@ function PosterBadgeImageOverridesField() {
       setWatermarkDirectoryPath(result.path);
       setDialogOpen(true);
     } catch (error) {
-      notifier.error(
+      toast.error(
         t.settings.badgeOverrides.createDirFailed(error instanceof Error ? error.message : t.common.unknownError),
+        { id: "watermark" },
       );
     }
   };
@@ -331,14 +340,15 @@ function PosterBadgeImageOverridesField() {
       const result = await services.openWatermarkDirectory();
       if (result?.message) {
         if (result.unsupported) {
-          notifier.info(result.message);
+          toast.info(result.message, { id: "watermark" });
         } else {
-          notifier.success(result.message);
+          toast.success(result.message, { id: "watermark" });
         }
       }
     } catch (error) {
-      notifier.error(
+      toast.error(
         t.settings.badgeOverrides.openDirFailed(error instanceof Error ? error.message : t.common.unknownError),
+        { id: "watermark" },
       );
     } finally {
       setOpeningDirectory(false);
@@ -536,6 +546,7 @@ export function NamingSection() {
       <NumberField name="naming.actorNameMax" min={1} max={20} />
       <TextField name="naming.actorNameMore" />
       <BoolField name="naming.actorFallbackToStudio" />
+      <ActorAliasesField />
       <TextField name="naming.releaseRule" />
       <EnumField name="naming.partStyle" options={toEnumOptions(t.settings.options.partStyle)} />
       <NumberField name="naming.folderNameMax" min={10} max={255} />
@@ -552,7 +563,6 @@ export function NamingSection() {
 export function TranslateSection() {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [testing, setTesting] = useState(false);
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
@@ -588,11 +598,13 @@ export function TranslateSection() {
     try {
       const result = await services.testTranslation(input);
       const text = t.settings.translationTest;
-      if (result.status === "ok") notifier.success(text.ok(result.sample ?? ""));
-      else if (result.status === "failed") notifier.error(`${text.failed}: ${result.error}`);
-      else notifier.error(text[result.status]);
+      if (result.status === "ok") toast.success(text.ok(result.sample ?? ""), { id: "translation-test" });
+      else if (result.status === "failed") toast.error(`${text.failed}: ${result.error}`, { id: "translation-test" });
+      else toast.error(text[result.status], { id: "translation-test" });
     } catch (error) {
-      notifier.error(t.settings.testFailed(error instanceof Error ? error.message : t.common.unknownError));
+      toast.error(t.settings.testFailed(error instanceof Error ? error.message : t.common.unknownError), {
+        id: "translation-test",
+      });
     } finally {
       setTesting(false);
     }
@@ -732,7 +744,6 @@ interface UiSectionProps {
 export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const [relaunching, setRelaunching] = useState(false);
   const form = useFormContext<FieldValues>();
   const currentUseCustomTitleBar = Boolean(useWatch({ control: form.control, name: "ui.useCustomTitleBar" }) ?? true);
@@ -741,17 +752,14 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
   const canRelaunch = titleBarChanged && inFlightSaves === 0;
 
   const handleRelaunch = async () => {
-    if (inFlightSaves > 0) {
-      notifier.info(t.settings.waitForAutosave);
-      return;
-    }
-
     setRelaunching(true);
     try {
       await services.relaunchApp();
     } catch (error) {
       setRelaunching(false);
-      notifier.error(t.settings.relaunchFailed(error instanceof Error ? error.message : t.common.unknownError));
+      toast.error(t.settings.relaunchFailed(error instanceof Error ? error.message : t.common.unknownError), {
+        id: "relaunch",
+      });
     }
   };
 
@@ -788,7 +796,6 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
 export function NotificationsSection() {
   const t = useT();
   const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
   const form = useFormContext<FieldValues>();
   const [testing, setTesting] = useState(false);
 
@@ -800,9 +807,9 @@ export function NotificationsSection() {
     setTesting(true);
     try {
       await testNotification(settings);
-      notifier.success(t.settings.integrations.testSent);
+      toast.success(t.settings.integrations.testSent, { id: "notification-test" });
     } catch (error) {
-      notifier.error(t.settings.testFailed(toErrorMessage(error)));
+      toast.error(t.settings.testFailed(toErrorMessage(error)), { id: "notification-test" });
     } finally {
       setTesting(false);
     }
@@ -858,6 +865,123 @@ export function QbittorrentSection({ status }: { status: ReactNode }) {
       <TextField name="automation.qbittorrent.category" />
       {status}
     </>
+  );
+}
+
+type ActorAliasGroupError = { name?: FieldError; aliases?: FieldError | Array<FieldError | undefined> };
+
+function ActorAliasesField() {
+  const t = useT();
+  const text = t.settings.actorAliases;
+  const form = useFormContext<FieldValues>();
+  const formState = useFormState({ control: form.control, name: "personSync.actorAliases" });
+  const idPrefix = useId();
+  // A new actor stays in the editor until it has a name and an alias, so an unfinished row is never saved.
+  const [draft, setDraft] = useState<ActorAliasGroup | null>(null);
+  // Groups carry no id. Keys that move with their row keep an alias still being typed with its own actor when a row
+  // above it is removed.
+  const rowKeys = useRef<number[]>([]);
+  const nextRowKey = useRef(0);
+  // The server reports a group's issue at its name or alias path, below this field's own error slot.
+  const groupErrors = (index: number) => {
+    const error = form.getFieldState(`personSync.actorAliases.${index}`, formState).error as
+      | ActorAliasGroupError
+      | undefined;
+    const aliases = Array.isArray(error?.aliases) ? error.aliases.find(Boolean) : error?.aliases;
+    return { name: error?.name?.message, aliases: aliases?.message };
+  };
+  return (
+    <BaseField name="personSync.actorAliases" layout="vertical" commitMode="debounce">
+      {(field) => {
+        const groups = Array.isArray(field.value) ? (field.value as ActorAliasGroup[]) : [];
+        // The draft renders as the last row, so its inputs stay mounted (and focused) when it is saved.
+        const rows = draft ? [...groups, draft] : groups;
+        while (rowKeys.current.length < rows.length) rowKeys.current.push(nextRowKey.current++);
+        rowKeys.current.length = rows.length;
+        const update = (index: number, next: Partial<ActorAliasGroup>) => {
+          if (!draft || index < groups.length) {
+            field.onChange(groups.map((group, at) => (at === index ? { ...group, ...next } : group)));
+            return;
+          }
+          const updated = { ...draft, ...next };
+          if (!updated.name.trim() || updated.aliases.length === 0) {
+            setDraft(updated);
+            return;
+          }
+          field.onChange([...groups, updated]);
+          setDraft(null);
+        };
+        const remove = (index: number) => {
+          rowKeys.current.splice(index, 1);
+          if (draft && index === groups.length) setDraft(null);
+          else field.onChange(groups.filter((_group, at) => at !== index));
+        };
+        return (
+          <div className="space-y-2">
+            {rows.map((group, index) => {
+              const rowId = `${idPrefix}-${rowKeys.current[index]}`;
+              const errors = groupErrors(index);
+              const error = errors.name ?? errors.aliases;
+              return (
+                <div
+                  key={rowId}
+                  className="grid items-start gap-x-3 gap-y-2 rounded-md border border-border/60 p-3 sm:grid-cols-[auto_minmax(0,1fr)]"
+                >
+                  <Label htmlFor={`${rowId}-name`} className="text-xs text-muted-foreground sm:h-8">
+                    {text.name}
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id={`${rowId}-name`}
+                      aria-invalid={Boolean(errors.name)}
+                      placeholder={text.namePlaceholder}
+                      className="h-8"
+                      value={group.name}
+                      onChange={(event) => update(index, { name: event.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={text.remove}
+                      onClick={() => remove(index)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <Label htmlFor={`${rowId}-aliases`} className="text-xs text-muted-foreground sm:h-8">
+                    {text.aliases}
+                  </Label>
+                  <ChipArrayField
+                    id={`${rowId}-aliases`}
+                    aria-invalid={Boolean(errors.aliases)}
+                    allowSpaces
+                    values={group.aliases}
+                    onChange={(aliases) => update(index, { aliases })}
+                    placeholder={text.aliasesPlaceholder}
+                    emptyText={null}
+                  />
+                  {error ? (
+                    <p className="text-xs text-destructive sm:col-start-2">{error}</p>
+                  ) : draft && index === groups.length ? (
+                    <p className="text-xs text-muted-foreground sm:col-start-2">{text.draftHint}</p>
+                  ) : null}
+                </div>
+              );
+            })}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={Boolean(draft)}
+              onClick={() => setDraft({ name: "", aliases: [] })}
+            >
+              {text.add}
+            </Button>
+          </div>
+        );
+      }}
+    </BaseField>
   );
 }
 

@@ -2,12 +2,10 @@ import {
   buildCommittedCrawlerData,
   buildMaintenanceApplyData,
   getDefaultMaintenanceFieldSelection,
-  resolveMaintenanceDiffImageCollection,
-  resolveMaintenanceDiffImageOption,
-  resolveMaintenanceDiffImageSrc,
 } from "@mdcz/runtime/maintenance";
 import { Website } from "@mdcz/shared/enums";
 import type { LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
+import { resolveMaintenanceDiffImageCollection, resolveMaintenanceDiffImageOption } from "@mdcz/views/maintenance";
 import { describe, expect, it } from "vitest";
 import {
   createMaintenanceCrawlerData,
@@ -339,7 +337,7 @@ describe("buildMaintenanceApplyData", () => {
   });
 });
 
-describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", () => {
+describe("resolveMaintenanceDiffImageOption", () => {
   it("resolves old vs new preview src and fallback lists for image diffs", () => {
     const posterDiff = createMaintenanceImageDiff({
       field: "poster_url",
@@ -356,8 +354,10 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
       },
     });
 
-    expect(resolveMaintenanceDiffImageSrc(posterDiff, "old")).toBe("/media/poster.jpg");
-    expect(resolveMaintenanceDiffImageSrc(posterDiff, "new")).toBe("https://example.com/new-poster.jpg");
+    expect(resolveMaintenanceDiffImageOption(posterDiff, "old")).toEqual({
+      src: "/media/poster.jpg",
+      fallbackSrcs: [],
+    });
     expect(resolveMaintenanceDiffImageOption(posterDiff, "new")).toEqual({
       src: "https://example.com/new-poster.jpg",
       fallbackSrcs: ["https://example.com/poster-alt.jpg"],
@@ -369,7 +369,6 @@ describe("resolveMaintenanceDiffImageSrc & resolveMaintenanceDiffImageOption", (
       newValue: "New",
       changed: true,
     });
-    expect(resolveMaintenanceDiffImageSrc(valueDiff, "old")).toBe("");
     expect(resolveMaintenanceDiffImageOption(valueDiff, "old")).toEqual({
       src: "",
       fallbackSrcs: [],

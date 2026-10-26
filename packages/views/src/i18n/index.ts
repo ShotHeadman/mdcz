@@ -1,9 +1,10 @@
+import type { UiLocale } from "@mdcz/shared/enums";
 import { create } from "zustand";
 import { en, type Messages } from "./en";
 import { zh } from "./zh";
 
 export type { Messages };
-export type Locale = "en-US" | "zh-CN";
+export type Locale = UiLocale;
 
 export const LOCALES: Locale[] = ["en-US", "zh-CN"];
 

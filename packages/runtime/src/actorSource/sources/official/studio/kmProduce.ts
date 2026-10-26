@@ -70,12 +70,12 @@ const parseKmDetail = (html: string, fallback: OfficialActressSummary): ActorPro
     aliases: toUniqueNames([profileRoot.find(".name p").first().text(), ...fallback.aliases]),
     birth_date: parseActorDate(fields.get("生年月日")),
     blood_type: parseActorBloodType(fields.get("血液型")),
-    description: buildFieldDescription(Array.from(fields.entries())),
     height_cm: parseActorMetricCm(fields.get("身長")),
     ...parseActorMeasurements(fields.get("スリーサイズ")),
     photo_url:
       toAbsoluteUrl(KM_PRODUCE_BASE_URL, profileRoot.find(".photo img.main").first().attr("src")) ?? fallback.photoUrl,
   };
+  profile.description = buildFieldDescription(profile, Array.from(fields.entries()));
 
   return hasActorProfileContent(profile) ? profile : null;
 };

@@ -1,0 +1,24 @@
+<div class="l-Model-Single_Top_Left c-Model-Single_Top_Left">
+  <img width="600" height="790" src="https://official.nax-pro.com/naxwp/wp-content/uploads/2021/04/ito.jpg" class="c-Model_Top-Img wp-post-image">
+</div>
+<div class="l-Model-Single_Top_Right c-Model-Single_Top_Right">
+  <div class="c-Model-Single_Top-Title_Wrap">
+    <h2 class="c-Model-Single_Top-Title u-Heading_Main">伊藤 舞雪</h2>
+    <div class="c-Model-Single_Top-Title-Kana u-Text-S">
+      いとうまゆき
+    </div>
+  </div>
+  <dl class="c-Model-Single_Top_ProfileList">
+    <dt class="c-Model-Single_Top_ProfileList_Title">生年月日</dt>
+    <dd class="c-Model-Single_Top_ProfileList_Item">
+      1997-11-30
+      （）
+    </dd>
+    <dt class="c-Model-Single_Top_ProfileList_Title">身長</dt>
+    <dd class="c-Model-Single_Top_ProfileList_Item">160<span>cm</span></dd>
+    <dt class="c-Model-Single_Top_ProfileList_Title">サイズ</dt>
+    <dd class="c-Model-Single_Top_ProfileList_Item">B: 88 (E)   W: 54   H: 89</dd>
+    <dt class="c-Model-Single_Top_ProfileList_Title">趣味</dt>
+    <dd class="c-Model-Single_Top_ProfileList_Item">映画・音楽鑑賞</dd>
+  </dl>
+</div>

@@ -4,6 +4,7 @@ import { Button, cn } from "@mdcz/ui";
 import { ChevronDown, LoaderCircle, Wrench, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { DisabledReason } from "../common";
 import { useT } from "../i18n";
 import { HEALTH_FIX_PRESETS, type LibraryFacetSelection } from "./healthIssues";
 
@@ -24,6 +25,8 @@ export interface LibraryBrowseControls {
   onHealthChange: (issue: LibraryHealthIssue | undefined) => void;
   onFacetChange: (facet: LibraryFacetSelection | undefined) => void;
   onViewChange: (view: "list" | "wall") => void;
+  /** Why the repair cannot start now, such as a running scrape. */
+  fixBlockedReason?: string;
   /** Starts a preview that repairs the movies matching `health`. */
   onFix: (issue: LibraryHealthIssue) => Promise<void>;
 }
@@ -162,24 +165,26 @@ export function LibraryBrowsePanel({
 
       {fixable ? (
         <div className="flex flex-wrap items-center gap-3 rounded-quiet-lg border border-border/40 bg-surface-low/60 px-4 py-3">
-          <Button
-            disabled={fixing}
-            onClick={async () => {
-              setFixing(true);
-              try {
-                await browse.onFix(health);
-              } catch (error) {
-                toast.error(toErrorMessage(error));
-              } finally {
-                setFixing(false);
-              }
-            }}
-            size="sm"
-            type="button"
-          >
-            {fixing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-            {t.library.health.fix(matchCount)}
-          </Button>
+          <DisabledReason reason={browse.fixBlockedReason}>
+            <Button
+              disabled={fixing || browse.fixBlockedReason !== undefined}
+              onClick={async () => {
+                setFixing(true);
+                try {
+                  await browse.onFix(health);
+                } catch (error) {
+                  toast.error(toErrorMessage(error), { id: "maintenance" });
+                } finally {
+                  setFixing(false);
+                }
+              }}
+              size="sm"
+              type="button"
+            >
+              {fixing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+              {t.library.health.fix(matchCount)}
+            </Button>
+          </DisabledReason>
           <span className="text-xs text-muted-foreground">{t.library.health.fixHint}</span>
         </div>
       ) : null}

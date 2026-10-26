@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@mdcz/ui";
 import { useT } from "../i18n";
+import { useSettingsInFlightSaves } from "./SettingsServices";
 
 export type SettingsProfileImportMode = "new" | "overwrite";
 
@@ -64,6 +65,7 @@ const PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME = "rounded-[var(--radius-quiet-ca
 export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
   const t = useT();
   const text = t.settings.profiles;
+  const saving = useSettingsInFlightSaves() > 0;
 
   return (
     <>
@@ -86,7 +88,12 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                 {t.common.cancel}
               </Button>
             </DialogClose>
-            <Button variant="destructive" className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME} onClick={props.onReset}>
+            <Button
+              variant="destructive"
+              className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
+              disabled={saving}
+              onClick={props.onReset}
+            >
               {text.confirmReset}
             </Button>
           </DialogFooter>
@@ -245,7 +252,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
                   placeholder={text.importNamePlaceholder}
                   className={PROFILE_DIALOG_INPUT_CLASS_NAME}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") {
+                    if (event.key === "Enter" && !saving) {
                       props.onImportProfile();
                     }
                   }}
@@ -284,7 +291,7 @@ export function SettingsProfileDialogs(props: SettingsProfileDialogsProps) {
             <Button
               className={PROFILE_DIALOG_PRIMARY_BUTTON_CLASS_NAME}
               onClick={props.onImportProfile}
-              disabled={!props.importFilePath || !props.importTargetName}
+              disabled={saving || !props.importFilePath || !props.importTargetName}
             >
               {text.importAction}
             </Button>

@@ -228,8 +228,9 @@ export class AvbaseActorSource implements BaseActorSource {
           Boolean(actor),
         );
         const sourceUrl = resolveUrl(this.baseUrl, toNonEmptyString(detail.primary?.url));
+        // Each actor is one stage name of the talent; its note describes the name ("AI加工"), so it is no alias.
         const aliases = toUniqueActorNames(
-          actors.flatMap((actor) => [actor.ruby ?? undefined, actor.note ?? undefined]),
+          actors.flatMap((actor) => [actor.name ?? undefined, actor.ruby ?? undefined]),
           toNonEmptyString,
         ).filter((alias) => normalizeActorName(alias) !== normalizeActorName((matched.name ?? query.name).trim()));
 

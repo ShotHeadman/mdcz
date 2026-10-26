@@ -1,10 +1,10 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { RuntimeNetworkClient } from "../network";
-import type { RuntimeLogger } from "../shared";
 import {
   buildMediaServerHeaders,
   buildMediaServerUrl,
+  deleteMediaServerPrimaryImage,
   fetchMediaServerMetadataEditorInfo,
   fetchMediaServerPersons,
   fetchMediaServerResolvedUserId,
@@ -12,9 +12,6 @@ import {
   type MediaServerHeadersInit,
   type MediaServerItemDetail,
   type MediaServerMode,
-  normalizeMediaServerBaseUrl,
-  parseMediaServerMode,
-  refreshMediaServerPerson,
   updateMediaServerItem,
   uploadMediaServerPrimaryImage,
 } from "./client";
@@ -28,40 +25,21 @@ import {
 } from "./common";
 import { runMediaServerConnectionCheck } from "./connectionCheck";
 import { type MediaServerErrorMapping, MediaServerServiceError, toMediaServerServiceError } from "./errors";
-import { type RuntimeInfoActorSourceProvider, runMediaServerInfoSync } from "./infoSync";
-import { type RuntimePhotoActorSourceProvider, runMediaServerPhotoSync } from "./photoSync";
+import {
+  findPersonNamed,
+  type MediaServerActorServiceDependencies,
+  type MediaServerPerson,
+  type MediaServerPersonTarget,
+  type PersonSyncKind,
+  runMediaServerPersonSync,
+} from "./personSync";
 import type { PlannedPersonSyncState } from "./planner";
 
-export type JellyfinMode = MediaServerMode;
-export type JellyfinBatchResult = PersonSyncResult;
-export type JellyfinItemDetail = MediaServerItemDetail;
-
-export interface JellyfinPerson {
-  Id: string;
-  Name: string;
-  Overview?: string;
-  ImageTags?: Record<string, string>;
-}
+export type JellyfinPerson = MediaServerPerson;
 
 export class JellyfinServiceError extends MediaServerServiceError {}
 
-export interface MediaServerSignalService {
-  resetProgress(): void;
-  setProgress(value: number, current?: number, total?: number): void;
-  showLogText(message: string, level?: "info" | "warn" | "error"): void;
-}
-
-export interface JellyfinActorServiceDependencies {
-  signalService: MediaServerSignalService;
-  networkClient: RuntimeNetworkClient;
-  actorSourceProvider: RuntimeInfoActorSourceProvider & RuntimePhotoActorSourceProvider;
-  logger: RuntimeLogger;
-}
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-export const normalizeJellyfinBaseUrl = normalizeMediaServerBaseUrl;
-export const parseJellyfinMode = parseMediaServerMode;
 
 export const isJellyfinUuid = (value: string): boolean => UUID_PATTERN.test(value.trim());
 
@@ -131,7 +109,7 @@ export const resolveJellyfinUserId = async (
 
 export const buildJellyfinPersonUpdatePayload = (
   person: JellyfinPerson,
-  detail: JellyfinItemDetail,
+  detail: MediaServerItemDetail,
   synced: PlannedPersonSyncState,
   lockOverview: boolean,
 ): Record<string, unknown> => {
@@ -177,6 +155,7 @@ export const fetchJellyfinPersons = async (
     limit?: number;
     fields?: string[];
     userId?: string;
+    searchTerm?: string;
   } = {},
 ): Promise<JellyfinPerson[]> => {
   const userId = options.userId ?? getConfiguredJellyfinUserId(configuration);
@@ -189,6 +168,7 @@ export const fetchJellyfinPersons = async (
       query: {
         userId,
         personTypes: "Actor",
+        searchTerm: options.searchTerm,
         Limit: options.limit !== undefined ? String(options.limit) : undefined,
         Fields: options.fields?.join(","),
       },
@@ -199,16 +179,10 @@ export const fetchJellyfinPersons = async (
         return response.Items;
       },
       parsePerson: (item) => {
-        if (!isRecord(item)) {
-          return null;
-        }
-
+        if (!isRecord(item)) return null;
         const id = toStringValue(item.Id);
         const name = toStringValue(item.Name);
-        if (!id || !name) {
-          return null;
-        }
-
+        if (!id || !name) return null;
         return {
           Id: id,
           Name: name,
@@ -240,7 +214,7 @@ export const fetchJellyfinPersonDetail = async (
   configuration: Configuration,
   person: JellyfinPerson,
   options: { userId?: string } = {},
-): Promise<JellyfinItemDetail> => {
+): Promise<MediaServerItemDetail> => {
   const userId = options.userId ?? (await resolveJellyfinUserId(networkClient, configuration));
 
   return await fetchMediaServerUserScopedItemDetail(
@@ -277,9 +251,6 @@ export const fetchJellyfinPersonDetail = async (
   );
 };
 
-export const hasJellyfinPrimaryImage = (person: JellyfinPerson): boolean =>
-  typeof person.ImageTags?.Primary === "string" && person.ImageTags.Primary.trim().length > 0;
-
 export const fetchJellyfinMetadataEditorInfo = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
@@ -312,12 +283,12 @@ export const fetchJellyfinMetadataEditorInfo = async (
     },
   );
 
-export const refreshJellyfinPerson = async (
+export const deleteJellyfinPrimaryImage = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
   personId: string,
 ): Promise<void> => {
-  await refreshMediaServerPerson(
+  await deleteMediaServerPrimaryImage(
     {
       networkClient,
       configuration,
@@ -327,17 +298,15 @@ export const refreshJellyfinPerson = async (
     },
     {
       statusMappings: {
-        400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin rejected person refresh request" },
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin credentials are invalid; cannot refresh person" },
+        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin credentials are invalid; cannot remove person photo" },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack person refresh permissions",
+          message: "Current Jellyfin credentials lack person photo write permissions",
         },
-        404: { code: "JELLYFIN_NOT_FOUND", message: "Jellyfin cannot refresh specified person" },
       },
       fallback: {
-        code: "JELLYFIN_REFRESH_FAILED",
-        message: "Failed to refresh Jellyfin person",
+        code: "JELLYFIN_WRITE_FAILED",
+        message: "Failed to remove Jellyfin person photo",
       },
     },
   );
@@ -347,7 +316,7 @@ export const updateJellyfinPersonInfo = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
   person: JellyfinPerson,
-  detail: JellyfinItemDetail,
+  detail: MediaServerItemDetail,
   synced: PlannedPersonSyncState,
   options: { lockOverview?: boolean } = {},
 ): Promise<void> => {
@@ -422,11 +391,60 @@ interface PublicSystemInfo {
   Version?: string;
 }
 
+// Jellyfin searches these providers by bare name for every person its scan creates, which matches JAV actors to
+// unrelated people. It has no per-library switch for people; only the server-wide Person metadata options work.
+const PERSON_NAME_SEARCH_PROVIDERS = ["TheMovieDb", "The Open Movie Database"];
+
+interface JellyfinMetadataOptions {
+  ItemType: string;
+  DisabledMetadataFetchers?: string[];
+  DisabledImageFetchers?: string[];
+}
+
+type JellyfinServerConfiguration = Record<string, unknown> & { MetadataOptions?: JellyfinMetadataOptions[] };
+
+const fetchJellyfinServerConfiguration = async (
+  networkClient: RuntimeNetworkClient,
+  configuration: Configuration,
+): Promise<JellyfinServerConfiguration> =>
+  await networkClient.getJson<JellyfinServerConfiguration>(buildJellyfinUrl(configuration, "/System/Configuration"), {
+    headers: buildJellyfinHeaders(configuration, { accept: "application/json" }),
+  });
+
+const findPersonMetadataOptions = (serverConfiguration: JellyfinServerConfiguration) =>
+  serverConfiguration.MetadataOptions?.find((options) => options.ItemType === "Person");
+
+/** Turns off the name searches for people on the whole server, so new actors keep only what MDCz writes. */
+export const stopJellyfinPersonNameMatching = async (
+  networkClient: RuntimeNetworkClient,
+  configuration: Configuration,
+): Promise<void> => {
+  const serverConfiguration = await fetchJellyfinServerConfiguration(networkClient, configuration);
+  const current = findPersonMetadataOptions(serverConfiguration);
+  const disable = (names: string[] = []) => [...new Set([...names, ...PERSON_NAME_SEARCH_PROVIDERS])];
+  const person = {
+    MetadataFetcherOrder: [],
+    ImageFetcherOrder: [],
+    DisabledMetadataSavers: [],
+    LocalMetadataReaderOrder: [],
+    ...current,
+    ItemType: "Person",
+    DisabledMetadataFetchers: disable(current?.DisabledMetadataFetchers),
+    DisabledImageFetchers: disable(current?.DisabledImageFetchers),
+  };
+  const metadataOptions = (serverConfiguration.MetadataOptions ?? []).filter((options) => options !== current);
+  await networkClient.postText(
+    buildJellyfinUrl(configuration, "/System/Configuration"),
+    JSON.stringify({ ...serverConfiguration, MetadataOptions: [...metadataOptions, person] }),
+    { headers: buildJellyfinHeaders(configuration, { "content-type": "application/json" }) },
+  );
+};
+
 export const checkJellyfinConnection = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
-): Promise<MediaServerConnectionCheckResult> =>
-  await runMediaServerConnectionCheck({
+): Promise<MediaServerConnectionCheckResult> => {
+  const result = await runMediaServerConnectionCheck({
     includeAdminKeyStep: false,
     unreachableCode: "JELLYFIN_UNREACHABLE",
     authFailedCode: "JELLYFIN_AUTH_FAILED",
@@ -457,82 +475,77 @@ export const checkJellyfinConnection = async (
       await fetchJellyfinMetadataEditorInfo(networkClient, configuration, personId);
     },
   });
+  if (!result.success) return result;
+  // The connection works either way; when the server configuration can't be read, its name search stays unknown.
+  const serverConfiguration = await fetchJellyfinServerConfiguration(networkClient, configuration).catch(() => null);
+  if (!serverConfiguration) return result;
+  const person = findPersonMetadataOptions(serverConfiguration);
+  const matchesPeopleByName = PERSON_NAME_SEARCH_PROVIDERS.some(
+    (name) => !person?.DisabledMetadataFetchers?.includes(name) || !person.DisabledImageFetchers?.includes(name),
+  );
+  return { ...result, matchesPeopleByName };
+};
 
-export class JellyfinActorInfoService {
-  private readonly networkClient: RuntimeNetworkClient;
-
-  constructor(private readonly deps: JellyfinActorServiceDependencies) {
-    this.networkClient = deps.networkClient;
-  }
-
-  async run(configuration: Configuration, mode: JellyfinMode): Promise<JellyfinBatchResult> {
-    const resolvedUserId = await resolveJellyfinUserId(this.networkClient, configuration);
-    return await runMediaServerInfoSync({
-      configuration,
-      mode,
-      serviceName: "Jellyfin",
-      signalService: this.deps.signalService,
-      actorSourceProvider: this.deps.actorSourceProvider,
-      logger: this.deps.logger,
-      fetchPersons: async () =>
-        await fetchJellyfinPersons(this.networkClient, configuration, {
-          fields: ["Overview"],
-          userId: resolvedUserId,
+/**
+ * The user ID is resolved on the first detail read, so photo-only syncs never ask the server for its users; a failed
+ * resolve is retried on the next read instead of failing every later one.
+ */
+export const createJellyfinPersonTarget = (
+  deps: MediaServerActorServiceDependencies,
+  configuration: Configuration,
+  userId?: string,
+): MediaServerPersonTarget<JellyfinPerson> => {
+  let resolvedUserId: Promise<string> | undefined;
+  return {
+    ...deps,
+    serviceName: "Jellyfin",
+    configuration,
+    findPerson: async (name) =>
+      findPersonNamed(
+        await fetchJellyfinPersons(deps.networkClient, configuration, {
+          searchTerm: name,
         }),
-      getPersonName: (person) => person.Name,
-      getPersonId: (person) => person.Id,
-      fetchPersonDetail: async (person) =>
-        await fetchJellyfinPersonDetail(this.networkClient, configuration, person, {
-          userId: resolvedUserId,
-        }),
-      buildExistingState: (person, detail) => ({
-        overview: toStringValue(detail.Overview) ?? person.Overview,
-        tags: toStringArray(detail.Tags),
-        taglines: toStringArray(detail.Taglines),
-        premiereDate: toStringValue(detail.PremiereDate),
-        productionYear: typeof detail.ProductionYear === "number" ? detail.ProductionYear : undefined,
-        productionLocations: toStringArray(detail.ProductionLocations),
+        name,
+      ),
+    fetchPersonDetail: async (person) => {
+      resolvedUserId ??= userId
+        ? Promise.resolve(userId)
+        : resolveJellyfinUserId(deps.networkClient, configuration).catch((error: unknown) => {
+            resolvedUserId = undefined;
+            throw error;
+          });
+      return await fetchJellyfinPersonDetail(deps.networkClient, configuration, person, {
+        userId: await resolvedUserId,
+      });
+    },
+    updatePersonInfo: async (person, detail, synced) =>
+      await updateJellyfinPersonInfo(deps.networkClient, configuration, person, detail, synced, {
+        lockOverview: configuration.jellyfin.lockOverviewAfterSync,
       }),
-      updatePersonInfo: async (person, detail, synced) => {
-        await updateJellyfinPersonInfo(this.networkClient, configuration, person, detail, synced, {
-          lockOverview: configuration.jellyfin.lockOverviewAfterSync,
-        });
-      },
-      shouldRefreshPerson: configuration.jellyfin.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshJellyfinPerson(this.networkClient, configuration, personId);
-      },
-    });
-  }
-}
+    uploadPrimaryImage: async (personId, bytes, contentType) =>
+      await uploadJellyfinPrimaryImage(deps.networkClient, configuration, personId, bytes, contentType),
+    deletePrimaryImage: async (personId) =>
+      await deleteJellyfinPrimaryImage(deps.networkClient, configuration, personId),
+  };
+};
 
-export class JellyfinActorPhotoService {
-  private readonly networkClient: RuntimeNetworkClient;
-
-  constructor(private readonly deps: JellyfinActorServiceDependencies) {
-    this.networkClient = deps.networkClient;
+export const syncJellyfinPersons = async (
+  deps: MediaServerActorServiceDependencies,
+  configuration: Configuration,
+  kind: PersonSyncKind,
+  mode: MediaServerMode,
+): Promise<PersonSyncResult> => {
+  if (kind === "photo") {
+    return await runMediaServerPersonSync(
+      createJellyfinPersonTarget(deps, configuration),
+      { photo: mode },
+      await fetchJellyfinPersons(deps.networkClient, configuration),
+    );
   }
-
-  async run(configuration: Configuration, mode: JellyfinMode): Promise<JellyfinBatchResult> {
-    return await runMediaServerPhotoSync({
-      configuration,
-      mode,
-      serviceName: "Jellyfin",
-      signalService: this.deps.signalService,
-      networkClient: this.networkClient,
-      actorSourceProvider: this.deps.actorSourceProvider,
-      logger: this.deps.logger,
-      fetchPersons: async () => await fetchJellyfinPersons(this.networkClient, configuration),
-      getPersonName: (person) => person.Name,
-      getPersonId: (person) => person.Id,
-      hasPrimaryImage: hasJellyfinPrimaryImage,
-      uploadPrimaryImage: async (personId, bytes, contentType) => {
-        await uploadJellyfinPrimaryImage(this.networkClient, configuration, personId, bytes, contentType);
-      },
-      shouldRefreshPerson: configuration.jellyfin.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshJellyfinPerson(this.networkClient, configuration, personId);
-      },
-    });
-  }
-}
+  const userId = await resolveJellyfinUserId(deps.networkClient, configuration);
+  return await runMediaServerPersonSync(
+    createJellyfinPersonTarget(deps, configuration, userId),
+    { info: mode },
+    await fetchJellyfinPersons(deps.networkClient, configuration, { fields: ["Overview"], userId }),
+  );
+};

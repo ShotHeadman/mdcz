@@ -101,7 +101,7 @@ describe("parseNfo", () => {
         actor_profiles: [
           {
             name: "Actor A",
-            photo_url: "actor-a.jpg",
+            photo_url: "https://img.example.com/actor-a.jpg",
           },
         ],
         content_type: "VR",
@@ -126,7 +126,7 @@ describe("parseNfo", () => {
     const parsed = parseNfoSnapshot(xml).crawlerData;
     expect(parsed.actor_profiles?.[0]).toMatchObject({
       name: "Actor A",
-      photo_url: "actor-a.jpg",
+      photo_url: "https://img.example.com/actor-a.jpg",
     });
     expect(parsed.publisher).toBe("PRESTIGE");
     expect(parsed.content_type).toBe("VR");
@@ -218,7 +218,7 @@ describe("parseNfo", () => {
       title: "Source Title",
       number: "ABC-123",
       actors: ["Actor A"],
-      actor_profiles: [{ name: "Actor A", photo_url: ".actors/Actor A.jpg" }],
+      actor_profiles: [{ name: "Actor A", photo_url: "https://img.example.com/actor-a.jpg" }],
       genres: ["Pantyhose/Tights", "Drama"],
       series: "Series",
       director: "Site Director",
@@ -232,7 +232,7 @@ describe("parseNfo", () => {
     // Emby's rewrite: actor thumbs dropped, <set><name>, CDATA, and "A/B" genres split and moved.
     const published = generator.buildXml(site, options);
     const rewritten = published
-      .replace(/<thumb>\.actors\/Actor A\.jpg<\/thumb>/u, "")
+      .replace("<thumb>https://img.example.com/actor-a.jpg</thumb>", "")
       .replace("<set>Series</set>", "<set><name>Series</name></set>")
       .replace(/<plot>([\s\S]*?)<\/plot>/u, "<plot><![CDATA[Line one.\nLine two.]]></plot>")
       .replace(

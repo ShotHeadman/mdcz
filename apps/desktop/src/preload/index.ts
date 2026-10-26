@@ -1,45 +1,19 @@
-import type { IpcChannel } from "@mdcz/shared/IpcChannel";
-import { requireIpcChannel } from "@mdcz/shared/IpcChannel";
-import type { EventChannel, EventPayloadByChannel } from "@mdcz/shared/ipcEvents";
-import { isEventChannel } from "@mdcz/shared/ipcEvents";
+import { CUSTOM_TITLE_BAR_ARG, DESKTOP_BRIDGE_CALLS, type DesktopBridge } from "@mdcz/shared/desktopBridge";
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
 
-type Unsubscribe = () => void;
+const calls = Object.fromEntries(
+  DESKTOP_BRIDGE_CALLS.map((name) => [name, (...args: unknown[]) => ipcRenderer.invoke(`desktop:${name}`, ...args)]),
+);
 
-export const invokeIpc = (channel: string, payload?: unknown): Promise<unknown> =>
-  ipcRenderer.invoke(requireIpcChannel(channel), payload);
-
-const listen = <TChannel extends EventChannel>(
-  channel: TChannel,
-  callback: (payload: EventPayloadByChannel[TChannel]) => void,
-): Unsubscribe => {
-  const listener = (_event: IpcRendererEvent, payload: EventPayloadByChannel[TChannel]): void => {
-    try {
-      callback(payload);
-    } catch (error) {
-      console.error("listener callback failed", {
-        channel,
-        error,
-      });
-    }
-  };
-
-  ipcRenderer.on(channel, listener);
-
-  return () => {
-    ipcRenderer.removeListener(channel, listener);
-  };
+const bridge: DesktopBridge = {
+  ...(calls as Omit<DesktopBridge, "on" | "customTitleBar">),
+  customTitleBar: process.argv.includes(CUSTOM_TITLE_BAR_ARG),
+  on: (event, listener) => {
+    const channel = `desktop:${event}`;
+    const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload as never);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
 };
 
-contextBridge.exposeInMainWorld("api", {
-  invoke: (channel: IpcChannel, payload?: unknown): Promise<unknown> => invokeIpc(channel, payload),
-  on: <TChannel extends EventChannel>(
-    channel: TChannel,
-    callback: (payload: EventPayloadByChannel[TChannel]) => void,
-  ): Unsubscribe => {
-    if (!isEventChannel(channel)) {
-      throw new Error(`Unsupported event channel: ${channel}`);
-    }
-    return listen(channel, callback);
-  },
-});
+contextBridge.exposeInMainWorld("mdczDesktop", bridge);

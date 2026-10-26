@@ -1,4 +1,4 @@
-import { buildComputedConfiguration } from "@main/services/config/computed";
+import { buildComputedConfiguration } from "@mdcz/runtime/config";
 import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
 import { assertTargetLayout } from "@mdcz/runtime/scrape/FileOrganizer";
 import { configurationSchema } from "@mdcz/shared/config";

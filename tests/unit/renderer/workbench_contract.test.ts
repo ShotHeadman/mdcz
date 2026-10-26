@@ -1,14 +1,14 @@
+import type { Configuration } from "@mdcz/shared/config";
 import { resolveMediaCandidateScanPlan } from "@mdcz/shared/mediaCandidate";
 import type { MediaCandidate } from "@mdcz/shared/types";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
-import type { ConfigOutput } from "@renderer/client/types";
 import { beforeEach, describe, expect, it } from "vitest";
 
 const rootDir = process.platform === "win32" ? "D:\\media" : "/media";
 const successDir = process.platform === "win32" ? "D:\\media\\JAV_output" : "/media/JAV_output";
 
-const createConfig = (defaultScanExcludeDirs = ["JAV_output"]): ConfigOutput =>
-  ({ paths: { defaultScanExcludeDirs } }) as unknown as ConfigOutput;
+const createConfig = (defaultScanExcludeDirs = ["JAV_output"]): Configuration =>
+  ({ paths: { defaultScanExcludeDirs } }) as unknown as Configuration;
 
 const createCandidate = (path: string): MediaCandidate => ({
   path,

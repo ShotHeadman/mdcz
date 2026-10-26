@@ -1,6 +1,6 @@
 import { cn, Input } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
-import { type ComponentProps, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ComponentProps, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n";
 
 const SUGGEST_DELAY_MS = 180;
@@ -29,7 +29,6 @@ export interface PathAutocompleteInputProps
   readOnly?: boolean;
   className?: string;
   inputClassName?: string;
-  staticSuggestions?: PathAutocompleteSuggestion[];
   loadSuggestions?: (value: string) => Promise<PathAutocompleteResult>;
 }
 
@@ -66,7 +65,6 @@ export function PathAutocompleteInput({
   readOnly,
   className,
   inputClassName,
-  staticSuggestions = [],
   loadSuggestions,
   ...inputProps
 }: PathAutocompleteInputProps) {
@@ -82,22 +80,7 @@ export function PathAutocompleteInput({
   const [activeIndex, setActiveIndex] = useState(0);
   const canSuggest = Boolean(onChange && !readOnly && !inputProps.disabled);
 
-  const fallbackEntries = useMemo(() => {
-    const needle = value.trim().toLocaleLowerCase();
-    return dedupePathAutocompleteSuggestions(
-      staticSuggestions.filter((suggestion) => {
-        if (!needle) {
-          return true;
-        }
-        return (
-          suggestion.path.toLocaleLowerCase().includes(needle) || suggestion.label.toLocaleLowerCase().includes(needle)
-        );
-      }),
-    );
-  }, [staticSuggestions, value]);
-
-  const visibleEntries = loadSuggestions ? entries : fallbackEntries;
-  const showPanel = open && canSuggest && (loading || Boolean(error) || visibleEntries.length > 0 || loaded);
+  const showPanel = open && canSuggest && (loading || Boolean(error) || entries.length > 0 || loaded);
 
   useEffect(() => {
     if (!open || !canSuggest || !loadSuggestions) {
@@ -171,13 +154,13 @@ export function PathAutocompleteInput({
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((index) => Math.min(index + 1, Math.max(visibleEntries.length - 1, 0)));
+      setActiveIndex((index) => Math.min(index + 1, Math.max(entries.length - 1, 0)));
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((index) => Math.max(index - 1, 0));
-    } else if (event.key === "Enter" && visibleEntries[activeIndex]) {
+    } else if (event.key === "Enter" && entries[activeIndex]) {
       event.preventDefault();
-      selectEntry(visibleEntries[activeIndex]);
+      selectEntry(entries[activeIndex]);
     } else if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
@@ -229,11 +212,11 @@ export function PathAutocompleteInput({
             </div>
           ) : null}
           {!loading && error ? <div className="px-3 py-2 text-xs text-muted-foreground">{error}</div> : null}
-          {!loading && !error && visibleEntries.length === 0 ? (
+          {!loading && !error && entries.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">{t.path.noSubdirectories}</div>
           ) : null}
           {!loading && !error
-            ? visibleEntries.map((entry, index) => (
+            ? entries.map((entry, index) => (
                 <button
                   key={entry.path}
                   ref={(node) => {

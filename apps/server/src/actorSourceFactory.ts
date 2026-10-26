@@ -8,7 +8,7 @@ import {
   LocalActorSource,
   OfficialActorSource,
 } from "@mdcz/runtime/actorSource";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import type { CookieResolver, NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { ServerConfigService } from "./services/configService";
@@ -20,6 +20,7 @@ export const createServerActorSourceProvider = (
   networkClient: NetworkClient,
   actorImageService: ActorImageService,
   listLibraryDirectories?: () => Promise<string[]>,
+  avjohoCookieResolver?: CookieResolver,
 ): ActorSourceProvider =>
   new ActorSourceProvider({
     logger: runtimeLoggerService.getLogger("ActorSource"),
@@ -27,8 +28,8 @@ export const createServerActorSourceProvider = (
       new LocalActorSource({ actorImageService, listLibraryDirectories }),
       new OfficialActorSource({ networkClient }),
       new GfriendsActorSource({ networkClient }),
-      // Headless host: no Electron cookie window. Avjoho still has its session challenge path.
-      new AvjohoActorSource({ networkClient }),
+      // Only desktop can pass Avjoho's browser check in a hidden window; elsewhere its session challenge path runs.
+      new AvjohoActorSource({ networkClient, cookieResolver: avjohoCookieResolver }),
       new AvbaseActorSource({ networkClient }),
     ]),
   });

@@ -1,4 +1,5 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
+import type { DesktopBridge } from "@mdcz/shared/desktopBridge";
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import type { MediaCandidate } from "@mdcz/shared/types";
 import {
@@ -12,22 +13,16 @@ import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
-import { ipc } from "@renderer/client/ipc";
-import { ShortcutHandler } from "@renderer/components/ShortcutHandler";
 import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
+import { DesktopChrome } from "../../../apps/web/src/components/DesktopChrome";
 
 const shortcutRoute = vi.hoisted(() => ({ pathname: "/workbench" }));
 vi.mock("@tanstack/react-router", () => ({
   useLocation: () => shortcutRoute,
-  useNavigate: () => vi.fn(),
 }));
-vi.mock("@renderer/api/manual", () => ({ retryScrapeSelection: vi.fn(), stopScrape: vi.fn() }));
-vi.mock("@renderer/utils/playback", () => ({ playMediaPath: vi.fn() }));
-vi.mock("@renderer/client/ipc", () => ({
-  ipc: { on: { shortcut: vi.fn(() => vi.fn()) } },
-}));
+const desktop = { on: vi.fn(() => vi.fn()) } as unknown as DesktopBridge;
 
 const rootDir = "/media";
 const library: MediaLibraryDto = {
@@ -50,8 +45,11 @@ test("submits directories without scanning and keeps explicit previews cancellab
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
   useScrapeStore.setState(useScrapeStore.getInitialState(), true);
   useUIStore.setState(useUIStore.getInitialState(), true);
-  const shortcuts = await render(<ShortcutHandler />);
-  const triggerStart = () => vi.mocked(ipc.on.shortcut).mock.calls.at(-1)?.[0]({ action: "start-or-stop-scrape" });
+  const shortcuts = await render(<DesktopChrome desktop={desktop} />);
+  const triggerStart = () =>
+    (vi.mocked(desktop.on).mock.calls.findLast(([event]) => event === "shortcut")?.[1] as (action: string) => void)(
+      "start-or-stop-scrape",
+    );
   const config = { ...defaultConfiguration, paths: { ...defaultConfiguration.paths, defaultScanExcludeDirs: [] } };
   const requests: Array<{ resolve: (result: CandidateScanResult) => void; reject: (error: Error) => void }> = [];
   const scanCandidates = vi.fn(
@@ -61,8 +59,6 @@ test("submits directories without scanning and keeps explicit previews cancellab
     requests.at(-1)?.reject(new Error("cancelled"));
   });
   const port: WorkbenchSetupPort = {
-    isServer: true,
-    browseDirectory: async () => null,
     scanCandidates,
     cancelCandidates,
   };
@@ -107,11 +103,11 @@ test("submits directories without scanning and keeps explicit previews cancellab
   await expect.element(start).toBeEnabled();
   expect(onStart).not.toHaveBeenCalled();
   shortcutRoute.pathname = "/overview";
-  await shortcuts.rerender(<ShortcutHandler />);
+  await shortcuts.rerender(<DesktopChrome desktop={desktop} />);
   triggerStart();
   expect(onStartDirectory).toHaveBeenCalledTimes(2);
   shortcutRoute.pathname = "/workbench";
-  await shortcuts.rerender(<ShortcutHandler />);
+  await shortcuts.rerender(<DesktopChrome desktop={desktop} />);
   onStartDirectory.mockRejectedValueOnce(new Error("目录不存在或无法访问"));
   await startWholeDirectory();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("目录不存在或无法访问");
@@ -250,9 +246,7 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       supportedExtensions={[".mp4"]}
       presetId="import_local"
       primaryDisabled
-      isServer
       formatBytes={() => "0 B"}
-      onBrowseScanDir={() => undefined}
       onRefreshScan={() => undefined}
       onPresetChange={() => undefined}
       onStart={() => undefined}

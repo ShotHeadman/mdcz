@@ -76,12 +76,6 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["actor", "photo"],
   },
   "paths.sceneImagesFolder": { label: "Scene image folder name" },
-  "paths.outputSummaryPath": {
-    label: "Overview statistics directory",
-    description: "Leave empty to use the output directory.",
-    aliases: ["summary", "overview"],
-  },
-  "paths.configDirectory": { label: "Configuration directory", aliases: ["config", "profile"] },
   "scrape.sites": {
     label: "Enabled sites & priority",
     description:
@@ -122,6 +116,25 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Auto-scan blacklist words",
     description:
       "Files and folders (with everything inside) whose names contain these words are excluded from automatic scans; matching is case-insensitive. Add with Enter, comma or space.",
+  },
+  "scrape.filenameSubtitleTokens": {
+    label: "Chinese subtitle words",
+    description:
+      "A file whose name contains one of these words has Chinese subtitles. Built in: C, CH, CHS, UC, 中文, 中字, 中文字幕 and more. Add with Enter, comma or space.",
+  },
+  "scrape.filenameUmrTokens": {
+    label: "Cracked (UMR) words",
+    // A non-breaking hyphen keeps the built-in word C-U on one line.
+    description:
+      "A file whose name contains one of these words is cracked uncensored, e.g. LTX or restored. Built in: UMR, 破解, C\u2011U.",
+  },
+  "scrape.filenameLeakTokens": {
+    label: "Leak words",
+    description: "A file whose name contains one of these words is a leaked uncensored release. None built in.",
+  },
+  "scrape.filenameUncensoredTokens": {
+    label: "Uncensored words",
+    description: "A file whose name contains one of these words is uncensored. Built in: U, UC.",
   },
   "scrape.minVideoSizeMb": {
     label: "Minimum video size (MB)",
@@ -349,13 +362,35 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "When on, {actor} falls back to the studio or seller name if there are no actors; use {actorFallbackPrefix}{actor} in templates to show the source.",
   },
+  "personSync.actorAliases": {
+    label: "Actor aliases",
+    description:
+      "Unifies the spellings sites use for one actor under a canonical name. Later scrapes write the canonical name into actor lists, the {actor} path and NFOs, and keep the other spellings as person aliases for photo and biography lookups; existing movies are not renamed.",
+    aliases: ["alias", "actor name", "rename"],
+  },
   "naming.releaseRule": { label: "Release date format" },
   "naming.folderNameMax": { label: "Maximum folder name length" },
   "naming.fileNameMax": { label: "Maximum file name length" },
-  "naming.cnwordStyle": { label: "Chinese subtitle marker" },
-  "naming.umrStyle": { label: "UMR marker" },
-  "naming.leakStyle": { label: "Leak marker" },
-  "naming.uncensoredStyle": { label: "Uncensored marker" },
+  "naming.cnwordStyle": {
+    label: "Chinese subtitle marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
+  "naming.umrStyle": {
+    label: "UMR marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
+  "naming.leakStyle": {
+    label: "Leak marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
+  "naming.uncensoredStyle": {
+    label: "Uncensored marker",
+    description:
+      "Suffix appended when organizing; the words that recognize file names are under Scrape › File name markers.",
+  },
   "naming.censoredStyle": { label: "Censored marker" },
   "naming.partStyle": {
     label: "Part style",
@@ -421,15 +456,20 @@ const fields: Record<FieldKey, FieldText> = {
   "translate.targetLanguage": { label: "Target language", aliases: ["language", "locale"] },
   "personSync.personOverviewSources": { label: "Person overview source order" },
   "personSync.personImageSources": { label: "Person photo source order" },
+  "personSync.syncAfterPublish": {
+    label: "Sync actors after scraping",
+    description:
+      "When a scrape run ends, wait for each server to scan the new movies, then sync their actors. Actors the run added get MDCz's info and photo in place of what the server matched by name, and are locked; actors the server already had only get what they miss. Applies to servers with folder refresh after organizing turned on.",
+  },
+  "personSync.bioLabelLanguage": {
+    label: "Actor bio label language",
+    description: "Language of the labels MDCz writes into actor bios, such as height and blood type.",
+  },
   "jellyfin.url": { label: "Jellyfin server URL", aliases: ["media server", "jellyfin", "server"] },
   "jellyfin.apiKey": { label: "Jellyfin API Key" },
   "jellyfin.userId": {
     label: "Jellyfin user ID",
     description: "Must be a UUID. Used to read the person list; leave empty to use the server default.",
-  },
-  "jellyfin.refreshPersonAfterSync": {
-    label: "Refresh people after sync",
-    description: "After syncing overviews or photos, also ask Jellyfin to refresh person metadata and images.",
   },
   "jellyfin.lockOverviewAfterSync": {
     label: "Lock person overview after sync",
@@ -441,10 +481,6 @@ const fields: Record<FieldKey, FieldText> = {
   "emby.userId": {
     label: "Emby user ID",
     description: "Used to read the person list; leave empty to use the server default.",
-  },
-  "emby.refreshPersonAfterSync": {
-    label: "Refresh people after sync",
-    description: "After syncing overviews or photos, also ask Emby to refresh person metadata and images.",
   },
   "emby.notifyAfterPublish": {
     label: "Refresh folder after organizing",

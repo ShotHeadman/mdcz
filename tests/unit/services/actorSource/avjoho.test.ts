@@ -1,6 +1,6 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { AvjohoActorSource } from "@mdcz/runtime/actorSource";
 import type { NetworkClient, NetworkCookieJar, ResolvedCookie } from "@mdcz/runtime/network";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 
 const createConfig = (overrides: Record<string, unknown> = {}) =>
@@ -43,7 +43,8 @@ const DETAIL_HTML = `
         <h1 class="entry-title">北川美玖（きたがわみく）</h1>
         <div class="entry-content">
           <table>
-            <tr><th>デビュー</th><td>2022年7月5日</td></tr>
+            <tr><th>デビュー</th><td>2023年 ※<a href="#name">別名</a><br />
+2022年7月5日</td></tr>
             <tr><th>生年月日</th><td>1996年1月31日</td></tr>
             <tr><th>身長</th><td>156cm</td></tr>
             <tr><th>スリーサイズ</th><td>B90cm W56cm H86cm</td></tr>
@@ -53,8 +54,9 @@ const DETAIL_HTML = `
             <tr><th>出身地</th><td>東京都</td></tr>
             <tr><th>血液型</th><td>AB型</td></tr>
             <tr><th>趣味・特技</th><td>アニメ、舞台鑑賞</td></tr>
-            <tr><th>別名</th><td>みく</td></tr>
-            <tr><th>専属メーカー</th><td>VENUS</td></tr>
+            <tr><th>別名</th><td><div class="fukusuu"><a href="https://example.com/1">みく</a>（2023年）</p>
+<p><a href="https://example.com/2">北川みく</a>（2021年）※AROUND</div></td></tr>
+            <tr><th>専属メーカー</th><td><div class="fukusuu"><p>VENUS</p><p>S1</p></div></td></tr>
           </table>
         </div>
       </article>
@@ -109,7 +111,7 @@ describe("AvjohoActorSource", () => {
           success: true,
           profile: {
             name: "北川美玖",
-            aliases: ["きたがわみく", "みく"],
+            aliases: ["きたがわみく", "みく", "北川みく"],
             birth_date: "1996-01-31",
             birth_place: "東京都",
             blood_type: "AB",
@@ -119,15 +121,11 @@ describe("AvjohoActorSource", () => {
             hip_cm: 86,
             cup_size: "G",
             photo_url: "https://db.avjoho.com/wp-content/uploads/veo00064ps.jpg",
+            // The debut of the current name, not those of the earlier names marked ※別名.
+            description: "デビュー: 2022年7月5日\n趣味・特技: アニメ、舞台鑑賞\n専属メーカー: VENUS / S1",
           },
           warnings: [],
         });
-        expect(result.profile?.description).toContain("デビュー: 2022年7月5日");
-        expect(result.profile?.description).toContain("デビュー: 2022年7月5日\n\n趣味・特技: アニメ、舞台鑑賞");
-        expect(result.profile?.description).toContain("趣味・特技: アニメ、舞台鑑賞");
-        expect(result.profile?.description).toContain("専属メーカー: VENUS");
-        expect(result.profile?.description).not.toContain("生年月日");
-        expect(result.profile?.description).not.toContain("身長");
       }
     }
   });

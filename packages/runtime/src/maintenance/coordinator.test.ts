@@ -8,6 +8,7 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { PublicationConflictError } from "../publication/conflicts";
+import { LibraryTaskGate } from "../tasks";
 import { type MaintenancePersistencePort, MaintenanceSessionCoordinator } from "./coordinator";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
 
@@ -114,6 +115,7 @@ const createCoordinator = (
       },
     },
     ...overrides,
+    taskGate: overrides.taskGate ?? new LibraryTaskGate(),
   });
   return { coordinator, events, library, runtime };
 };
@@ -250,6 +252,31 @@ describe("MaintenanceSessionCoordinator", () => {
     await failed;
     const retry = await fixture.coordinator.startPreview(input);
     await retry.completion;
+    await fixture.coordinator.close();
+  });
+
+  it("never overlaps a scrape: starts only while no scrape is live and holds the library while active", async () => {
+    const taskGate = new LibraryTaskGate();
+    let scraping = true;
+    taskGate.track("scrape", () => scraping);
+    const scanned = promiseWithResolvers<LocalScanEntry[]>();
+    const fixture = createCoordinator({}, [root], { taskGate });
+    const input = { rootId: root.id, presetId: "import_local" as const, refs: [ref("one.mp4")] };
+
+    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("A scrape task is running");
+    scraping = false;
+    vi.mocked(fixture.runtime.scanRefs).mockImplementationOnce(async () => await scanned.promise);
+    const preview = await fixture.coordinator.startPreview(input);
+    expect(() => taskGate.assertAvailable("scrape")).toThrow("A maintenance task is running");
+    scanned.resolve([createEntry("one.mp4")]);
+    const batch = await preview.completion;
+    // Reviewing a finished preview leaves scrapes free to run; applying it claims the library again.
+    expect(() => taskGate.assertAvailable("scrape")).not.toThrow();
+
+    scraping = true;
+    await expect(
+      fixture.coordinator.beginApply({ sessionId: preview.session.id, selections: [{ previewId: batch.items[0].id }] }),
+    ).rejects.toThrow("A scrape task is running");
     await fixture.coordinator.close();
   });
 

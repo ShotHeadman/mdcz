@@ -1,5 +1,6 @@
 import { normalizeText } from "@mdcz/runtime/shared";
 import { normalizeActorName, toUniqueActorNames } from "@mdcz/shared/actorAliases";
+import type { ActorProfile } from "@mdcz/shared/types";
 import { type CheerioAPI, load } from "cheerio";
 import type { ActorSourceHint } from "../../types";
 
@@ -64,7 +65,23 @@ export const getOwnText = ($element: CheerioSelection): string | undefined => {
   return toNonEmptyString(clone.text());
 };
 
+// Profile lines whose value MDCz reads into fields. The bio builder writes those facts itself, so such a line stays in
+// the description only when its value could not be read, such as a birthday without a year.
+const FIELD_LABELS: Record<string, ReadonlyArray<keyof ActorProfile>> = {
+  生年月日: ["birth_date"],
+  誕生日: ["birth_date"],
+  出身地: ["birth_place"],
+  血液型: ["blood_type"],
+  身長: ["height_cm"],
+  スリーサイズ: ["bust_cm", "waist_cm", "hip_cm"],
+  サイズ: ["bust_cm", "waist_cm", "hip_cm"],
+  B: ["bust_cm"],
+  W: ["waist_cm"],
+  H: ["hip_cm"],
+};
+
 export const buildFieldDescription = (
+  profile: ActorProfile,
   fields: Array<[string, string | undefined]>,
   intro?: string,
 ): string | undefined => {
@@ -74,13 +91,16 @@ export const buildFieldDescription = (
     lines.push(body);
   }
 
-  for (const [label, value] of fields) {
-    const normalizedLabel = toNonEmptyString(label);
+  for (const [rawLabel, value] of fields) {
+    const label = rawLabel.replace(/\s+/gu, "");
     const normalizedValue = toNonEmptyString(value);
-    if (!normalizedLabel || !normalizedValue) {
+    if (!label || !normalizedValue) {
       continue;
     }
-    lines.push(`${normalizedLabel}: ${normalizedValue}`);
+    if (FIELD_LABELS[label]?.every((field) => profile[field] !== undefined)) {
+      continue;
+    }
+    lines.push(`${label}: ${normalizedValue}`);
   }
 
   return lines.length > 0 ? lines.join("\n") : undefined;

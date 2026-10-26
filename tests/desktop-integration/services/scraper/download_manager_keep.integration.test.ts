@@ -1,14 +1,15 @@
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { dirname, join, relative } from "node:path";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
+import { resolvePublicationAssetLayout } from "@mdcz/runtime/publication/assetLayout";
 import { DownloadManager, downloadCrawlerAssets } from "@mdcz/runtime/scrape";
 import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
 import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
 import { TrailerAssetDownloader } from "@mdcz/runtime/scrape/download/assets/TrailerAssetDownloader";
 import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -986,41 +987,54 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("keeps the scene image set with the most successful downloads when no set completes", async () => {
-    const { root, manager, networkClient } = await createSubject();
-    mockValid();
-    networkClient.download.mockImplementation(async (url, outputPath) => {
-      if (url.endsWith("set-a-3.jpg") || url.endsWith("set-b-2.jpg") || url.endsWith("set-b-3.jpg")) {
-        throw new Error("Request timeout");
-      }
-      return writeDownloadedFile(outputPath, url);
-    });
-    const config = sequentialSceneSet(3);
-    const assets = await manager.downloadAll(
-      root,
-      createCrawlerData({
-        scene_images: [
-          "https://best.example.com/set-a-1.jpg",
-          "https://best.example.com/set-a-2.jpg",
-          "https://best.example.com/set-a-3.jpg",
-        ],
-      }),
-      config,
+  it("falls back across scene image sets and declares a publication slot for every image it keeps", async () => {
+    const cases = [
       {
-        scene_images: [
-          [
-            "https://fallback.example.com/set-b-1.jpg",
-            "https://fallback.example.com/set-b-2.jpg",
-            "https://fallback.example.com/set-b-3.jpg",
-          ],
-        ],
+        primary: ["set-a-1", "set-a-2", "set-a-3"],
+        fallback: ["set-b-1", "set-b-2", "set-b-3"],
+        failing: ["set-a-3", "set-b-2", "set-b-3"],
+        expected: ["set-a-1", "set-a-2"],
       },
-    );
-    await expectSceneImages(root, assets, [
-      "https://best.example.com/set-a-1.jpg",
-      "https://best.example.com/set-a-2.jpg",
-    ]);
-    await expect(access(scenePath(root, 3))).rejects.toThrow();
+      {
+        primary: ["set-a-1", "set-a-2"],
+        fallback: ["set-b-1", "set-b-2", "set-b-3"],
+        failing: ["set-a-2"],
+        expected: ["set-b-1", "set-b-2", "set-b-3"],
+      },
+    ];
+
+    for (const testCase of cases) {
+      vi.restoreAllMocks();
+      const { root, manager, networkClient } = await createSubject();
+      const libraryDir = await createTempDir();
+      mockValid();
+      const url = (name: string) => `https://${name.startsWith("set-a") ? "best" : "fallback"}.example.com/${name}.jpg`;
+      networkClient.download.mockImplementation(async (sourceUrl, outputPath) => {
+        if (testCase.failing.some((name) => sourceUrl === url(name))) throw new Error("Request timeout");
+        return writeDownloadedFile(outputPath, sourceUrl);
+      });
+      const config = sequentialSceneSet(3);
+      const data = createCrawlerData({ scene_images: testCase.primary.map(url) });
+      const assets = await manager.downloadAll(root, data, config, { scene_images: [testCase.fallback.map(url)] });
+
+      await expectSceneImages(root, assets, testCase.expected.map(url));
+      await expect(access(scenePath(root, testCase.expected.length + 1))).rejects.toThrow();
+      const { staged } = await resolvePublicationAssetLayout({
+        layout: {
+          mode: "preserve",
+          sourceVideoPath: join(libraryDir, "ABC-123.mp4"),
+          targetVideoPath: join(libraryDir, "ABC-123.mp4"),
+          outputDir: libraryDir,
+          metadataDir: libraryDir,
+          existingMetadataDir: libraryDir,
+          nfoPath: join(libraryDir, "ABC-123.nfo"),
+          sidecars: [],
+        },
+        config,
+        crawlerData: data,
+      });
+      expect(assets.sceneImages.filter((path) => !staged.has(relative(root, path)))).toEqual([]);
+    }
   });
 
   it("persists image host failures and opens cooldown on the third retryable HTTP failure", async () => {

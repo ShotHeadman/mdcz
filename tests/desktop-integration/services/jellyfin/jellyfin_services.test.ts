@@ -1,9 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getActorImageCacheDirectory } from "@main/appIdentity";
-import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
-import { checkConnection, isUuid } from "@main/services/mediaServer/jellyfin";
 import {
   type ActorLookupResult,
   ActorSourceProvider,
@@ -11,11 +8,17 @@ import {
   GfriendsActorSource,
   LocalActorSource,
 } from "@mdcz/runtime/actorSource";
-import type { MediaServerSignalService } from "@mdcz/runtime/mediaserver";
-import { JellyfinActorInfoService, JellyfinActorPhotoService } from "@mdcz/runtime/mediaserver";
+import {
+  checkJellyfinConnection,
+  isJellyfinUuid,
+  type MediaServerActorServiceDependencies,
+  type MediaServerSignalService,
+  stopJellyfinPersonNameMatching,
+  syncJellyfinPersons,
+} from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
-import { app } from "electron";
+import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const createSignalService = (): MediaServerSignalService => ({
@@ -30,12 +33,6 @@ const createTempDir = async (): Promise<string> => {
   const dirPath = await mkdtemp(join(tmpdir(), "mdcz-jellyfin-"));
   tempDirs.push(dirPath);
   return dirPath;
-};
-
-const createUserDataDir = async (): Promise<string> => {
-  const userDataDir = await createTempDir();
-  vi.spyOn(app, "getPath").mockReturnValue(userDataDir);
-  return userDataDir;
 };
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
@@ -64,19 +61,13 @@ class FakeNetworkClient {
   readonly postText = vi.fn(async (_url: string, _body: string) => "");
 }
 
-const createActorSourceProvider = (
-  networkClient: FakeNetworkClient,
-  actorMapUrl = "https://example.com/empty-map.json",
-) =>
+const createActorSourceProvider = (networkClient: FakeNetworkClient, cacheRoot: string) =>
   new ActorSourceProvider({
     registry: new ActorSourceRegistry([
-      // Local image resolution is rooted in the mocked desktop user data directory.
-      new LocalActorSource({
-        actorImageService: new ActorImageService({ cacheRoot: getActorImageCacheDirectory() }),
-      }),
+      new LocalActorSource({ actorImageService: new ActorImageService({ cacheRoot }) }),
       new GfriendsActorSource({
         networkClient: networkClient as unknown as NetworkClient,
-        actorMapUrl,
+        actorMapUrl: "https://example.com/empty-map.json",
       }),
     ]),
   });
@@ -151,11 +142,20 @@ describe("Jellyfin services", () => {
   });
 
   it("accepts a standard Jellyfin UUID user ID", () => {
-    expect(isUuid(jellyfinUserId)).toBe(true);
+    expect(isJellyfinUuid(jellyfinUserId)).toBe(true);
   });
 
-  it("returns layered diagnostics for a healthy Jellyfin connection", async () => {
+  it("returns layered diagnostics for a healthy Jellyfin connection and stops its name search for people", async () => {
     const networkClient = new FakeNetworkClient();
+    let serverConfiguration: Record<string, unknown> = {
+      EnableMetrics: false,
+      MetadataOptions: [{ ItemType: "Movie", DisabledMetadataFetchers: [] }],
+    };
+    networkClient.postText.mockImplementation(async (url: string, body: string) => {
+      expect(new URL(url).pathname).toBe("/System/Configuration");
+      serverConfiguration = JSON.parse(body);
+      return "";
+    });
     networkClient.getJson.mockImplementation(async (url: string) => {
       const parsed = new URL(url);
       const path = parsed.pathname;
@@ -172,19 +172,14 @@ describe("Jellyfin services", () => {
       if (path === "/Items/person-1/MetadataEditor") {
         return {};
       }
+      if (path === "/System/Configuration") return serverConfiguration;
       throw new Error(`Unexpected URL ${url}`);
     });
+    const configuration = createConfig({
+      jellyfin: { ...defaultConfiguration.jellyfin, url: "http://127.0.0.1:8096", apiKey: "token" },
+    });
 
-    const result = await checkConnection(
-      networkClient as unknown as NetworkClient,
-      createConfig({
-        jellyfin: {
-          ...defaultConfiguration.jellyfin,
-          url: "http://127.0.0.1:8096",
-          apiKey: "token",
-        },
-      }),
-    );
+    const result = await checkJellyfinConnection(networkClient as unknown as NetworkClient, configuration);
 
     expect(result.success).toBe(true);
     expect(result.serverInfo).toEqual({ serverName: "Jellyfin", version: "10.11.2" });
@@ -194,6 +189,24 @@ describe("Jellyfin services", () => {
       ["peopleRead", "ok"],
       ["peopleWrite", "ok"],
     ]);
+    expect(result.matchesPeopleByName).toBe(true);
+
+    await stopJellyfinPersonNameMatching(networkClient as unknown as NetworkClient, configuration);
+    // The rest of the server configuration is written back unchanged.
+    expect(serverConfiguration).toMatchObject({
+      EnableMetrics: false,
+      MetadataOptions: [
+        { ItemType: "Movie", DisabledMetadataFetchers: [] },
+        {
+          ItemType: "Person",
+          DisabledMetadataFetchers: ["TheMovieDb", "The Open Movie Database"],
+          DisabledImageFetchers: ["TheMovieDb", "The Open Movie Database"],
+        },
+      ],
+    });
+    expect(
+      (await checkJellyfinConnection(networkClient as unknown as NetworkClient, configuration)).matchesPeopleByName,
+    ).toBe(false);
   });
 
   it("marks auth failure and skips people checks when /System/Info is unauthorized", async () => {
@@ -209,7 +222,7 @@ describe("Jellyfin services", () => {
       throw new Error(`Unexpected URL ${url}`);
     });
 
-    const result = await checkConnection(
+    const result = await checkJellyfinConnection(
       networkClient as unknown as NetworkClient,
       createConfig({
         jellyfin: {
@@ -242,7 +255,7 @@ describe("Jellyfin services", () => {
       throw new Error(`Unexpected URL ${url}`);
     });
 
-    const result = await checkConnection(
+    const result = await checkJellyfinConnection(
       networkClient as unknown as NetworkClient,
       createConfig({
         jellyfin: {
@@ -261,7 +274,7 @@ describe("Jellyfin services", () => {
     });
   });
 
-  it("uses local actor overview sources, can lock Overview, and refreshes the person after a successful update", async () => {
+  it("uses local actor overview sources, can lock Overview", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
       const parsed = new URL(url);
@@ -276,14 +289,15 @@ describe("Jellyfin services", () => {
     const actorSourceProvider = new FakeActorSourceProvider();
     actorSourceProvider.lookup.mockResolvedValue(createStructuredLookupResult());
 
-    const service = new JellyfinActorInfoService({
+    const deps: MediaServerActorServiceDependencies = {
       signalService: createSignalService(),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-    });
+    };
 
-    const result = await service.run(
+    const result = await syncJellyfinPersons(
+      deps,
       createConfig({
         personSync: {
           ...defaultConfiguration.personSync,
@@ -294,15 +308,15 @@ describe("Jellyfin services", () => {
           url: "http://127.0.0.1:8096",
           apiKey: "token",
           userId: jellyfinUserId,
-          refreshPersonAfterSync: true,
           lockOverviewAfterSync: true,
         },
       }),
+      "info",
       "all",
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
+    expect(networkClient.postText).toHaveBeenCalledTimes(1);
     expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1$/u);
     expectManagedActorPayload(
       readPostedPayload(networkClient),
@@ -312,7 +326,6 @@ describe("Jellyfin services", () => {
       LockedFields: ["Overview"],
       LockData: true,
     });
-    expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
   });
 
   it("uses the user-scoped item detail endpoint for Jellyfin actor info sync", async () => {
@@ -333,14 +346,15 @@ describe("Jellyfin services", () => {
     const actorSourceProvider = new FakeActorSourceProvider();
     actorSourceProvider.lookup.mockResolvedValue(createStructuredLookupResult());
 
-    const service = new JellyfinActorInfoService({
+    const deps: MediaServerActorServiceDependencies = {
       signalService: createSignalService(),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-    });
+    };
 
-    const result = await service.run(
+    const result = await syncJellyfinPersons(
+      deps,
       createConfig({
         personSync: {
           ...defaultConfiguration.personSync,
@@ -350,9 +364,9 @@ describe("Jellyfin services", () => {
           ...defaultConfiguration.jellyfin,
           url: "http://127.0.0.1:8096",
           apiKey: "token",
-          refreshPersonAfterSync: false,
         },
       }),
+      "info",
       "all",
     );
 
@@ -399,14 +413,15 @@ describe("Jellyfin services", () => {
       .mockResolvedValueOnce(createStructuredLookupResult("Actor A"))
       .mockResolvedValueOnce(createStructuredLookupResult("Actor B"));
 
-    const service = new JellyfinActorInfoService({
+    const deps: MediaServerActorServiceDependencies = {
       signalService: createSignalService(),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-    });
+    };
 
-    const result = await service.run(
+    const result = await syncJellyfinPersons(
+      deps,
       createConfig({
         personSync: {
           ...defaultConfiguration.personSync,
@@ -416,9 +431,9 @@ describe("Jellyfin services", () => {
           ...defaultConfiguration.jellyfin,
           url: "http://127.0.0.1:8096",
           apiKey: "token",
-          refreshPersonAfterSync: false,
         },
       }),
+      "info",
       "all",
     );
 
@@ -452,14 +467,15 @@ describe("Jellyfin services", () => {
       warnings: [],
     });
 
-    const service = new JellyfinActorInfoService({
+    const deps: MediaServerActorServiceDependencies = {
       signalService: createSignalService(),
       networkClient: networkClient as unknown as NetworkClient,
       actorSourceProvider: actorSourceProvider as unknown as ActorSourceProvider,
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-    });
+    };
 
-    const result = await service.run(
+    const result = await syncJellyfinPersons(
+      deps,
       createConfig({
         personSync: {
           ...defaultConfiguration.personSync,
@@ -470,9 +486,9 @@ describe("Jellyfin services", () => {
           url: "http://127.0.0.1:8096",
           apiKey: "token",
           userId: jellyfinUserId,
-          refreshPersonAfterSync: false,
         },
       }),
+      "info",
       "all",
     );
 
@@ -491,7 +507,7 @@ describe("Jellyfin services", () => {
 
   it("uploads actor photos as base64 text and falls back to the indexed image endpoint", async () => {
     const root = await createTempDir();
-    await createUserDataDir();
+    const cacheRoot = join(await createTempDir(), "actor-image-cache");
     const photoPath = join(root, "Actor A.jpg");
     await writeFile(photoPath, "photo-bytes", "utf8");
 
@@ -512,14 +528,15 @@ describe("Jellyfin services", () => {
       )
       .mockResolvedValueOnce("");
 
-    const service = new JellyfinActorPhotoService({
+    const deps: MediaServerActorServiceDependencies = {
       signalService: createSignalService(),
       networkClient: networkClient as unknown as NetworkClient,
-      actorSourceProvider: createActorSourceProvider(networkClient),
+      actorSourceProvider: createActorSourceProvider(networkClient, cacheRoot),
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-    });
+    };
 
-    const result = await service.run(
+    const result = await syncJellyfinPersons(
+      deps,
       createConfig({
         paths: {
           ...defaultConfiguration.paths,
@@ -533,22 +550,20 @@ describe("Jellyfin services", () => {
           ...defaultConfiguration.jellyfin,
           url: "http://127.0.0.1:8096",
           apiKey: "token",
-          refreshPersonAfterSync: true,
         },
       }),
+      "photo",
       "all",
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(networkClient.postContent).not.toHaveBeenCalled();
-    expect(networkClient.postText).toHaveBeenCalledTimes(3);
+    expect(networkClient.postText).toHaveBeenCalledTimes(2);
 
     const [firstUrl, firstBody] = networkClient.postText.mock.calls[0];
     const [secondUrl, secondBody] = networkClient.postText.mock.calls[1];
-    const [refreshUrl] = networkClient.postText.mock.calls[2];
     expect(firstUrl).toContain("/Items/person-1/Images/Primary");
     expect(secondUrl).toContain("/Items/person-1/Images/Primary/0");
-    expect(refreshUrl).toContain("/Items/person-1/Refresh");
     expect(firstBody).toBe(Buffer.from(await readFile(photoPath)).toString("base64"));
     expect(secondBody).toBe(firstBody);
   });

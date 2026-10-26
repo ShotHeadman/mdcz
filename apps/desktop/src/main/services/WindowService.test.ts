@@ -1,13 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { buildRendererContentSecurityPolicy } from "./WindowService";
+import { shell } from "electron";
+import { describe, expect, it, vi } from "vitest";
+import { openExternalInstead } from "./WindowService";
 
 describe("WindowService isolation", () => {
-  it("adds only the Vite renderer and websocket origins in development", () => {
-    const csp = buildRendererContentSecurityPolicy("http://localhost:5173");
-    expect(csp).toContain("script-src 'self' http://localhost:5173");
-    expect(csp).toContain("connect-src 'self' http://localhost:5173 ws://localhost:5173");
-    expect(csp).toContain("img-src 'self' local-file:");
-    expect(buildRendererContentSecurityPolicy(undefined)).toContain("script-src 'self'");
-    expect(buildRendererContentSecurityPolicy(undefined)).not.toContain("ws://");
+  it("opens only http(s) links in the system browser and never a second window", () => {
+    const openExternal = vi.spyOn(shell, "openExternal");
+    for (const url of ["https://github.com/ShotHeadman/mdcz", "javascript:alert(1)", "file:///etc/passwd"]) {
+      expect(openExternalInstead({ url })).toEqual({ action: "deny" });
+    }
+    expect(openExternal.mock.calls).toEqual([["https://github.com/ShotHeadman/mdcz"]]);
   });
 });

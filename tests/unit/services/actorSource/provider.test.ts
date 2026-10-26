@@ -1,5 +1,5 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { ActorSourceProvider, ActorSourceRegistry, type BaseActorSource } from "@mdcz/runtime/actorSource";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import type { ActorProfile } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 
@@ -35,7 +35,7 @@ describe("ActorSourceProvider image lookup", () => {
     const config = createConfig({
       personSync: {
         ...basePersonSync,
-        actorAliases: { 河北彩花: ["河北彩伽", "河北彩花（河北彩伽）"] },
+        actorAliases: [{ name: "河北彩花", aliases: ["河北彩伽", "河北彩花（河北彩伽）"] }],
       },
     });
 
@@ -54,7 +54,7 @@ describe("ActorSourceProvider image lookup", () => {
     const updatedConfig = createConfig({
       personSync: {
         ...basePersonSync,
-        actorAliases: { 河北彩花: ["河北彩伽"] },
+        actorAliases: [{ name: "河北彩花", aliases: ["河北彩伽"] }],
       },
     });
     await provider.lookup(updatedConfig, { name: "河北彩花", requiredField: "photo_url" });
@@ -160,7 +160,7 @@ describe("ActorSourceProvider image lookup", () => {
     expect(avbase.lookup).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps overview metadata on the first qualified source and falls back when earlier sources are too sparse", async () => {
+  it("takes the bio from the first qualified source and fills its missing facts from later sources that agree with it", async () => {
     const cases = [
       {
         registry: () => {
@@ -194,12 +194,13 @@ describe("ActorSourceProvider image lookup", () => {
             aliases: ["Official Alias"],
             description: "AVBASE profile",
             birth_date: "1999-05-08",
+            birth_place: "神奈川県",
+            blood_type: "A",
+            height_cm: 166,
           });
-          expect(result.profile.birth_place).toBeUndefined();
-          expect(result.profile.height_cm).toBeUndefined();
           expect(result.profileSources.description).toBe("avbase");
           expect(result.profileSources.birth_date).toBe("avbase");
-          expect(result.profileSources.birth_place).toBeUndefined();
+          expect(result.profileSources.birth_place).toBe("avjoho");
         },
       },
       {
@@ -212,20 +213,50 @@ describe("ActorSourceProvider image lookup", () => {
             birth_place: "神奈川県",
             height_cm: 166,
           });
-          return { sources: { official, avbase }, registry: new ActorSourceRegistry([official, avbase]) };
+          const avjoho = createSource("avjoho", { description: "AVJOHO profile" });
+          return {
+            sources: { official, avbase, avjoho },
+            registry: new ActorSourceRegistry([official, avbase, avjoho]),
+          };
         },
         config: createConfig({
           personSync: {
             ...defaultConfiguration.personSync,
-            personOverviewSources: ["official", "avbase"],
+            personOverviewSources: ["official", "avbase", "avjoho"],
           },
         }),
         assert: (result: Awaited<ReturnType<ActorSourceProvider["lookup"]>>) => {
+          // The primary source lists only facts, so the bio text comes from the next source that has one.
+          expect(result.profile.description).toBe("AVJOHO profile");
+          expect(result.profileSources.description).toBe("avjoho");
           expect(result.profile.birth_date).toBe("1999-05-08");
           expect(result.profile.birth_place).toBe("神奈川県");
           expect(result.profile.height_cm).toBe(166);
           expect(result.profileSources.birth_date).toBe("avbase");
           expect(result.profile.aliases).toEqual(["Official Alias"]);
+        },
+      },
+      {
+        registry: () => {
+          const official = createSource("official", {});
+          const avbase = createSource("avbase", { description: "AVBASE profile", birth_date: "1999-05-08" });
+          // Another actress with the same name: her birthday differs, so none of her facts fill the gaps.
+          const avjoho = createSource("avjoho", { birth_date: "1990-01-01", birth_place: "大阪府", height_cm: 150 });
+          return {
+            sources: { official, avbase, avjoho },
+            registry: new ActorSourceRegistry([official, avbase, avjoho]),
+          };
+        },
+        config: createConfig({
+          personSync: {
+            ...defaultConfiguration.personSync,
+            personOverviewSources: ["official", "avbase", "avjoho"],
+          },
+        }),
+        assert: (result: Awaited<ReturnType<ActorSourceProvider["lookup"]>>) => {
+          expect(result.profile).toMatchObject({ description: "AVBASE profile", birth_date: "1999-05-08" });
+          expect(result.profile.birth_place).toBeUndefined();
+          expect(result.profile.height_cm).toBeUndefined();
         },
       },
     ];

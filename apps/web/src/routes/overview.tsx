@@ -1,7 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { OverviewRecentAcquisitionDto } from "@mdcz/shared/serverDtos";
 import { openNewWorkbenchTask } from "@mdcz/views/adapters/workbenchSession";
-import { getT, useT } from "@mdcz/views/i18n";
+import { useT } from "@mdcz/views/i18n";
 import {
   ActivityTimelineCard,
   hasActiveActivity,
@@ -17,19 +17,10 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createWebMaintenanceActionPort } from "../adapters/ports";
 import { api, getLibraryAssetSrc } from "../client";
+import { openFolder } from "../desktop";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
-
-export const hasWorkbenchOutput = (input: {
-  libraryCount: number;
-  output?: { fileCount: number; totalBytes: number } | null;
-  recentCount: number;
-}): boolean =>
-  input.libraryCount > 0 ||
-  (input.output?.fileCount ?? 0) > 0 ||
-  (input.output?.totalBytes ?? 0) > 0 ||
-  input.recentCount > 0;
 
 export function OverviewPage() {
   const t = useT();
@@ -37,18 +28,16 @@ export function OverviewPage() {
   const queryClient = useQueryClient();
   const maintenancePort = useMemo(() => createWebMaintenanceActionPort(), []);
   const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionDto | null>(null);
-  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
+  const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list() });
   const overviewQ = useQuery({
     queryKey: queryKeys.overview.summary,
     queryFn: () => api.overview.summary(),
-    retry: false,
   });
-  const sitesQ = useQuery({ queryKey: queryKeys.overview.sites, queryFn: () => api.crawler.listSites(), retry: false });
+  const sitesQ = useQuery({ queryKey: queryKeys.overview.sites, queryFn: () => api.crawler.listSites() });
   const activityQ = useQuery({
     queryKey: queryKeys.activity.list,
     queryFn: () => api.activity.list({ limit: 12 }),
     refetchInterval: (query) => (hasActiveActivity(query.state.data?.entries ?? []) ? 3_000 : false),
-    retry: false,
   });
   const openWorkbench = async (mode: "scrape" | "maintenance") => {
     try {
@@ -57,16 +46,10 @@ export function OverviewPage() {
         mode === "maintenance" ? { to: buildHref("/workbench", { intent: "maintenance" }) } : { to: "/workbench" },
       );
     } catch (error) {
-      toast.error(toErrorMessage(error));
+      toast.error(toErrorMessage(error), { id: "workbench-open" });
     }
   };
-  const output = overviewQ.data?.output;
   const recent = overviewQ.data?.recentAcquisitions ?? [];
-  const configured = hasWorkbenchOutput({
-    libraryCount: librariesQ.data?.libraries.length ?? 0,
-    output,
-    recentCount: recent.length,
-  });
 
   return (
     <main className="h-full overflow-y-auto bg-surface-canvas text-foreground">
@@ -74,8 +57,8 @@ export function OverviewPage() {
         <section className="col-span-12 grid grid-cols-1 gap-6 lg:grid-cols-3">
           <OverviewHeroStartCard
             className="lg:col-span-2"
-            data={output}
-            hasConfiguredOutput={configured}
+            data={overviewQ.data?.output}
+            hasConfiguredOutput={(librariesQ.data?.libraries.length ?? 0) > 0}
             isError={overviewQ.isError}
             isLoading={librariesQ.isLoading || overviewQ.isLoading}
             labels={{ startAction: t.web.goToWorkbench, setupAction: t.libraries.createFirst }}
@@ -107,6 +90,7 @@ export function OverviewPage() {
             isError={overviewQ.isError}
             isLoading={overviewQ.isLoading}
             items={recent}
+            onItemOpen={openFolder}
             onItemRemove={setRemoveTarget}
             onRetry={() => {
               void queryClient.invalidateQueries({ queryKey: queryKeys.overview.summary });
@@ -140,10 +124,9 @@ export function OverviewPage() {
 async function removeRecentAcquisition(item: OverviewRecentAcquisitionDto, onSuccess: () => void) {
   try {
     await api.overview.removeRecentAcquisition({ id: item.id });
-    toast.success(getT().web.removedFromRecent);
     onSuccess();
   } catch (error) {
-    toast.error(toErrorMessage(error));
+    toast.error(toErrorMessage(error), { id: "recent-acquisition" });
   }
 }
 

@@ -311,21 +311,12 @@ export const schema = {
 };
 
 export type MediaRootRow = typeof mediaRoots.$inferSelect;
-export type InsertMediaRootRow = typeof mediaRoots.$inferInsert;
 export type ScanTaskRow = typeof scanTasks.$inferSelect;
-export type InsertScanTaskRow = typeof scanTasks.$inferInsert;
 export type ScanTaskEventRow = typeof scanTaskEvents.$inferSelect;
-export type InsertScanTaskEventRow = typeof scanTaskEvents.$inferInsert;
 export type ScanResultRow = typeof scanResults.$inferSelect;
-export type InsertScanResultRow = typeof scanResults.$inferInsert;
-export type ScrapeRunRow = typeof scrapeRuns.$inferSelect;
-export type InsertScrapeRunRow = typeof scrapeRuns.$inferInsert;
 export type LibraryItemRow = typeof libraryItems.$inferSelect;
-export type InsertLibraryItemRow = typeof libraryItems.$inferInsert;
 export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
-export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
 export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
 export type SiteResultRow = typeof siteResults.$inferSelect;
 export type MediaLibraryRow = typeof mediaLibraries.$inferSelect;
 export type PendingItemRow = typeof pendingItems.$inferSelect;
-export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;

@@ -28,7 +28,7 @@ import { render } from "vitest-browser-react";
 const noop = vi.fn();
 
 const baseSettingsServices = {
-  browsePath: vi.fn(async () => ({})),
+  browsePath: vi.fn(async () => null),
   checkCookies: vi.fn(async () => ({ results: [] })),
   decrementInFlightSaves: vi.fn(),
   ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
@@ -40,6 +40,7 @@ const baseSettingsServices = {
   relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
   saveConfig: vi.fn(async () => undefined),
+  settingsTarget: "desktop",
   testTranslation: vi.fn(async () => ({ status: "ok" as const, sample: "" })),
 } satisfies SettingsServices;
 
@@ -47,12 +48,6 @@ const createSettingsServices = (overrides: Partial<SettingsServices> = {}): Sett
   ...baseSettingsServices,
   ...overrides,
 });
-
-const settingsNotifier = {
-  error: vi.fn(),
-  info: vi.fn(),
-  success: vi.fn(),
-};
 
 function FormHarness({
   children,
@@ -67,7 +62,7 @@ function FormHarness({
   const form = useForm<FieldValues>({ defaultValues: flatValues });
 
   return (
-    <SettingsServicesProvider notifier={settingsNotifier} services={services}>
+    <SettingsServicesProvider services={services}>
       <FormProvider {...(form as ComponentProps<typeof FormProvider>)}>
         <SettingsEditorAutosaveProvider savedValues={flatValues} defaultValues={flatValues} defaultValuesReady>
           {children}
@@ -105,7 +100,7 @@ function SettingsSurfaceHarness({
   );
 
   return (
-    <SettingsServicesProvider notifier={settingsNotifier} services={{ ...baseSettingsServices, isServer }}>
+    <SettingsServicesProvider services={{ ...baseSettingsServices, settingsTarget: isServer ? "server" : "desktop" }}>
       <SettingsEditor
         data={configuration}
         defaultConfig={configuration}
@@ -203,22 +198,46 @@ test("ordered site field exposes grouped priority semantics", async () => {
   await expect.element(screen.getByRole("checkbox")).toHaveAttribute("aria-checked", "mixed");
 });
 
-test("profile capsule marks loading busy state", async () => {
-  const screen = await render(
-    <ProfileCapsule
-      profiles={[]}
-      activeProfile={null}
-      isLoading
-      onSwitchProfile={noop}
-      onCreateProfile={noop}
-      onDeleteProfile={noop}
-      onResetConfig={noop}
-      onExportProfile={noop}
-      onImportProfile={noop}
-    />,
+test("profile capsule is inert while loading or while an auto-save is in flight", async () => {
+  const capsuleProps = {
+    profiles: ["default", "alt"],
+    activeProfile: "default",
+    onSwitchProfile: noop,
+    onCreateProfile: noop,
+    onDeleteProfile: noop,
+    onResetConfig: noop,
+    onExportProfile: noop,
+    onImportProfile: noop,
+  };
+  const loading = await render(
+    <SettingsServicesProvider services={baseSettingsServices}>
+      <ProfileCapsule {...capsuleProps} isLoading />
+    </SettingsServicesProvider>,
   );
+  expect(loading.container.querySelector('[aria-busy="true"]')).not.toBeNull();
 
-  expect(screen.container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  let inFlight = 0;
+  const listeners = new Set<() => void>();
+  const services = createSettingsServices({
+    getInFlightSaves: () => inFlight,
+    subscribeInFlightSaves: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  });
+  const screen = await render(
+    <SettingsServicesProvider services={services}>
+      <ProfileCapsule {...capsuleProps} />
+    </SettingsServicesProvider>,
+  );
+  await screen.getByRole("button", { name: "default" }).click();
+  const exportAction = page.getByRole("button", { name: "导出当前档案..." });
+  await expect.element(exportAction).toBeEnabled();
+
+  inFlight = 1;
+  for (const listener of listeners) listener();
+  await expect.element(exportAction).toBeDisabled();
+  await expect.element(page.getByRole("button", { name: "alt" })).toBeDisabled();
 });
 
 test("section anchors render section content and header", async () => {
@@ -245,11 +264,9 @@ test("advanced settings footer hides while search filters are active", async () 
 
 test("server path fields keep autocomplete suggestions without browse buttons", async () => {
   const services = createSettingsServices({
-    getPathSuggestions: () => [
-      { label: "Movies", path: "E:/Movies" },
-      { label: "Output", path: "E:/Output" },
-    ],
-    isServer: true,
+    browsePath: undefined,
+    settingsTarget: "server",
+    suggestDirectoryPath: async () => ({ entries: [{ label: "Movies", path: "E:/Movies" }] }),
   });
 
   const screen = await render(

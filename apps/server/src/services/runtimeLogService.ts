@@ -3,6 +3,11 @@ import type { TaskEventBus } from "../taskEvents";
 
 type RuntimeLogLevel = NonNullable<LogEntryDto["level"]>;
 
+/** Where runtime logs go besides the in-memory list: the server's console, desktop's rotating log files. */
+export type RuntimeLogSink = (level: "debug" | "info" | "warn" | "error", source: string, message: string) => void;
+
+const consoleSink: RuntimeLogSink = (level, _source, message) => console[level](message);
+
 const toTaskLevel = (type: string): RuntimeLogLevel => {
   if (type === "failed" || type === "item-failed") return "ERR";
   if (type === "paused" || type === "stopping") return "WARN";
@@ -30,6 +35,7 @@ export class RuntimeLogService {
   constructor(
     private readonly maxEntries = 1000,
     private readonly taskEvents?: TaskEventBus,
+    private readonly sink: RuntimeLogSink = consoleSink,
   ) {}
 
   getLogger(source: string) {
@@ -60,21 +66,9 @@ export class RuntimeLogService {
     if (this.entries.length > this.maxEntries) {
       this.entries.splice(0, this.entries.length - this.maxEntries);
     }
-    this.echoToConsole(level, message);
+    this.sink(level, sourceName, message);
     this.taskEvents?.log(entry);
     return entry;
-  }
-
-  private echoToConsole(level: "debug" | "info" | "warn" | "error", message: string): void {
-    if (level === "error") {
-      console.error(message);
-    } else if (level === "warn") {
-      console.warn(message);
-    } else if (level === "debug") {
-      console.debug(message);
-    } else {
-      console.info(message);
-    }
   }
 
   list(input?: LogListInput): LogListResponse {

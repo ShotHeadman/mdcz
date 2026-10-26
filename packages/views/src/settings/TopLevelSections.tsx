@@ -14,6 +14,7 @@ import {
   AggregationScrapeSection,
   AssetDownloadsSection,
   FilenameFilteringSection,
+  FilenameMarkersSection,
   NamingSection,
   NetworkConnectionSection,
   NetworkSiteAccessSection,
@@ -74,6 +75,13 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
       </Subsection>
       <Subsection title={t.settings.subsections.filenameFiltering} className="mb-6 last:mb-0">
         <FilenameFilteringSection />
+      </Subsection>
+      <Subsection
+        title={t.settings.subsections.filenameMarkers}
+        description={t.settings.subsections.filenameMarkersDescription}
+        className="mb-6 last:mb-0"
+      >
+        <FilenameMarkersSection />
       </Subsection>
     </SectionAnchor>
   );
@@ -165,7 +173,7 @@ export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: b
   const services = useSettingsServices();
   const search = useSettingsSearch();
   const status = useIntegrationStatus(services.integrations);
-  if ((services.settingsTarget ?? (services.isServer ? "server" : "desktop")) !== "server") return null;
+  if (services.settingsTarget !== "server") return null;
 
   return (
     <SectionAnchor
@@ -207,9 +215,7 @@ export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: b
 export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = false }: SystemSectionProps) {
   const t = useT();
   const services = useSettingsServices();
-  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
-
-  if (target === "server") {
+  if (services.settingsTarget === "server") {
     return null;
   }
 
@@ -223,11 +229,9 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
       <Subsection title={t.settings.subsections.interface} className="mb-6 last:mb-0">
         <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
       </Subsection>
-      {!services.isServer ? (
-        <Subsection title={t.settings.subsections.shortcuts} className="mb-6 last:mb-0">
-          <ShortcutsSection />
-        </Subsection>
-      ) : null}
+      <Subsection title={t.settings.subsections.shortcuts} className="mb-6 last:mb-0">
+        <ShortcutsSection />
+      </Subsection>
     </SectionAnchor>
   );
 }

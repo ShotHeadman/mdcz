@@ -150,7 +150,7 @@ export class LibraryService {
           actors: entry.actors,
           thumbnailPath: entry.thumbnailPath ?? null,
           thumbnailRootId: record?.thumbnailRootId ?? null,
-          lastKnownPath: entry.lastKnownPath,
+          relativePath: record?.rootRelativePath ?? "",
           completedAt: new Date(entry.completedAt).toISOString(),
           available: record && root ? await this.availabilityChecker.check(root, record.rootRelativePath) : null,
         };

@@ -9,5 +9,9 @@
     <dt class="p-talent-detail__desc">東京都</dt>
     <dt class="p-talent-detail__term">身長</dt>
     <dt class="p-talent-detail__desc">159cm</dt>
+    <dt class="p-talent-detail__term">スリーサイズ</dt>
+    <dt class="p-talent-detail__desc">B:87（E） W:57 H:86</dt>
+    <dt class="p-talent-detail__term">趣味</dt>
+    <dt class="p-talent-detail__desc">読書</dt>
   </dl>
 </section>

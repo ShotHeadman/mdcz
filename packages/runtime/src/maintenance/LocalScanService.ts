@@ -1,7 +1,6 @@
 import { basename, dirname, extname, join, parse, resolve } from "node:path";
 import { deterministicMediaRootId, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
-import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
 import type { CrawlerData, DiscoveredAssets, LocalScanEntry } from "@mdcz/shared/types";
@@ -11,7 +10,7 @@ import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { newestNfosFirst, preferredLocalNfoBaseNames, selectLocalNfoNames } from "../scrape/selectLocalNfo";
 import { throwIfAborted } from "../scrape/utils/abort";
 import { DEFAULT_VIDEO_EXTENSIONS, listVideoFiles } from "../scrape/utils/filesystem";
-import { parseFileInfo } from "../scrape/utils/number";
+import { type FilenameRules, parseFileInfo } from "../scrape/utils/number";
 import { runtimeLoggerService } from "../shared";
 import { resolveLocalAssetReference, uniqueDefinedPaths } from "./localAssetReferences";
 
@@ -19,8 +18,8 @@ const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 type MetadataLocation = {
   registeredOutputs?: Map<string, { nfoPaths: string[]; assets?: DiscoveredAssets }>;
   inventory?: DirectoryInventory;
-  /** The scrape settings that read numbers out of file names; without them a repaired or ignored name parses differently than it was scraped. */
-  filenameRules?: Pick<Configuration["scrape"], "filenameIgnoreTokens" | "numberMappings">;
+  /** The scrape settings that read numbers and markers out of file names; without them a name parses differently than it was scraped. */
+  filenameRules?: FilenameRules;
 };
 
 const fileExists = async (path: string, inventory: DirectoryInventory): Promise<boolean> => {
@@ -274,7 +273,7 @@ export class LocalScanService {
     const rules = metadata?.filenameRules;
     const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath, {
       inventory,
-      parsedFileInfo: rules && parseFileInfo(videoPath, rules.filenameIgnoreTokens, rules.numberMappings),
+      parsedFileInfo: rules && parseFileInfo(videoPath, rules),
     });
     const dir = dirname(videoPath);
 

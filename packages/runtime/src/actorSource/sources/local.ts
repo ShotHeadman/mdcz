@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, parse, resolve } from "node:path";
 import { resolveActorPhotoFolderPath } from "@mdcz/runtime/scrape/actorImage/actorPhotoPath";
 import { listFiles, pathExists } from "@mdcz/runtime/scrape/utils/filesystem";
+import { sanitizePathSegment } from "@mdcz/runtime/scrape/utils/path";
 import { CachedAsyncResolver, toErrorMessage } from "@mdcz/runtime/shared";
 import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
@@ -130,6 +131,12 @@ const buildLocalActorRecordIndex = async (
   }
 
   const nfoFiles = files.filter((filePath) => extname(filePath).toLowerCase() === ".nfo");
+  // NFOs don't name movie-local actor photos, so they are found by the file name ActorPhotoMaterializer gives them.
+  const movieActorPhotos = new Map(
+    files
+      .filter((filePath) => basename(dirname(filePath)) === ".actors")
+      .map((filePath) => [join(dirname(filePath), parse(filePath).name), filePath]),
+  );
   const index = new Map<string, IndexedActorRecord>();
 
   for (const nfoPath of nfoFiles) {
@@ -148,7 +155,7 @@ const buildLocalActorRecordIndex = async (
         profilesByName.set(normalizeActorName(name), {
           name,
           aliases: [],
-          photo_url: undefined,
+          photo_url: movieActorPhotos.get(join(dirname(nfoPath), ".actors", sanitizePathSegment(name) || "actor")),
         });
       }
 

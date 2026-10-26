@@ -9,17 +9,23 @@ import type {
   MediaLibraryStubProbeResponse,
   MediaLibraryUpdateInput,
 } from "./mediaLibrary";
+import type { RootFileRef } from "./mediaRef";
 import type {
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
   PendingIdInput,
+  PendingIdsInput,
   PendingListResponse,
   PendingRetryInput,
+  PendingRetryManyInput,
+  PendingRetryManyResponse,
   PendingRetryResponse,
 } from "./pending";
 import type {
   ActivityListInput,
   ActivityListResponse,
+  ActorSyncCancelInput,
+  ActorSyncJobDto,
   ApiKeyCreateInput,
   ApiKeyCreateResponse,
   ApiKeyListResponse,
@@ -198,8 +204,9 @@ export interface ServerApiContract {
     list(): Promise<PendingListResponse>;
     detail(input: PendingIdInput): Promise<PendingDetailResponse>;
     retry(input: PendingRetryInput): Promise<PendingRetryResponse>;
+    retryMany(input: PendingRetryManyInput): Promise<PendingRetryManyResponse>;
     confirmUncensored(input: PendingConfirmUncensoredInput): Promise<{ success: true }>;
-    ignore(input: PendingIdInput): Promise<{ success: true }>;
+    ignore(input: PendingIdsInput): Promise<{ success: true }>;
   };
   apiKeys: {
     list(): Promise<ApiKeyListResponse>;
@@ -235,13 +242,15 @@ export interface ServerApiContract {
     start(input: ScanStartInput): Promise<ScanTaskDto>;
   };
   scrape: {
+    actorSyncStatus(): Promise<ActorSyncJobDto[]>;
+    cancelActorSync(input: ActorSyncCancelInput): Promise<ScrapeMutationAckDto>;
     liveRuns(): Promise<ScrapeLiveRunsResponse>;
     snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto>;
     removeRecord(input: FileActionInput): Promise<FileActionResponse>;
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
-    posterCropSession(input: ScrapeResultIdInput): Promise<PosterCropSessionResponse>;
+    posterCropSession(input: RootFileRef): Promise<PosterCropSessionResponse>;
     posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
     pause(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;

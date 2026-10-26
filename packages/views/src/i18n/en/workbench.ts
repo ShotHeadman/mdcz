@@ -1,4 +1,10 @@
 export const workbench = {
+  /** Keyed by the task already running. */
+  taskConflict: {
+    scrape: "A scrape is currently running. Stop it before starting maintenance or repair.",
+    maintenance: "Maintenance is currently running. Stop it before starting a new scrape.",
+  },
+
   // Return button
   returnDialogDescription: "Returning will clear the current workbench content. Are you sure you want to continue?",
   returnDialogTitle: "Return to workbench setup",
@@ -21,6 +27,22 @@ export const workbench = {
   taskStateSkipped: "Skipped",
   taskStateInaccessiblePaths: "Some paths are inaccessible",
   retryFailed: "Retry failed",
+  actorSyncQueued: (servers: string) => `${servers} · Actor sync queued`,
+  actorSyncWaiting: (servers: string, found: number, total: number) =>
+    `${servers} · Waiting for scan (actors ${found}/${total})`,
+  actorSyncSyncing: (servers: string, done: number, total: number) => `${servers} · Syncing actors ${done}/${total}`,
+  actorSyncSummary: (synced: number, notFound: number, failed: number) =>
+    [
+      `Actor sync completed: ${synced} updated`,
+      notFound ? `${notFound} not found` : "",
+      failed ? `${failed} failed` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  actorSyncCancelled: "Actor sync cancelled",
+  actorSyncScanMissed: (servers: string) =>
+    `${servers} didn't detect the new actors in time. Check that its media library paths match MDCz.`,
+  cancelActorSync: "Cancel",
 
   // Setup view
   browse: "Browse",

@@ -7,14 +7,18 @@ import {
   mediaLibrarySourceInputSchema,
   mediaLibraryUpdateInputSchema,
 } from "@mdcz/shared/mediaLibrary";
+import { rootFileRefSchema } from "@mdcz/shared/mediaRef";
 import {
   pendingConfirmUncensoredInputSchema,
   pendingIdInputSchema,
+  pendingIdsInputSchema,
   pendingRetryInputSchema,
+  pendingRetryManyInputSchema,
 } from "@mdcz/shared/pending";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   activityListInputSchema,
+  actorSyncCancelInputSchema,
   apiKeyCreateInputSchema,
   authLoginInputSchema,
   cancelCandidatesInputSchema,
@@ -279,14 +283,17 @@ export const appRouter = t.router({
     retry: protectedProcedure
       .input(pendingRetryInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.pending.retry(input)),
+    retryMany: protectedProcedure
+      .input(pendingRetryManyInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.retryMany(input)),
     confirmUncensored: protectedProcedure
       .input(pendingConfirmUncensoredInputSchema)
       .mutation(async ({ ctx, input }) => {
         await ctx.services.pending.confirmUncensored(input);
         return { success: true as const };
       }),
-    ignore: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
-      await ctx.services.pending.ignore(input.id);
+    ignore: protectedProcedure.input(pendingIdsInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.pending.ignore(input.ids);
       return { success: true as const };
     }),
   }),
@@ -377,6 +384,11 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.scans.start(input.rootId)),
   }),
   scrape: t.router({
+    actorSyncStatus: protectedProcedure.query(({ ctx }) => ctx.services.actorSync.status()),
+    cancelActorSync: protectedProcedure.input(actorSyncCancelInputSchema).mutation(({ ctx, input }) => {
+      ctx.services.actorSync.cancel(input.runId);
+      return { runId: input.runId };
+    }),
     removeRecord: protectedProcedure
       .input(fileActionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.removeRecord(input)),
@@ -394,8 +406,8 @@ export const appRouter = t.router({
       .input(nfoWriteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.nfoWrite(input)),
     posterCropSession: protectedProcedure
-      .input(scrapeResultIdInputSchema)
-      .query(async ({ ctx, input }) => await ctx.services.scrape.posterCropSession(input.id)),
+      .input(rootFileRefSchema)
+      .query(async ({ ctx, input }) => await ctx.services.scrape.posterCropSession(input)),
     posterCropSave: protectedProcedure
       .input(posterCropSaveInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.posterCropSave(input)),

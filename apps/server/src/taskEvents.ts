@@ -1,4 +1,10 @@
-import type { LogEntryDto, PersonSyncJobDto, TaskNotificationDto, TaskStatus } from "@mdcz/shared/serverDtos";
+import type {
+  ActorSyncJobDto,
+  LogEntryDto,
+  PersonSyncJobDto,
+  TaskNotificationDto,
+  TaskStatus,
+} from "@mdcz/shared/serverDtos";
 
 export interface TaskLifecycleEvent {
   id: string;
@@ -43,6 +49,10 @@ export class TaskEventBus {
 
   personSync(job: PersonSyncJobDto): void {
     this.emit({ kind: "person-sync", job });
+  }
+
+  actorSync(job: ActorSyncJobDto): void {
+    this.emit({ kind: "actor-sync", job });
   }
 
   private emit(notification: TaskNotificationDto): void {

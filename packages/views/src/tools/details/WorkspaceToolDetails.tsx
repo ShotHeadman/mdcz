@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { BatchTranslateApplyResultItem, BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateApplyResultItem, BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/toolTypes";
 import { Badge, Button, Checkbox, cn, Input, Label, Progress } from "@mdcz/ui";
 import {
   AlertCircle,
@@ -15,14 +15,11 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { type Messages, useT } from "../../i18n";
 
-const TOOL_ICON_BUTTON_CLASS =
-  "h-11 w-11 shrink-0 rounded-quiet-sm bg-surface-low text-foreground hover:bg-surface-raised/75 transition-colors";
 const TOOL_INPUT_CLASS =
   "h-11 rounded-quiet-sm border-none bg-surface-low/90 px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30 transition-shadow";
-const TOOL_NOTE_CLASS = "text-xs leading-6 text-muted-foreground";
 const TOOL_PRIMARY_BUTTON_CLASS =
   "h-11 rounded-quiet-capsule bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center justify-center gap-2";
 const TOOL_SECONDARY_BUTTON_CLASS =
@@ -56,13 +53,6 @@ const persistBatchTranslateDirectory = (directory: string): void => {
 
 type BatchTranslateItemApplyStatus = "idle" | "processing" | "success" | "partial" | "failed";
 
-type BatchNfoTranslatorApplySummary = {
-  successCount: number;
-  partialCount: number;
-  failedCount: number;
-  totalCount: number;
-};
-
 const normalizeBatchTranslateSize = (value: unknown): number => {
   if (typeof value === "string" && value.trim() === "") return DEFAULT_BATCH_TRANSLATE_SIZE;
   const parsed = Number(value);
@@ -93,73 +83,14 @@ const buildFailedBatchTranslateResult = (
   translatedFields: [],
 });
 
-export interface SingleFilePathScraperDetailProps {
-  pending?: boolean;
-  onBrowseFile?: () => Promise<string | null | undefined>;
-  onRun: (path: string) => void | Promise<void>;
-}
-
-export function SingleFilePathScraperDetail({
-  pending = false,
-  onBrowseFile,
-  onRun,
-}: SingleFilePathScraperDetailProps) {
-  const t = useT();
-  const [filePath, setFilePath] = useState("");
-
-  const browseFile = async () => {
-    const selected = await onBrowseFile?.();
-    if (selected) setFilePath(selected);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className={TOOL_SUBSECTION_CLASS}>
-        <Label
-          htmlFor="filePath"
-          className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
-        >
-          {t.tools.filePath}
-        </Label>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Input
-            id="filePath"
-            value={filePath}
-            onChange={(event) => setFilePath(event.target.value)}
-            placeholder="/path/to/video.mp4"
-            className={cn(TOOL_INPUT_CLASS, "flex-1")}
-          />
-          {onBrowseFile ? (
-            <Button type="button" variant="secondary" onClick={browseFile} className={TOOL_ICON_BUTTON_CLASS}>
-              <FolderOpen className="h-4 w-4" />
-            </Button>
-          ) : null}
-        </div>
-        <p className={TOOL_NOTE_CLASS}>{t.tools.singleFileScrapeNote}</p>
-      </div>
-
-      <Button
-        onClick={() => void onRun(filePath)}
-        disabled={pending}
-        className={cn(TOOL_PRIMARY_BUTTON_CLASS, "w-full sm:w-auto")}
-      >
-        {pending ? t.tools.scraping : t.tools.startSingleFileScrape}
-      </Button>
-    </div>
-  );
-}
-
 export interface BatchNfoTranslatorWorkspaceDetailProps {
-  items: BatchTranslateScanItem[];
-  scanning?: boolean;
   onApply: (
     items: BatchTranslateScanItem[],
     batchSize: number,
     mode: BatchTranslateMode,
   ) => Promise<BatchTranslateApplyResultItem[]>;
-  onApplyComplete?: (summary: BatchNfoTranslatorApplySummary) => void;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
-  onScan: (directory: string, mode: BatchTranslateMode) => void | Promise<void>;
+  onScan: (directory: string, mode: BatchTranslateMode) => Promise<BatchTranslateScanItem[]>;
 }
 
 const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus): string => {
@@ -178,15 +109,15 @@ const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus
 };
 
 export function BatchNfoTranslatorWorkspaceDetail({
-  items,
-  scanning = false,
   onApply,
-  onApplyComplete,
   onBrowseDirectory,
   onScan,
 }: BatchNfoTranslatorWorkspaceDetailProps) {
   const t = useT();
   const [directory, setDirectory] = useState(readStoredBatchTranslateDirectory);
+  const [items, setItems] = useState<BatchTranslateScanItem[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [batchSizeInput, setBatchSizeInput] = useState(String(DEFAULT_BATCH_TRANSLATE_SIZE));
   const [mode, setMode] = useState<BatchTranslateMode>("untranslated");
   // Apply must translate with the mode that produced the listed items.
@@ -238,15 +169,6 @@ export function BatchNfoTranslatorWorkspaceDetail({
     }
   };
 
-  useEffect(() => {
-    setSelectedPaths(new Set(items.map((item) => item.filePath)));
-    setResults([]);
-    setItemStatusByPath({});
-    setApplyProgress(null);
-    pausedRef.current = false;
-    setPaused(false);
-  }, [items]);
-
   const toggleItem = (filePath: string) => {
     setSelectedPaths((current) => {
       const next = new Set(current);
@@ -261,13 +183,25 @@ export function BatchNfoTranslatorWorkspaceDetail({
   };
 
   const handleScan = async () => {
+    // Clearing first keeps Apply from acting on the previous directory's items while this scan runs or after it fails.
+    setItems([]);
     setResults([]);
     setItemStatusByPath({});
     setApplyProgress(null);
     setApplyPaused(false);
+    setScanError(null);
     persistBatchTranslateDirectory(directory);
     setScannedMode(mode);
-    await onScan(directory, mode);
+    setScanning(true);
+    try {
+      const scannedItems = await onScan(directory.trim(), mode);
+      setItems(scannedItems);
+      setSelectedPaths(new Set(scannedItems.map((item) => item.filePath)));
+    } catch (error) {
+      setScanError(toErrorMessage(error));
+    } finally {
+      setScanning(false);
+    }
   };
 
   const handleApply = async () => {
@@ -280,9 +214,6 @@ export function BatchNfoTranslatorWorkspaceDetail({
     setApplyProgress({ completed: 0, total: selectedItems.length });
 
     const accumulatedResults: BatchTranslateApplyResultItem[] = [];
-    let successCount = 0;
-    let partialCount = 0;
-    let failedCount = 0;
 
     for (let index = 0; index < selectedItems.length; index += normalizedBatchSize) {
       await waitWhileApplyPaused();
@@ -315,13 +246,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
           returnedResultByPath.get(item.filePath) ??
           buildFailedBatchTranslateResult(item, t.tools.noTranslationReturned),
       }));
-      for (const { result } of resolvedChunkResults) {
-        accumulatedResults.push(result);
-        const status = toBatchTranslateItemApplyStatus(result);
-        if (status === "success") successCount += 1;
-        else if (status === "partial") partialCount += 1;
-        else failedCount += 1;
-      }
+      accumulatedResults.push(...resolvedChunkResults.map(({ result }) => result));
 
       setResults([...accumulatedResults]);
       setItemStatusByPath((current) => ({
@@ -340,12 +265,6 @@ export function BatchNfoTranslatorWorkspaceDetail({
     setApplying(false);
     setApplyPaused(false);
     setApplyProgress(null);
-    onApplyComplete?.({
-      failedCount,
-      partialCount,
-      successCount,
-      totalCount: selectedItems.length,
-    });
   };
 
   const browseDirectory = async () => {
@@ -487,7 +406,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
         <Button
           variant="secondary"
           onClick={() => void handleScan()}
-          disabled={scanning || applying}
+          disabled={scanning || applying || !directory.trim()}
           className={cn(TOOL_SECONDARY_BUTTON_CLASS, "flex-1")}
         >
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -525,6 +444,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
           </Button>
         ) : null}
       </div>
+      {scanError ? <p className="break-all text-sm text-destructive">{scanError}</p> : null}
 
       {applying && applyProgress ? (
         <div className={TOOL_SUBSECTION_CLASS}>

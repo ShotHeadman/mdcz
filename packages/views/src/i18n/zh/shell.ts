@@ -20,4 +20,8 @@ export const shell: Messages["shell"] = {
   openMenu: "打开导航",
   closeMenu: "关闭导航",
   switchLanguage: "Switch to English",
+  renderErrorTitle: "页面显示异常",
+  renderErrorDescription: "当前页面未能正常加载。您可以尝试重新加载本页面，若问题依然存在请刷新整个应用。",
+  retryView: "重新加载",
+  reloadApp: "刷新应用",
 };

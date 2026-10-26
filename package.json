@@ -27,13 +27,10 @@
     "build:linux": "pnpm --filter @mdcz/desktop build:linux",
     "check": "pnpm typecheck && pnpm test && pnpm exec biome check .",
     "test": "vitest run --project unit --project integration --project desktop-integration --project contract --project component --silent",
-    "test:apps": "pnpm --filter @mdcz/server --filter @mdcz/web test",
     "test:unit": "vitest run --project unit --silent",
     "test:integration": "vitest run --project integration --project desktop-integration --project contract --silent",
     "test:coverage": "vitest run --coverage --project unit --project integration --project desktop-integration --project contract --silent",
-    "test:coverage:desktop": "vitest run --config vitest.desktop-coverage.config.ts --coverage --silent",
     "typecheck": "tsc -b --pretty false",
-    "typecheck:apps": "pnpm --filter @mdcz/server --filter @mdcz/web typecheck",
     "format": "biome check --write"
   },
   "devDependencies": {

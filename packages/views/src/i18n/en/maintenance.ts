@@ -78,25 +78,15 @@ export const maintenance = {
   selectAll: (selected: number, total: number) => `Select All (${selected}/${total})`,
 
   // MaintenanceBatchBarAdapter
-  selectItemsFirst: "Select the items to run first",
   previewFailed: (error: string) => `Preview failed: ${error}`,
-  noExecutableSelections: "Nothing to execute. Finish the preview and resolve blocked items first.",
-  maintenanceStarted: (count: number) => `Maintenance started for ${count} item${count === 1 ? "" : "s"}`,
   startFailed: (error: string) => `Failed to start: ${error}`,
-  previewResumed: "Maintenance preview resumed",
-  taskResumed: "Maintenance task resumed",
-  previewPaused: "Maintenance preview paused",
-  taskPaused: "Maintenance task paused",
   resumeFailed: (error: string) => `Failed to resume: ${error}`,
   pauseFailed: (error: string) => `Failed to pause: ${error}`,
-  processStopped: "Maintenance process stopped",
   stopFailed: (error: string) => `Failed to stop: ${error}`,
   discardSessionFailed: (error: string) => `Failed to discard maintenance session: ${error}`,
 
   // MaintenanceEntryListAdapter
   multiPartTitle: (title: string, count: number) => `${title} · ${count} disc parts`,
-  noOpenablePath: "No openable file path",
-  openFolderFailed: (error: string) => `Failed to open directory: ${error}`,
   openFolder: "Open directory",
   play: "Play",
   editNfo: "Edit NFO",
@@ -118,11 +108,4 @@ export const maintenance = {
   readingLocalFiles: "Reading local files",
   fileChanges: "File changes",
   dataCompare: "Data comparison",
-
-  // workbenchSession
-  scrapeRunningCannotMaintain:
-    "Normal scrape is running, cannot start maintenance mode. Please stop the current scrape task first.",
-  noMaintainableItems: "No maintainable items found",
-  localImportStarted: (count: number) => `Local import preview started, total ${count} items`,
-  previewStarted: "Maintenance preview started",
 };

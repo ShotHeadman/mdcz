@@ -49,7 +49,6 @@ export interface AppShellProps {
   children: ReactNode;
   currentPath: string;
   linkComponent: (props: ShellLinkProps) => ReactNode;
-  titlebar?: ReactNode;
   systemNav?: ShellNavItem[];
   /** Counts shown beside nav items, such as the pending items waiting for the user. */
   navBadges?: Partial<Record<DesktopRouteId, number>>;
@@ -83,7 +82,6 @@ export function AppShell({
   children,
   currentPath,
   linkComponent: LinkComponent,
-  titlebar,
   systemNav = SYSTEM_SHELL_NAV,
   navBadges = {},
 }: AppShellProps) {
@@ -110,8 +108,7 @@ export function AppShell({
   };
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background">
-      {titlebar}
+    <div className="flex h-full flex-col overflow-hidden bg-background">
       <header className="flex h-12 shrink-0 items-center gap-2 bg-sidebar px-2 text-sidebar-foreground md:hidden">
         <Button variant="ghost" size="icon" aria-label={t.shell.openMenu} onClick={() => setDrawerPath(currentPath)}>
           <Menu />

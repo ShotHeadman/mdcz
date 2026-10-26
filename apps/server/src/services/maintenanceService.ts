@@ -5,6 +5,7 @@ import {
   resolveMaintenanceTarget,
 } from "@mdcz/runtime/maintenance";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
   MaintenanceApplyInput,
@@ -27,6 +28,7 @@ export class MaintenanceService {
     private readonly mediaRoots: MediaRootService,
     private readonly taskEvents: TaskEventBus,
     runtime: MaintenanceRuntime,
+    taskGate: LibraryTaskGate,
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
@@ -36,6 +38,7 @@ export class MaintenanceService {
         list: async () => await this.mediaRoots.listRoots(),
       },
       runtime: this.runtime,
+      taskGate,
       discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
         return (
           await discoverDirectoryFiles({
@@ -120,12 +123,6 @@ export class MaintenanceService {
     if (selectedIds && selected.length !== selectedIds.size)
       throw new Error("Some maintenance previews do not exist or do not belong to the current task");
     if (selected.length === 0) throw new Error("Select the maintenance previews to apply");
-    if (
-      selected.some((preview) => preview.proposedCrawlerData) &&
-      input.confirmationToken !== `maintenance:${input.sessionId}`
-    ) {
-      throw new Error("Applying maintenance requires a confirmation token");
-    }
     const fieldsByPreview = new Map((input.selections ?? []).map((item) => [item.previewId, item.fieldSelections]));
     const selections: MaintenanceApplySelection[] = selected.map((preview) => ({
       previewId: preview.id,

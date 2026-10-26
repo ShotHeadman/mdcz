@@ -12,9 +12,6 @@
     "tests/**/*.tsx",
     "apps/desktop/src/main/**/*.ts",
     "apps/desktop/src/preload/**/*.ts",
-    "apps/desktop/src/renderer/src/**/*.ts",
-    "apps/desktop/src/renderer/src/**/*.tsx",
-    "apps/desktop/src/**/*.d.ts",
     "apps/server/src/**/*.ts",
     "apps/web/src/**/*.ts",
     "apps/web/src/**/*.tsx",
@@ -23,10 +20,5 @@
     "packages/ui/src/**/*.tsx",
     "vitest.config.ts"
   ],
-  "exclude": [
-    "apps/desktop/src/renderer/src/App.tsx",
-    "apps/desktop/src/renderer/src/index.tsx",
-    "apps/web/src/main.tsx",
-    "apps/web/src/router.tsx"
-  ]
+  "exclude": ["apps/web/src/main.tsx", "apps/web/src/router.tsx"]
 }

@@ -1,4 +1,4 @@
-import type { MediaServerCheckStep, MediaServerConnectionCheckResult } from "@mdcz/shared/ipcTypes";
+import type { MediaServerCheckStep, MediaServerConnectionCheckResult } from "@mdcz/shared/toolTypes";
 import { Button, cn, Label, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
 import { getT, type Messages, useT } from "../../i18n";
 
@@ -33,6 +33,7 @@ export interface PersonMediaLibraryDetailProps {
   onServerChange: (server: PersonServer) => void;
   onSyncInfo: (server: PersonServer) => void;
   onSyncPhoto: (server: PersonServer) => void;
+  onStopPersonNameMatching: () => void;
 }
 
 export function canRunPersonSync(result: PersonConnectionCheckResult | null): result is PersonConnectionCheckResult {
@@ -118,6 +119,7 @@ export function PersonMediaLibraryDetail({
   onServerChange,
   onSyncInfo,
   onSyncPhoto,
+  onStopPersonNameMatching,
 }: PersonMediaLibraryDetailProps) {
   const activeState = activeServer === "jellyfin" ? jellyfin : emby;
   const anySyncRunning =
@@ -221,6 +223,22 @@ export function PersonMediaLibraryDetail({
               </div>
             ))}
           </div>
+
+          {checkResult.matchesPeopleByName ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-quiet bg-amber-100/70 px-4 py-3 dark:bg-amber-500/12">
+              <div className="min-w-0 flex-1 basis-64 text-xs leading-6 text-amber-800 dark:text-amber-200">
+                {t.tools.personNameMatchingNotice}
+              </div>
+              <Button
+                variant="secondary"
+                onClick={onStopPersonNameMatching}
+                disabled={activeState.checkPending || anySyncRunning}
+                className="h-9 shrink-0 rounded-quiet-capsule bg-surface-floating px-4 text-xs font-semibold text-foreground hover:bg-surface-raised/75"
+              >
+                {t.tools.stopPersonNameMatching}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

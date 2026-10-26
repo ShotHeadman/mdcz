@@ -1,4 +1,4 @@
-import { hasMissingActorInfo, planPersonSync } from "@mdcz/runtime/mediaserver";
+import { planPersonSync } from "@mdcz/runtime/mediaserver";
 import { describe, expect, it } from "vitest";
 
 describe("person sync planner", () => {
@@ -23,6 +23,7 @@ describe("person sync planner", () => {
         taglines: [],
       },
       "missing",
+      "zh-CN",
     );
 
     expect(result.shouldUpdate).toBe(true);
@@ -57,6 +58,7 @@ describe("person sync planner", () => {
         productionLocations: ["东京", "埼玉県"],
       },
       "all",
+      "zh-CN",
     );
 
     expect(result.shouldUpdate).toBe(true);
@@ -91,6 +93,7 @@ describe("person sync planner", () => {
         productionLocations: ["埼玉県"],
       },
       "all",
+      "zh-CN",
     );
 
     expect(result.shouldUpdate).toBe(true);
@@ -100,7 +103,13 @@ describe("person sync planner", () => {
     expect(result.taglines).toEqual([]);
   });
 
-  it("rebuilds the managed profile block while preserving the existing custom overview", () => {
+  it.each([
+    { locale: "zh-CN" as const, expected: "基本资料\n身高：169cm\n\n旧简介\n\n别名：神木れい" },
+    { locale: "en-US" as const, expected: "Profile\nHeight: 169 cm\n\n旧简介\n\nAlso known as: 神木れい" },
+  ])("rebuilds the managed profile block in $locale while preserving the existing custom overview", ({
+    locale,
+    expected,
+  }) => {
     const result = planPersonSync(
       {
         name: "神木麗",
@@ -113,71 +122,11 @@ describe("person sync planner", () => {
         taglines: [],
       },
       "all",
+      locale,
     );
 
     expect(result.shouldUpdate).toBe(true);
     expect(result.updatedFields).toEqual(["overview"]);
-    expect(result.overview).toBe("基本资料\n身高：169cm\n\n旧简介\n\n别名：神木れい");
-  });
-
-  it("detects whether actor info is still missing", () => {
-    expect(
-      hasMissingActorInfo(
-        {
-          overview: "基本资料\n血型：A型\n身高：169cm\n\n已有简介\n\n别名：神木れい",
-          tags: ["favorite"],
-          taglines: [],
-          premiereDate: "1999-12-20T00:00:00.000Z",
-          productionYear: 1999,
-          productionLocations: ["埼玉県"],
-        },
-        {
-          name: "神木麗",
-          aliases: ["神木れい"],
-          blood_type: "A",
-          height_cm: 169,
-          birth_date: "1999-12-20",
-          birth_place: "埼玉県",
-        },
-      ),
-    ).toBe(false);
-
-    expect(
-      hasMissingActorInfo(
-        {
-          overview: "已有简介",
-          tags: ["favorite"],
-          taglines: [],
-        },
-        {
-          name: "神木麗",
-          blood_type: "A",
-          height_cm: 169,
-          birth_date: "1999-12-20",
-          birth_place: "埼玉県",
-        },
-      ),
-    ).toBe(true);
-
-    expect(
-      hasMissingActorInfo(
-        {
-          overview: "基本资料\n血型：A型\n身高：169cm\n\n已有简介\n\n别名：神木れい",
-          tags: ["favorite", "mdcz:birth_date:1999-12-20"],
-          taglines: ["MDCz: 1999-12-20"],
-          premiereDate: "1999-12-20T00:00:00.000Z",
-          productionYear: 1999,
-          productionLocations: ["埼玉県"],
-        },
-        {
-          name: "神木麗",
-          aliases: ["神木れい"],
-          blood_type: "A",
-          height_cm: 169,
-          birth_date: "1999-12-20",
-          birth_place: "埼玉県",
-        },
-      ),
-    ).toBe(true);
+    expect(result.overview).toBe(expected);
   });
 });

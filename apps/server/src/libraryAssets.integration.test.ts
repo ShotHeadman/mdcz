@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
@@ -112,6 +112,29 @@ describe("library asset HTTP representations", () => {
       expect(cached.statusCode).toBe(status);
       expect(cached.rawPayload).toEqual(status === 304 ? Buffer.alloc(0) : fixture.source);
       if (revision) expect(cached.headers.etag).not.toBe(response.headers.etag);
+    }
+
+    const outside = join(await createTempRoot("library-assets-outside"), "secret.png");
+    await writeFile(outside, fixture.source);
+    await symlink(outside, join(fixture.sourcePath, "..", "linked.png"));
+    for (const [name, query, status, contentType] of [
+      ["clip.mov", "", 200, "video/quicktime"],
+      ["clip.m4v", "", 200, "video/x-m4v"],
+      // Formats sharp cannot resize come back as they are, even when a thumbnail was asked for.
+      ["poster.bmp", "?w=120&format=webp", 200, "image/bmp"],
+      ["poster.svg", "?w=120&format=webp", 200, "image/svg+xml"],
+      ["linked.png", "", 403, undefined],
+    ] as const) {
+      if (!name.startsWith("linked")) await writeFile(join(fixture.sourcePath, "..", name), "original");
+      const original = await fixture.fastify.inject({
+        method: "GET",
+        url: `${fixture.url.replace("poster.png", name)}${query}`,
+        headers: { authorization: `Bearer ${fixture.token}` },
+      });
+      expect(original.statusCode, name).toBe(status);
+      if (contentType) expect(original.headers["content-type"]).toContain(contentType);
+      if (contentType) expect(original.body).toBe("original");
+      if (name.endsWith(".svg")) expect(original.headers["content-security-policy"]).toContain("sandbox");
     }
   });
 

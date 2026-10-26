@@ -2,7 +2,6 @@ import type { Website } from "./enums";
 import type { AssetRef, RootFileRef } from "./mediaRef";
 
 export type FileId = string;
-export type GroupId = string;
 
 export interface ActorProfile {
   name: string;
@@ -156,19 +155,6 @@ export interface NfoLocalState {
   sourcePin?: { site: Website; url: string };
 }
 
-export interface UncensoredConfirmResultItem {
-  fileId: FileId;
-  sourceVideoPath: string;
-  targetVideoPath: string;
-  targetNfoPath?: string;
-  choice: UncensoredChoice;
-}
-
-export interface UncensoredConfirmResponse {
-  updatedCount: number;
-  items: UncensoredConfirmResultItem[];
-}
-
 export type NamingPreviewSampleId = "standard" | "subtitled" | "multiActor" | "noActor";
 
 export interface NamingPreviewItem {
@@ -191,13 +177,6 @@ export interface MediaCandidate {
   ref: RootFileRef;
   /** Already in the library, or the source of a hardlinked or copied library file. */
   inLibrary: boolean;
-}
-
-export interface IpcError {
-  code: string;
-  message: string;
-  fields?: string[];
-  fieldErrors?: Record<string, string>;
 }
 
 // ── Maintenance Mode ──────────────────────────────────────────────
@@ -310,10 +289,6 @@ export interface MaintenancePreviewItem {
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
-}
-
-export interface MaintenancePreviewResult {
-  items: MaintenancePreviewItem[];
 }
 
 export interface MaintenanceImageAlternatives {
