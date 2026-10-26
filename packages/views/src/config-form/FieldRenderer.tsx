@@ -530,12 +530,14 @@ export function ChipArrayFieldWrapper({
   return (
     <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
       {(field) => (
-        <ChipArrayField
-          values={Array.isArray(field.value) ? field.value : []}
-          onChange={field.onChange}
-          options={options}
-          showBulkActions={showBulkActions}
-        />
+        <FormControl>
+          <ChipArrayField
+            values={Array.isArray(field.value) ? field.value : []}
+            onChange={field.onChange}
+            options={options}
+            showBulkActions={showBulkActions}
+          />
+        </FormControl>
       )}
     </BaseField>
   );

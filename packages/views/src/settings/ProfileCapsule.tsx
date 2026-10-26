@@ -62,9 +62,10 @@ export function ProfileCapsule({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         disabled={saving}
+        aria-busy={saving}
         className={cn(
           "inline-flex h-9 items-center gap-2 rounded-[var(--radius-quiet-capsule)] bg-surface-low px-4 text-sm",
-          "text-foreground outline-none transition-colors hover:bg-surface-raised",
+          "text-foreground outline-none transition-colors enabled:hover:bg-surface-raised disabled:cursor-wait",
           "focus-visible:ring-2 focus-visible:ring-ring/40",
           className,
         )}

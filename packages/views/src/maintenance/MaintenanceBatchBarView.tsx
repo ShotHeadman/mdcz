@@ -11,6 +11,7 @@ import {
 } from "@mdcz/ui";
 import { PauseCircle, Play, StopCircle } from "lucide-react";
 import { useState } from "react";
+import { DisabledReason } from "../common";
 import { useT } from "../i18n";
 import { ReturnToWorkbenchSetupButton } from "../workbench/ReturnToWorkbenchSetupButton";
 
@@ -113,8 +114,7 @@ export function MaintenanceBatchBarView({
               dialogDescription={t.maintenance.returnDescription}
               onConfirm={onReturnToSetup}
             />
-            {/* Disabled buttons take no pointer events, so the reason sits on their wrapper. */}
-            <span className="flex flex-wrap gap-2" title={blockedReason}>
+            <DisabledReason reason={blockedReason} className="flex flex-wrap gap-2">
               <Button
                 onClick={async () => {
                   if (!usesDiffView && hasPreviewResults) {
@@ -140,7 +140,7 @@ export function MaintenanceBatchBarView({
                   {t.maintenance.dataReplace}
                 </Button>
               )}
-            </span>
+            </DisabledReason>
           </>
         ) : (
           <>

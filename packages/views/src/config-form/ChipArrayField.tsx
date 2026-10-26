@@ -8,19 +8,21 @@ import {
   CommandItem,
   CommandList,
   cn,
-  FormControl,
   Input,
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@mdcz/ui";
 import { Check, ChevronsUpDown, X } from "lucide-react";
-import { useState } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 import { useT } from "../i18n";
 
 export type ChipArrayOption = string | { value: string; label: string };
 
-interface ChipArrayFieldProps {
+// A wrapping FormControl passes these; the focusable control takes them so the field label and error point at it.
+type ControlProps = Pick<ComponentProps<"input">, "id" | "aria-describedby" | "aria-invalid">;
+
+interface ChipArrayFieldProps extends ControlProps {
   values: string[];
   onChange: (values: string[]) => void;
   placeholder?: string;
@@ -29,6 +31,8 @@ interface ChipArrayFieldProps {
   defaultOpen?: boolean;
   /** Values may contain spaces (romanized actor names), so only commas and line breaks separate them. */
   allowSpaces?: boolean;
+  /** Shown under a free-form field with no values; null shows nothing. */
+  emptyText?: ReactNode;
 }
 
 export function ChipArrayField({
@@ -39,6 +43,8 @@ export function ChipArrayField({
   showBulkActions = false,
   defaultOpen = false,
   allowSpaces = false,
+  emptyText,
+  ...control
 }: ChipArrayFieldProps) {
   const t = useT();
   const [inputValue, setInputValue] = useState("");
@@ -104,54 +110,53 @@ export function ChipArrayField({
     <div className="w-full flex justify-end min-h-0">
       {options ? (
         <Popover open={open} onOpenChange={setOpen}>
-          <FormControl>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                role="combobox"
-                aria-expanded={open}
-                className="min-h-8 h-auto py-1.5 px-2.5 w-full bg-background/50 hover:bg-background focus:outline-none focus:ring-1 focus:ring-primary/20 border border-input rounded-md transition-all flex flex-wrap gap-1.5 items-center justify-start text-left overflow-hidden cursor-pointer"
-              >
-                <div className="flex flex-wrap gap-1.5 items-center flex-1 min-w-0">
-                  {values.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      {placeholder || t.configForm.chipArray.noneSelected}
-                    </span>
-                  ) : allOptionsSelected ? (
-                    <span className="text-xs font-medium text-foreground">
-                      {t.configForm.chipArray.allSelected(resolvedOptions.length)}
-                    </span>
-                  ) : values.length > 3 ? (
-                    <span className="text-xs font-medium text-foreground">
-                      {t.configForm.chipArray.someSelected(
-                        values.length,
-                        values
-                          .slice(0, 2)
-                          .map((v) => labelByValue.get(v) ?? v)
-                          .join(", "),
-                      )}
-                    </span>
-                  ) : (
-                    values.map((value: string) => (
-                      <Badge
-                        key={value}
-                        variant="secondary"
-                        className="pl-1.5 pr-1 py-0 h-5 text-[10px] font-medium bg-muted hover:bg-muted/80 border-none gap-1 shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeValue(value);
-                        }}
-                      >
-                        {labelByValue.get(value) ?? value}
-                        <X className="h-2.5 w-2.5 opacity-60 hover:opacity-100 transition-opacity" />
-                      </Badge>
-                    ))
-                  )}
-                </div>
-                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-40 ml-1" />
-              </button>
-            </PopoverTrigger>
-          </FormControl>
+          <PopoverTrigger asChild>
+            <button
+              {...control}
+              type="button"
+              role="combobox"
+              aria-expanded={open}
+              className="min-h-8 h-auto py-1.5 px-2.5 w-full bg-background/50 hover:bg-background focus:outline-none focus:ring-1 focus:ring-primary/20 border border-input rounded-md transition-all flex flex-wrap gap-1.5 items-center justify-start text-left overflow-hidden cursor-pointer"
+            >
+              <div className="flex flex-wrap gap-1.5 items-center flex-1 min-w-0">
+                {values.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">
+                    {placeholder || t.configForm.chipArray.noneSelected}
+                  </span>
+                ) : allOptionsSelected ? (
+                  <span className="text-xs font-medium text-foreground">
+                    {t.configForm.chipArray.allSelected(resolvedOptions.length)}
+                  </span>
+                ) : values.length > 3 ? (
+                  <span className="text-xs font-medium text-foreground">
+                    {t.configForm.chipArray.someSelected(
+                      values.length,
+                      values
+                        .slice(0, 2)
+                        .map((v) => labelByValue.get(v) ?? v)
+                        .join(", "),
+                    )}
+                  </span>
+                ) : (
+                  values.map((value: string) => (
+                    <Badge
+                      key={value}
+                      variant="secondary"
+                      className="pl-1.5 pr-1 py-0 h-5 text-[10px] font-medium bg-muted hover:bg-muted/80 border-none gap-1 shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeValue(value);
+                      }}
+                    >
+                      {labelByValue.get(value) ?? value}
+                      <X className="h-2.5 w-2.5 opacity-60 hover:opacity-100 transition-opacity" />
+                    </Badge>
+                  ))
+                )}
+              </div>
+              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-40 ml-1" />
+            </button>
+          </PopoverTrigger>
           <PopoverContent className="w-[320px] p-0" align="end" disablePortal={defaultOpen}>
             <Command>
               <CommandInput placeholder={t.configForm.chipArray.searchPlaceholder} className="h-8 text-xs" />
@@ -208,16 +213,15 @@ export function ChipArrayField({
         // Free-form tag mode
         <div className="flex flex-col gap-2 w-full">
           <div className="flex gap-2">
-            <FormControl>
-              <Input
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                placeholder={placeholder || t.configForm.chipArray.inputPlaceholder}
-                className="h-8 flex-1 text-sm bg-background/50 focus:bg-background transition-all"
-              />
-            </FormControl>
+            <Input
+              {...control}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={placeholder || t.configForm.chipArray.inputPlaceholder}
+              className="h-8 flex-1 text-sm bg-background/50 focus:bg-background transition-all"
+            />
             <Button
               type="button"
               onClick={() => {
@@ -250,8 +254,10 @@ export function ChipArrayField({
                 </Badge>
               ))}
             </div>
-          ) : (
-            <div className="text-[11px] text-muted-foreground/60 italic px-1">{t.configForm.chipArray.empty}</div>
+          ) : emptyText === null ? null : (
+            <div className="text-[11px] text-muted-foreground/60 italic px-1">
+              {emptyText ?? t.configForm.chipArray.empty}
+            </div>
           )}
         </div>
       )}

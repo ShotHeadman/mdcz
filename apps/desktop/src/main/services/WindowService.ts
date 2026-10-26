@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { DesktopBridgeEvents } from "@mdcz/shared/desktopBridge";
+import { CUSTOM_TITLE_BAR_ARG, type DesktopBridgeEvents } from "@mdcz/shared/desktopBridge";
 import { app, BrowserWindow, nativeImage, nativeTheme, shell } from "electron";
 import windowStateKeeper from "electron-window-state";
 import iconPath from "../../../build/icon.png?asset";
@@ -85,6 +85,7 @@ export class WindowService {
       }),
       webPreferences: {
         preload: preloadPath,
+        additionalArguments: options.useCustomTitleBar ? [CUSTOM_TITLE_BAR_ARG] : [],
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,

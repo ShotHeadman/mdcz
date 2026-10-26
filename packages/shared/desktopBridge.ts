@@ -45,7 +45,12 @@ export interface DesktopBridgeEvents {
   updateStatus: AppUpdateStatus;
 }
 
+/** Main adds this renderer argument when the window has no native title bar. */
+export const CUSTOM_TITLE_BAR_ARG = "--mdcz-custom-title-bar";
+
 export interface DesktopBridge extends DesktopBridgeCalls {
+  /** The window's frame is fixed at creation, so this holds until relaunch even if the setting changes. */
+  readonly customTitleBar: boolean;
   on<TEvent extends keyof DesktopBridgeEvents>(
     event: TEvent,
     listener: (payload: DesktopBridgeEvents[TEvent]) => void,

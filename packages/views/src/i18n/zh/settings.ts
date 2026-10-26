@@ -152,7 +152,9 @@ export const settings: Messages["settings"] = {
   actorAliases: {
     name: "规范名称",
     namePlaceholder: "刮削写入的名字，如 河北彩花",
+    aliases: "别名",
     aliasesPlaceholder: "其他写法，按 Enter 或逗号添加",
+    draftHint: "填写规范名称并添加至少一个别名后保存",
     add: "添加演员",
     remove: "删除演员",
   },

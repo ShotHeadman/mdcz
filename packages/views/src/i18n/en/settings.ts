@@ -168,7 +168,9 @@ export const settings = {
   actorAliases: {
     name: "Canonical name",
     namePlaceholder: "The name scrapes write, e.g. 河北彩花",
+    aliases: "Aliases",
     aliasesPlaceholder: "Other spellings; add with Enter or comma",
+    draftHint: "Saved once it has a canonical name and at least one alias",
     add: "Add actor",
     remove: "Remove actor",
   },

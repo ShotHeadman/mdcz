@@ -124,8 +124,9 @@ const fields: Record<FieldKey, FieldText> = {
   },
   "scrape.filenameUmrTokens": {
     label: "Cracked (UMR) words",
+    // A non-breaking hyphen keeps the built-in word C-U on one line.
     description:
-      "A file whose name contains one of these words is cracked uncensored, e.g. LTX or restored. Built in: UMR, 破解, C-U.",
+      "A file whose name contains one of these words is cracked uncensored, e.g. LTX or restored. Built in: UMR, 破解, C\u2011U.",
   },
   "scrape.filenameLeakTokens": {
     label: "Leak words",

@@ -48,7 +48,7 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 
   if (authQ.isLoading) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-surface-canvas text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center bg-surface-canvas text-sm text-muted-foreground">
         {t.common.loading}
       </div>
     );
@@ -76,7 +76,7 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
   useWebTaskSync();
   const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list() });
-  // The logs panel and custom title bar are desktop settings; the browser has neither.
+  // The logs panel is a desktop setting; the browser has none.
   const configQ = useQuery({
     queryKey: queryKeys.config.current,
     queryFn: () => api.config.read(),
@@ -84,7 +84,6 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
   });
   const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
   const isToolsRoute = pathname === "/tools";
-  const ui = desktop ? configQ.data?.ui : undefined;
 
   useEffect(() => {
     if (isToolsRoute) {
@@ -98,9 +97,10 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
       linkComponent={ShellLink}
       navBadges={{ pending: pendingQ.data?.items.length }}
       systemNav={
-        ui?.showLogsPanel === false ? SYSTEM_SHELL_NAV.filter((item) => item.to !== "/logs") : SYSTEM_SHELL_NAV
+        desktop && configQ.data?.ui.showLogsPanel === false
+          ? SYSTEM_SHELL_NAV.filter((item) => item.to !== "/logs")
+          : SYSTEM_SHELL_NAV
       }
-      titlebar={ui?.useCustomTitleBar ? <DesktopTitleBar /> : null}
     >
       {desktop ? <DesktopChrome desktop={desktop} /> : null}
       {children}
@@ -113,13 +113,31 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
   );
 };
 
+// The window keeps its frame until relaunch, so the title bar strip wraps every page from the first paint, loading and
+// crash screens included.
+const WindowFrame = ({ children }: { children: ReactNode }) =>
+  desktop?.customTitleBar ? (
+    <div className="flex h-full flex-col">
+      <DesktopTitleBar />
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
+  ) : (
+    children
+  );
+
 export const Route = createRootRoute({
   component: () => (
-    <ErrorBoundary>
-      <RootLayout>
-        <Outlet />
-      </RootLayout>
-    </ErrorBoundary>
+    <WindowFrame>
+      <ErrorBoundary>
+        <RootLayout>
+          <Outlet />
+        </RootLayout>
+      </ErrorBoundary>
+    </WindowFrame>
   ),
-  errorComponent: ({ error, reset }) => <CrashFallback error={error} onRetry={reset} />,
+  errorComponent: ({ error, reset }) => (
+    <WindowFrame>
+      <CrashFallback error={error} onRetry={reset} />
+    </WindowFrame>
+  ),
 });

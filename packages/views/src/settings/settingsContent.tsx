@@ -29,10 +29,11 @@ import {
   DialogTrigger,
   FormControl,
   Input,
+  Label,
   Switch,
 } from "@mdcz/ui";
 import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FieldError, FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { toast } from "sonner";
@@ -871,17 +872,23 @@ type ActorAliasGroupError = { name?: FieldError; aliases?: FieldError | Array<Fi
 
 function ActorAliasesField() {
   const t = useT();
+  const text = t.settings.actorAliases;
   const form = useFormContext<FieldValues>();
   const formState = useFormState({ control: form.control, name: "personSync.actorAliases" });
+  const idPrefix = useId();
   // A new actor stays in the editor until it has a name and an alias, so an unfinished row is never saved.
   const [draft, setDraft] = useState<ActorAliasGroup | null>(null);
+  // Groups carry no id. Keys that move with their row keep an alias still being typed with its own actor when a row
+  // above it is removed.
+  const rowKeys = useRef<number[]>([]);
+  const nextRowKey = useRef(0);
   // The server reports a group's issue at its name or alias path, below this field's own error slot.
-  const groupError = (index: number): string | undefined => {
+  const groupErrors = (index: number) => {
     const error = form.getFieldState(`personSync.actorAliases.${index}`, formState).error as
       | ActorAliasGroupError
       | undefined;
     const aliases = Array.isArray(error?.aliases) ? error.aliases.find(Boolean) : error?.aliases;
-    return error?.name?.message ?? aliases?.message;
+    return { name: error?.name?.message, aliases: aliases?.message };
   };
   return (
     <BaseField name="personSync.actorAliases" layout="vertical" commitMode="debounce">
@@ -889,6 +896,8 @@ function ActorAliasesField() {
         const groups = Array.isArray(field.value) ? (field.value as ActorAliasGroup[]) : [];
         // The draft renders as the last row, so its inputs stay mounted (and focused) when it is saved.
         const rows = draft ? [...groups, draft] : groups;
+        while (rowKeys.current.length < rows.length) rowKeys.current.push(nextRowKey.current++);
+        rowKeys.current.length = rows.length;
         const update = (index: number, next: Partial<ActorAliasGroup>) => {
           if (!draft || index < groups.length) {
             field.onChange(groups.map((group, at) => (at === index ? { ...group, ...next } : group)));
@@ -902,41 +911,64 @@ function ActorAliasesField() {
           field.onChange([...groups, updated]);
           setDraft(null);
         };
-        const remove = (index: number) =>
-          draft && index === groups.length
-            ? setDraft(null)
-            : field.onChange(groups.filter((_group, at) => at !== index));
+        const remove = (index: number) => {
+          rowKeys.current.splice(index, 1);
+          if (draft && index === groups.length) setDraft(null);
+          else field.onChange(groups.filter((_group, at) => at !== index));
+        };
         return (
           <div className="space-y-2">
-            {rows.map((group, index) => (
-              <div key={index} className="space-y-2 rounded-md border border-border/60 p-3">
-                <div className="flex items-center gap-2">
-                  <Input
-                    aria-label={t.settings.actorAliases.name}
-                    placeholder={t.settings.actorAliases.namePlaceholder}
-                    className="h-8"
-                    value={group.name}
-                    onChange={(event) => update(index, { name: event.target.value })}
+            {rows.map((group, index) => {
+              const rowId = `${idPrefix}-${rowKeys.current[index]}`;
+              const errors = groupErrors(index);
+              const error = errors.name ?? errors.aliases;
+              return (
+                <div
+                  key={rowId}
+                  className="grid items-start gap-x-3 gap-y-2 rounded-md border border-border/60 p-3 sm:grid-cols-[auto_minmax(0,1fr)]"
+                >
+                  <Label htmlFor={`${rowId}-name`} className="text-xs text-muted-foreground sm:h-8">
+                    {text.name}
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id={`${rowId}-name`}
+                      aria-invalid={Boolean(errors.name)}
+                      placeholder={text.namePlaceholder}
+                      className="h-8"
+                      value={group.name}
+                      onChange={(event) => update(index, { name: event.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={text.remove}
+                      onClick={() => remove(index)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <Label htmlFor={`${rowId}-aliases`} className="text-xs text-muted-foreground sm:h-8">
+                    {text.aliases}
+                  </Label>
+                  <ChipArrayField
+                    id={`${rowId}-aliases`}
+                    aria-invalid={Boolean(errors.aliases)}
+                    allowSpaces
+                    values={group.aliases}
+                    onChange={(aliases) => update(index, { aliases })}
+                    placeholder={text.aliasesPlaceholder}
+                    emptyText={null}
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={t.settings.actorAliases.remove}
-                    onClick={() => remove(index)}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+                  {error ? (
+                    <p className="text-xs text-destructive sm:col-start-2">{error}</p>
+                  ) : draft && index === groups.length ? (
+                    <p className="text-xs text-muted-foreground sm:col-start-2">{text.draftHint}</p>
+                  ) : null}
                 </div>
-                <ChipArrayField
-                  allowSpaces
-                  values={group.aliases}
-                  onChange={(aliases) => update(index, { aliases })}
-                  placeholder={t.settings.actorAliases.aliasesPlaceholder}
-                />
-                {groupError(index) ? <p className="text-xs text-destructive">{groupError(index)}</p> : null}
-              </div>
-            ))}
+              );
+            })}
             <Button
               type="button"
               variant="outline"
@@ -944,7 +976,7 @@ function ActorAliasesField() {
               disabled={Boolean(draft)}
               onClick={() => setDraft({ name: "", aliases: [] })}
             >
-              {t.settings.actorAliases.add}
+              {text.add}
             </Button>
           </div>
         );
