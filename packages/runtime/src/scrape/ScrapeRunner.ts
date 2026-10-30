@@ -819,6 +819,7 @@ export class ScrapeRunner {
             recordSiteResults: this.deps.recordSiteResults,
           }),
         translateService: this.translateService,
+        readFileNumber: (...args) => this.translateService.readFileNumber(...args),
         nfoGenerator: this.nfoGenerator,
         buildTags: buildMovieTags,
         downloadManager: new DownloadManager(this.deps.networkClient, {

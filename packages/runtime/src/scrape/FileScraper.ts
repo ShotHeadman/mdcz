@@ -44,7 +44,7 @@ import { newestNfosFirst, preferredLocalNfoBaseNames, selectLocalNfoNames } from
 import type { TranslateService } from "./TranslateService";
 import { isAbortError, throwIfAborted } from "./utils/abort";
 import { classifyMovie, isLikelyUncensoredNumber } from "./utils/movieClassification";
-import { parseFileInfo } from "./utils/number";
+import { acceptAiNumber, parseFileInfo } from "./utils/number";
 
 const entryNameMatches = (entryName: string, candidateName: string): boolean =>
   process.platform === "win32" ? entryName.toLowerCase() === candidateName.toLowerCase() : entryName === candidateName;
@@ -94,6 +94,7 @@ export interface FileScraperDependencies {
     signalService: Pick<RuntimeScrapeSignalService, "showLogText" | "setProgress">;
   }): Promise<DownloadedAssets>;
   probeVideoMetadata?(sourcePath: string): Promise<VideoMeta | undefined>;
+  readFileNumber?: TranslateService["readFileNumber"];
   signalService: RuntimeScrapeSignalService;
   translateService: Pick<TranslateService, "translateCrawlerData">;
 }
@@ -307,16 +308,50 @@ export class FileScraper {
         `Preparing movie scrape task ${randomUUID()} for ${fileInfo.number} (scrapeSessionId: ${scrapeSessionId ?? "standalone"})`,
       );
       signalService.showScrapeStep("search");
-      const { aggregation, crawlerData, translationError } = await prepareOnlineMetadata({
-        number: fileInfo.number,
-        configuration,
-        aggregationService: this.deps.aggregationService,
-        translateService: this.deps.translateService,
-        published: { crawlerData: publishedData, localState: inspected[0].localState },
-        keepEdits: true,
-        manualScrape,
-        signal,
-      });
+      const published = { crawlerData: publishedData, localState: inspected[0].localState };
+      const searchOnline = (number: string) =>
+        prepareOnlineMetadata({
+          number,
+          configuration,
+          aggregationService: this.deps.aggregationService,
+          translateService: this.deps.translateService,
+          published,
+          keepEdits: true,
+          manualScrape,
+          signal,
+        });
+      let online: Awaited<ReturnType<typeof searchOnline>>;
+      try {
+        online = await searchOnline(fileInfo.number);
+      } catch (error) {
+        const { readFileNumber } = this.deps;
+        // Only the parser's own reading can be junk picked out of the name; a corrected or mapped number is the user's.
+        const parsedNumber = parseFileInfo(fileInfo.filePath, { ...configuration.scrape, numberMappings: {} }).number;
+        if (
+          !(error instanceof ScrapeFailureError && error.kind === "not_found") ||
+          !configuration.scrape.aiNumberFallback ||
+          !readFileNumber ||
+          manualScrape ||
+          fileInfo.number !== parsedNumber
+        )
+          throw error;
+        const answer = await readFileNumber(fileInfo.fileName, fileInfo.number, configuration, signal).catch(
+          (aiError: unknown) => {
+            if (isAbortError(aiError)) throw aiError;
+            this.deps.logger.warn(`AI number reading failed for ${fileInfo.fileName}: ${toErrorMessage(aiError)}`);
+            return null;
+          },
+        );
+        const aiNumber = answer ? acceptAiNumber(fileInfo.fileName, fileInfo.number, answer) : undefined;
+        if (!aiNumber) {
+          if (answer) signalService.showLogText(`Ignored AI number ${answer} for ${fileInfo.fileName}`);
+          throw error;
+        }
+        signalService.showLogText(`AI read ${aiNumber} from ${fileInfo.fileName}; ${fileInfo.number} was not found`);
+        for (const member of inspected) member.fileInfo = { ...member.fileInfo, number: aiNumber };
+        online = await searchOnline(aiNumber);
+      }
+      const { aggregation, crawlerData, translationError } = online;
       const planMember = (
         member: { fileInfo: FileInfo; localState?: NfoLocalState; options: FileScrapeOptions },
         versionLabel?: string,

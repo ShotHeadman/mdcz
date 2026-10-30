@@ -49,6 +49,12 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "番号识别忽略词",
       description: "番号识别前忽略这些文字；仅影响识别，不修改文件名。支持 Enter、逗号或空格分割添加。",
     },
+    "scrape.aiNumberFallback": {
+      label: "AI 兜底识别番号",
+      description:
+        "识别出的番号在所有站点都找不到时，把文件名发给翻译设置中的 LLM 重新识别一次；只采用文件名里确实出现的番号。需先在翻译设置中配置 LLM。",
+      aliases: ["ai", "llm"],
+    },
     "scrape.filenameBlacklistTokens": {
       label: "自动扫描黑名单词",
       description:

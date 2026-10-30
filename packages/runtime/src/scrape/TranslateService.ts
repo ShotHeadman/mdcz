@@ -193,6 +193,18 @@ export class TranslateService {
     });
   }
 
+  async readFileNumber(
+    fileName: string,
+    missedNumber: string,
+    config: Configuration,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    throwIfAborted(signal);
+    return await runWithNetworkChannel("translation", () =>
+      this.openAiTranslator.readFileNumber(fileName, missedNumber, config, signal),
+    );
+  }
+
   async translateText(
     input: string,
     target: LanguageTarget,

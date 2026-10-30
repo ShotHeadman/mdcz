@@ -229,6 +229,28 @@ export const extractNumber = (fileName: string, escapeStrings: string[] = []): s
     : number;
 };
 
+/**
+ * The number an AI read from a file name, or `undefined` when it cannot be trusted: the name must spell the answer
+ * out (separators and zero padding aside), so the AI picks among the name's own characters instead of recalling a
+ * work, and the parser must read a number other than the one that already missed.
+ */
+export const acceptAiNumber = (fileName: string, missedNumber: string, answer: string): string | undefined => {
+  const tokens = answer
+    .normalize("NFKC")
+    .toUpperCase()
+    .match(/[A-Z]+|\d+/gu);
+  if (!tokens) return undefined;
+  const spelledOut = new RegExp(
+    tokens
+      .map((token, index) => `${index ? "[^A-Z0-9]*" : ""}${/\d/u.test(token) ? `0*${token}(?!\\d)` : token}`)
+      .join(""),
+    "u",
+  );
+  if (!spelledOut.test(fileName.normalize("NFKC").toUpperCase())) return undefined;
+  const number = extractNumber(answer.normalize("NFKC"));
+  return number && number !== missedNumber ? number : undefined;
+};
+
 const detectNamedPart = (stem: string, number: string): FileInfo["part"] | undefined => {
   const keywordMatches = Array.from(stem.matchAll(PART_PATTERN));
   const keywordMatch = keywordMatches.at(-1);

@@ -1,5 +1,25 @@
-import { expandScrapeRetryItems, extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
+import {
+  acceptAiNumber,
+  expandScrapeRetryItems,
+  extractNumber,
+  parseFileInfo,
+} from "@mdcz/runtime/scrape/utils/number";
 import { describe, expect, it } from "vitest";
+
+describe("acceptAiNumber", () => {
+  it.each([
+    { name: "www.98T.la@MEYD-911-U", missed: "WWW-98T", answer: "MEYD-911", expected: "MEYD-911" },
+    { name: "hd1080-mide00123hhb", missed: "HD-1080", answer: "MIDE-123", expected: "MIDE-123" },
+    { name: "www.98T.la@FC2-PPV-1234567", missed: "WWW-98T", answer: "FC2-PPV-1234567", expected: "FC2-1234567" },
+    { name: "ＭＥＹＤ－９１１ 新作", missed: "X-1", answer: "meyd-911", expected: "MEYD-911" },
+    { name: "三上悠亜 新作 4K60fps", missed: "X-1", answer: "SSIS-123", expected: undefined },
+    { name: "www.98T.la@ABP-1234", missed: "WWW-98T", answer: "ABP-123", expected: undefined },
+    { name: "www.98T.la@MEYD-911", missed: "WWW-98T", answer: "www.98T", expected: undefined },
+    { name: "www.98T.la@MEYD-911", missed: "WWW-98T", answer: "未找到", expected: undefined },
+  ])("reads $answer from $name as $expected", ({ name, missed, answer, expected }) => {
+    expect(acceptAiNumber(name, missed, answer)).toBe(expected);
+  });
+});
 
 describe("extractNumber", () => {
   it("preserves explicit hyphenated catalog codes before bare part stripping", () => {

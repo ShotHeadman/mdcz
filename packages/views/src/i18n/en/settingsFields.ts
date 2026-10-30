@@ -112,6 +112,12 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "Ignored before detecting the movie code; only affects detection and never renames files. Add with Enter, comma or space.",
   },
+  "scrape.aiNumberFallback": {
+    label: "AI number fallback",
+    description:
+      "When no site has the number read from a file name, sends the file name to the LLM set up under Translation to read the number once more. Only a number that appears in the file name is used. Requires the LLM to be configured in Translation settings.",
+    aliases: ["ai", "llm"],
+  },
   "scrape.filenameBlacklistTokens": {
     label: "Auto-scan blacklist words",
     description:

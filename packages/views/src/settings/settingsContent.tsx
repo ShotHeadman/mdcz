@@ -201,6 +201,7 @@ export function FilenameFilteringSection() {
   return (
     <>
       <ChipArrayFieldWrapper name="scrape.filenameIgnoreTokens" />
+      <BoolField name="scrape.aiNumberFallback" />
       <ChipArrayFieldWrapper name="scrape.filenameBlacklistTokens" />
       <NumberField name="scrape.minVideoSizeMb" min={0} max={10240} />
     </>

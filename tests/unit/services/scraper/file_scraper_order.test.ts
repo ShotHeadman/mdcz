@@ -87,6 +87,53 @@ describe("FileScraper site aggregation", () => {
     expect(result.relativePath).toBe(filePath);
     expect(result.crawlerData?.number ?? result.fileName).toContain("ABF-252");
   });
+
+  it.each([
+    { name: "searches again with a number the AI reads from the name", answer: "MEYD-911", searched: ["MEYD-911"] },
+    { name: "keeps the miss when the answer is not in the name", answer: "SSIS-123", searched: [] },
+    { name: "keeps the miss when the AI request fails", answer: new Error("HTTP 500"), searched: [] },
+    { name: "does not ask while the fallback is off", answer: "MEYD-911", fallback: false, searched: [], asked: 0 },
+    {
+      name: "does not second-guess a mapped number",
+      answer: "MEYD-911",
+      mappings: { "98T.LA": "ABC-123" },
+      searched: [],
+      asked: 0,
+    },
+  ])("$name", async ({ answer, searched, fallback = true, mappings = {}, asked = 1 }) => {
+    const crawlerProvider = new OrderedStubCrawlerProvider();
+    const directory = await createTempDirectory("scrape-ai-number");
+    onTestFinished(directory.cleanup);
+    const filePath = join(directory.path, "www.98T.la@MEYD-911-U.mp4");
+    await writeFile(filePath, "video");
+    const config = createConfig({ aiNumberFallback: fallback, numberMappings: mappings });
+    const readFileNumber = vi.fn(async () => {
+      if (answer instanceof Error) throw answer;
+      return answer;
+    });
+    const scraper = createFileScraper({
+      getConfiguration: async () => config,
+      aggregationService: new AggregationService(crawlerProvider, { config }),
+      translateService: new TranslateService(new NetworkClient()),
+      readFileNumber,
+      nfoGenerator: new NfoGenerator(),
+      downloadManager: new DownloadManager(new NetworkClient(), {
+        imageHostCooldownStore: new MemoryImageHostCooldownStore(),
+      }),
+      fileOrganizer: new FileOrganizer(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const result = await prepareFile(scraper, filePath, undefined, undefined, {
+      roots: [{ id: "test", hostPath: "/tmp" }],
+    });
+
+    const parsed = mappings["98T.LA"] ?? "WWW-98T";
+    expect(readFileNumber).toHaveBeenCalledTimes(asked);
+    if (asked) expect(readFileNumber).toHaveBeenCalledWith("www.98T.la@MEYD-911-U", parsed, config, undefined);
+    expect([...new Set(crawlerProvider.calledNumbers)]).toEqual([parsed, ...searched]);
+    expect(result.status === "failed" && result.pending?.kind).toBe("not_found");
+  });
 });
 
 import { writeFile } from "node:fs/promises";

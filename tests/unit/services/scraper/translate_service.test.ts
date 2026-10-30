@@ -618,4 +618,36 @@ describe("TranslateService term consistency", () => {
     await expect(service.translateText("简体标题", "zh_tw", config)).resolves.toBe("簡體標題");
     expect(generateText).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { output: '{"number":"MEYD-911"}', expected: "MEYD-911" },
+    { output: '{"number":null}', expected: null },
+    { output: '<think>The domain is noise.</think>\n```json\n{"number": "MEYD-911"}\n```', expected: "MEYD-911" },
+    { output: "MEYD-911", expected: /AI number reading returned invalid output/ },
+  ])("reads a file number from LLM output $output", async ({ output, expected }) => {
+    const generateText = vi.fn().mockResolvedValue(output);
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
+    const reading = service.readFileNumber("www.98T.la@MEYD-911-U", "WWW-98T", createBaseConfig());
+
+    if (expected instanceof RegExp) await expect(reading).rejects.toThrow(expected);
+    else await expect(reading).resolves.toBe(expected);
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringMatching(/「WWW-98T」[\s\S]*文件名：www\.98T\.la@MEYD-911-U$/u),
+        outputSchema: expect.objectContaining({ name: "file_number" }),
+      }),
+      undefined,
+    );
+  });
+
+  it("refuses to read a file number without a usable LLM", async () => {
+    const generateText = vi.fn();
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
+    const config = configurationSchema.parse({ translate: { llmApiKey: "" } });
+
+    await expect(service.readFileNumber("www.98T.la@MEYD-911-U", "WWW-98T", config)).rejects.toThrow(
+      /requires an LLM model/,
+    );
+    expect(generateText).not.toHaveBeenCalled();
+  });
 });
