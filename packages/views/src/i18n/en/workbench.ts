@@ -25,6 +25,7 @@ export const workbench = {
   rescrapeDirectory: "Rescrape this directory",
   taskStateVideos: "Videos",
   taskStateSkipped: "Skipped",
+  taskStateInLibrary: "In library",
   taskStateInaccessiblePaths: "Some paths are inaccessible",
   retryFailed: "Retry failed",
   actorSyncQueued: (servers: string) => `${servers} · Actor sync queued`,

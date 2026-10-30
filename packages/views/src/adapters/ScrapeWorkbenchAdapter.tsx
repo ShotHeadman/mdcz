@@ -63,7 +63,9 @@ export function ScrapeWorkbenchAdapter({
     queued: { icon: Loader2, tone: "active", title: t.scrape.taskQueued },
     discovering: { icon: Loader2, tone: "active", title: t.scrape.scanningVideoFiles },
     stopping: { icon: Loader2, tone: "active", title: t.scrape.stoppingWaitingCurrent },
-    completed: { icon: SearchX, tone: "muted", title: t.scrape.noVideosFound },
+    completed: snapshot?.discovery?.inLibrary
+      ? { icon: SearchX, tone: "muted", title: t.scrape.allVideosInLibrary, hint: t.scrape.allVideosInLibraryHint }
+      : { icon: SearchX, tone: "muted", title: t.scrape.noVideosFound },
     stopped: { icon: CircleStop, tone: "muted", title: t.scrape.taskStopped },
     interrupted: {
       icon: Unplug,

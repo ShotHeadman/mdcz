@@ -25,6 +25,7 @@ export const workbench: Messages["workbench"] = {
   rescrapeDirectory: "重新刮削此目录",
   taskStateVideos: "视频",
   taskStateSkipped: "跳过",
+  taskStateInLibrary: "已在库中",
   taskStateInaccessiblePaths: "部分路径无法访问",
   retryFailed: "重试失败",
   actorSyncQueued: (servers: string) => `${servers} · 人物同步排队中`,

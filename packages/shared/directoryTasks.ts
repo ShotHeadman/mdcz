@@ -18,6 +18,8 @@ export interface DiscoveryProgress {
   directories: number;
   candidates: number;
   skipped: number;
+  /** Videos a folder scrape left out because a library already has them. */
+  inLibrary?: number;
   elapsedMs: number;
   currentPath: string | null;
   warnings: string[];

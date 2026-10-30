@@ -177,6 +177,69 @@ describe("buildServer scrape integration", () => {
     expect(manifest.manifestFixedAt).not.toBeNull();
     if (kind !== "files") expect(manifest.items).toEqual([]);
   });
+
+  it.each([
+    "inPlace",
+    "copy",
+  ] as const)("leaves the videos a library already has out of folder scrapes (%s)", async (placement) => {
+    const root = await createTempRoot("folder-scrape-owned");
+    const source = join(root, "source");
+    // In place, each movie needs a folder of its own.
+    const addMovie = async (number: string) => {
+      await mkdir(join(source, number), { recursive: true });
+      await writeFile(join(source, number, `${number}.mp4`), "video");
+    };
+    await addMovie("ABC-123");
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+    });
+    await services.config.update({
+      download: {
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      },
+    });
+    const token = await loginAsAdmin(fastify);
+    const { libraryId } = await createTestLibrary(fastify, token, root, {
+      placement,
+      ...(placement === "inPlace" ? { outputPath: "" } : {}),
+    });
+    const scrape = async (procedure: "start" | "rerunDirectory", payload: object) => {
+      const response = await fastify.inject({
+        method: "POST",
+        url: `/trpc/scrape.${procedure}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const taskId: string = response.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+      const snapshot = await services.scrape.snapshot({ taskId });
+      return {
+        taskId,
+        files: snapshot.items.map((item) => item.relativePath.split("/").at(-1)),
+        discovery: { candidates: snapshot.discovery?.candidates, inLibrary: snapshot.discovery?.inLibrary },
+      };
+    };
+
+    const first = await scrape("start", {
+      executionMode: "batch",
+      libraryId,
+      source: { kind: "directory", scanDir: source, recursive: true },
+    });
+    await addMovie("XYZ-111");
+    const rerun = await scrape("rerunDirectory", { taskId: first.taskId });
+    const unchanged = await scrape("rerunDirectory", { taskId: first.taskId });
+
+    expect([first, rerun, unchanged].map(({ files, discovery }) => ({ files, discovery }))).toEqual([
+      { files: ["ABC-123.mp4"], discovery: { candidates: 1, inLibrary: 0 } },
+      { files: ["XYZ-111.mp4"], discovery: { candidates: 1, inLibrary: 1 } },
+      { files: [], discovery: { candidates: 0, inLibrary: 2 } },
+    ]);
+  });
   it.each([
     "conflict",
     "metadata",

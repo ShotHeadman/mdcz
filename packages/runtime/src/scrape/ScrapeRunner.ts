@@ -742,9 +742,23 @@ export class ScrapeRunner {
       onProgress,
       platform: this.deps.platform ?? "desktop",
     });
+    const roots = new Map((await repository.mediaRoots.listRoots()).map((root) => [root.id, root]));
+    const identities = await Promise.all(
+      found.refs.map(async (ref) => {
+        const root = roots.get(ref.rootId);
+        if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+        return filesystemPathKey(await found.inventory.entryPath(resolveRootRelativePath(root, ref.relativePath)));
+      }),
+    );
+    // Like the library watcher, a folder scrape leaves out what a library already has, the retained sources of
+    // copied or linked movies included; a library movie is scraped again from the library or a preview selection.
+    const owned = repository.library.knownMediaIdentities(identities);
+    const refs = found.refs.filter((_, index) => !owned.has(identities[index]));
+    const discovery = { ...found.discovery, candidates: refs.length, inLibrary: found.refs.length - refs.length };
+    onProgress(discovery);
 
     const groups = await admitScrapeGroups({
-      refs: found.refs,
+      refs,
       resolveRoot: (id) => repository.mediaRoots.get(id),
       inventory: found.inventory,
       configuration: context.configuration,
@@ -753,7 +767,7 @@ export class ScrapeRunner {
     const manifest = await repository.scrapeRuns.fixManifest({
       runId: run.id,
       signal,
-      discoveryJson: JSON.stringify(found.discovery),
+      discoveryJson: JSON.stringify(discovery),
       items: groups
         .flatMap((group) => group.members)
         .map((member, ordinal) => ({

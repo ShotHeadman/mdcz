@@ -565,6 +565,7 @@ export const scrapeRunSnapshotSchema = z.object({
       directories: z.number(),
       candidates: z.number(),
       skipped: z.number(),
+      inLibrary: z.number().optional(),
       elapsedMs: z.number(),
       currentPath: z.string().nullable(),
       warnings: z.array(z.string()),
