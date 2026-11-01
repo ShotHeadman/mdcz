@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
@@ -696,6 +696,22 @@ export class MaintenanceRuntime {
           folders: published.folders,
           library: publication.library,
         });
+        // Movies of one actor share the photos in their folder's .actors, so a movie leaving takes copies.
+        const snapshot = publication.library.publicationSnapshot({
+          paths: published.artifacts.flatMap((artifact) => artifact.removeSourcesAfterCommit ?? []),
+        });
+        const usedByOthers = new Set(
+          [...snapshot.files, ...snapshot.assets].flatMap((row) => {
+            const root = publication.roots.find((candidate) => candidate.id === row.rootId);
+            return row.itemId !== publication.identity.movieId && root
+              ? [filesystemPathKey(resolveRootRelativePath(root, row.relativePath))]
+              : [];
+          }),
+        );
+        for (const artifact of published.artifacts)
+          artifact.removeSourcesAfterCommit = artifact.removeSourcesAfterCommit?.filter(
+            (path) => !usedByOthers.has(filesystemPathKey(resolve(path))),
+          );
         const validate = async () => {
           throwIfAborted(signal);
           await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));

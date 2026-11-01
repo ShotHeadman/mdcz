@@ -489,6 +489,27 @@ describe("buildServer maintenance integration", () => {
       nfoNaming: "filename",
     } as const;
     const library = await createTestLibrary(fastify, token, root, librarySettings);
+    // Incoming files share a folder, and with it the actor photos, with another library movie.
+    if (location === "incoming") {
+      await writeFile(join(sourceDir, "XYZ-126.mp4"), "another movie");
+      await mkdir(join(sourceDir, ".actors"));
+      await writeFile(join(sourceDir, ".actors", "Actor A.jpg"), "actor photo");
+      const { repositories } = await services.persistence.getState();
+      await repositories.library.upsertEntry({
+        movie: {
+          assets: [
+            {
+              kind: "actor",
+              uri: ".actors/Actor A.jpg",
+              rootId: library.rootId,
+              relativePath: ".actors/Actor A.jpg",
+              published: true,
+            },
+          ],
+        },
+        files: [{ rootId: library.rootId, rootRelativePath: "XYZ-126.mp4", assets: [], fileId: "shared-actor-file" }],
+      });
+    }
     const relativePath = join(sourceRelative, "ABC-125.mp4").replaceAll("\\", "/");
     const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "local_organize", [
       relativePath,
@@ -533,6 +554,9 @@ describe("buildServer maintenance integration", () => {
     await expect(access(join(sourceDir, "ABC-125.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(sourceDir, "ABC-125-poster.jpg"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(sourceDir, "ABC-125.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+    if (location === "incoming")
+      for (const directory of [targetDir, sourceDir])
+        await expect(readFile(join(directory, ".actors", "Actor A.jpg"), "utf8")).resolves.toBe("actor photo");
   });
 
   it.each([
