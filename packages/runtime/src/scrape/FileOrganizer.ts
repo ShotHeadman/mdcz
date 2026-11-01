@@ -2,9 +2,8 @@ import { basename, dirname, join, parse, resolve } from "node:path";
 import { isPathInside } from "@mdcz/media-store";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
-import { isSharedDirectoryTarget, type PublicationTarget } from "@mdcz/shared/mediaLibrary";
+import { type PublicationTarget, resolveMovieNaming } from "@mdcz/shared/mediaLibrary";
 import type { CrawlerData, FileInfo, NamingPreviewItem, NfoLocalState } from "@mdcz/shared/types";
-import { noopRuntimeLogger, type RuntimeLogger } from "../shared";
 import { DirectoryInventory } from "./DirectoryInventory";
 import {
   buildGeneratedVideoSidecarTargetPath,
@@ -15,7 +14,6 @@ import {
 } from "./media";
 import { getNfoWritePaths } from "./nfo";
 import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
-import { parseFileInfo } from "./utils/number";
 import { isStrmFile, prepareMovedStrmContent } from "./utils/strm";
 
 /** How a placed video reaches its target; the source stays on disk for `hardlink` and `copy`. */
@@ -66,7 +64,6 @@ export const buildScrapePublicationKey = <T extends Pick<OrganizePlan, "metadata
   `scrape-publication:${resolve(plan.metadataDir)}`;
 
 interface ResolveOutputPlanOptions {
-  allowSharedDirectory?: boolean;
   subtitleSidecars?: SubtitleSidecarMatch[];
   inventory?: DirectoryInventory;
 }
@@ -75,35 +72,17 @@ export interface OrganizePlanOptions {
   versionLabel?: string;
 }
 
-/** Several movies in one folder share fixed asset names, so they need names that follow the video. */
-export const assertTargetLayout = (config: Configuration, target: PublicationTarget): void => {
-  if (!isSharedDirectoryTarget(target)) return;
-  if (config.naming.assetNamingMode !== "followVideo")
-    throw new Error("The library folder template has no per-movie field; set asset naming to follow the video");
-  if (config.download.nfoNaming !== "filename")
-    throw new Error("The library folder template has no per-movie field; set NFO naming to the video file name");
-  if (config.download.downloadSceneImages)
-    throw new Error("The library folder template has no per-movie field; turn off scene images");
-};
-
 export class FileOrganizer {
-  private readonly logger: RuntimeLogger;
-
   private readonly namingEngine = new NamingEngine();
-
-  constructor(logger: RuntimeLogger = noopRuntimeLogger) {
-    this.logger = logger;
-  }
 
   plan(
     fileInfo: FileInfo,
     data: CrawlerData,
     config: Configuration,
-    target: PublicationTarget,
+    target: Pick<PublicationTarget, "placement" | "outputPath" | "folderTemplate" | "fileTemplate">,
     localState?: NfoLocalState,
     options: OrganizePlanOptions = {},
   ): OrganizePlan {
-    assertTargetLayout(config, target);
     const layout = this.namingEngine.buildLayout(fileInfo, data, config, target, localState);
     const sourceDir = resolve(dirname(fileInfo.filePath));
     if (target.placement === "inPlace") {
@@ -163,7 +142,12 @@ export class FileOrganizer {
     return NAMING_PREVIEW_SAMPLES.map((sample) => {
       const layout = this.namingEngine.buildLayout(sample.fileInfo, sample.data, config, target, sample.localState);
       const plan = this.plan(sample.fileInfo, sample.data, config, target, sample.localState);
-      const assets = buildMovieAssetFileNames(basename(plan.nfoPath, ".nfo"), config.naming.assetNamingMode);
+      const naming = resolveMovieNaming({
+        policy: target,
+        holdsOtherMovies: false,
+        downloadSceneImages: config.download.downloadSceneImages,
+      });
+      const assets = buildMovieAssetFileNames(basename(plan.nfoPath, ".nfo"), naming.assetNaming);
       return {
         sample: sample.sample,
         folder: target.placement === "inPlace" ? "" : layout.folderRelativePath,
@@ -173,13 +157,13 @@ export class FileOrganizer {
         metadataDir: plan.metadataDir,
         outputs: [
           ...(config.download.generateNfo
-            ? getNfoWritePaths(plan.nfoPath, config.download.nfoNaming).requiredPaths.map((path) => basename(path))
+            ? getNfoWritePaths(plan.nfoPath, naming.nfoNaming).requiredPaths.map((path) => basename(path))
             : []),
           ...(config.download.downloadThumb ? [assets.thumb] : []),
           ...(config.download.downloadPoster ? [assets.poster] : []),
           ...(config.download.downloadFanart ? [assets.fanart] : []),
           ...(config.download.downloadTrailer ? [assets.trailer] : []),
-          ...(config.download.downloadSceneImages ? [`${config.paths.sceneImagesFolder}/…`] : []),
+          ...(naming.sceneImages ? [`${config.paths.sceneImagesFolder}/…`] : []),
         ],
       };
     });
@@ -192,27 +176,7 @@ export class FileOrganizer {
       existingMetadataDir?: string;
     } = {},
   ): Promise<ResolvedPublicationLayout> {
-    const outputRoot = plan.metadataDir;
-    const sourceDir = resolve(dirname(sourceFilePath));
-    const sameDirectoryOutput = sourceDir === resolve(outputRoot);
     const inventory = options.inventory ?? new DirectoryInventory();
-
-    if (sameDirectoryOutput && !options.allowSharedDirectory) {
-      const sourceFileInfo = parseFileInfo(sourceFilePath);
-      const videoFiles = (await inventory.mediaEntries(sourceDir)).map((entry) => join(sourceDir, entry.name));
-      const otherVideos = videoFiles.filter(
-        (filePath) =>
-          resolve(filePath) !== resolve(sourceFilePath) &&
-          !(sourceFileInfo.number && sourceFileInfo.number === parseFileInfo(filePath).number),
-      );
-      if (otherVideos.length > 0) {
-        this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
-        throw new Error(
-          "Source directory contains multiple movies; scrape it into a library that writes metadata to its own folder",
-        );
-      }
-    }
-
     const moveMedia = plan.mode === "move";
     // Media servers look for subtitles next to the file they play, which is the link in link placements.
     const playedPath = moveMedia ? plan.targetVideoPath : plan.link?.path;

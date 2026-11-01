@@ -1,3 +1,4 @@
+import type { AssetNamingMode, NfoNamingMode } from "@mdcz/shared/assetNaming";
 import type { AutomationLevel, DiscoveryMode, MediaLibraryIssueCode, PlacementMode } from "@mdcz/shared/mediaLibrary";
 
 export const libraries = {
@@ -39,6 +40,13 @@ export const libraries = {
     placement: "Placement",
     folderTemplate: "Folder template",
     fileTemplate: "File name template",
+    assetNaming: "Asset file naming",
+    nfoNaming: "NFO file naming",
+    namingHint: "Posters, thumbnails, fanart, trailers and NFOs; applies from the next time MDCz writes a movie.",
+    sharedFolderNaming:
+      "Several movies go into one folder, so files follow the video file name, only <file name>.nfo is written and no scene images are downloaded.",
+    inPlaceNaming:
+      "A source folder that holds several movies gets names that follow the video file name, only <file name>.nfo and no scene images.",
     automation: "Automation",
     discovery: "Discovery",
     cloudPath: "CloudDrive2 path",
@@ -46,6 +54,15 @@ export const libraries = {
     scanIntervalMinutes: "Full rescan interval (minutes)",
     scanIntervalHint: "Catches what change events miss, such as network mounts that send none.",
   },
+  assetNamings: { fixed: "Fixed names", followVideo: "Follow the video file name" } satisfies Record<
+    AssetNamingMode,
+    string
+  >,
+  nfoNamings: {
+    both: "Generate both",
+    movie: "movie.nfo only",
+    filename: "<file name>.nfo only",
+  } satisfies Record<NfoNamingMode, string>,
   placements: {
     move: {
       label: "Move",

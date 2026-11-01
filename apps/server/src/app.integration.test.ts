@@ -4,6 +4,7 @@ import { deterministicMediaRootId } from "@mdcz/media-store";
 import { RECENT_ACQUISITION_LIMIT } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import { mediaLibrarySettingsSchema } from "@mdcz/shared/mediaLibrary";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   closeTestServers,
@@ -333,8 +334,8 @@ describe("buildServer composition integration", () => {
     expect(resetResponse.json().result.data.network.timeout).toBe(defaultsResponse.json().result.data.network.timeout);
     expect(importResponse.statusCode).toBe(200);
     expect(importResponse.json().result.data.network.timeout).toBe(33);
-    await expect(services.config.update({ download: { nfoNaming: "invalid" as never } })).rejects.toMatchObject({
-      fields: ["download.nfoNaming"],
+    await expect(services.config.update({ naming: { partStyle: "invalid" as never } })).rejects.toMatchObject({
+      fields: ["naming.partStyle"],
     });
   });
 
@@ -403,12 +404,17 @@ describe("buildServer composition integration", () => {
     const app = await createTestServer();
     const { configPath } = app.services.config.runtimePaths;
     await mkdir(join(configPath, ".."), { recursive: true });
-    await writeFile(configPath, `[paths]\nmediaPath = ${JSON.stringify(root)}\n[watch]\nenabled = true\n`, "utf8");
+    await writeFile(
+      configPath,
+      `[paths]\nmediaPath = ${JSON.stringify(root)}\n[watch]\nenabled = true\n[download]\nnfoNaming = "movie"\n`,
+      "utf8",
+    );
     const token = await loginAsAdmin(app.fastify);
     const libraries = async () =>
       (await app.services.libraries.list()).map(({ sourcePath, automation }) => ({ sourcePath, automation }));
 
     expect(await libraries()).toEqual([{ sourcePath: root, automation: "scrape" }]);
+    expect((await app.services.libraries.list())[0]?.nfoNaming).toBe("movie");
     const saved = await readFile(configPath, "utf8");
     expect(saved).not.toContain("mediaPath");
     expect(saved).not.toContain("[watch]");
@@ -421,6 +427,44 @@ describe("buildServer composition integration", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(await libraries()).toEqual([{ sourcePath: root, automation: "scrape" }]);
+  });
+  it("gives existing libraries the configuration's naming and removes it from 0.20 profiles, also after a restart", async () => {
+    const root = await createTempRoot("naming-upgrade-root");
+    const first = await createTestServer();
+    const { configDir, configPath } = first.services.config.runtimePaths;
+    (await first.services.persistence.initialize()).repositories.mediaLibraries.create(
+      mediaLibrarySettingsSchema.parse({ name: "Existing", sourcePath: root, placement: "inPlace" }),
+    );
+    const active = '[naming]\nassetNamingMode = "followVideo"\n[download]\nnfoNaming = "movie"\n';
+    const singleDirectory = '[paths]\nmediaPath = "/media"\n[download]\nnfoNaming = "filename"\n';
+    await mkdir(configDir, { recursive: true });
+    await writeFile(configPath, active, "utf8");
+    await writeFile(join(configDir, "other.toml"), '[download]\nnfoNaming = "filename"\ngenerateNfo = false\n', "utf8");
+    await writeFile(join(configDir, "old.toml"), singleDirectory, "utf8");
+    const expectConverted = async (app: typeof first) => {
+      await loginAsAdmin(app.fastify);
+      expect(
+        (await app.services.libraries.list()).map(({ name, assetNaming, nfoNaming }) => ({
+          name,
+          assetNaming,
+          nfoNaming,
+        })),
+      ).toEqual([{ name: "Existing", assetNaming: "followVideo", nfoNaming: "movie" }]);
+      const saved = await readFile(configPath, "utf8");
+      expect(saved).not.toContain("nfoNaming");
+      expect(saved).not.toContain("assetNamingMode");
+      const other = await readFile(join(configDir, "other.toml"), "utf8");
+      expect(other).not.toContain("nfoNaming");
+      expect(other).toContain("generateNfo = false");
+      // A 0.19 profile still describes its library, which it becomes when it is next active.
+      await expect(readFile(join(configDir, "old.toml"), "utf8")).resolves.toBe(singleDirectory);
+    };
+    await expectConverted(first);
+
+    // A start interrupted before it saved the active profile converts again on the next one.
+    await first.fastify.close();
+    await writeFile(configPath, active, "utf8");
+    await expectConverted(await createTestServer({ restartOf: first }));
   });
   it("exposes protected settings parity runtime actions through dedicated tRPC routers", async () => {
     const { fastify } = await createTestServer({ runtimeActions: createFakeRuntimeActions() });
@@ -980,8 +1024,8 @@ describe("buildServer composition integration", () => {
     const root = await createTempRoot("nfo-editor-root");
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
-    const { rootId } = await createTestLibrary(fastify, token, root);
-    await services.config.update({ download: { nfoNaming: "filename", nfoIgnoreFields: ["director"] } });
+    const { rootId } = await createTestLibrary(fastify, token, root, { nfoNaming: "filename" });
+    await services.config.update({ download: { nfoIgnoreFields: ["director"] } });
     await writeFile(join(root, "ABC-123.mp4"), "video");
     await writeFile(
       join(root, "ABC-123.nfo"),

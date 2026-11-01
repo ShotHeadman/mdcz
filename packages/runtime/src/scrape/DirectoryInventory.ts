@@ -5,6 +5,13 @@ import { canonicalPath, filesystemPathKey, type MediaRoot, resolveRootRelativePa
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { type ParsedNfoSnapshot, parseNfoSnapshot } from "../maintenance/nfoSnapshot";
 import { isPrimaryVideoFile } from "./media/generatedSidecarVideos";
+import { type FilenameRules, parseFileInfo } from "./utils/number";
+
+/** Equal numbers are one movie; a video whose name yields no number is a movie of its own. */
+const movieIdentity = (videoPath: string, rules: FilenameRules): string => {
+  const number = parseFileInfo(videoPath, rules).number.trim().toUpperCase();
+  return number ? `number:${number}` : `path:${filesystemPathKey(videoPath)}`;
+};
 
 export class DirectoryInventory {
   readonly registeredNfos = new Map<string, readonly string[]>();
@@ -13,6 +20,7 @@ export class DirectoryInventory {
   private readonly fileObservations = new Map<string, Promise<{ entryPath: string; stats: Stats }>>();
   private readonly nfos = new Map<string, Promise<ParsedNfoSnapshot | undefined>>();
   private readonly nfoContents = new Map<string, Promise<string | undefined>>();
+  private readonly movieIdentities = new Map<string, Promise<ReadonlySet<string>>>();
 
   observeDirectory(path: string, canonicalPath: string, entries: readonly Dirent[]): void {
     this.directoryPaths.set(filesystemPathKey(path), Promise.resolve(canonicalPath));
@@ -181,6 +189,24 @@ export class DirectoryInventory {
       }),
     );
     return entries.filter((entry) => entry !== undefined);
+  }
+
+  /**
+   * Whether `directory` holds a movie other than the one `videoPath` belongs to; the video need not be in it. Each
+   * folder is parsed once, because a folder of a thousand movies is checked once per movie. An inventory serves one
+   * run with one configuration, so `rules` cannot change under the cache.
+   */
+  async holdsOtherMovies(directory: string, videoPath: string, rules: FilenameRules): Promise<boolean> {
+    const key = filesystemPathKey(directory);
+    let pending = this.movieIdentities.get(key);
+    if (!pending) {
+      pending = this.mediaEntries(directory).then(
+        (entries) => new Set(entries.map((entry) => movieIdentity(join(directory, entry.name), rules))),
+      );
+      this.movieIdentities.set(key, pending);
+    }
+    const identities = await pending;
+    return identities.size > (identities.has(movieIdentity(videoPath, rules)) ? 1 : 0);
   }
 
   async mediaEntries(directory: string): Promise<readonly Dirent[]> {

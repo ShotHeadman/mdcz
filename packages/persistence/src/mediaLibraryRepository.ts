@@ -42,6 +42,10 @@ export class MediaLibraryRepository {
     this.database.db.delete(mediaLibraries).where(eq(mediaLibraries.id, id)).run();
   }
 
+  setNamingForAll(naming: Pick<MediaLibraryValues, "assetNaming" | "nfoNaming">): void {
+    this.database.db.update(mediaLibraries).set(naming).run();
+  }
+
   loadWatchSnapshot(libraryId: string): Set<string> | undefined {
     const row = this.database.db
       .select({ fileKeysJson: libraryWatchSnapshots.fileKeysJson })

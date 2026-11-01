@@ -5,7 +5,7 @@ import { filesystemPathKey, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
-import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
+import type { MovieNaming, PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   CrawlerData,
@@ -16,7 +16,11 @@ import type {
   ScrapeResult,
   VideoMeta,
 } from "@mdcz/shared/types";
-import { type PublicationAssetLayout, resolvePublicationAssetLayout } from "../publication/assetLayout";
+import {
+  type PublicationAssetLayout,
+  resolvePublicationAssetLayout,
+  resolvePublicationNaming,
+} from "../publication/assetLayout";
 import {
   type PreparedMovieOutput,
   prepareMovieArtifacts,
@@ -145,6 +149,7 @@ export interface PreparedMovieGroup {
   movieId: string;
   assets: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
   configuration: Configuration;
+  naming: MovieNaming;
   crawlerData: CrawlerData;
   translationError?: string;
   aggregation: AggregationResult;
@@ -163,7 +168,11 @@ const toScrapeIdentity = (fileId: string, fileInfo: FileInfo, options: FileScrap
   ...(fileInfo.part ? { part: fileInfo.part } : {}),
 });
 
-const plannedArtifactPaths = (configuration: Configuration, members: readonly PreparedMovieMember[]): string[] => {
+const plannedArtifactPaths = (
+  configuration: Configuration,
+  naming: MovieNaming,
+  members: readonly PreparedMovieMember[],
+): string[] => {
   const videos = new Set(
     members.flatMap((member) => [
       path.resolve(member.fileInfo.filePath),
@@ -174,8 +183,7 @@ const plannedArtifactPaths = (configuration: Configuration, members: readonly Pr
   for (const member of members) {
     const { outputPlan: plan } = member;
     if (configuration.download.generateNfo)
-      for (const nfo of getNfoWritePaths(plan.nfoPath, configuration.download.nfoNaming).requiredPaths)
-        paths.add(path.resolve(nfo));
+      for (const nfo of getNfoWritePaths(plan.nfoPath, naming.nfoNaming).requiredPaths) paths.add(path.resolve(nfo));
     for (const sidecar of plan.sidecars) paths.add(path.resolve(sidecar.targetPath));
     for (const target of [...member.assetLayout.staged.values(), ...member.assetLayout.retained.values()])
       paths.add(target);
@@ -258,10 +266,11 @@ export class FileScraper {
         member.identity = toScrapeIdentity(member.identity.fileId, resolved.fileInfo, options);
         let localState = options.localState;
         const directory = path.dirname(parsedFileInfo.filePath);
-        const videos = await inventory.mediaEntries(directory);
-        const singleMovie = videos.every(
-          (entry) => parseFileInfo(entry.name, configuration.scrape).number === parsedFileInfo.number,
-        );
+        const singleMovie = !(await inventory.holdsOtherMovies(
+          directory,
+          parsedFileInfo.filePath,
+          configuration.scrape,
+        ));
         const candidates = preferredLocalNfoBaseNames(
           parsedFileInfo.fileName,
           parsedFileInfo.part?.suffix,
@@ -394,22 +403,33 @@ export class FileScraper {
             occupiedKeys,
           )
         : [];
-      const preparedMembers: PreparedMovieMember[] = [];
+      const outputPlans = [];
       for (const [index, member] of inspected.entries()) {
         const label = labels[index];
-        const outputPlan = await this.deps.fileOrganizer.resolveOutputPlan(
-          label ? planMember(member, label) : plans[index],
-          member.fileInfo.filePath,
-          {
-            allowSharedDirectory:
-              configuration.naming.assetNamingMode === "followVideo" && configuration.download.nfoNaming === "filename",
-            existingMetadataDir: path.dirname(member.fileInfo.filePath),
-            subtitleSidecars: member.subtitleSidecars,
-            inventory,
-          },
+        outputPlans.push(
+          await this.deps.fileOrganizer.resolveOutputPlan(
+            label ? planMember(member, label) : plans[index],
+            member.fileInfo.filePath,
+            {
+              existingMetadataDir: path.dirname(member.fileInfo.filePath),
+              subtitleSidecars: member.subtitleSidecars,
+              inventory,
+            },
+          ),
         );
         throwIfAborted(signal);
         this.setProgress(member.progress, 50);
+      }
+      const naming = await resolvePublicationNaming({
+        layouts: outputPlans,
+        policy: options.target,
+        config: configuration,
+        inventory,
+      });
+      const movieBaseName = path.basename(outputPlans[0].nfoPath, ".nfo");
+      const preparedMembers: PreparedMovieMember[] = [];
+      for (const [index, member] of inspected.entries()) {
+        const outputPlan = outputPlans[index];
         preparedMembers.push({
           signalService: member.signalService,
           progress: member.progress,
@@ -421,8 +441,9 @@ export class FileScraper {
           assetLayout: await resolvePublicationAssetLayout({
             layout: outputPlan,
             config: configuration,
+            naming,
             crawlerData,
-            movieBaseName: path.basename(preparedMembers[0]?.outputPlan.nfoPath ?? outputPlan.nfoPath, ".nfo"),
+            movieBaseName,
             inventory,
           }),
           roots: member.roots,
@@ -436,10 +457,11 @@ export class FileScraper {
           movieId,
           assets,
           configuration,
+          naming,
           crawlerData,
           translationError: translationError ? `Translation failed: ${translationError}` : undefined,
           aggregation,
-          artifactPaths: plannedArtifactPaths(configuration, preparedMembers),
+          artifactPaths: plannedArtifactPaths(configuration, naming, preparedMembers),
           members: preparedMembers,
         },
       };
@@ -458,7 +480,7 @@ export class FileScraper {
   async executePreparedFiles(prepared: PreparedMovieGroup, signal?: AbortSignal): Promise<ScrapeGroupResult> {
     if (!prepared.members.length) return { results: [] };
     const first = prepared.members[0];
-    const { configuration, aggregation } = prepared;
+    const { configuration, naming, aggregation } = prepared;
     const plan = first.outputPlan;
     const { fileInfo, signalService, progress } = first;
     const { postProcessAssets } = this.deps;
@@ -511,6 +533,7 @@ export class FileScraper {
       signalService.showScrapeStep("download");
       const downloaded = await downloadCrawlerAssets({
         config: configuration,
+        naming,
         crawlerData,
         downloadManager: this.deps.downloadManager,
         fileInfo,
@@ -540,7 +563,7 @@ export class FileScraper {
       this.setProgress(progress, 80);
       const preservedNfoPath = configuration.download.generateNfo
         ? undefined
-        : await findExistingNfoInInventory(prepared.inventory, plan.nfoPath, configuration.download.nfoNaming);
+        : await findExistingNfoInInventory(prepared.inventory, plan.nfoPath, naming.nfoNaming);
       const publication = await prepareMovieArtifacts({
         inventory: prepared.inventory,
         roots,
@@ -569,12 +592,13 @@ export class FileScraper {
         stagingDir,
         downloadedAssets: downloaded.assets,
         actorPhotoPaths: actorOutput.actorPhotoPaths,
-        nfoNaming: configuration.download.nfoNaming,
+        naming,
         remoteData: crawlerData,
         writeNfo: async (assets, writeFile) =>
           await writePreparedNfo({
             assets,
             config: configuration,
+            naming,
             crawlerData,
             enabled: configuration.download.generateNfo,
             fileInfo,

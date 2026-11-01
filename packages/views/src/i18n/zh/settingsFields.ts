@@ -222,7 +222,10 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["覆盖角标", "角标图片", "水印"],
     },
     "download.downloadFanart": { label: "下载背景图" },
-    "download.downloadSceneImages": { label: "下载剧照" },
+    "download.downloadSceneImages": {
+      label: "下载剧照",
+      description: "剧照放在影片文件夹的固定子目录中；多部影片共用一个文件夹时不下载剧照。",
+    },
     "download.downloadTrailer": { label: "下载预告片" },
     "download.sceneImageConcurrency": {
       label: "剧照下载并发",
@@ -230,7 +233,6 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["剧照并发"],
     },
     "download.generateNfo": { label: "生成 NFO" },
-    "download.nfoNaming": { label: "NFO 文件命名" },
     "download.nfoIgnoreFields": {
       label: "NFO 忽略字段",
       description: "选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。",
@@ -271,7 +273,6 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "部分站点把演员名附在标题末尾（如「…… 三上悠亜」）；开启后按本片演员名单移除。",
       aliases: ["标题演员", "女优名"],
     },
-    "naming.assetNamingMode": { label: "附属文件命名", description: "海报、横版缩略图、背景图与预告片的文件名规则。" },
     "naming.nfoTitleTemplate": {
       label: "NFO 标题模板",
       description: "NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}",

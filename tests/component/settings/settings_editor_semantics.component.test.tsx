@@ -385,12 +385,13 @@ test("settings sections expose public labels and the library template notice", a
   await expect.element(paths.getByText("路径", { exact: true })).toBeVisible();
 
   const naming = await render(
-    <FormHarness values={{ naming: { assetNamingMode: "fixed" } }}>
+    <FormHarness values={{ naming: { nfoTitleTemplate: "{title}" } }}>
       <NamingSection />
     </FormHarness>,
   );
-  // Folder and file templates are per library now, so the naming section points there instead.
+  // Templates and file naming are per library now, so the naming section points there instead.
   await expect.element(naming.getByText("文件夹与文件名模板按库设置", { exact: false })).toBeVisible();
+  await expect.element(naming.getByText("附属文件命名")).not.toBeInTheDocument();
 
   const advancedDownload = await render(
     <FormHarness values={{ download: { downloadPoster: true, sceneImageConcurrency: 4 } }}>
@@ -417,7 +418,6 @@ test("NFO settings render the configured enum list only while NFO generation is 
         download: {
           generateNfo: true,
           nfoIgnoreFields: ["num", "director", "trailer"],
-          nfoNaming: "both",
         },
       }}
     >

@@ -1,7 +1,9 @@
 export const ASSET_NAMING_MODES = ["fixed", "followVideo"] as const;
+export const NFO_NAMING_MODES = ["both", "movie", "filename"] as const;
 export const MOVIE_NFO_BASE_NAME = "movie";
 
 export type AssetNamingMode = (typeof ASSET_NAMING_MODES)[number];
+export type NfoNamingMode = (typeof NFO_NAMING_MODES)[number];
 
 export interface MovieAssetFileNames {
   thumb: string;

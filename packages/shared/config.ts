@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { normalizeActorAliasGroups, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
-import { ASSET_NAMING_MODES } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UI_LOCALES, Website } from "./enums";
 import {
   DEFAULT_LLM_BASE_URL,
@@ -42,7 +41,6 @@ const DEFAULT_SITES: Website[] = [
 ];
 
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
-const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 export const NFO_FIELD_OPTIONS = [
   "num",
   "plot",
@@ -112,7 +110,6 @@ const scrapeSchema = z.object({
 });
 
 const namingSchema = z.object({
-  assetNamingMode: z.enum(ASSET_NAMING_MODES).default("fixed"),
   nfoTitleTemplate: z.string().default("{title}"),
   actorNameMax: z.number().int().min(1).max(20).default(3),
   actorNameMore: z.string().default("等演员"),
@@ -168,7 +165,6 @@ const downloadSchema = z.object({
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   generateNfo: z.boolean().default(true),
-  nfoNaming: z.enum(NFO_NAMING_OPTIONS).default("both"),
   nfoIgnoreFields: z.array(z.enum(NFO_FIELD_OPTIONS)).default([]),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepThumb: z.boolean().default(true),

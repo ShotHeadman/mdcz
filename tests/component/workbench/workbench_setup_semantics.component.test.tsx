@@ -33,6 +33,8 @@ const library: MediaLibraryDto = {
   folderTemplate: "{actor}/{number}",
   fileTemplate: "{number}",
   placement: "move",
+  assetNaming: "fixed",
+  nfoNaming: "both",
   automation: "off",
   discovery: "events",
   cloudPath: "",

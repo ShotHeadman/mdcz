@@ -67,7 +67,7 @@ import { DirectoryInventory } from "./DirectoryInventory";
 import { createDirectoryScope, discoverDirectoryFiles } from "./directoryDiscovery";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executionPolicy";
-import { assertTargetLayout, FileOrganizer } from "./FileOrganizer";
+import { FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
 import { admitScrapeGroups, type MovieGroup } from "./movieGroups";
 import { NfoGenerator } from "./nfo";
@@ -248,7 +248,6 @@ export class ScrapeRunner {
       rerunDirectory: async (runId) => {
         const configuration = structuredClone(await this.deps.getConfiguration());
         const target = toPublicationTarget(this.runLibrary(await this.deps.persistence.scrapeRuns.get(runId)));
-        assertTargetLayout(configuration, target);
         const run = await this.deps.persistence.scrapeRuns.rerunDirectory(runId);
         this.runContexts.set(run.id, { configuration, target });
         return run;
@@ -526,7 +525,6 @@ export class ScrapeRunner {
     configuration: Configuration,
   ): Promise<NormalizedScrapeStart> {
     const library = this.deps.persistence.libraries.get(input.libraryId);
-    assertTargetLayout(configuration, toPublicationTarget(library));
     if ("source" in input) {
       const directoryScope = createDirectoryScope(
         input.source,
@@ -681,7 +679,6 @@ export class ScrapeRunner {
     if (itemsToRetry.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
     const library = this.runLibrary(run);
     const target = toPublicationTarget(library);
-    assertTargetLayout(configuration, target);
     const groups = await admitScrapeGroups({
       refs: itemsToRetry.map((item) => ({
         rootId: item.rootId,

@@ -1,7 +1,9 @@
 import { stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
+import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
+import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
 import type {
   BatchTranslateApplyResultItem,
   BatchTranslateField,
@@ -45,6 +47,7 @@ type BatchTranslateWriteNfoInput = {
     download: Configuration["download"];
     naming: Configuration["naming"];
   };
+  naming: Pick<MovieNaming, "nfoNaming" | "sceneImages">;
   crawlerData: CrawlerData;
   enabled: boolean;
   fileInfo: FileInfo;
@@ -152,7 +155,8 @@ const pathExists = async (targetPath: string): Promise<boolean> => {
   }
 };
 
-const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration["download"]["nfoNaming"]> => {
+/** A translated NFO is written back under the names it already has. */
+const resolveExistingNfoNaming = async (nfoPath: string): Promise<NfoNamingMode> => {
   const normalizedNfoPath = resolve(nfoPath);
   if (basename(normalizedNfoPath).toLowerCase() === MOVIE_NFO_NAME) return "movie";
 
@@ -160,9 +164,16 @@ const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration[
   return (await pathExists(moviePath)) ? "both" : "filename";
 };
 
-const defaultWriteNfo: BatchTranslateWriteNfo = async ({ config, crawlerData, nfoGenerator, nfoPath, writeFile }) => {
+const defaultWriteNfo: BatchTranslateWriteNfo = async ({
+  config,
+  naming,
+  crawlerData,
+  nfoGenerator,
+  nfoPath,
+  writeFile,
+}) => {
   return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
-    nfoNaming: config.download.nfoNaming,
+    nfoNaming: naming.nfoNaming,
     enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
     nfoTitleTemplate: config.naming.nfoTitleTemplate,
     writeFile,
@@ -447,13 +458,8 @@ export const applyBatchNfoTranslations = async (
           downloaded: [],
           sceneImages: [],
         },
-        config: {
-          download: {
-            ...config.download,
-            nfoNaming: detectedNfoNaming,
-          },
-          naming: config.naming,
-        },
+        config,
+        naming: { nfoNaming: detectedNfoNaming, sceneImages: config.download.downloadSceneImages },
         crawlerData: nextCrawlerData,
         enabled: true,
         fileInfo: entry.fileInfo,

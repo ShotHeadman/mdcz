@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
+import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets } from "@mdcz/shared/types";
 import { type RuntimeDownloadNetworkClient, runWithNetworkChannel } from "../../network";
 import { type RuntimeLogger, runtimeLoggerService } from "../../shared";
@@ -63,6 +64,7 @@ export class DownloadManager {
     outputDir: string,
     data: CrawlerData,
     config: Configuration,
+    naming: MovieNaming,
     imageAlternatives: Partial<ImageAlternatives> = {},
     callbacks?: DownloadCallbacks,
     options: DownloadExecutionOptions = {},
@@ -72,7 +74,7 @@ export class DownloadManager {
       downloaded: [],
     };
 
-    const plan = this.createExecutionPlan(outputDir, data, config, imageAlternatives, callbacks, options);
+    const plan = this.createExecutionPlan(outputDir, data, config, naming, imageAlternatives, callbacks, options);
     let cover: Promise<string | undefined> | undefined;
     const context: DownloadExecutionContext = {
       plan,
@@ -123,6 +125,7 @@ export class DownloadManager {
     outputDir: string,
     data: CrawlerData,
     config: Configuration,
+    naming: MovieNaming,
     imageAlternatives: Partial<ImageAlternatives>,
     callbacks?: DownloadCallbacks,
     options: DownloadExecutionOptions = {},
@@ -135,7 +138,8 @@ export class DownloadManager {
       existingAssets: options.existingAssets,
       inventory: options.inventory ?? new DirectoryInventory(),
       movieBaseName,
-      assetFileNames: buildMovieAssetFileNames(movieBaseName, config.naming.assetNamingMode),
+      assetFileNames: buildMovieAssetFileNames(movieBaseName, naming.assetNaming),
+      sceneImages: naming.sceneImages,
       data,
       config,
       imageAlternatives,

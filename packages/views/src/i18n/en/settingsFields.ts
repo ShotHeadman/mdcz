@@ -299,7 +299,11 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["watermark", "badge image", "custom badge", "poster badge image"],
   },
   "download.downloadFanart": { label: "Download fanart" },
-  "download.downloadSceneImages": { label: "Download scene images" },
+  "download.downloadSceneImages": {
+    label: "Download scene images",
+    description:
+      "Scene images go into a fixed subfolder of the movie's folder, so movies that share a folder get none.",
+  },
   "download.downloadTrailer": { label: "Download trailer" },
   "download.sceneImageConcurrency": {
     label: "Scene image download concurrency",
@@ -307,7 +311,6 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["scene images", "download concurrency", "parallel"],
   },
   "download.generateNfo": { label: "Generate NFO", aliases: ["nfo", "metadata file"] },
-  "download.nfoNaming": { label: "NFO file naming", aliases: ["nfo", "naming", "metadata file"] },
   "download.nfoIgnoreFields": {
     label: "Excluded NFO fields",
     description:
@@ -352,10 +355,6 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       'Some sites append actor names to the title (e.g. "… Yua Mikami"); when enabled they are removed based on the movie\'s actor list.',
     aliases: ["title actors", "actress name"],
-  },
-  "naming.assetNamingMode": {
-    label: "Asset file naming",
-    description: "File name rule for posters, thumbnails, fanart and trailers.",
   },
   "naming.nfoTitleTemplate": {
     label: "NFO title template",

@@ -16,13 +16,16 @@ export const inferConfigurationFileFormat = (filePath: string): ConfigurationFil
   return extension === CONFIGURATION_FILE_EXTENSIONS.json ? "json" : "toml";
 };
 
+/** Writes a document as it is, without the schema's normalization, which would drop keys this version no longer reads. */
+export const serializeConfigurationDocument = (
+  document: Record<string, unknown>,
+  format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
+): string => (format === "json" ? `${JSON.stringify(document, null, 2)}\n` : `${stringify(document)}\n`);
+
 export const serializeConfiguration = (
   configuration: Configuration,
   format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
-): string => {
-  const parsed = configurationSchema.parse(configuration);
-  return format === "json" ? `${JSON.stringify(parsed, null, 2)}\n` : `${stringify(parsed)}\n`;
-};
+): string => serializeConfigurationDocument(configurationSchema.parse(configuration), format);
 
 /** The file's document before schema validation. */
 export const parseConfigurationDocument = (

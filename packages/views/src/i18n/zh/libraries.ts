@@ -37,6 +37,11 @@ export const libraries: Messages["libraries"] = {
     placement: "放置方式",
     folderTemplate: "文件夹模板",
     fileTemplate: "文件名模板",
+    assetNaming: "附属文件命名",
+    nfoNaming: "NFO 文件命名",
+    namingHint: "海报、横版缩略图、背景图、预告片与 NFO 的文件名；从 MDCz 下一次写入影片时生效。",
+    sharedFolderNaming: "多部影片会放进同一文件夹：按影片文件名命名，只写 文件名.nfo，不下载剧照。",
+    inPlaceNaming: "来源文件夹里有多部影片时，这些影片按影片文件名命名，只写 文件名.nfo，不下载剧照。",
     automation: "自动化",
     discovery: "发现方式",
     cloudPath: "CloudDrive2 路径",
@@ -44,6 +49,8 @@ export const libraries: Messages["libraries"] = {
     scanIntervalMinutes: "完整重扫间隔（分钟）",
     scanIntervalHint: "补上变更事件遗漏的文件，例如不发送事件的网络挂载。",
   },
+  assetNamings: { fixed: "固定命名", followVideo: "跟随影片文件名" },
+  nfoNamings: { both: "同时生成两种", movie: "仅 movie.nfo", filename: "仅 文件名.nfo" },
   placements: {
     move: {
       label: "移动",

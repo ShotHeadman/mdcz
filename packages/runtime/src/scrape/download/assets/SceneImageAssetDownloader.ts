@@ -21,7 +21,7 @@ const listExistingSceneImages = async (sceneDir: string, inventory: DirectoryInv
 
 export class SceneImageAssetDownloader implements AssetDownloader {
   shouldDownload(plan: DownloadExecutionPlan): boolean {
-    return plan.config.download.downloadSceneImages;
+    return plan.sceneImages;
   }
 
   async download(context: DownloadExecutionContext): Promise<void> {

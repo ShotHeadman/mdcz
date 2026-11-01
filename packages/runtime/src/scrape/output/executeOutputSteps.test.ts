@@ -87,6 +87,7 @@ describe("shared output steps", () => {
         _outputDir: string,
         _data: CrawlerData,
         _config: typeof config,
+        _naming: unknown,
         _alternatives: unknown,
         callbacks?: DownloadCallbacks,
       ) => {
@@ -101,6 +102,7 @@ describe("shared output steps", () => {
         onSceneProgress: callerSceneProgress,
       },
       config,
+      naming: { sharedFolder: false, assetNaming: "fixed", nfoNaming: "both", sceneImages: true },
       crawlerData,
       downloadManager: { downloadAll } as unknown as DownloadManager,
       fileInfo: createFileInfo(),
@@ -132,6 +134,7 @@ describe("shared output steps", () => {
       assets,
       buildTags,
       config,
+      naming: { nfoNaming: "filename", sceneImages: false },
       crawlerData,
       enabled: true,
       fileInfo,
@@ -150,6 +153,8 @@ describe("shared output steps", () => {
         assets,
         buildTags,
         fileInfo,
+        nfoNaming: "filename",
+        includeRemoteSceneImageUrls: false,
         videoMeta: { durationSeconds: 120 },
       }),
     );

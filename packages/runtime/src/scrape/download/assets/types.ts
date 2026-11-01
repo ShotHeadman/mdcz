@@ -32,6 +32,8 @@ export interface DownloadExecutionPlan {
   inventory: DirectoryInventory;
   movieBaseName: string;
   assetFileNames: MovieAssetFileNames;
+  /** Off when the global setting is off, and for movies that share a folder. */
+  sceneImages: boolean;
   data: CrawlerData;
   config: Configuration;
   imageAlternatives: Partial<ImageAlternatives>;

@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import {
   type MediaRoot,
   readRootFile,
@@ -6,6 +7,7 @@ import {
   storageErrorCodes,
   toRootRelativePath,
 } from "@mdcz/media-store";
+import { resolveFileNaming } from "@mdcz/runtime/library";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   getNfoReadCandidates,
@@ -55,11 +57,22 @@ export class ServerNfoAdapter {
     private readonly persistence: ServerPersistenceService,
   ) {}
 
+  private async nfoNaming(root: MediaRoot, input: Pick<NfoReadInput, "relativePath" | "videoRelativePath">) {
+    const nfoPath = resolveRootRelativePath(root, input.relativePath);
+    const naming = await resolveFileNaming({
+      libraries: (await this.persistence.getState()).repositories.mediaLibraries.list(),
+      videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : nfoPath,
+      metadataDir: dirname(nfoPath),
+      configuration: await this.config.get(),
+    });
+    return naming.nfoNaming;
+  }
+
   async read(input: NfoReadInput): Promise<NfoReadResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
+    const root = await this.mediaRoots.get(input.rootId);
     const candidates = getNfoReadCandidates(
       input.relativePath,
-      configuration.download.nfoNaming,
+      await this.nfoNaming(root, input),
       input.videoRelativePath,
     );
     const existing = await readExistingNfo(root, candidates);
@@ -81,6 +94,7 @@ export class ServerNfoAdapter {
       videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : undefined,
       data: input.data,
       configuration,
+      nfoNaming: await this.nfoNaming(root, input),
       nfoGenerator: this.nfoGenerator,
       publication: {
         roots: await this.mediaRoots.listRoots(),
@@ -115,9 +129,19 @@ export class ServerPosterCropAdapter {
     return { ...context, root: context.root ?? sourceRoot };
   }
 
+  private async assetNaming(videoPath: string, assets: { thumb?: string; poster?: string }) {
+    const naming = await resolveFileNaming({
+      libraries: (await this.persistence.getState()).repositories.mediaLibraries.list(),
+      videoPath,
+      metadataDir: dirname(assets.poster ?? assets.thumb ?? videoPath),
+      configuration: await this.config.get(),
+    });
+    return naming.assetNaming;
+  }
+
   async session(video: RootFileRef) {
-    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(video), this.config.get()]);
-    const session = await this.posterCropService.prepare(videoPath, configuration.naming.assetNamingMode, assets);
+    const { root, videoPath, assets } = await this.context(video);
+    const session = await this.posterCropService.prepare(videoPath, await this.assetNaming(videoPath, assets), assets);
     return {
       rootId: root.id,
       sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
@@ -129,14 +153,11 @@ export class ServerPosterCropAdapter {
   }
 
   async save(input: PosterCropSaveInput) {
-    const [{ root, videoPath, assets, movieId }, configuration] = await Promise.all([
-      this.context(input),
-      this.config.get(),
-    ]);
+    const { root, videoPath, assets, movieId } = await this.context(input);
     const state = await this.persistence.getState();
     const result = await this.posterCropService.save(
       videoPath,
-      configuration.naming.assetNamingMode,
+      await this.assetNaming(videoPath, assets),
       input.crop,
       assets,
       {

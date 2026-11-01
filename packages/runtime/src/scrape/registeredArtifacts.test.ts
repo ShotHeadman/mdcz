@@ -70,6 +70,7 @@ describe("registeredPosterCropContext", () => {
       nfoPath,
       data,
       configuration: defaultConfiguration,
+      nfoNaming: "both",
       nfoGenerator: new NfoGenerator(),
       publication: { roots: [root], outputs: library, library },
     });

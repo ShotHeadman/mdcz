@@ -2,7 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { join } from "node:path";
 import { ActorSourceProvider, ActorSourceRegistry } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
-import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { findNamingPolicy } from "@mdcz/runtime/library";
+import type { MaintenanceRuntime, MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type AggregationResult, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
@@ -30,7 +31,12 @@ export interface TestServerOptions {
   networkClient?: NetworkClient;
   prepareScrapeItem?: PrepareScrapeItem;
   scrapeAggregation?: ScrapeServiceResources["aggregationService"];
-  createMaintenanceRuntime?: (config: ServerConfigService) => MaintenanceRuntime;
+  /** Starts on the directories of a server that has been closed, as a restart would. */
+  restartOf?: ServerApp;
+  createMaintenanceRuntime?: (
+    config: ServerConfigService,
+    findNamingPolicy: MaintenanceRuntimeDependencies["findNamingPolicy"],
+  ) => MaintenanceRuntime;
 }
 
 export interface LocalHttpServer {
@@ -53,7 +59,9 @@ const activeTempRoots = new Set<TempDirectoryHarness>();
 const activeLocalServers = new Set<LocalHttpServer>();
 
 export const createTestServer = async (options: TestServerOptions = {}): Promise<ServerApp> => {
-  const directory = await createTempDirectory("server-app");
+  const previous = options.restartOf && activeServers.get(options.restartOf);
+  if (options.restartOf && !previous) throw new Error("Untracked test server");
+  const directory = previous || (await createTempDirectory("server-app"));
   const paths = {
     configDir: join(directory.path, "config"),
     dataDir: join(directory.path, "data"),
@@ -96,7 +104,9 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       actorSourceProvider: new ActorSourceProvider({ registry: new ActorSourceRegistry() }),
       aggregationService: options.scrapeAggregation,
       prepareScrapeItem: options.prepareScrapeItem,
-      maintenanceRuntime: options.createMaintenanceRuntime?.(config),
+      maintenanceRuntime: options.createMaintenanceRuntime?.(config, async (hostPath) =>
+        findNamingPolicy((await persistence.getState()).repositories.mediaLibraries.list(), hostPath),
+      ),
     },
     services: {
       auth:

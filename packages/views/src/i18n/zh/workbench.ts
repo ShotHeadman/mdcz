@@ -65,7 +65,7 @@ export const workbench: Messages["workbench"] = {
   libraryLabel: "媒体库",
   libraryPlaceholder: "请选择媒体库",
   manageLibraries: "管理媒体库",
-  noLibraries: "请先创建媒体库以配置文件输出目录与归档规则。",
+  noLibraries: "请先创建媒体库：它决定影片放到哪里、文件怎么命名。不需要 Jellyfin 或 Emby。",
   createLibrary: "创建媒体库",
   inaccessiblePathsWarning: (count: number) => `部分路径无法访问，已跳过 ${count} 项`,
   selectVisibleFilesAriaLabel: "选择当前可见文件",

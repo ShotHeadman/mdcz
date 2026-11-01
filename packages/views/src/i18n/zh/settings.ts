@@ -41,8 +41,6 @@ export const settings: Messages["settings"] = {
       PART: "统一为 PART1 / PART2",
       DISC: "统一为 DISC1 / DISC2",
     },
-    assetNaming: { fixed: "固定命名", followVideo: "跟随影片文件名" },
-    nfoNaming: { both: "同时生成两种", movie: "仅 movie.nfo", filename: "仅 文件名.nfo" },
   },
   nfoFields: {
     num: "番号兼容字段",
@@ -89,6 +87,7 @@ export const settings: Messages["settings"] = {
     source: (path) => `源文件：${path}`,
     organized: (path) => `整理后：${path}`,
     metadataDir: (path) => `元数据目录：${path}`,
+    files: (names) => `写入：${names.join("、")}`,
   },
   namingTemplateHelp: {
     folder: "文件夹模板",
@@ -128,9 +127,9 @@ export const settings: Messages["settings"] = {
     },
     notes: {
       folder: [
-        "该配置里的 / 或 \\ 会创建多级文件夹；",
-        "移动视频与字幕或仅输出元数据时，会按文件夹模板创建目录；",
-        "如果模板不包含影片级唯一字段，保存时会按共享目录模式校验附属文件和 NFO 命名",
+        "该配置里的 / 或 \\ 会创建多级文件夹；留空：所有影片直接放在输出目录",
+        "移动视频与字幕或仅输出元数据时，会按文件夹模板创建目录",
+        "模板不含番号、标题或文件名时（例如只有 {actor}），多部影片会放进同一文件夹：附属文件按影片文件名命名，只写 文件名.nfo，不下载剧照",
       ],
       file: [
         "文件名模板只决定视频基础文件名，不会创建子目录；路径分隔符和非法文件名字符都会被清理",

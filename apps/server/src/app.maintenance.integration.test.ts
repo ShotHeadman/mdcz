@@ -1,7 +1,7 @@
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { AggregationService } from "@mdcz/runtime/scrape";
 import { DownloadManager, FileOrganizer, MemoryImageHostCooldownStore, NfoGenerator } from "@mdcz/runtime/scrape";
@@ -94,6 +94,7 @@ const waitForMaintenanceSession = async (
 
 const createMaintenanceRuntime = (
   config: ServerConfigService,
+  findNamingPolicy: MaintenanceRuntimeDependencies["findNamingPolicy"],
   aggregationService: AggregationService,
   downloadAll: DownloadManager["downloadAll"] = async () => ({ sceneImages: [], downloaded: [] }),
 ): MaintenanceRuntime =>
@@ -103,6 +104,7 @@ const createMaintenanceRuntime = (
     } as never,
     aggregationService,
     config,
+    findNamingPolicy,
     downloadManager: {
       downloadAll,
     } as never,
@@ -282,9 +284,10 @@ describe("buildServer maintenance integration", () => {
     });
     let firstPreview = true;
     const { fastify } = await createTestServer({
-      createMaintenanceRuntime: (config) => {
+      createMaintenanceRuntime: (config, findNamingPolicy) => {
         const runtime = createMaintenanceRuntime(
           config,
+          findNamingPolicy,
           createTestAggregation("https://example.com/maintenance.png") as AggregationService,
         );
         const createSession = runtime.createSession.bind(runtime);
@@ -482,9 +485,10 @@ describe("buildServer maintenance integration", () => {
       placement: "move",
       folderTemplate: "{studio}/{number}",
       fileTemplate: "{number}_new",
+      assetNaming: "followVideo",
+      nfoNaming: "filename",
     } as const;
     const library = await createTestLibrary(fastify, token, root, librarySettings);
-    await services.config.update({ naming: { assetNamingMode: "followVideo" }, download: { nfoNaming: "filename" } });
     const relativePath = join(sourceRelative, "ABC-125.mp4").replaceAll("\\", "/");
     const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "local_organize", [
       relativePath,
@@ -559,7 +563,8 @@ describe("buildServer maintenance integration", () => {
     const aggregate = vi.spyOn(aggregation, "aggregate");
     const downloadAll = vi.fn(async () => ({ sceneImages: [] as string[], downloaded: [] as string[] }));
     const { fastify, services } = await createTestServer({
-      createMaintenanceRuntime: (config) => createMaintenanceRuntime(config, aggregation, downloadAll),
+      createMaintenanceRuntime: (config, findNamingPolicy) =>
+        createMaintenanceRuntime(config, findNamingPolicy, aggregation, downloadAll),
     });
     const token = await loginAsAdmin(fastify);
     const library = await createTestLibrary(fastify, token, root, organizedLibrary);
@@ -676,6 +681,7 @@ describe("buildServer maintenance integration", () => {
       expect.any(String),
       expect.any(Object),
       expect.any(Object),
+      expect.objectContaining({ sharedFolder: false, assetNaming: "fixed" }),
       expect.any(Object),
       expect.objectContaining({
         assetDecisions: { thumb: "replace", poster: "replace", fanart: "replace" },
@@ -692,6 +698,106 @@ describe("buildServer maintenance integration", () => {
     const organizedNfoContent = await readFile(organizedNfo, "utf8");
     expect(organizedNfoContent).toContain("Remote Title ABC-300");
     await expect(access(join(root, "ABC-300.nfo"))).resolves.toBeUndefined();
+  });
+
+  it("refreshes a movie whose folder holds another movie under names that follow its video", async () => {
+    const root = await createTempRoot("maintenance-shared-folder");
+    await writeFile(join(root, "ABC-401.mp4"), "video");
+    await writeFile(join(root, "ABC-402.mp4"), "another movie");
+    const posterBytes = createTestPngBytes();
+    await writeFile(join(root, "poster.jpg"), posterBytes);
+    await mkdir(join(root, "extrafanart"));
+    await writeFile(join(root, "extrafanart", "fanart1.jpg"), "scene");
+    const imageServer = await startTestImageServer();
+    const imageUrl = `${imageServer.url}/image.png`;
+    await writeFile(
+      join(root, "ABC-401.nfo"),
+      new NfoGenerator().buildXml(
+        {
+          number: "ABC-401",
+          title: "Local Title ABC-401",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.JAVDB,
+          poster_source_url: imageUrl,
+        },
+        {
+          assets: {
+            poster: join(root, "poster.jpg"),
+            sceneImages: [join(root, "extrafanart", "fanart1.jpg")],
+            downloaded: [],
+          },
+        },
+      ),
+    );
+    const network = new NetworkClient();
+    const download = vi.spyOn(network, "download");
+    const manager = new DownloadManager(network, { imageHostCooldownStore: new MemoryImageHostCooldownStore() });
+    const aggregation = createTestAggregation(imageUrl, { titlePrefix: "Remote Title" }) as AggregationService;
+    const { fastify, services } = await createTestServer({
+      createMaintenanceRuntime: (config, findNamingPolicy) =>
+        createMaintenanceRuntime(config, findNamingPolicy, aggregation, manager.downloadAll.bind(manager)),
+    });
+    const token = await loginAsAdmin(fastify);
+    // The library's own naming would write poster.jpg, movie.nfo and scene images; the shared folder overrides it.
+    const library = await createTestLibrary(fastify, token, root, { placement: "inPlace", nfoNaming: "both" });
+    await services.config.update({
+      translate: { enableTranslation: false },
+      download: {
+        downloadThumb: false,
+        downloadFanart: false,
+        downloadPoster: true,
+        downloadSceneImages: true,
+        downloadTrailer: false,
+      },
+    });
+    const state = await services.persistence.getState();
+    await state.repositories.library.upsertEntry({
+      movie: {
+        id: "shared-folder-movie",
+        assets: [
+          ["nfo", "ABC-401.nfo"],
+          ["poster", "poster.jpg"],
+          ["scene", "extrafanart/fanart1.jpg"],
+        ].map(([kind, relativePath]) => ({
+          kind,
+          uri: relativePath,
+          rootId: library.rootId,
+          relativePath,
+          published: true,
+        })),
+      },
+      files: [{ rootId: library.rootId, rootRelativePath: "ABC-401.mp4", assets: [], fileId: "shared-folder-file" }],
+    });
+
+    const { sessionId } = await startMaintenancePreview(fastify, token, library, "refresh_metadata", ["ABC-401.mp4"]);
+    await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sessionId },
+    });
+    const applied = await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+
+    expect(applied.currentBatch?.items[0]).toMatchObject({ status: "success" });
+    await expect(readFile(join(root, "ABC-401-poster.jpg"))).resolves.toEqual(posterBytes);
+    await expect(access(join(root, "poster.jpg"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(root, "movie.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(root, "extrafanart", "fanart1.jpg"), "utf8")).resolves.toBe("scene");
+    const nfo = await readFile(join(root, "ABC-401.nfo"), "utf8");
+    expect(nfo).toContain("Remote Title ABC-401");
+    expect(nfo).toContain("ABC-401-poster.jpg");
+    expect(nfo).not.toContain("extrafanart");
+    expect(download).not.toHaveBeenCalled();
+    const movie = await state.repositories.library.getEntryById("shared-folder-movie");
+    expect(movie.assets.filter((asset) => asset.relativePath).map((asset) => [asset.kind, asset.relativePath])).toEqual(
+      expect.arrayContaining([
+        ["poster", "ABC-401-poster.jpg"],
+        ["nfo", "ABC-401.nfo"],
+      ]),
+    );
+    expect(movie.assets.some((asset) => asset.kind === "scene" && asset.relativePath)).toBe(false);
   });
 
   it("refreshes mirrored metadata while preserving video names and kept artwork", async () => {
@@ -731,18 +837,19 @@ describe("buildServer maintenance integration", () => {
     const download = vi.spyOn(network, "download");
     const manager = new DownloadManager(network, { imageHostCooldownStore: new MemoryImageHostCooldownStore() });
     const { fastify, services } = await createTestServer({
-      createMaintenanceRuntime: (config) =>
-        createMaintenanceRuntime(config, aggregation, manager.downloadAll.bind(manager)),
+      createMaintenanceRuntime: (config, findNamingPolicy) =>
+        createMaintenanceRuntime(config, findNamingPolicy, aggregation, manager.downloadAll.bind(manager)),
     });
     const token = await loginAsAdmin(fastify);
     const library = await createTestLibrary(fastify, token, root, {
       placement: "metadataOnly",
       outputPath: metadataRoot,
       fileTemplate: "{number}_Changed",
+      assetNaming: "followVideo",
+      nfoNaming: "filename",
     });
     const { rootId } = library;
     await services.config.update({
-      naming: { assetNamingMode: "followVideo" },
       translate: { enableTranslation: false },
       download: {
         downloadThumb: false,
@@ -750,7 +857,6 @@ describe("buildServer maintenance integration", () => {
         downloadPoster: true,
         downloadSceneImages: false,
         downloadTrailer: false,
-        nfoNaming: "filename",
       },
     });
     const state = await services.persistence.getState();

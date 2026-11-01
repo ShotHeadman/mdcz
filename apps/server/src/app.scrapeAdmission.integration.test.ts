@@ -151,6 +151,8 @@ describe("scrape admission and grouping", () => {
       outputPath: metadata,
       folderTemplate: library.folderTemplate,
       fileTemplate: library.fileTemplate,
+      assetNaming: library.assetNaming,
+      nfoNaming: library.nfoNaming,
     });
     expect(options.roots).toEqual(
       expect.arrayContaining([

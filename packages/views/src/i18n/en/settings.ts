@@ -49,8 +49,6 @@ export const settings = {
       PART: "Normalize to PART1 / PART2",
       DISC: "Normalize to DISC1 / DISC2",
     },
-    assetNaming: { fixed: "Fixed names", followVideo: "Follow the video file name" },
-    nfoNaming: { both: "Generate both", movie: "movie.nfo only", filename: "<file name>.nfo only" },
   },
   nfoFields: {
     num: "code compatibility fields",
@@ -100,6 +98,7 @@ export const settings = {
     waiting: "Waiting for sample data",
     source: (path: string) => `Source: ${path}`,
     organized: (path: string) => `Organized: ${path}`,
+    files: (names: string[]) => `Writes: ${names.join(", ")}`,
     metadataDir: (path: string) => `Metadata directory: ${path}`,
   },
   namingTemplateHelp: {
@@ -143,9 +142,9 @@ export const settings = {
     } as Record<string, string>,
     notes: {
       folder: [
-        "A / or \\ in this template creates nested folders.",
+        "A / or \\ in this template creates nested folders; leave it empty to put every movie directly in the output directory.",
         "Folders are created from this template when moving videos and subtitles, or when outputting metadata only.",
-        "If the template has no per-movie unique field, attached files and NFO names are validated in shared directory mode on save.",
+        "Without the code, title or file name (for example only {actor}), several movies go into one folder: asset files follow the video file name, only <file name>.nfo is written and no scene images are downloaded.",
       ],
       file: [
         "The file name template only sets the video's base name and never creates subfolders; path separators and invalid characters are removed.",

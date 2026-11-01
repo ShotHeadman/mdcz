@@ -104,6 +104,10 @@ export class ServerConfigService {
     return this.config.takeLegacyConversion();
   }
 
+  async removeLibraryNamingFromInactiveProfiles(): Promise<void> {
+    await this.config.removeLibraryNamingFromInactiveProfiles();
+  }
+
   onChange(listener: (event: RuntimeConfigChangeEvent) => void): () => void {
     this.changeListeners.add(listener);
     return () => this.changeListeners.delete(listener);

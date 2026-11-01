@@ -69,7 +69,8 @@ export const workbench = {
   libraryLabel: "Library",
   libraryPlaceholder: "Choose a library",
   manageLibraries: "Manage libraries",
-  noLibraries: "Create a library first to define the output directory and placement rules.",
+  noLibraries:
+    "Create a library first: it sets where movies go and how their files are named. No Jellyfin or Emby needed.",
   createLibrary: "Create library",
   inaccessiblePathsWarning: (count: number) => `Some paths are inaccessible; ${count} skipped`,
   selectVisibleFilesAriaLabel: "Select currently visible files",

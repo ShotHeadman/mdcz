@@ -94,7 +94,6 @@ const ASSET_DOWNLOAD_FIELD_KEYS = [
 ] as const;
 
 const NAMING_SECTION_FIELD_KEYS = [
-  "naming.assetNamingMode",
   "naming.nfoTitleTemplate",
   "naming.actorNameMax",
   "naming.actorNameMore",
@@ -438,17 +437,14 @@ export function NfoSection() {
     <>
       <BoolField name="download.generateNfo" />
       {shouldMountConditionalSettings(generateNfo, search) && (
-        <>
-          <EnumField name="download.nfoNaming" options={toEnumOptions(t.settings.options.nfoNaming)} />
-          <ChipArrayFieldWrapper
-            name="download.nfoIgnoreFields"
-            options={NFO_FIELD_OPTIONS.map((value) => ({
-              value,
-              label: t.settings.nfoFieldOption(value, t.settings.nfoFields[value]),
-            }))}
-            showBulkActions
-          />
-        </>
+        <ChipArrayFieldWrapper
+          name="download.nfoIgnoreFields"
+          options={NFO_FIELD_OPTIONS.map((value) => ({
+            value,
+            label: t.settings.nfoFieldOption(value, t.settings.nfoFields[value]),
+          }))}
+          showBulkActions
+        />
       )}
     </>
   );
@@ -541,7 +537,6 @@ export function NamingSection() {
           {t.settings.templatesMovedNotice}
         </div>
       )}
-      <EnumField name="naming.assetNamingMode" options={toEnumOptions(t.settings.options.assetNaming)} />
       <TextField name="naming.nfoTitleTemplate" />
       <TitleRepairSection />
       <NumberField name="naming.actorNameMax" min={1} max={20} />

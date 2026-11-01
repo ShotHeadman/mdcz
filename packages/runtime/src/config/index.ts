@@ -15,8 +15,9 @@ import {
   parseConfigurationContent,
   parseConfigurationDocument,
   serializeConfiguration,
+  serializeConfigurationDocument,
 } from "@mdcz/shared/configCodec";
-import { convertLegacyConfiguration, type LegacyConfigurationConversion } from "./legacyLibrary";
+import { convertLegacyConfiguration, type LegacyConfigurationConversion, removeLibraryNaming } from "./legacyLibrary";
 
 export {
   buildComputedConfiguration,
@@ -448,6 +449,10 @@ export class RuntimeConfigService {
     await this.store.cleanupInvalidNonActiveProfiles(logger);
   }
 
+  async removeLibraryNamingFromInactiveProfiles(): Promise<void> {
+    await this.store.removeLibraryNamingFromInactiveProfiles();
+  }
+
   private async applyAfterLoad(configuration: Configuration): Promise<Configuration> {
     const next = await this.options.onAfterLoad?.(configuration);
     return next ?? configuration;
@@ -685,16 +690,8 @@ export class RuntimeConfigProfileStore {
 
   async cleanupInvalidNonActiveProfiles(logger?: RuntimeCleanupLogger): Promise<void> {
     await mkdir(this.options.configDir, { recursive: true });
-    if (!this.activeProfileLoaded) {
-      await this.loadActiveProfileName();
-    }
-
-    const entries = await readdir(this.options.configDir);
-    for (const entry of entries) {
-      if (!this.isProfileConfigFile(entry) || entry === RUNTIME_ACTIVE_PROFILE_META_FILE) continue;
-      if (entry === `${this.activeProfileName}.json` || entry === `${this.activeProfileName}.toml`) continue;
-
-      const filePath = path.join(this.options.configDir, entry);
+    for (const filePath of await this.inactiveProfilePaths()) {
+      const entry = path.basename(filePath);
       try {
         await this.readConfigurationFile(filePath);
       } catch {
@@ -708,6 +705,34 @@ export class RuntimeConfigProfileStore {
         }
       }
     }
+  }
+
+  /** Removes library naming from every profile but the active one, which the caller saves itself. */
+  async removeLibraryNamingFromInactiveProfiles(): Promise<void> {
+    for (const filePath of await this.inactiveProfilePaths()) {
+      const format = inferConfigurationFileFormat(filePath);
+      const content = await readFile(filePath, "utf8");
+      let raw: unknown;
+      try {
+        raw = parseConfigurationDocument(content, format);
+      } catch {
+        // A profile that cannot be parsed holds nothing to remove; switching to it reports the error.
+        continue;
+      }
+      if (removeLibraryNaming(raw))
+        await writeFile(filePath, serializeConfigurationDocument(raw as Record<string, unknown>, format), "utf8");
+    }
+  }
+
+  private async inactiveProfilePaths(): Promise<string[]> {
+    if (!this.activeProfileLoaded) await this.loadActiveProfileName();
+    const active = [`${this.activeProfileName}.json`, `${this.activeProfileName}.toml`];
+    return (await readdir(this.options.configDir))
+      .filter(
+        (entry) =>
+          this.isProfileConfigFile(entry) && entry !== RUNTIME_ACTIVE_PROFILE_META_FILE && !active.includes(entry),
+      )
+      .map((entry) => path.join(this.options.configDir, entry));
   }
 
   getProfilePath(profileName: string): string {

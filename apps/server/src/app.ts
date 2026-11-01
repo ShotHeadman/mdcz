@@ -4,7 +4,7 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
+import { findNamingPolicy, MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { ActorSyncFollowUp, PersonSyncLock } from "@mdcz/runtime/mediaserver";
 import { type CookieResolver, NetworkClient } from "@mdcz/runtime/network";
@@ -182,6 +182,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       recordSiteResults: async (number, results) =>
         (await persistence.getState()).repositories.siteResults.record(number, results),
       loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
+      findNamingPolicy: async (hostPath) => findNamingPolicy(await libraries.list(), hostPath),
     });
   const maintenance =
     options.services?.maintenance ??
@@ -287,10 +288,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.addHook("onReady", async () => {
     await services.persistence.initialize();
     await services.config.load();
-    // Settings that moved into libraries become the first library before the configuration is saved without them.
+    // Settings that moved into libraries reach them before the configuration is saved without them. Saving the active
+    // profile comes last: until then it still holds the settings, so an interrupted start converts again.
     const legacy = services.config.takeLegacyConversion();
     if (legacy) {
       await services.libraries.adoptLegacyConfiguration(legacy);
+      await services.config.removeLibraryNamingFromInactiveProfiles();
       await services.config.save(await services.config.get());
     }
     await services.scans.recoverInterrupted();

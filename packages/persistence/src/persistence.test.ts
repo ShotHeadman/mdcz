@@ -181,7 +181,7 @@ describe("Persistence migrations", () => {
       expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_runs'").all()).toEqual([
         { name: "scrape_runs" },
       ]);
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -249,7 +249,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -308,7 +308,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 6 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
