@@ -35,6 +35,8 @@ export interface PreparedMovieFile {
 }
 
 export interface MovieArtifacts {
+  /** The folders that hold the movie's metadata. */
+  folders: string[];
   files: PreparedMovieFile[];
   movieAssets: AssetRef[];
   artifacts: WriteArtifact[];
@@ -467,6 +469,7 @@ export const prepareMovieArtifacts = async (input: {
       throw new Error(`Artifact target cannot overwrite a source media file: ${artifact.targetPath}`);
   }
   return {
+    folders: [...new Set(input.members.map((member) => member.layout.metadataDir))],
     assets,
     nfoPath,
     files,

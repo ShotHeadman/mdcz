@@ -333,15 +333,18 @@ describe("buildServer scrape integration", () => {
     }
   });
 
-  it("labels resolution versions of one movie and attaches later versions to the library movie", async () => {
+  it("labels resolution versions of one movie, attaches later versions and keeps other movies out of its folder", async () => {
     const root = await createTempRoot("scrape-versions-root");
     for (const [name, content] of [
       ["ABC-123.mp4", "height=800"],
       ["ABC-123-4K.mp4", "height=2160"],
+      ["XYZ-999.mp4", "other"],
     ])
       await writeFile(join(root, name), content);
+    // Folder names are cut to 60 characters, so every title starting with this prefix names the same folder.
+    const titlePrefix = "很长的系列标题".repeat(10);
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+      scrapeAggregation: createTestAggregation("https://unused.example/image.png", { titlePrefix }),
     });
     await services.config.update({
       download: {
@@ -353,8 +356,8 @@ describe("buildServer scrape integration", () => {
       },
     });
     const token = await loginAsAdmin(fastify);
-    const { rootId, libraryId } = await createTestLibrary(fastify, token, root, { folderTemplate: "fixed/{number}" });
-    const scrape = async (names: string[]) => {
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root, { folderTemplate: "fixed/{title}" });
+    const scrape = async (names: string[], status: "completed" | "failed" = "completed") => {
       const response = await fastify.inject({
         method: "POST",
         url: "/trpc/scrape.start",
@@ -365,16 +368,29 @@ describe("buildServer scrape integration", () => {
           libraryId,
         },
       });
-      await waitForScrapeRunStatus(fastify, token, response.json().result.data.runId, "completed");
+      const taskId = response.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, status);
+      return await services.scrape.snapshot({ taskId });
     };
-    const output = join(root, "JAV_output/fixed/ABC-123");
+    const folder = `JAV_output/fixed/${titlePrefix.slice(0, 60)}`;
+    const output = join(root, folder);
     const { repositories } = await services.persistence.getState();
 
     await scrape(["ABC-123.mp4", "ABC-123-4K.mp4"]);
     await writeFile(join(root, "ABC-123-1080P.mp4"), "hd");
     await scrape(["ABC-123-1080P.mp4"]);
-    await scrape(["JAV_output/fixed/ABC-123/ABC-123.mp4"]);
+    await scrape([`${folder}/ABC-123.mp4`]);
+    const other = await scrape(["XYZ-999.mp4"], "failed");
 
+    expect(other.items[0]?.error).toContain("Another movie already has this folder");
+    expect(await readFile(join(root, "XYZ-999.mp4"), "utf8")).toBe("other");
+    expect((await readdir(output)).sort()).toEqual([
+      "ABC-123 - 1080p.mp4",
+      "ABC-123 - 800p.mp4",
+      "ABC-123.mp4",
+      "ABC-123.nfo",
+      "movie.nfo",
+    ]);
     for (const [name, content] of [
       ["ABC-123.mp4", "height=2160"],
       ["ABC-123 - 800p.mp4", "height=800"],

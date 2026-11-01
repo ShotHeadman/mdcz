@@ -27,7 +27,7 @@ import { runWithScrapeItem } from "../network";
 import { resolvePublicationAssetLayout, resolvePublicationNaming } from "../publication/assetLayout";
 import type { CommittedMovie } from "../publication/committedMovie";
 import { toCommittedMovie } from "../publication/committedMovie";
-import { PublicationConflictError } from "../publication/conflicts";
+import { assertFoldersHoldNoOtherMovie, PublicationConflictError } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
 import {
   MANAGED_MOVIE_ASSET_KINDS,
@@ -38,6 +38,7 @@ import {
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
+import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import {
   applyScrapeNetworkPolicy,
@@ -150,6 +151,7 @@ export interface MaintenanceRuntimeApplyEntryInput {
   };
   publication: {
     commit(movie: CommittedMovie): void;
+    library: Pick<PublicationOutputPort, "publicationSnapshot">;
     roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
     identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
   };
@@ -687,6 +689,13 @@ export class MaintenanceRuntime {
       );
       try {
         throwIfAborted(signal);
+        await assertFoldersHoldNoOtherMovie({
+          target: preset.output === "move" && this.target ? this.target : IN_PLACE_TARGET,
+          movieId: publication.identity.movieId,
+          sourcePaths: files.map((file) => file.fileInfo.filePath),
+          folders: published.folders,
+          library: publication.library,
+        });
         const validate = async () => {
           throwIfAborted(signal);
           await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));

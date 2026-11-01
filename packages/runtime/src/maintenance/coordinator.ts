@@ -805,6 +805,7 @@ export class MaintenanceSessionCoordinator {
               files,
               signal: context.signal,
               publication: {
+                library,
                 roots: publicationRoots,
                 commit: (movie) => writeCommittedMovie(library, movie),
                 identity: {

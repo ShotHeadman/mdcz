@@ -40,6 +40,7 @@ import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { buildMovieTags } from "../maintenance/movieTags";
 import type { NetworkClient } from "../network";
 import { toCommittedMovie } from "../publication/committedMovie";
+import { assertFoldersHoldNoOtherMovie } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
 import { assertSymlinkSupport } from "../publication/outputFileSystem";
 import { movieOutputResultAssets } from "../publication/outputLibrary";
@@ -1078,6 +1079,15 @@ export class ScrapeRunner {
           (directory) => inventory.canonicalDirectory(directory),
         );
         try {
+          await assertFoldersHoldNoOtherMovie({
+            target: scrapeOptions.target,
+            movieId: committedMovie.id,
+            sourcePaths: output.files.map((file) =>
+              resolveRootRelativePath(requireRoot(file.source.rootId), file.source.relativePath),
+            ),
+            folders: output.folders,
+            library: this.deps.persistence.library,
+          });
           if (output.moves.length > 0) {
             await new MoveOutput(undefined, this.logger).install({
               moves: output.moves,
