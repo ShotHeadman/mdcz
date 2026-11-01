@@ -52,7 +52,7 @@ describe("scrape store contract", () => {
     expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("");
   });
 
-  it("overlays a retry run on the earlier runs of its chain and drops the chain on a fresh start", () => {
+  it("overlays a retry run on the earlier runs of its chain and drops the chain on a directory rerun or fresh start", () => {
     const completed = buildScrapeSnapshot({
       task: { ...buildScrapeSnapshot().task, revision: 80, totalItems: 2, successCount: 1, failedCount: 1 },
       items: [
@@ -73,6 +73,16 @@ describe("scrape store contract", () => {
       { fileId: "item-success", status: "success" },
       { fileId: "retried-id", status: "processing" },
     ]);
+
+    useScrapeStore.getState().setSnapshot(
+      buildScrapeSnapshot({
+        task: { ...completed.task, id: "rerun", previousTaskId: "retry-run", revision: 1 },
+        directorySource: { kind: "directory", scanDir: "/media", recursive: true, excludeDirPaths: [], targetDir: "" },
+        items: [],
+      }),
+    );
+
+    expect(selectScrapeResults(useScrapeStore.getState())).toEqual([]);
 
     useScrapeStore.getState().setSnapshot(
       buildScrapeSnapshot({

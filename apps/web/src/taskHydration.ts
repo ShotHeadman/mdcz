@@ -25,6 +25,11 @@ export const selectActiveLiveScrapeRun = (
   );
 };
 
+/** Live runs omit finished ones, so a run that ends at once, such as a folder with nothing left, is shown by its id. */
+export const showScrapeRun = async ({ runId }: { runId: string }): Promise<void> => {
+  useScrapeStore.getState().setSnapshot(await api.scrape.snapshot({ taskId: runId }));
+};
+
 export const readScrapeRunsSnapshot = async () => {
   const response = await api.scrape.liveRuns();
   const state = useScrapeStore.getState();

@@ -44,8 +44,8 @@ export interface ScrapeActionTarget {
 export interface ScrapeActionPort extends Partial<FileActions> {
   rerunDirectory(runId: string): Promise<void>;
   cancelActorSync(runId: string): Promise<void>;
-  /** Re-scrapes from one detail page (pinning it), or by number with `unpin` (dropping a pinned page). */
-  rescrape(targets: ScrapeActionTarget[], source: { manualUrl: string } | { unpin: true }): Promise<void>;
+  /** Re-scrapes library files, from one detail page (pinning it), or by number with `unpin` (dropping a pinned page). */
+  rescrape(targets: ScrapeActionTarget[], source?: { manualUrl: string } | { unpin: true }): Promise<void>;
   retryFailed(itemIds?: readonly string[]): Promise<void>;
   removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;
   openNfo(path: string): Promise<void> | void;

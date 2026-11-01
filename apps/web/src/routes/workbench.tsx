@@ -36,6 +36,7 @@ import { browseDirectory } from "../desktop";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
+import { showScrapeRun } from "../taskHydration";
 
 export const Route = createFileRoute("/workbench")({
   validateSearch: (search): { intent?: "maintenance" } => ({
@@ -116,10 +117,9 @@ function WorkbenchPage() {
       } else {
         if (!libraryId) throw new Error(t.workbench.noLibraries);
         activateNewScrapeTask();
-        await runScrapeRequest(async () => {
-          await api.scrape.start({ executionMode: "batch", libraryId, source });
-          requestScrapeLiveRunsRefresh();
-        });
+        await showScrapeRun(
+          await runScrapeRequest(async () => await api.scrape.start({ executionMode: "batch", libraryId, source })),
+        );
       }
     } catch (error) {
       if (workbenchMode === "maintenance") useMaintenanceStore.getState().setPending(false);
@@ -130,14 +130,16 @@ function WorkbenchPage() {
   const handleStartSelectedScrape = async (candidates: MediaCandidate[], libraryId: string) => {
     try {
       activateNewScrapeTask();
-      await runScrapeRequest(async () => {
-        await api.scrape.start({
-          refs: candidates.map((candidate) => candidate.ref),
-          executionMode: "batch",
-          libraryId,
-        });
-        requestScrapeLiveRunsRefresh();
-      });
+      await showScrapeRun(
+        await runScrapeRequest(
+          async () =>
+            await api.scrape.start({
+              refs: candidates.map((candidate) => candidate.ref),
+              executionMode: "batch",
+              libraryId,
+            }),
+        ),
+      );
     } catch (error) {
       useScrapeStore.getState().setError(toErrorMessage(error));
       setStartError(error);
