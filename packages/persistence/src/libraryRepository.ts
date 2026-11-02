@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { filesystemPathKey } from "@mdcz/media-store";
+import { NotFoundError } from "@mdcz/shared/error";
 import { and, asc, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { writeLibraryRows } from "./libraryWrite";
@@ -456,7 +457,7 @@ export class LibraryRepository {
     modifiedAt?: Date | null;
   }): Promise<LibraryEntryRecord> {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, input.fileId)).get();
-    if (!file) throw new Error(`Library file not found: ${input.fileId}`);
+    if (!file) throw new NotFoundError(`Library file not found: ${input.fileId}`);
     const root = this.database.db.select().from(mediaRoots).where(eq(mediaRoots.id, input.rootId)).get();
     if (!root) throw new Error(`Media root not found: ${input.rootId}`);
     if (
@@ -501,13 +502,13 @@ export class LibraryRepository {
 
   async getEntryByFileId(fileId: string): Promise<LibraryEntryRecord> {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
-    if (!file) throw new Error(`Library file not found: ${fileId}`);
+    if (!file) throw new NotFoundError(`Library file not found: ${fileId}`);
     return this.getEntryById(file.itemId);
   }
 
   removeFile(fileId: string): void {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
-    if (!file) throw new Error(`Library file not found: ${fileId}`);
+    if (!file) throw new NotFoundError(`Library file not found: ${fileId}`);
     this.database.sqlite.transaction(() => {
       this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.fileId, fileId)).run();
       this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).run();
@@ -518,7 +519,7 @@ export class LibraryRepository {
 
   deleteEntry(id: string): void {
     const item = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
-    if (!item) throw new Error(`Library entry not found: ${id}`);
+    if (!item) throw new NotFoundError(`Library entry not found: ${id}`);
     this.database.sqlite.transaction(() => {
       this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
       this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).run();
@@ -542,7 +543,7 @@ export class LibraryRepository {
       .limit(1)
       .get();
     if (!row) {
-      throw new Error(`Library entry not found: ${rootId}:${rootRelativePath}`);
+      throw new NotFoundError(`Library entry not found: ${rootId}:${rootRelativePath}`);
     }
     return await this.getEntryById(row.itemId);
   }
@@ -558,7 +559,7 @@ export class LibraryRepository {
           files: [...entry.files.filter((f) => f.id === file.id), ...entry.files.filter((f) => f.id !== file.id)],
         };
       }
-      throw new Error(`Library entry not found: ${id}`);
+      throw new NotFoundError(`Library entry not found: ${id}`);
     }
     const [files, assets] = await Promise.all([this.listFilesForItems([id]), this.listAssetsForItems([id])]);
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
@@ -814,7 +815,7 @@ export class LibraryRepository {
   private async getLibraryItem(id: string): Promise<LibraryItemRow> {
     const row = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
     if (!row) {
-      throw new Error(`Library entry not found: ${id}`);
+      throw new NotFoundError(`Library entry not found: ${id}`);
     }
     return row;
   }

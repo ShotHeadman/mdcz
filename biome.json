@@ -229,8 +229,8 @@
                 },
                 "patterns": [
                   {
-                    "group": ["@mdcz/shared/*"],
-                    "message": "Persistence returns raw rows; domain parsing belongs in the service layer."
+                    "group": ["@mdcz/shared/*", "!@mdcz/shared/error"],
+                    "message": "Persistence returns raw rows; domain parsing belongs in the service layer. Only @mdcz/shared/error (error classes) is allowed."
                   }
                 ]
               }

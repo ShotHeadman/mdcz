@@ -2,6 +2,7 @@ import { realpath as realpathCallback } from "node:fs";
 import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { NotFoundError } from "@mdcz/shared/error";
 import type { MediaRoot } from "./mediaRoot";
 import { normalizeRootRelativePath, resolveRootRelativePath } from "./rootRelativePath";
 
@@ -24,7 +25,7 @@ export const canonicalizeRootFileRefs = <T extends { rootId: string; relativePat
   const rootsById = new Map(roots.map((root) => [root.id, root]));
   return refs.map((ref) => {
     const root = rootsById.get(ref.rootId);
-    if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+    if (!root) throw new NotFoundError(`Media root not found: ${ref.rootId}`);
     const relativePath = normalizeRootRelativePath(ref.relativePath);
     if (!relativePath) throw new Error("Media file path must not be empty");
     resolveRootRelativePath(root, relativePath);

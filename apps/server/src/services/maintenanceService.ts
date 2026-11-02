@@ -6,6 +6,7 @@ import {
 } from "@mdcz/runtime/maintenance";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
+import { NotFoundError } from "@mdcz/shared/error";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
   MaintenanceApplyInput,
@@ -115,7 +116,7 @@ export class MaintenanceService {
   async execute(input: MaintenanceApplyInput): Promise<MaintenanceMutationAckDto> {
     const session = await this.coordinator.getActiveSession();
     if (!session || session.id !== input.sessionId)
-      throw new Error(`Maintenance session not found: ${input.sessionId}`);
+      throw new NotFoundError(`Maintenance session not found: ${input.sessionId}`);
     const previews = session.previews;
     const selectedIds = input.previewIds ? new Set(input.previewIds) : null;
     const selected = selectedIds ? previews.filter((preview) => selectedIds.has(preview.id)) : previews;

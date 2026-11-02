@@ -8,9 +8,9 @@ import {
   type MediaRoot,
   normalizeHostPath,
 } from "@mdcz/media-store";
+import { NotFoundError } from "@mdcz/shared/error";
 import { eq } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { type MediaRootRow, mediaRoots } from "./schema";
 
 export type PersistedMediaRoot = MediaRoot;
@@ -102,7 +102,7 @@ export class MediaRootRepository {
   async get(id: string): Promise<PersistedMediaRoot> {
     const row = this.database.db.select().from(mediaRoots).where(eq(mediaRoots.id, id)).limit(1).get();
     if (!row) {
-      throw new PersistenceError(persistenceErrorCodes.NotFound, `Media root not found: ${id}`);
+      throw new NotFoundError(`Media root not found: ${id}`);
     }
     return toMediaRoot(row);
   }

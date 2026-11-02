@@ -12,7 +12,7 @@ import type {
 } from "@mdcz/persistence";
 import type { Configuration } from "@mdcz/shared/config";
 import { type DirectoryTaskScope, type DiscoveryProgress, directoryTaskScopeSchema } from "@mdcz/shared/directoryTasks";
-import { toErrorMessage } from "@mdcz/shared/error";
+import { NotFoundError, toErrorMessage } from "@mdcz/shared/error";
 import { resolveManualScrapeRoute } from "@mdcz/shared/manualScrapeUrl";
 import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
@@ -66,7 +66,7 @@ import { AggregationService, type CrawlerPort, type SiteResultSink } from "./agg
 import { DirectoryInventory } from "./DirectoryInventory";
 import { createDirectoryScope, discoverDirectoryFiles } from "./directoryDiscovery";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
-import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executionPolicy";
+import { createScrapeExecutionPolicy } from "./executionPolicy";
 import { FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
 import { admitScrapeGroups, type MovieGroup } from "./movieGroups";
@@ -488,7 +488,7 @@ export class ScrapeRunner {
       };
     }
 
-    throw new Error(`Scrape result not found: ${id}`);
+    throw new NotFoundError(`Scrape result not found: ${id}`);
   }
 
   recordLog(
@@ -781,7 +781,6 @@ export class ScrapeRunner {
     await checkRoots([...new Set([...manifest.items.map((item) => item.rootId), ...outputRootIds])]);
 
     const { configuration, target, unpin } = context;
-    applyScrapeNetworkPolicy(this.deps.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
 
     const roots = new Map<string, MediaRoot>();

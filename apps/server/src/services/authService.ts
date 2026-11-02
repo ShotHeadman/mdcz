@@ -17,8 +17,8 @@ import type { ServerPersistenceService } from "./persistenceService";
 
 const deriveKey = promisify(scrypt);
 const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
-// Recording every request's use would write the database per request; a session's last use is only needed coarsely.
-const SESSION_TOUCH_INTERVAL_MS = 10 * 60 * 1000;
+// Recording every request's use would write the database per request; a credential's last use is only needed coarsely.
+const CREDENTIAL_TOUCH_INTERVAL_MS = 10 * 60 * 1000;
 const API_KEY_PREFIX = "mdcz_";
 const FREE_LOGIN_FAILURES = 5;
 const LOGIN_LOCK_BASE_MS = 30 * 1000;
@@ -32,6 +32,8 @@ export class AuthenticationError extends Error {
 
 const hashSecret = (secret: string): string => createHash("sha256").update(secret).digest("hex");
 
+export const isApiKey = (token?: string): token is string => Boolean(token?.startsWith(API_KEY_PREFIX));
+
 /** What the API asks of authentication. The server checks sessions and API keys; desktop admits its one window. */
 export type ServerAuth = Pick<
   AuthService,
@@ -39,7 +41,6 @@ export type ServerAuth = Pick<
   | "login"
   | "logout"
   | "assertAuthenticated"
-  | "assertAutomation"
   | "listApiKeys"
   | "createApiKey"
   | "deleteApiKey"
@@ -49,10 +50,11 @@ export type ServerAuth = Pick<
 
 /**
  * WebUI sessions and API keys are stored as hashes in the database, so sessions survive restarts and container
- * updates. API keys authorize only the automation endpoints, never the WebUI.
+ * updates. An API key authorizes the API as a session does, except managing API keys and the password; it never
+ * signs in to the WebUI.
  */
 export class AuthService {
-  readonly #touchedSessions = new Map<string, number>();
+  readonly #touchedCredentials = new Map<string, number>();
   readonly #loginFailures = new Map<string, { count: number; lastFailureAt: number; lockedUntil: number }>();
 
   constructor(
@@ -90,28 +92,24 @@ export class AuthService {
     // A changed password must also lock out whoever might have signed in with the old one.
     const credentials = (await this.persistence.getState()).repositories.credentials;
     credentials.deleteOtherSessions(token ? hashSecret(token) : "");
-    this.#touchedSessions.clear();
+    this.#touchedCredentials.clear();
   }
 
   async logout(token?: string): Promise<AuthSessionDto> {
     if (token) {
-      this.#touchedSessions.delete(hashSecret(token));
+      this.#touchedCredentials.delete(hashSecret(token));
       (await this.persistence.getState()).repositories.credentials.deleteSession(hashSecret(token));
     }
     return { authenticated: false };
   }
 
+  /** Accepts a WebUI session or an API key. */
   async assertAuthenticated(token?: string): Promise<void> {
-    if (!(await this.isSession(token))) throw new AuthenticationError("Authentication required");
-  }
-
-  /** Automation endpoints accept an API key or a WebUI session. */
-  async assertAutomation(token?: string): Promise<void> {
-    if (token?.startsWith(API_KEY_PREFIX)) {
-      if ((await this.persistence.getState()).repositories.credentials.touchApiKey(hashSecret(token))) return;
+    if (isApiKey(token)) {
+      if (await this.touchCredential(token, "apiKey")) return;
       throw new AuthenticationError("Invalid API key");
     }
-    await this.assertAuthenticated(token);
+    if (!(await this.isSession(token))) throw new AuthenticationError("Authentication required");
   }
 
   async listApiKeys(): Promise<ApiKeyListResponse> {
@@ -141,6 +139,8 @@ export class AuthService {
 
   async deleteApiKey(id: string): Promise<void> {
     (await this.persistence.getState()).repositories.credentials.deleteApiKey(id);
+    // A revoked key must stop working at once, not when its cached use expires.
+    this.#touchedCredentials.clear();
   }
 
   async completeSetup(input: SetupCompleteInput): Promise<AuthSessionDto> {
@@ -214,18 +214,22 @@ export class AuthService {
   }
 
   private async isSession(token?: string): Promise<boolean> {
-    if (!token || token.startsWith(API_KEY_PREFIX)) return false;
+    if (!token || isApiKey(token)) return false;
+    return await this.touchCredential(token, "session");
+  }
+
+  private async touchCredential(token: string, kind: "session" | "apiKey"): Promise<boolean> {
     const tokenHash = hashSecret(token);
     const now = Date.now();
-    const touched = this.#touchedSessions.get(tokenHash);
-    if (touched !== undefined && now - touched < SESSION_TOUCH_INTERVAL_MS) return true;
-    const valid = (await this.persistence.getState()).repositories.credentials.touchSession(
-      tokenHash,
-      new Date(now - SESSION_IDLE_MS),
-      new Date(now),
-    );
-    if (valid) this.#touchedSessions.set(tokenHash, now);
-    else this.#touchedSessions.delete(tokenHash);
+    const touched = this.#touchedCredentials.get(tokenHash);
+    if (touched !== undefined && now - touched < CREDENTIAL_TOUCH_INTERVAL_MS) return true;
+    const credentials = (await this.persistence.getState()).repositories.credentials;
+    const valid =
+      kind === "session"
+        ? credentials.touchSession(tokenHash, new Date(now - SESSION_IDLE_MS), new Date(now))
+        : credentials.touchApiKey(tokenHash, new Date(now));
+    if (valid) this.#touchedCredentials.set(tokenHash, now);
+    else this.#touchedCredentials.delete(tokenHash);
     return valid;
   }
 

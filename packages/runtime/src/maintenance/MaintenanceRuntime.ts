@@ -41,14 +41,12 @@ import { createStagingDirectory, removeStagingDirectory } from "../publication/p
 import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import {
-  applyScrapeNetworkPolicy,
   type DownloadManager,
   downloadCrawlerAssets,
   type FileOrganizer,
   type NfoGenerator,
   prepareOutputCrawlerData,
   type ResolvedPublicationLayout,
-  type ScrapeNetworkPolicyClient,
   type TranslateService,
   writePreparedNfo,
 } from "../scrape";
@@ -94,7 +92,6 @@ export interface MaintenanceRuntimeDependencies {
   findNamingPolicy(hostPath: string): Promise<NamingPolicy | undefined>;
   downloadManager?: DownloadManager;
   fileOrganizer: Pick<FileOrganizer, "plan" | "resolveOutputPlan">;
-  networkPolicyClient?: ScrapeNetworkPolicyClient;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   signalService: MaintenanceSignalService;
   translateService?: TranslateService;
@@ -248,11 +245,6 @@ export class MaintenanceRuntime {
       input.target,
       input.inventory,
     );
-  }
-
-  async applyNetworkPolicy(): Promise<void> {
-    if (!this.deps.networkPolicyClient) return;
-    applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
   }
 
   async scanRefs(input: {

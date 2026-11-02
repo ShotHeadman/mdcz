@@ -17,7 +17,7 @@ import {
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
-import { toErrorMessage } from "@mdcz/shared/error";
+import { NotFoundError, toErrorMessage } from "@mdcz/shared/error";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   FileActionInput,
@@ -263,7 +263,7 @@ export class ScrapeService {
 
   async snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto> {
     const snapshot = await (await this.runner()).getSnapshot(input.taskId);
-    if (!snapshot) throw new Error(`Scrape task not found: ${input.taskId}`);
+    if (!snapshot) throw new NotFoundError(`Scrape run not found: ${input.taskId}`);
     return snapshot;
   }
 
@@ -326,7 +326,7 @@ export class ScrapeService {
     const file = entry.files.find(
       (candidate) => candidate.rootId === target.rootId && candidate.rootRelativePath === target.relativePath,
     );
-    if (!file) throw new Error("Library file not found");
+    if (!file) throw new NotFoundError(`Library file not found: ${target.rootId}:${target.relativePath}`);
     state.repositories.library.removeFile(file.id);
     this.taskEvents.invalidate("scrape-history");
     return { ok: true, ...target };

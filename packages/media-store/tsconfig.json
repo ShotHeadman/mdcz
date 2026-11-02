@@ -10,5 +10,6 @@
     "tsBuildInfoFile": "../../node_modules/.cache/typescript/media-store.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts"],
+  "references": [{ "path": "../shared" }]
 }

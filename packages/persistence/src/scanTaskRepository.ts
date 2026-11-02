@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { NotFoundError } from "@mdcz/shared/error";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
@@ -141,7 +142,7 @@ export class ScanTaskRepository {
   async get(id: string): Promise<ScanTask> {
     const row = this.database.db.select().from(scanTasks).where(eq(scanTasks.id, id)).limit(1).get();
     if (!row) {
-      throw new PersistenceError(persistenceErrorCodes.NotFound, `Task not found: ${id}`);
+      throw new NotFoundError(`Task not found: ${id}`);
     }
     return toScanTask(row);
   }

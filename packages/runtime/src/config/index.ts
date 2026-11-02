@@ -17,6 +17,7 @@ import {
   serializeConfiguration,
   serializeConfigurationDocument,
 } from "@mdcz/shared/configCodec";
+import { NotFoundError } from "@mdcz/shared/error";
 import { convertLegacyConfiguration, type LegacyConfigurationConversion, removeLibraryNaming } from "./legacyLibrary";
 
 export {
@@ -350,7 +351,7 @@ export class RuntimeConfigService {
 
     const resetDefault = getConfigurationPathDefault(propertyPath);
     if (!resetDefault.found) {
-      throw new Error(`Path not found: ${propertyPath}`);
+      throw new NotFoundError(`Configuration path not found: ${propertyPath}`);
     }
 
     return await this.runWithValidation(async () => {
@@ -606,7 +607,7 @@ export class RuntimeConfigProfileStore {
     const profileName = normalizeRuntimeProfileName(name);
     const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new NotFoundError(`Profile "${profileName}" not found`);
     }
     this.activeProfileName = profileName;
     this.activeProfileLoaded = true;
@@ -624,7 +625,7 @@ export class RuntimeConfigProfileStore {
     }
     const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new NotFoundError(`Profile "${profileName}" not found`);
     }
     await unlink(filePath);
     return { profileName };
@@ -810,7 +811,7 @@ export class RuntimeConfigProfileStore {
 
   private async readProfileConfiguration(filePath: string, profileName: string): Promise<Configuration> {
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new NotFoundError(`Profile "${profileName}" not found`);
     }
     return await this.readConfigurationFile(filePath);
   }

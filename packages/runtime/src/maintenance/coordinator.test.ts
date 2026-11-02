@@ -393,38 +393,6 @@ describe("MaintenanceSessionCoordinator", () => {
     await fixture.coordinator.close();
   });
 
-  it("refreshes the network policy before each preview and apply phase", async () => {
-    let policyVersion = 0;
-    const fixture = createCoordinator({
-      applyNetworkPolicy: vi.fn(async () => {
-        policyVersion += 1;
-      }),
-      previewMovie: vi.fn(async ({ entry }: { entry: LocalScanEntry }) => {
-        expect(policyVersion).toBe(1);
-        return toRuntimePreview(entry);
-      }),
-      applyEntry: vi.fn(async ({ entry }) => {
-        expect(policyVersion).toBe(2);
-        return { status: "failed" as const, error: entry.fileId };
-      }),
-    });
-
-    const preview = await fixture.coordinator.startPreview({
-      rootId: root.id,
-      presetId: "local_organize",
-      refs: [ref("one.mp4")],
-    });
-    const previewBatch = await preview.completion;
-    const apply = await fixture.coordinator.beginApply({
-      sessionId: preview.session.id,
-      selections: [{ previewId: previewBatch.items[0]?.id ?? "" }],
-    });
-    await apply.completion;
-
-    expect(vi.mocked(fixture.runtime.applyNetworkPolicy)).toHaveBeenCalledTimes(2);
-    await fixture.coordinator.close();
-  });
-
   it.each(["conflict", "failure"] as const)("continues the batch after a movie %s", async (outcome) => {
     const fixture = createCoordinator({
       applyEntry: vi.fn(async ({ entry }) => {

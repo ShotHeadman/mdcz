@@ -30,6 +30,11 @@ const summarizeImpitError = (message: string): string | null => {
   return null;
 };
 
+/** A record, session or profile the caller named does not exist; the API answers 404. */
+export class NotFoundError extends Error {
+  override readonly name = "NotFoundError";
+}
+
 export const DomainErrorCode = {
   CONFIG_VALIDATION: "CONFIG_VALIDATION",
   LIBRARY_TASK_CONFLICT: "LIBRARY_TASK_CONFLICT",

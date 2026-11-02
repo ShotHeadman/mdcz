@@ -159,7 +159,8 @@ export const settings: Messages["settings"] = {
   },
   integrations: {
     access: "下载器接入",
-    accessDescription: "供下载器与网盘调用自动化接口，无法用于登录网页界面。",
+    accessDescription:
+      "供下载器、网盘与脚本完整调用 MDCz API（管理 Key 与修改密码除外），无法用于登录网页界面。请只交给你信任的工具。",
     notifications: "通知",
     keyName: "名称",
     keyNamePlaceholder: "qBittorrent",

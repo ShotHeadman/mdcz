@@ -1247,7 +1247,7 @@ describe("buildServer scrape integration", () => {
       },
     });
 
-    expect(startResponse.statusCode).toBe(500);
+    expect(startResponse.statusCode).toBe(404);
     expect(startResponse.json().error.message).toContain("Media root not found");
   });
 

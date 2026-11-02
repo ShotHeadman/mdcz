@@ -175,7 +175,8 @@ export const settings = {
   },
   integrations: {
     access: "Downloader access",
-    accessDescription: "Allows downloaders and cloud tools to access automation APIs (cannot log into the web UI).",
+    accessDescription:
+      "Gives downloaders, cloud tools and scripts full access to the MDCz API, except managing keys and the password. It cannot sign in to the web UI; give keys only to tools you trust.",
     notifications: "Notifications",
     keyName: "Key name",
     keyNamePlaceholder: "qBittorrent",

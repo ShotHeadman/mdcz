@@ -825,7 +825,7 @@ describe("buildServer composition integration", () => {
     );
   });
 
-  it("authorizes automation endpoints with revocable API keys and scrapes a downloader's path", async () => {
+  it("authorizes the API with revocable API keys that cannot manage keys, and scrapes a downloader's path", async () => {
     const root = await createTempRoot("automation-root");
     await writeFile(join(root, "ABC-123.mp4"), "video");
     const image = await startTestImageServer();
@@ -884,15 +884,21 @@ describe("buildServer composition integration", () => {
       url: "/trpc/integrations.status",
       headers: { authorization: `Bearer ${token}` },
     });
-    // An API key reaches only the automation endpoints, and stops working once revoked.
+    // An API key reaches the API as a session does, except key management, and stops working once revoked.
     const keyOnSettings = await fastify.inject({ method: "GET", url: "/trpc/config.read", headers: automation });
+    const keyMintingKey = await fastify.inject({
+      method: "POST",
+      url: "/trpc/apiKeys.create",
+      headers: automation,
+      payload: { name: "escalation" },
+    });
     await fastify.inject({
       method: "POST",
       url: "/trpc/apiKeys.delete",
       headers: { authorization: `Bearer ${token}` },
       payload: { id: key.id },
     });
-    const revoked = await fastify.inject({ method: "GET", url: "/api/automation/library/recent", headers: automation });
+    const revoked = await fastify.inject({ method: "GET", url: "/trpc/config.read", headers: automation });
 
     expect(unauthorizedResponse.statusCode).toBe(401);
     expect(unauthorizedResponse.json().message).toContain("Authentication required");
@@ -903,7 +909,8 @@ describe("buildServer composition integration", () => {
     expect(cloudDrive.statusCode).toBe(204);
     expect(silentCloudDrive.json().result.data.cloudDrive.lastEventAt).toBeNull();
     expect(reachedCloudDrive.json().result.data.cloudDrive.lastEventAt).toEqual(expect.any(String));
-    expect(keyOnSettings.statusCode).toBe(401);
+    expect(keyOnSettings.statusCode).toBe(200);
+    expect(keyMintingKey.statusCode).toBe(403);
     expect(revoked.statusCode).toBe(401);
   });
   it("polls a qBittorrent category, scrapes each torrent that finished after polling began once, and keeps it seeding", async () => {

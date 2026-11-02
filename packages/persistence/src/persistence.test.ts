@@ -1,11 +1,12 @@
 import { cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createMediaRoot } from "@mdcz/media-store";
+import { NotFoundError } from "@mdcz/shared/error";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 
 import { createPersistenceDatabase, type PersistenceDatabase } from "./database";
-import { PersistenceError, persistenceErrorCodes } from "./errors";
+import { persistenceErrorCodes } from "./errors";
 import { LibraryRepository, selectRepresentativeFile } from "./libraryRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
 import { defaultMigrationsFolder, runMigrations } from "./migrate";
@@ -380,16 +381,17 @@ describe("MediaRootRepository", () => {
     }
   });
 
-  it("uses stable not-found errors", async () => {
+  it("reports a missing record as NotFoundError", async () => {
     database = createTestPersistenceDatabase();
-    const repository = new MediaRootRepository(database);
+    const lookups: Array<(database: PersistenceDatabase) => Promise<unknown>> = [
+      async (database) => await new MediaRootRepository(database).get("missing"),
+      async (database) => await new LibraryRepository(database).getEntryById("missing"),
+      async (database) => await new LibraryRepository(database).getEntryByFileId("missing"),
+      async (database) => new PendingRepository(database).get("missing"),
+      async (database) => await new ScanTaskRepository(database).get("missing"),
+    ];
 
-    await expect(repository.get("missing")).rejects.toEqual(
-      expect.objectContaining({
-        code: persistenceErrorCodes.NotFound,
-        name: PersistenceError.name,
-      }),
-    );
+    for (const lookup of lookups) await expect(lookup(database)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

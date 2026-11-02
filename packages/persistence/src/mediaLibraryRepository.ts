@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { NotFoundError } from "@mdcz/shared/error";
 import { asc, eq } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { libraryWatchSnapshots, type MediaLibraryRow, mediaLibraries } from "./schema";
 
 export type MediaLibraryRecord = MediaLibraryRow;
@@ -16,7 +16,7 @@ export class MediaLibraryRepository {
 
   get(id: string): MediaLibraryRecord {
     const row = this.database.db.select().from(mediaLibraries).where(eq(mediaLibraries.id, id)).get();
-    if (!row) throw new PersistenceError(persistenceErrorCodes.NotFound, `Library not found: ${id}`);
+    if (!row) throw new NotFoundError(`Library not found: ${id}`);
     return row;
   }
 
