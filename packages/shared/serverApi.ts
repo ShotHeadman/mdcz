@@ -30,6 +30,7 @@ import type {
   ApiKeyCreateResponse,
   ApiKeyListResponse,
   AppEnsureWatermarkDirectoryResponse,
+  AuthChangePasswordInput,
   AuthLoginInput,
   AuthSessionDto,
   ConfigImportInput,
@@ -117,6 +118,7 @@ export interface ServerApiContract {
     setup(): Promise<AuthSessionDto>;
     login(input: AuthLoginInput): Promise<AuthSessionDto>;
     logout(): Promise<AuthSessionDto>;
+    changePassword(input: AuthChangePasswordInput): Promise<{ success: true }>;
     status(): Promise<AuthSessionDto>;
   };
   app: {
@@ -250,7 +252,7 @@ export interface ServerApiContract {
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
-    posterCropSession(input: RootFileRef): Promise<PosterCropSessionResponse>;
+    posterCropSession(input: RootFileRef): Promise<PosterCropSessionResponse | null>;
     posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
     pause(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;

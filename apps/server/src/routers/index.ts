@@ -20,6 +20,7 @@ import {
   activityListInputSchema,
   actorSyncCancelInputSchema,
   apiKeyCreateInputSchema,
+  authChangePasswordInputSchema,
   authLoginInputSchema,
   cancelCandidatesInputSchema,
   configImportInputSchema,
@@ -79,8 +80,12 @@ export const appRouter = t.router({
     }),
     login: t.procedure
       .input(authLoginInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.auth.login(input.password)),
+      .mutation(async ({ ctx, input }) => await ctx.services.auth.login(input.password, ctx.clientAddress)),
     logout: t.procedure.mutation(async ({ ctx }) => await ctx.services.auth.logout(ctx.token)),
+    changePassword: protectedProcedure.input(authChangePasswordInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.auth.changePassword(input, ctx.token, ctx.clientAddress);
+      return { success: true as const };
+    }),
     status: t.procedure.query(async ({ ctx }) => {
       return await ctx.services.auth.status(ctx.token);
     }),

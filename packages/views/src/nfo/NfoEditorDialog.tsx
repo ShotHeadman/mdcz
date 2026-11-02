@@ -334,6 +334,7 @@ export function NfoEditorDialog({
                 <TextField
                   label={t.nfo.editor.fields.releaseDate}
                   value={data.release_date}
+                  error={errors.release_date}
                   onChange={updateTextField("release_date")}
                 />
                 <TextField

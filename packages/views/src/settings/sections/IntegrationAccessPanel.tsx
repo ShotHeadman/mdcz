@@ -4,7 +4,7 @@ import { Button, copyText, Input } from "@mdcz/ui";
 import { Copy, Loader2, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useT } from "../../i18n";
+import { formatDateTime, useT } from "../../i18n";
 import type { SettingsIntegrationServices } from "../SettingsServices";
 
 const STATUS_REFRESH_MS = 5_000;
@@ -39,7 +39,7 @@ export function QbittorrentStatusLine({ status }: { status: IntegrationStatusRes
   return (
     <div className="space-y-1 py-2 text-xs">
       <p className="text-muted-foreground">
-        {text.qbittorrentChecked(new Date(status.lastPollAt).toLocaleString(), status.library?.name ?? null)}
+        {text.qbittorrentChecked(formatDateTime(status.lastPollAt), status.library?.name ?? null)}
       </p>
       {status.library ? null : <p className="text-amber-600 dark:text-amber-400">{text.qbittorrentNoLibrary}</p>}
       {status.failures.length ? (
@@ -128,7 +128,7 @@ export function IntegrationAccessPanel({
               <div className="font-medium">{key.name}</div>
               <div className="font-mono text-xs text-muted-foreground">
                 {key.prefix}… ·{" "}
-                {t.settings.integrations.lastUsed(key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : null)}
+                {t.settings.integrations.lastUsed(key.lastUsedAt ? formatDateTime(key.lastUsedAt) : null)}
               </div>
             </div>
             <Button
@@ -151,7 +151,7 @@ export function IntegrationAccessPanel({
         <CopyLine value={`${integrations.origin}/api/webhooks/clouddrive`} />
         <p className="text-xs text-muted-foreground">
           {t.settings.integrations.clouddriveLastEvent(
-            cloudDriveLastEventAt ? new Date(cloudDriveLastEventAt).toLocaleString() : null,
+            cloudDriveLastEventAt ? formatDateTime(cloudDriveLastEventAt) : null,
           )}
         </p>
       </Snippet>

@@ -115,7 +115,7 @@ export async function registeredPosterCropContext(
   const owners = [...new Set(snapshot.files.map((file) => file.itemId))];
   if (owners.length > 1)
     throw new Error("The same video file is referenced by multiple library movies; cannot determine cover");
-  if (!owners.length) throw new Error("Current video is not in library; cannot retrieve saved cover");
+  if (!owners.length) return null;
   const movieId = owners[0];
   const entry = await library.getEntryById(movieId);
   const assets: { thumb?: string; poster?: string } = {};

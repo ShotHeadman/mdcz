@@ -11,7 +11,7 @@ import { registeredPosterCropContext, writeNfoPublication } from "./registeredAr
 describe("registeredPosterCropContext", () => {
   it.each(
     [[], ["movie-a"], ["movie-a", "movie-b"]].map((owners) => ({ owners })),
-  )("requires one distinct movie owner ($owners)", async ({ owners }) => {
+  )("finds the one distinct movie owner, if any ($owners)", async ({ owners }) => {
     const library = {
       publicationSnapshot: vi.fn(() => ({
         files: owners.map((itemId) => ({ itemId, rootId: "root", relativePath: "video.mp4" })),
@@ -28,7 +28,8 @@ describe("registeredPosterCropContext", () => {
       await expect(result).resolves.toMatchObject({ assets: {}, movieId: "movie-a" });
       expect(library.getEntryById).toHaveBeenCalledWith("movie-a");
     } else {
-      await expect(result).rejects.toThrow(owners.length ? "referenced by multiple library movies" : "not in library");
+      if (owners.length) await expect(result).rejects.toThrow("referenced by multiple library movies");
+      else await expect(result).resolves.toBeNull();
       expect(library.getEntryById).not.toHaveBeenCalled();
     }
   });

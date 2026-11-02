@@ -770,6 +770,8 @@ export type LibraryListResponse = z.infer<typeof libraryListResponseSchema>;
 
 export const libraryAvailabilityInputSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1).max(200),
+  /** Checks the disk now instead of answering from the recent checks; for an explicit refresh. */
+  fresh: z.boolean().optional(),
 });
 
 export type LibraryAvailabilityInput = z.infer<typeof libraryAvailabilityInputSchema>;
@@ -1100,14 +1102,24 @@ export const translateTestResponseSchema = z.object({
 
 export type TranslateTestResponse = z.infer<typeof translateTestResponseSchema>;
 
+// No password policy beyond non-empty: an empty password would leave the WebUI open to anyone.
+const adminPasswordSchema = z.string().min(1);
+
 export const authLoginInputSchema = z.object({
-  password: z.string(),
+  password: adminPasswordSchema,
 });
 
 export type AuthLoginInput = z.infer<typeof authLoginInputSchema>;
 
+export const authChangePasswordInputSchema = z.object({
+  currentPassword: adminPasswordSchema,
+  newPassword: adminPasswordSchema,
+});
+
+export type AuthChangePasswordInput = z.infer<typeof authChangePasswordInputSchema>;
+
 export const setupCompleteInputSchema = z.object({
-  password: z.string(),
+  password: adminPasswordSchema,
 });
 
 export type SetupCompleteInput = z.infer<typeof setupCompleteInputSchema>;
@@ -1150,7 +1162,8 @@ const profileNameSchema = z
   .string()
   .trim()
   .min(1)
-  .regex(/^[\p{L}\p{N}_-]+$/u, 'Profile name only supports letters, numbers, "_" and "-"');
+  .regex(/^[\p{L}\p{N}_-]+$/u, 'Profile name only supports letters, numbers, "_" and "-"')
+  .refine((name) => name !== "auth-state", 'Profile name "auth-state" is reserved');
 
 export const configProfileNameInputSchema = z.object({
   name: profileNameSchema,

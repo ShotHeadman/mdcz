@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@mdcz/ui";
-import { AlertCircle, ArrowDown, Check, FolderOpen, FolderOutput, Loader2, Search, X } from "lucide-react";
+import { AlertCircle, ArrowDown, Check, FolderOpen, FolderOutput, Loader2, RefreshCw, Search, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useT } from "../i18n";
 import { PathAutocompleteInput, type PathAutocompleteResult } from "../path";
@@ -49,6 +49,8 @@ export interface WorkbenchSetupViewProps {
   totalSize: number;
   scanStatus: WorkbenchSetupScanStatus;
   scanError?: string;
+  /** The listed files were scanned for different settings and no longer describe what starting would act on. */
+  previewStale?: boolean;
   startPending: boolean;
   supportedExtensions: string[];
   presetId: MaintenancePresetId;
@@ -311,6 +313,7 @@ export function WorkbenchSetupView({
   totalSize,
   scanStatus,
   scanError,
+  previewStale = false,
   startPending,
   supportedExtensions,
   presetId,
@@ -708,6 +711,21 @@ export function WorkbenchSetupView({
                     </div>
                   ) : null}
 
+                  {previewStale && scanDir ? (
+                    <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+                      <RefreshCw className="h-8 w-8" />
+                      <div className="text-sm font-medium">{t.workbench.previewStale}</div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={refreshDisabled || startPending}
+                        onClick={onRefreshScan}
+                      >
+                        {t.workbench.refreshFiles}
+                      </Button>
+                    </div>
+                  ) : null}
+
                   {!scanning && scanStatus !== "error" && !scanDir ? (
                     <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                       <FolderOpen className="h-8 w-8" />
@@ -715,7 +733,7 @@ export function WorkbenchSetupView({
                     </div>
                   ) : null}
 
-                  {scanStatus === "success" && scanDir && candidates.length === 0 ? (
+                  {scanStatus === "success" && scanDir && candidates.length === 0 && !previewStale ? (
                     <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
                       <FolderOpen className="h-8 w-8" />
                       <div className="text-sm font-medium">
@@ -728,7 +746,7 @@ export function WorkbenchSetupView({
                     </div>
                   ) : null}
 
-                  {filteredCandidates.map((candidate) => (
+                  {(previewStale ? [] : filteredCandidates).map((candidate) => (
                     <MediaRow
                       key={candidate.path}
                       candidate={candidate}

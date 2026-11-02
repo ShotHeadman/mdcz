@@ -12,6 +12,7 @@ export const localAuth: ServerAuth = {
   login: unavailable,
   logout: unavailable,
   completeSetup: unavailable,
+  changePassword: unavailable,
   listApiKeys: unavailable,
   createApiKey: unavailable,
   deleteApiKey: unavailable,

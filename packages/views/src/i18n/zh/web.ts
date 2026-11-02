@@ -9,6 +9,18 @@ export const web: Messages["web"] = {
   loggingIn: "正在登录...",
   login: "登录",
   incorrectPassword: "管理员密码错误",
+  tooManyLoginAttempts: "登录失败次数过多，请稍后再试。",
+
+  account: "账户",
+  changePassword: "修改密码",
+  logout: "退出登录",
+  currentPassword: "当前密码",
+  newPassword: "新密码",
+  confirmNewPassword: "确认新密码",
+  savingPassword: "正在保存…",
+  changePasswordDescription: "修改后将退出其他登录状态。",
+  passwordChanged: "密码已修改",
+  passwordRequired: "请输入密码",
 
   initAdminTitle: "初始化管理员账户",
   passwordsDoNotMatch: "两次输入的密码不一致",
@@ -41,7 +53,7 @@ export const web: Messages["web"] = {
   photoAdminNotice: "人物头像上传通常需要管理员 API Key。若返回 401 或 403，请改用管理员 API Key 后重试。",
 
   stopScrapeConfirm: "确定要停止刮削吗？",
-  retryFailedConfirm: (count: number) => `确定要批量重试 ${count} 个失败项目吗？`,
+  retryFailedConfirm: (count: number) => `确定要重试 ${count} 个失败或跳过的项目吗？`,
   pauseFailed: (error: string) => `暂停失败: ${error}`,
   resumeFailed: (error: string) => `恢复失败: ${error}`,
   stopping: "正在停止...",

@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { confirmDialog } from "../common";
-import { useT } from "../i18n";
+import { formatDateTime, useT } from "../i18n";
 
 const KIND_BADGE_META: Record<PendingKindDto, { className: string; icon: LucideIcon; iconClassName?: string }> = {
   uncensored: {
@@ -224,8 +224,7 @@ export function PendingView({
                     {item.fileName}
                   </div>
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {item.libraryName ?? t.pending.noLibrary} ·{" "}
-                    {t.pending.updated(new Date(item.updatedAt).toLocaleString())}
+                    {item.libraryName ?? t.pending.noLibrary} · {t.pending.updated(formatDateTime(item.updatedAt))}
                   </div>
                 </button>
               </li>

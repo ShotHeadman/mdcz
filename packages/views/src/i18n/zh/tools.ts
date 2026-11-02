@@ -112,7 +112,10 @@ export const tools: Messages["tools"] = {
   manualUrl: "手动 URL",
   manualUrlPlaceholder: "可选：站点详情页 URL",
   relativePath: "相对路径",
-  relativePathPlaceholder: "从下方选择，或输入 rootId 下的相对路径",
+  relativePathPlaceholder: "从下方选择，或输入相对于所选媒体目录的路径",
+  singleFileScrapeStarted: "已开始刮削，可在工作台查看进度。",
+  symlinkSummary: (total: number, linked: number, copied: number, skipped: number, failed: number) =>
+    `共 ${total} 个文件：链接 ${linked}，复制 ${copied}，跳过 ${skipped}，失败 ${failed}`,
   rootNoFiles: "根目录暂无文件。",
   pleaseSelectMediaDirectory: "请选择媒体目录。",
   startSingleFileScrape: "启动单文件刮削",

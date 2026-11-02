@@ -27,7 +27,7 @@ export const library: Messages["library"] = {
     fix: (count: number) => `从站点刷新 ${count} 部`,
     fixHint: "打开刷新结果的预览，应用之前不会写入任何内容。",
     fixStarted: (count: number) => `正在预览 ${count} 部影片的刷新`,
-    mixedRoots: "这些影片分布在多个媒体目录，请先选定一个媒体库再修复。",
+    mixedRoots: "所选影片位于不同媒体目录，批量刷新仅支持同一目录。请筛选后重试。",
     clear: "清除筛选",
   },
   facets: {

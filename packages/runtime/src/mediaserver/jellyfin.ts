@@ -93,11 +93,7 @@ const fetchAutoResolvedJellyfinUserId = async (
           message: "Current Jellyfin credentials lack permission to read user list",
         },
       },
-      fallback: {
-        code: "JELLYFIN_USER_CONTEXT_REQUIRED",
-        message:
-          "Current Jellyfin server requires user context; please configure Jellyfin user ID in settings and retry",
-      },
+      fallback: { code: "JELLYFIN_UNREACHABLE", message: "Failed to read the Jellyfin user list" },
     },
   );
 
@@ -535,6 +531,8 @@ export const syncJellyfinPersons = async (
   kind: PersonSyncKind,
   mode: MediaServerMode,
 ): Promise<PersonSyncResult> => {
+  if (!configuration.jellyfin.apiKey.trim())
+    throw new JellyfinServiceError("JELLYFIN_AUTH_FAILED", "Jellyfin API key is not configured");
   if (kind === "photo") {
     return await runMediaServerPersonSync(
       createJellyfinPersonTarget(deps, configuration),

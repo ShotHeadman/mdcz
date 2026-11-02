@@ -162,26 +162,51 @@ describe("buildServer composition integration", () => {
   });
 
   it.each([
-    "",
-    "a",
-    "admin",
-    "  ",
-    "密码",
-    "x".repeat(1025),
-  ])("accepts setup and login without password policy restrictions (case %#)", async (password) => {
+    ["", 400],
+    ["a", 200],
+    ["  ", 200],
+    ["密码", 200],
+    ["x".repeat(1025), 200],
+  ])("applies no password policy beyond non-empty (case %#)", async (password, expectedStatus) => {
     const { fastify } = await createTestServer();
-    const response = await fastify.inject({
-      method: "POST",
-      url: "/trpc/setup.complete",
-      payload: { password },
-    });
-    expect(response.statusCode).toBe(200);
-    const login = await fastify.inject({
+    for (const url of ["/trpc/setup.complete", "/trpc/auth.login"]) {
+      const response = await fastify.inject({ method: "POST", url, payload: { password } });
+      expect(response.statusCode).toBe(expectedStatus);
+    }
+  });
+
+  it("changes the password, signing out every other session, and locks out repeated failures", async () => {
+    const { fastify, services } = await createTestServer();
+    await services.auth.completeSetup({ password: "old-password" });
+    const { token: kept } = await services.auth.login("old-password");
+    const { token: other } = await services.auth.login("old-password");
+    const changePassword = (token: string | undefined, currentPassword: string) =>
+      fastify.inject({
+        method: "POST",
+        url: "/trpc/auth.changePassword",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { currentPassword, newPassword: "new-password" },
+      });
+
+    expect((await changePassword(kept, "wrong-password")).statusCode).toBe(401);
+    expect((await changePassword(kept, "old-password")).statusCode).toBe(200);
+    await expect(services.auth.assertAuthenticated(kept)).resolves.toBeUndefined();
+    await expect(services.auth.assertAuthenticated(other)).rejects.toThrow("Authentication required");
+    await expect(services.auth.login("old-password")).rejects.toThrow("Incorrect administrator password");
+
+    const attempts = [];
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      attempts.push(
+        (await fastify.inject({ method: "POST", url: "/trpc/auth.login", payload: { password: "guess" } })).statusCode,
+      );
+    }
+    expect(attempts).toEqual([401, 401, 401, 401, 401, 429]);
+    const lockedOut = await fastify.inject({
       method: "POST",
       url: "/trpc/auth.login",
-      payload: { password },
+      payload: { password: "new-password" },
     });
-    expect(login.statusCode).toBe(200);
+    expect(lockedOut.statusCode).toBe(429);
   });
 
   it("uses an environment password without persisting it or reopening setup for an empty media library", async () => {
@@ -200,7 +225,10 @@ describe("buildServer composition integration", () => {
     });
     expect(denied.statusCode).toBe(403);
     await expect(services.auth.login("wrong-password")).rejects.toThrow("Incorrect administrator password");
-    await expect(services.auth.login(environmentPassword)).resolves.toMatchObject({ authenticated: true });
+    const { token } = await services.auth.login(environmentPassword);
+    await expect(
+      services.auth.changePassword({ currentPassword: environmentPassword, newPassword: "replacement" }, token),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(readFile(join(services.config.runtimePaths.configDir, "auth-state.json"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -397,7 +425,8 @@ describe("buildServer composition integration", () => {
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.message).toContain("libraryId");
+    // Validation issues read as text, not as the schema's JSON.
+    expect(response.json().error.message).toMatch(/^libraryId: /u);
   });
   it("adopts single-directory settings as the first library once and rejects an unavailable source", async () => {
     const root = await createTempRoot("legacy-media-root");

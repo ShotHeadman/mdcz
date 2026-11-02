@@ -25,7 +25,7 @@ export const library = {
     fix: (count: number) => `Refresh ${count} from sites`,
     fixHint: "Opens a preview of the refreshed metadata. Nothing is written until you apply it.",
     fixStarted: (count: number) => `Previewing a refresh of ${count} movies`,
-    mixedRoots: "These movies span several media directories. Please filter by a single library before fixing.",
+    mixedRoots: "Selected movies span multiple directories. Please filter to a single directory and try again.",
     clear: "Clear filters",
   },
   facets: {

@@ -41,6 +41,10 @@ export const useLocaleStore = create<LocaleState>((set) => {
 
 export const useT = (): Messages => DICTIONARIES[useLocaleStore((state) => state.locale)];
 
+/** Dates and times read in the UI language rather than the browser's. */
+export const formatDateTime = (value: string | number | Date, options?: Intl.DateTimeFormatOptions): string =>
+  new Date(value).toLocaleString(useLocaleStore.getState().locale, options);
+
 /** Non-reactive access for callbacks, stores, and adapters outside React render. */
 export const getT = (): Messages => DICTIONARIES[useLocaleStore.getState().locale];
 

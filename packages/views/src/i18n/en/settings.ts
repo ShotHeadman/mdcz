@@ -144,7 +144,7 @@ export const settings = {
       folder: [
         "A / or \\ in this template creates nested folders; leave it empty to put every movie directly in the output directory.",
         "Folders are created from this template when moving videos and subtitles, or when outputting metadata only.",
-        "Without the code, title or file name (for example only {actor}), several movies go into one folder: asset files follow the video file name, only <file name>.nfo is written and no scene images are downloaded.",
+        "Without the number, title or file name (for example only {actor}), multiple movies share one folder: files follow the video file name, only <filename>.nfo is written, and scene images are skipped (prevents overwrite).",
       ],
       file: [
         "The file name template only sets the video's base name and never creates subfolders; path separators and invalid characters are removed.",

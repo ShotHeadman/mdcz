@@ -7,6 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "../client";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
+import { refreshPendingQueries } from "../lib/pendingQueries";
 import { queryKeys } from "../lib/queryKeys";
 
 export function PendingPage() {
@@ -22,7 +23,7 @@ export function PendingPage() {
     queryFn: () => api.pending.detail({ id: activeId ?? "" }),
     enabled: Boolean(activeId),
   });
-  const refresh = async () => await queryClient.invalidateQueries({ queryKey: queryKeys.pending.all });
+  const refresh = async () => await refreshPendingQueries(queryClient);
   const act = async (action: () => Promise<unknown>) => {
     try {
       await action();

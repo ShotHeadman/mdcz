@@ -36,8 +36,9 @@ export const scrape: Messages["scrape"] = {
   scanningVideoFiles: "正在扫描视频文件",
   stoppingWaitingCurrent: "正在停止，等待当前文件处理完成",
   noVideosFound: "未找到可处理视频",
-  allVideosInLibrary: "目录中的视频都已在库中",
-  allVideosInLibraryHint: "刮削目录时会跳过已入库影片。如需重新刮削，请在媒体库中操作，或在“预览文件”中勾选。",
+  allVideosInLibrary: "目录中的视频均已在库中",
+  allVideosInLibraryHint:
+    "按目录刮削默认跳过已入库影片。如需重新刮削，请前往媒体库操作，或在下方“预览文件”中手动勾选。",
   taskStopped: "任务已停止",
   taskInterrupted: "任务已中断",
   preparingTask: "正在准备任务",
@@ -76,5 +77,6 @@ export const scrape: Messages["scrape"] = {
   saveNfoFailed: (error: string) => `保存 NFO 失败: ${error}`,
   discardNfoChanges: "放弃未保存的 NFO 修改？",
   discardPosterChanges: "放弃未保存的封面修改？",
+  coverSaved: "封面已保存",
   saveCoverFailed: (error: string) => `保存封面失败: ${error}`,
 };

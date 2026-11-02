@@ -115,7 +115,7 @@ const fields: Record<FieldKey, FieldText> = {
   "scrape.aiNumberFallback": {
     label: "AI number fallback",
     description:
-      "When no site has the number read from a file name, sends the file name to the LLM set up under Translation to read the number once more. Only a number that appears in the file name is used. Requires the LLM to be configured in Translation settings.",
+      "When no site matches the number, asks the Translation LLM to re-extract it from the filename (uses only numbers actually in the filename).",
     aliases: ["ai", "llm"],
   },
   "scrape.filenameBlacklistTokens": {
@@ -302,7 +302,7 @@ const fields: Record<FieldKey, FieldText> = {
   "download.downloadSceneImages": {
     label: "Download scene images",
     description:
-      "Scene images go into a fixed subfolder of the movie's folder, so movies that share a folder get none.",
+      "Scene images are saved into the extrafanart subfolder; skipped when multiple movies share a folder (prevents mixing).",
   },
   "download.downloadTrailer": { label: "Download trailer" },
   "download.sceneImageConcurrency": {

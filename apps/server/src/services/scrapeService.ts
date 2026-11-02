@@ -310,7 +310,7 @@ export class ScrapeService {
     return await this.nfoAdapter.write(input);
   }
 
-  async posterCropSession(video: RootFileRef): Promise<PosterCropSessionResponse> {
+  async posterCropSession(video: RootFileRef): Promise<PosterCropSessionResponse | null> {
     return await this.posterCropAdapter.session(video);
   }
 

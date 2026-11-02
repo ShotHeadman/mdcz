@@ -21,6 +21,17 @@ import type { ServerPersistenceService } from "./persistenceService";
 import type { RuntimeLogService } from "./runtimeLogService";
 import type { ScrapeService } from "./scrapeService";
 
+/** A request the caller can fix; Fastify answers with its status code instead of 500. */
+export class AutomationRequestError extends Error {
+  override readonly name = "AutomationRequestError";
+  constructor(
+    message: string,
+    readonly statusCode: 404 | 422,
+  ) {
+    super(message);
+  }
+}
+
 const MAX_TRACKED_WEBHOOK_TASKS = 1_000;
 const MAX_QUEUED_DELIVERIES = 1_000;
 const DELIVERY_TIMEOUT_MS = 10_000;
@@ -102,8 +113,13 @@ export class AutomationService {
     const library = input.libraryId
       ? await this.deps.libraries.get(input.libraryId)
       : await this.deps.libraries.findBySourcePath(hostPath);
-    if (!library) throw new Error(`No library's source directory contains ${hostPath}`);
-    const isDirectory = (await stat(hostPath)).isDirectory();
+    if (!library) throw new AutomationRequestError(`No library's source directory contains ${hostPath}`, 422);
+    const isDirectory = (
+      await stat(hostPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") throw new AutomationRequestError(`Path not found: ${hostPath}`, 404);
+        throw error;
+      })
+    ).isDirectory();
     const refs = isDirectory
       ? (
           await discoverDirectoryFiles({
@@ -128,7 +144,7 @@ export class AutomationService {
             },
           ];
         })();
-    if (!refs.length) throw new Error(`No video files found at ${hostPath}`);
+    if (!refs.length) throw new AutomationRequestError(`No video files found at ${hostPath}`, 422);
     const snapshot = await this.deps.libraryWatch.submitExternal(library.id, refs, (accepted) =>
       this.deps.scrape.start({ executionMode: "batch", libraryId: library.id, refs: [...accepted] }),
     );

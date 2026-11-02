@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeRuntimeConfig,
   parseRuntimeConfiguration,
+  RUNTIME_AUTH_STATE_FILE,
   RuntimeConfigProfileStore,
   RuntimeConfigService,
   RuntimeConfigValidationError,
@@ -41,6 +42,7 @@ describe("RuntimeConfigProfileStore", () => {
     await store.load();
     await store.createProfile("windows-dev");
     await store.switchProfile("windows-dev");
+    await expect(store.createProfile("auth-state")).rejects.toThrow("reserved");
 
     expect(await store.listProfiles()).toEqual({
       profiles: ["default", "windows-dev"],
@@ -85,15 +87,19 @@ describe("RuntimeConfigProfileStore", () => {
     ).rejects.toBeInstanceOf(RuntimeConfigValidationError);
   });
 
-  it("cleans invalid inactive legacy profiles without touching the active profile", async () => {
+  it("cleans invalid inactive legacy profiles without touching the active profile or the admin credential", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });
     await store.load();
     await writeFile(join(configDir, "broken.json"), JSON.stringify({ jellyfin: { userId: "not-a-uuid" } }), "utf8");
+    const authStatePath = join(configDir, RUNTIME_AUTH_STATE_FILE);
+    await writeFile(authStatePath, JSON.stringify({ passwordHash: "scrypt$x$y", jellyfin: 1 }), "utf8");
 
     await store.cleanupInvalidNonActiveProfiles();
+    await store.removeLibraryNamingFromInactiveProfiles();
 
     expect((await store.listProfiles()).profiles).toEqual(["default"]);
+    expect(JSON.parse(await readFile(authStatePath, "utf8"))).toEqual({ passwordHash: "scrypt$x$y", jellyfin: 1 });
   });
 });
 

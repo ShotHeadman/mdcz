@@ -126,7 +126,7 @@ export class ServerPosterCropAdapter {
     const context = await registeredPosterCropContext(videoPath, state.repositories.library, (id) =>
       this.mediaRoots.get(id),
     );
-    return { ...context, root: context.root ?? sourceRoot };
+    return context && { ...context, root: context.root ?? sourceRoot };
   }
 
   private async assetNaming(videoPath: string, assets: { thumb?: string; poster?: string }) {
@@ -139,8 +139,11 @@ export class ServerPosterCropAdapter {
     return naming.assetNaming;
   }
 
-  async session(video: RootFileRef) {
-    const { root, videoPath, assets } = await this.context(video);
+  /** Null when there is no saved cover to crop: the video is not in the library, or its movie has no local image. */
+  async session(video: RootFileRef): Promise<PosterCropSessionResponse | null> {
+    const context = await this.context(video);
+    if (!context || (!context.assets.thumb && !context.assets.poster)) return null;
+    const { root, videoPath, assets } = context;
     const session = await this.posterCropService.prepare(videoPath, await this.assetNaming(videoPath, assets), assets);
     return {
       rootId: root.id,
@@ -153,7 +156,9 @@ export class ServerPosterCropAdapter {
   }
 
   async save(input: PosterCropSaveInput) {
-    const { root, videoPath, assets, movieId } = await this.context(input);
+    const context = await this.context(input);
+    if (!context) throw new Error("Current video is not in library; cannot retrieve saved cover");
+    const { root, videoPath, assets, movieId } = context;
     const state = await this.persistence.getState();
     const result = await this.posterCropService.save(
       videoPath,

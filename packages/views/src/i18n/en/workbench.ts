@@ -27,7 +27,7 @@ export const workbench = {
   taskStateSkipped: "Skipped",
   taskStateInLibrary: "In library",
   taskStateInaccessiblePaths: "Some paths are inaccessible",
-  retryFailed: "Retry failed",
+  retryFailed: "Retry failed & skipped",
   actorSyncQueued: (servers: string) => `${servers} · Actor sync queued`,
   actorSyncWaiting: (servers: string, found: number, total: number) =>
     `${servers} · Waiting for scan (actors ${found}/${total})`,
@@ -69,12 +69,12 @@ export const workbench = {
   libraryLabel: "Library",
   libraryPlaceholder: "Choose a library",
   manageLibraries: "Manage libraries",
-  noLibraries:
-    "Create a library first: it sets where movies go and how their files are named. No Jellyfin or Emby needed.",
+  noLibraries: "Create a library first to configure output directory and naming rules.",
   createLibrary: "Create library",
   inaccessiblePathsWarning: (count: number) => `Some paths are inaccessible; ${count} skipped`,
   selectVisibleFilesAriaLabel: "Select currently visible files",
   refreshFiles: "Refresh files",
+  previewStale: "Settings changed. Refresh the file list before starting.",
   alreadyInLibrary: "Already in library",
   selectedOfTotalFiles: (selected: number, total: number) => `${selected} / ${total} file(s) selected`,
   searchFilesAriaLabel: "Search files",

@@ -201,7 +201,8 @@ const setRepresentationHeaders = (
   input: { contentType: string; etag: string; modifiedAt: Date },
 ): boolean => {
   reply.type(input.contentType);
-  reply.header("cache-control", "private, max-age=3600");
+  // Posters are rewritten in place (cropping, re-scraping), so a cached copy is checked against the ETag every time.
+  reply.header("cache-control", "private, no-cache");
   reply.header("etag", input.etag);
   reply.header("last-modified", input.modifiedAt.toUTCString());
   const ifNoneMatch = request.headers["if-none-match"];

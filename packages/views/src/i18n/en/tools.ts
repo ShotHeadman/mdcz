@@ -120,7 +120,10 @@ export const tools = {
   manualUrl: "Manual URL",
   manualUrlPlaceholder: "Optional: site detail page URL",
   relativePath: "Relative path",
-  relativePathPlaceholder: "Select below or enter relative path under media root",
+  relativePathPlaceholder: "Select below or enter a path relative to the selected media directory",
+  singleFileScrapeStarted: "Scrape started. Follow its progress in the workbench.",
+  symlinkSummary: (total: number, linked: number, copied: number, skipped: number, failed: number) =>
+    `${total} files: ${linked} linked, ${copied} copied, ${skipped} skipped, ${failed} failed`,
   rootNoFiles: "No files found in root directory.",
   pleaseSelectMediaDirectory: "Please select a media directory.",
   startSingleFileScrape: "Start single-file scrape",

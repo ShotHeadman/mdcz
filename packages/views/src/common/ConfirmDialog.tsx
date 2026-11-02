@@ -32,7 +32,7 @@ export function ConfirmDialogHost() {
 
   return (
     <Dialog open={pending !== null} onOpenChange={(open) => !open && settle(false)}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" {...(pending?.description ? {} : { "aria-describedby": undefined })}>
         <DialogHeader>
           <DialogTitle>{pending?.title}</DialogTitle>
           {pending?.description ? (

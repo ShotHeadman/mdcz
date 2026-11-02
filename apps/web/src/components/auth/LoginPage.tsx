@@ -1,6 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { Button, Label, PasswordInput } from "@mdcz/ui";
-import { useT } from "@mdcz/views/i18n";
+import { type Messages, useT } from "@mdcz/views/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { TRPCClientError } from "@trpc/client";
@@ -8,6 +8,13 @@ import { type FormEvent, useState } from "react";
 import { api } from "../../client";
 import { queryKeys } from "../../lib/queryKeys";
 import { ErrorBanner } from "../../routeCommon";
+
+export const passwordErrorMessage = (t: Messages, error: unknown): string => {
+  const code = error instanceof TRPCClientError ? error.data?.code : undefined;
+  if (code === "UNAUTHORIZED") return t.web.incorrectPassword;
+  if (code === "TOO_MANY_REQUESTS") return t.web.tooManyLoginAttempts;
+  return toErrorMessage(error);
+};
 
 export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
   const t = useT();
@@ -27,11 +34,7 @@ export const LoginPage = ({ nextPath = "/" }: { nextPath?: string }) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth.status });
       await navigate({ to: nextPath, replace: true });
     } catch (err) {
-      setError(
-        err instanceof TRPCClientError && err.data?.code === "UNAUTHORIZED"
-          ? t.web.incorrectPassword
-          : toErrorMessage(err),
-      );
+      setError(passwordErrorMessage(t, err));
     } finally {
       setIsPending(false);
     }

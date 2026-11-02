@@ -654,7 +654,10 @@ describe("buildServer scrape integration", () => {
         targetRelativePath: cropSession.targetRelativePath,
       });
       await expect(
-        restarted.services.scrape.posterCropSave({ ...video, crop: crop.initialCrop }),
+        restarted.services.scrape.posterCropSave({
+          ...video,
+          crop: crop?.initialCrop ?? { x: 0, y: 0, width: 1, height: 1 },
+        }),
       ).resolves.toMatchObject({ revision: expect.any(String) });
     } finally {
       await restarted.fastify.close();

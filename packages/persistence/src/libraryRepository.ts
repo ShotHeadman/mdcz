@@ -923,11 +923,15 @@ const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   const query = input.query?.trim().toLowerCase();
   if (query) {
     const pattern = `%${escapeLikePattern(query)}%`;
+    // Numbers are typed without their separators as often as with them: start608 finds START-608.
+    const compactQuery = query.replace(/[-_\s]/gu, "");
+    const numberPattern = compactQuery ? `%${escapeLikePattern(compactQuery)}%` : pattern;
     const escapeClause = sql`ESCAPE '\\'`;
     filters.push(
       sql`(
         lower(coalesce(${libraryItems.title}, '')) LIKE ${pattern} ${escapeClause}
-        OR lower(coalesce(${libraryItems.number}, '')) LIKE ${pattern} ${escapeClause}
+        OR replace(replace(replace(lower(coalesce(${libraryItems.number}, '')), '-', ''), '_', ''), ' ', '')
+          LIKE ${numberPattern} ${escapeClause}
         OR lower(coalesce(${libraryItems.mediaIdentity}, '')) LIKE ${pattern} ${escapeClause}
         OR lower(coalesce(${libraryItems.actorsJson}, '')) LIKE ${pattern} ${escapeClause}
         OR EXISTS (

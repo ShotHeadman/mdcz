@@ -12,6 +12,7 @@ import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape"
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
+import { formatValidationError } from "@mdcz/shared/error";
 import {
   automationRecentInputSchema,
   automationScrapeStartInputSchema,
@@ -281,6 +282,10 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (error instanceof AuthenticationError) {
       return reply.code(401).send({ statusCode: 401, error: "Unauthorized", message: error.message });
     }
+    const validationMessage = formatValidationError(error);
+    if (validationMessage) {
+      return reply.code(400).send({ statusCode: 400, error: "Bad Request", message: validationMessage });
+    }
     reply.send(error);
   });
   const shutdownController = new AbortController();
@@ -387,7 +392,11 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     trpcOptions: {
       router: appRouter,
       allowMethodOverride: true,
-      createContext: ({ req }: CreateFastifyContextOptions) => ({ services, token: getBearerToken(req) }),
+      createContext: ({ req }: CreateFastifyContextOptions) => ({
+        services,
+        token: getBearerToken(req),
+        clientAddress: req.ip,
+      }),
     },
   });
 

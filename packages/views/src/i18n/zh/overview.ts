@@ -14,6 +14,7 @@ export const overview: Messages["overview"] = {
   activity: {
     title: "最近活动",
     kinds: { scan: "扫描", scrape: "刮削", maintenance: "维护" },
+    partlyDone: "部分完成",
     statuses: {
       queued: "排队中",
       discovering: "正在查找视频",

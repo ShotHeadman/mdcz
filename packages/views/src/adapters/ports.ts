@@ -25,7 +25,8 @@ export interface DetailActionPort extends Partial<FileActions> {
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
-  preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
+  /** Null when the item has no saved cover to crop. */
+  preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession | null>;
   savePosterCrop(item: DetailViewItem, crop: NormalizedCropRegion): Promise<{ posterUrl: string }>;
 }
 

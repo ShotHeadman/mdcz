@@ -570,7 +570,7 @@ describe("LibraryRepository", () => {
     await addRoots("root-1", "root-2");
     const repository = new LibraryRepository(database);
     await repository.upsertEntry({
-      movie: { id: "entry-1", actors: ["Actor One"], title: "First title" },
+      movie: { id: "entry-1", actors: ["Actor One"], title: "First title", number: "ABC-123" },
       files: [
         {
           rootId: "root-1",
@@ -594,10 +594,11 @@ describe("LibraryRepository", () => {
       entries: [expect.objectContaining({ id: "entry-1" })],
       total: 1,
     });
-    await expect(repository.listEntriesPage({ limit: 10, query: "abc-123" })).resolves.toMatchObject({
-      entries: [expect.objectContaining({ id: "entry-1" })],
-      total: 1,
-    });
+    for (const query of ["abc-123", "abc123"])
+      await expect(repository.listEntriesPage({ limit: 10, query })).resolves.toMatchObject({
+        entries: [expect.objectContaining({ id: "entry-1" })],
+        total: 1,
+      });
     await expect(repository.listEntriesPage({ limit: 10, rootId: "root-2" })).resolves.toMatchObject({
       entries: [expect.objectContaining({ id: "entry-2" })],
       total: 1,

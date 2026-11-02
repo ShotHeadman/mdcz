@@ -28,6 +28,9 @@ export {
 export type { LegacyConfigurationConversion } from "./legacyLibrary";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
+/** The server keeps its administrator credential beside the profiles, so it must never be taken for one. */
+const AUTH_STATE_NAME = "auth-state";
+export const RUNTIME_AUTH_STATE_FILE = `${AUTH_STATE_NAME}.json`;
 export const RUNTIME_DEFAULT_PROFILE_NAME = "default";
 export const RUNTIME_PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
 
@@ -56,6 +59,9 @@ export const normalizeRuntimeProfileName = (name: string): string => {
   }
   if (!RUNTIME_PROFILE_NAME_PATTERN.test(normalized)) {
     throw new Error('Profile name can only contain letters, numbers, "_" and "-"');
+  }
+  if (normalized === AUTH_STATE_NAME) {
+    throw new Error(`Profile name "${normalized}" is reserved`);
   }
   return normalized;
 };
@@ -576,9 +582,9 @@ export class RuntimeConfigProfileStore {
     }
     const entries = await readdir(this.options.configDir);
     const profiles = entries
-      .filter((entry) => this.isProfileConfigFile(entry) && entry !== RUNTIME_ACTIVE_PROFILE_META_FILE)
+      .filter((entry) => this.isProfileConfigFile(entry))
       .map((entry) => entry.replace(/\.(json|toml)$/u, ""))
-      .filter((name) => RUNTIME_PROFILE_NAME_PATTERN.test(name));
+      .filter((name) => RUNTIME_PROFILE_NAME_PATTERN.test(name) && name !== AUTH_STATE_NAME);
     if (!profiles.includes(RUNTIME_DEFAULT_PROFILE_NAME)) {
       profiles.unshift(RUNTIME_DEFAULT_PROFILE_NAME);
     }
@@ -728,10 +734,7 @@ export class RuntimeConfigProfileStore {
     if (!this.activeProfileLoaded) await this.loadActiveProfileName();
     const active = [`${this.activeProfileName}.json`, `${this.activeProfileName}.toml`];
     return (await readdir(this.options.configDir))
-      .filter(
-        (entry) =>
-          this.isProfileConfigFile(entry) && entry !== RUNTIME_ACTIVE_PROFILE_META_FILE && !active.includes(entry),
-      )
+      .filter((entry) => this.isProfileConfigFile(entry) && !active.includes(entry))
       .map((entry) => path.join(this.options.configDir, entry));
   }
 
@@ -756,6 +759,7 @@ export class RuntimeConfigProfileStore {
   }
 
   private isProfileConfigFile(entry: string): boolean {
+    if (entry === RUNTIME_ACTIVE_PROFILE_META_FILE || entry === RUNTIME_AUTH_STATE_FILE) return false;
     return entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.toml) || entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.json);
   }
 

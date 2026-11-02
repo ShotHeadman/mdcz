@@ -252,7 +252,7 @@ export function SitePriorityEditorField({ options }: SitePriorityEditorFieldProp
       </FormItem>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className={EDITOR_DIALOG_CLASS_NAME}>
+        <DialogContent className={EDITOR_DIALOG_CLASS_NAME} aria-describedby={undefined}>
           <DialogHeader className="gap-3 px-7 pt-7 pb-2 text-left">
             <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
               {t.settings.sitePriority.eyebrow}

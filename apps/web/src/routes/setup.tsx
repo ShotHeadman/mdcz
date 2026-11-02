@@ -29,6 +29,10 @@ export const SetupPage = () => {
             onSubmit={async (event) => {
               event.preventDefault();
               setError(null);
+              if (!password) {
+                setError(t.web.passwordRequired);
+                return;
+              }
               if (password !== confirmation) {
                 setError(t.web.passwordsDoNotMatch);
                 return;

@@ -1,6 +1,11 @@
 import { PersistenceError, persistenceErrorCodes } from "@mdcz/persistence";
 import { LibraryTaskConflictError } from "@mdcz/runtime/tasks";
-import { DomainErrorCode, type DomainErrorShape, type LibraryTaskConflictDomainError } from "@mdcz/shared/error";
+import {
+  DomainErrorCode,
+  type DomainErrorShape,
+  formatValidationError,
+  type LibraryTaskConflictDomainError,
+} from "@mdcz/shared/error";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ServerServices } from "../services";
 import { ServerConfigValidationError } from "../services/configService";
@@ -8,6 +13,7 @@ import { ServerConfigValidationError } from "../services/configService";
 export interface RouterContext {
   services: ServerServices;
   token?: string;
+  clientAddress?: string;
 }
 
 export const t = initTRPC.context<RouterContext>().create({
@@ -23,7 +29,9 @@ export const t = initTRPC.context<RouterContext>().create({
         details: { running: error.cause.running },
       } satisfies LibraryTaskConflictDomainError;
     }
-    return { ...shape, data: { ...shape.data, domainError } };
+    // Input validation fails with the schema's issue list as JSON; people read the issues.
+    const message = (error.code === "BAD_REQUEST" && formatValidationError(error.cause)) || shape.message;
+    return { ...shape, message, data: { ...shape.data, domainError } };
   },
 });
 

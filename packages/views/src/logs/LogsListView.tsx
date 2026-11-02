@@ -4,7 +4,7 @@ import { cn } from "@mdcz/ui";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CheckCircle2, CircleX, FileText, Globe2, Info, TriangleAlert } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { useT } from "../i18n";
+import { formatDateTime, useT } from "../i18n";
 
 export interface LogsListViewProps {
   autoScroll?: boolean;
@@ -16,7 +16,7 @@ type VisualLogLevel = ReturnType<typeof getVisualLogLevel>;
 
 function formatTimestamp(timestamp: string): string {
   try {
-    return new Date(timestamp).toLocaleTimeString("zh-CN", {
+    return formatDateTime(timestamp, {
       hour12: false,
       hour: "2-digit",
       minute: "2-digit",
@@ -73,6 +73,8 @@ export const LogsListView = ({ autoScroll = true, logs, emptyText }: LogsListVie
     getItemKey: (index) => logs[index]?.id ?? index,
     getScrollElement: () => scrollRef.current,
     overscan: 16,
+    // Scrolling to the newest entry runs from an effect, where React refuses a flushSync render.
+    useFlushSync: false,
   });
 
   useEffect(() => {
@@ -89,10 +91,7 @@ export const LogsListView = ({ autoScroll = true, logs, emptyText }: LogsListVie
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-low text-muted-foreground/75">
           <FileText className="h-6 w-6 stroke-[1.75]" />
         </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground/80">{t.logs.noMatchingLogs}</p>
-          <p className="text-xs text-muted-foreground">{resolvedEmptyText}</p>
-        </div>
+        <p className="text-sm font-medium text-foreground/80">{resolvedEmptyText}</p>
       </div>
     );
   }

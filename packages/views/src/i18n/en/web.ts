@@ -9,6 +9,19 @@ export const web = {
   loggingIn: "Logging in…",
   login: "Log in",
   incorrectPassword: "Incorrect administrator password",
+  tooManyLoginAttempts: "Too many failed attempts. Please wait a moment and try again.",
+
+  // Account
+  account: "Account",
+  changePassword: "Change password",
+  logout: "Log out",
+  currentPassword: "Current password",
+  newPassword: "New password",
+  confirmNewPassword: "Confirm new password",
+  savingPassword: "Saving…",
+  changePasswordDescription: "Other sessions will be signed out.",
+  passwordChanged: "Password changed",
+  passwordRequired: "Enter a password",
 
   // Setup
   initAdminTitle: "Initialize Administrator Account",
@@ -50,7 +63,7 @@ export const web = {
 
   // Workbench
   stopScrapeConfirm: "Are you sure you want to stop scraping?",
-  retryFailedConfirm: (count: number) => `Are you sure you want to retry ${count} failed items?`,
+  retryFailedConfirm: (count: number) => `Retry ${count} failed or skipped items?`,
   pauseFailed: (error: string) => `Pause failed: ${error}`,
   resumeFailed: (error: string) => `Resume failed: ${error}`,
   stopping: "Stopping…",

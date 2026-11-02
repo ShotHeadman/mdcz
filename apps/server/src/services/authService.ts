@@ -1,11 +1,13 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
-import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { RUNTIME_AUTH_STATE_FILE } from "@mdcz/runtime/config";
 import type {
   ApiKeyCreateInput,
   ApiKeyCreateResponse,
   ApiKeyListResponse,
+  AuthChangePasswordInput,
   AuthSessionDto,
   SetupCompleteInput,
 } from "@mdcz/shared/serverDtos";
@@ -18,6 +20,9 @@ const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 // Recording every request's use would write the database per request; a session's last use is only needed coarsely.
 const SESSION_TOUCH_INTERVAL_MS = 10 * 60 * 1000;
 const API_KEY_PREFIX = "mdcz_";
+const FREE_LOGIN_FAILURES = 5;
+const LOGIN_LOCK_BASE_MS = 30 * 1000;
+const LOGIN_LOCK_MAX_MS = 15 * 60 * 1000;
 
 /** Authentication failures answer 401 on plain HTTP routes; tRPC maps them to UNAUTHORIZED itself. */
 export class AuthenticationError extends Error {
@@ -39,6 +44,7 @@ export type ServerAuth = Pick<
   | "createApiKey"
   | "deleteApiKey"
   | "completeSetup"
+  | "changePassword"
 >;
 
 /**
@@ -47,6 +53,7 @@ export type ServerAuth = Pick<
  */
 export class AuthService {
   readonly #touchedSessions = new Map<string, number>();
+  readonly #loginFailures = new Map<string, { count: number; lastFailureAt: number; lockedUntil: number }>();
 
   constructor(
     private readonly paths: Pick<ServerRuntimePaths, "configDir">,
@@ -67,22 +74,23 @@ export class AuthService {
     };
   }
 
-  async login(password: string): Promise<AuthSessionDto> {
-    const passwordHash = await this.readPasswordHash();
-    let valid = false;
-    if (this.environmentPassword) {
-      const supplied = Buffer.from(password);
-      const expected = Buffer.from(this.environmentPassword);
-      valid = supplied.length === expected.length && timingSafeEqual(supplied, expected);
-    } else if (passwordHash) {
-      const [, salt, hash] = passwordHash.split("$") as [string, string, string];
-      const actual = (await deriveKey(password, Buffer.from(salt, "hex"), 64)) as Buffer;
-      valid = timingSafeEqual(actual, Buffer.from(hash, "hex"));
-    }
-    if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect administrator password" });
+  async login(password: string, clientAddress = "unknown"): Promise<AuthSessionDto> {
+    await this.verifyPassword(password, clientAddress);
     const token = randomBytes(24).toString("base64url");
     (await this.persistence.getState()).repositories.credentials.createSession(hashSecret(token));
     return { authenticated: true, token };
+  }
+
+  async changePassword(input: AuthChangePasswordInput, token?: string, clientAddress = "unknown"): Promise<void> {
+    if (this.environmentPassword) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "The password is set by MDCZ_ADMIN_PASSWORD" });
+    }
+    await this.verifyPassword(input.currentPassword, clientAddress);
+    await this.writePasswordHash(input.newPassword, "replace");
+    // A changed password must also lock out whoever might have signed in with the old one.
+    const credentials = (await this.persistence.getState()).repositories.credentials;
+    credentials.deleteOtherSessions(token ? hashSecret(token) : "");
+    this.#touchedSessions.clear();
   }
 
   async logout(token?: string): Promise<AuthSessionDto> {
@@ -139,10 +147,52 @@ export class AuthService {
     if (!(await this.status()).setupRequired) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Setup is already complete; please sign in" });
     }
+    await this.writePasswordHash(input.password, "create");
+    return await this.login(input.password);
+  }
+
+  private async verifyPassword(password: string, clientAddress: string): Promise<void> {
+    const now = Date.now();
+    for (const [address, entry] of this.#loginFailures) {
+      if (now - entry.lastFailureAt > LOGIN_LOCK_MAX_MS && entry.lockedUntil <= now)
+        this.#loginFailures.delete(address);
+    }
+    const failures = this.#loginFailures.get(clientAddress);
+    if (failures && failures.lockedUntil > now) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: `Too many failed sign-ins; try again in ${Math.ceil((failures.lockedUntil - now) / 1000)} s`,
+      });
+    }
+    const passwordHash = await this.readPasswordHash();
+    let valid = false;
+    if (this.environmentPassword) {
+      const supplied = Buffer.from(password);
+      const expected = Buffer.from(this.environmentPassword);
+      valid = supplied.length === expected.length && timingSafeEqual(supplied, expected);
+    } else if (passwordHash) {
+      const [, salt, hash] = passwordHash.split("$") as [string, string, string];
+      const actual = (await deriveKey(password, Buffer.from(salt, "hex"), 64)) as Buffer;
+      valid = timingSafeEqual(actual, Buffer.from(hash, "hex"));
+    }
+    if (valid) {
+      this.#loginFailures.delete(clientAddress);
+      return;
+    }
+    const count = (failures?.count ?? 0) + 1;
+    const lockMs =
+      count < FREE_LOGIN_FAILURES
+        ? 0
+        : Math.min(LOGIN_LOCK_BASE_MS * 2 ** (count - FREE_LOGIN_FAILURES), LOGIN_LOCK_MAX_MS);
+    this.#loginFailures.set(clientAddress, { count, lastFailureAt: now, lockedUntil: now + lockMs });
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect administrator password" });
+  }
+
+  private async writePasswordHash(password: string, mode: "create" | "replace"): Promise<void> {
     const salt = randomBytes(16);
-    const hash = (await deriveKey(input.password, salt, 64)) as Buffer;
+    const hash = (await deriveKey(password, salt, 64)) as Buffer;
     await mkdir(this.paths.configDir, { recursive: true, mode: 0o700 });
-    const statePath = path.join(this.paths.configDir, "auth-state.json");
+    const statePath = path.join(this.paths.configDir, RUNTIME_AUTH_STATE_FILE);
     const temporaryPath = `${statePath}.${randomBytes(12).toString("hex")}.tmp`;
     try {
       await writeFile(
@@ -151,7 +201,8 @@ export class AuthService {
         { encoding: "utf8", flag: "wx", mode: 0o600, flush: true },
       );
       // Publishing a complete file with link() also rejects concurrent registration.
-      await link(temporaryPath, statePath);
+      if (mode === "create") await link(temporaryPath, statePath);
+      else await rename(temporaryPath, statePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
         throw new TRPCError({ code: "CONFLICT", message: "Administrator already exists; please sign in" });
@@ -160,7 +211,6 @@ export class AuthService {
     } finally {
       await rm(temporaryPath, { force: true });
     }
-    return await this.login(input.password);
   }
 
   private async isSession(token?: string): Promise<boolean> {
@@ -180,7 +230,7 @@ export class AuthService {
   }
 
   private async readPasswordHash(): Promise<string | null> {
-    const statePath = path.join(this.paths.configDir, "auth-state.json");
+    const statePath = path.join(this.paths.configDir, RUNTIME_AUTH_STATE_FILE);
     let content: string;
     try {
       content = await readFile(statePath, "utf8");

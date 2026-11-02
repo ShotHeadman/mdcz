@@ -185,7 +185,7 @@ describe("web detail action port", () => {
     const session = await port.preparePosterCrop(item);
     const result = await port.savePosterCrop(item, initialCrop);
 
-    expect(session.sourceUrl).toBe(
+    expect(session?.sourceUrl).toBe(
       "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
     expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });

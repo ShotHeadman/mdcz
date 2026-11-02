@@ -10,6 +10,7 @@ import {
   copyText,
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -46,7 +47,7 @@ import {
 } from "lucide-react";
 import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useT } from "../i18n";
+import { formatDateTime, useT } from "../i18n";
 import { type LibraryBrowseControls, LibraryBrowsePanel } from "./LibraryBrowsePanel";
 import { LibraryPosterWall } from "./LibraryPosterWall";
 
@@ -239,8 +240,8 @@ export function LibraryIndexView({
               </div>
             </div>
 
-            <div className="flex flex-1 items-center gap-2.5 sm:justify-end">
-              <div className="relative min-w-[200px] flex-1 sm:max-w-[380px]">
+            <div className="flex flex-1 flex-wrap items-center gap-2.5 sm:justify-end">
+              <div className="relative min-w-[200px] flex-1 basis-full sm:basis-auto sm:max-w-[380px]">
                 <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                 <Input
                   aria-label={t.library.searchAriaLabel}
@@ -371,7 +372,9 @@ export function LibraryDeleteDialog({
         <DialogHeader>
           <DialogTitle>{t.library.removeDialogTitle}</DialogTitle>
         </DialogHeader>
-        {entry && <p>{t.library.removeDialogDescription(entry.fileRefs.length, entry.assets.length)}</p>}
+        <DialogDescription>
+          {entry ? t.library.removeDialogDescription(entry.fileRefs.length, entry.assets.length) : null}
+        </DialogDescription>
         <DialogFooter>
           <Button disabled={submitting} variant="outline" onClick={onCancel}>
             {t.common.cancel}
@@ -820,7 +823,7 @@ function MiddleEllipsisPath({ rootDisplayName, relativePath }: { rootDisplayName
 }
 
 const formatDate = (value: string | null | undefined): string =>
-  value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : "-";
+  value ? formatDateTime(value, { dateStyle: "medium" }) : "-";
 
 const latestEntryUpdate = (entry: Pick<LibraryEntryDto, "createdAt" | "lastRefreshedAt" | "fileRefs">): string =>
   [entry.createdAt, entry.lastRefreshedAt, ...entry.fileRefs.map((file) => file.modifiedAt)]

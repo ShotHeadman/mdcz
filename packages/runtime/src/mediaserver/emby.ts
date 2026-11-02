@@ -84,10 +84,7 @@ const fetchAutoResolvedEmbyUserId = async (
         401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot read user list" },
         403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack permission to read user list" },
       },
-      fallback: {
-        code: "EMBY_USER_CONTEXT_REQUIRED",
-        message: "Current Emby server requires user context; please configure Emby user ID in settings and retry",
-      },
+      fallback: { code: "EMBY_UNREACHABLE", message: "Failed to read the Emby user list" },
     },
   );
 
@@ -428,6 +425,8 @@ export const syncEmbyPersons = async (
   kind: PersonSyncKind,
   mode: MediaServerMode,
 ): Promise<PersonSyncResult> => {
+  if (!configuration.emby.apiKey.trim())
+    throw new EmbyServiceError("EMBY_AUTH_FAILED", "Emby API key is not configured");
   const query = await resolveEmbyPersonQuery(deps.networkClient, configuration);
   return await runMediaServerPersonSync(
     createEmbyPersonTarget(deps, configuration, query),

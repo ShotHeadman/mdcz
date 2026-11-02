@@ -3,6 +3,7 @@ export const nfo = {
     titleRequired: "Title cannot be empty",
     numberRequired: "Number cannot be empty",
     websiteRequired: "Please select a source site",
+    releaseDateInvalid: "Release date must be a valid date in YYYY-MM-DD format",
     durationInvalid: "Duration must be a valid number",
     ratingInvalid: "Rating must be a valid number",
     actorNameRequired: "Actor name cannot be empty",

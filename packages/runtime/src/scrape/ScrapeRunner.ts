@@ -19,7 +19,6 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   ScrapeHistoryResponse,
   ScrapeHistoryRunDto,
-  ScrapeLiveItemDto,
   ScrapeLiveRunsResponse,
   ScrapeResultDetailResponse,
   ScrapeResultDto,
@@ -417,65 +416,27 @@ export class ScrapeRunner {
 
   async result(id: string): Promise<ScrapeResultDetailResponse> {
     const live = await this.getSnapshot();
-    let snapshotItem: ScrapeLiveItemDto | undefined = live?.items.find(
-      (item: ScrapeLiveItemDto) => item.id === id || item.resultId === id,
-    );
-    let snapshotTaskId = live?.task.id ?? "";
-    let snapshotCreatedAt = live?.task.createdAt ?? "";
-    let snapshotUpdatedAt = live?.task.updatedAt ?? "";
+    const snapshot = [...(live ? [live] : []), ...this.terminalSnapshots.values()]
+      .map((run) => ({ run, item: run.items.find((item) => item.id === id || item.resultId === id) }))
+      .find((candidate) => candidate.item);
+    const snapshotItem = snapshot?.item;
 
-    if (!snapshotItem) {
-      for (const terminal of this.terminalSnapshots.values()) {
-        const item = terminal.items.find((candidate) => candidate.id === id || candidate.resultId === id);
-        if (item) {
-          snapshotItem = item;
-          snapshotTaskId = terminal.task.id;
-          snapshotCreatedAt = terminal.task.createdAt;
-          snapshotUpdatedAt = terminal.task.updatedAt;
-          break;
-        }
-      }
-    }
-
-    if (snapshotItem) {
-      const root = await this.deps.persistence.mediaRoots.get(snapshotItem.rootId).catch(() => null);
-      return {
-        result: {
-          id: snapshotItem.id,
-          taskId: snapshotTaskId,
-          rootId: snapshotItem.rootId,
-          rootDisplayName: root?.displayName ?? snapshotItem.rootId,
-          outputRootId: snapshotItem.outputRootId,
-          relativePath: snapshotItem.relativePath,
-          fileName: snapshotItem.fileName,
-          status:
-            snapshotItem.status === "pending" || snapshotItem.status === "processing" ? "failed" : snapshotItem.status,
-          error: snapshotItem.error,
-          crawlerData: snapshotItem.crawlerData,
-          nfoRootId: snapshotItem.nfoRootId,
-          nfoRelativePath: snapshotItem.nfoRelativePath,
-          outputRelativePath: snapshotItem.outputRelativePath,
-          assets: snapshotItem.assets,
-          manualUrl: snapshotItem.manualUrl,
-          persistenceState: "terminal",
-          createdAt: snapshotCreatedAt,
-          updatedAt: snapshotUpdatedAt,
-        },
-      };
-    }
-
-    const entry =
-      (await this.deps.persistence.library.getEntryByFileId(id).catch(() => null)) ??
-      (await this.deps.persistence.library.getEntryById(id).catch(() => null));
+    // A published movie lives on in the library, where later edits and moves land; the run snapshot keeps only what
+    // the scrape wrote, so it describes only items that never reached the library.
+    const libraryId = snapshotItem ? (snapshotItem.status === "success" ? snapshotItem.resultId : null) : id;
+    const entry = libraryId
+      ? ((await this.deps.persistence.library.getEntryByFileId(libraryId).catch(() => null)) ??
+        (await this.deps.persistence.library.getEntryById(libraryId).catch(() => null)))
+      : null;
     if (entry) {
-      const file = entry.files.find((f) => f.id === id) ?? entry.files[0];
+      const file = entry.files.find((f) => f.id === libraryId) ?? entry.files[0];
       const nfoAsset = entry.assets.find((a) => a.kind === "nfo");
       const crawlerData = entry.crawlerDataJson ? (JSON.parse(entry.crawlerDataJson) as CrawlerData) : null;
       const root = await this.deps.persistence.mediaRoots.get(file.rootId).catch(() => null);
       return {
         result: {
           id,
-          taskId: "",
+          taskId: snapshot?.run.task.id ?? "",
           rootId: file.rootId,
           rootDisplayName: root?.displayName ?? file.rootId,
           outputRootId: file.rootId,
@@ -492,10 +453,37 @@ export class ScrapeRunner {
               ? { type: "local", kind: asset.kind, file: { rootId: asset.rootId, relativePath: asset.relativePath } }
               : { type: "remote", kind: asset.kind, url: asset.uri },
           ),
-          manualUrl: null,
+          manualUrl: snapshotItem?.manualUrl ?? null,
           persistenceState: "terminal",
           createdAt: entry.createdAt.toISOString(),
           updatedAt: (entry.lastRefreshedAt ?? entry.createdAt).toISOString(),
+        },
+      };
+    }
+
+    if (snapshot && snapshotItem) {
+      const root = await this.deps.persistence.mediaRoots.get(snapshotItem.rootId).catch(() => null);
+      return {
+        result: {
+          id: snapshotItem.id,
+          taskId: snapshot.run.task.id,
+          rootId: snapshotItem.rootId,
+          rootDisplayName: root?.displayName ?? snapshotItem.rootId,
+          outputRootId: snapshotItem.outputRootId,
+          relativePath: snapshotItem.relativePath,
+          fileName: snapshotItem.fileName,
+          status:
+            snapshotItem.status === "pending" || snapshotItem.status === "processing" ? "failed" : snapshotItem.status,
+          error: snapshotItem.error,
+          crawlerData: snapshotItem.crawlerData,
+          nfoRootId: snapshotItem.nfoRootId,
+          nfoRelativePath: snapshotItem.nfoRelativePath,
+          outputRelativePath: snapshotItem.outputRelativePath,
+          assets: snapshotItem.assets,
+          manualUrl: snapshotItem.manualUrl,
+          persistenceState: "terminal",
+          createdAt: snapshot.run.task.createdAt,
+          updatedAt: snapshot.run.task.updatedAt,
         },
       };
     }

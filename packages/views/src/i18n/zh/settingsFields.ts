@@ -51,8 +51,7 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "scrape.aiNumberFallback": {
       label: "AI 兜底识别番号",
-      description:
-        "识别出的番号在所有站点都找不到时，把文件名发给翻译设置中的 LLM 重新识别一次；只采用文件名里确实出现的番号。需先在翻译设置中配置 LLM。",
+      description: "所有站点均未找到番号时，由翻译配置的 LLM 从文件名重新提取（仅采纳文件名中真实包含的番号）。",
       aliases: ["ai", "llm"],
     },
     "scrape.filenameBlacklistTokens": {
@@ -224,7 +223,7 @@ export const settingsFields: Messages["settingsFields"] = {
     "download.downloadFanart": { label: "下载背景图" },
     "download.downloadSceneImages": {
       label: "下载剧照",
-      description: "剧照放在影片文件夹的固定子目录中；多部影片共用一个文件夹时不下载剧照。",
+      description: "剧照存放在 extrafanart 子目录中；多部影片共用同一文件夹时自动跳过（防止混淆）。",
     },
     "download.downloadTrailer": { label: "下载预告片" },
     "download.sceneImageConcurrency": {

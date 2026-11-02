@@ -5,7 +5,7 @@ import { Badge, Button, cn, quietPanelSurfaceClass } from "@mdcz/ui";
 import { AlertCircle, Download, FolderCog, FolderInput, FolderOutput, Pencil, Plus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { confirmDialog } from "../common";
-import { useT } from "../i18n";
+import { formatDateTime, useT } from "../i18n";
 import type { PathAutocompleteResult } from "../path";
 import { LibraryEditorDialog } from "./LibraryEditorDialog";
 import { LibraryHealthPanel } from "./LibraryHealthPanel";
@@ -143,7 +143,7 @@ export function LibrariesView({
                   {showAutomation && library.automation !== "off" && library.discovery === "clouddrive" ? (
                     <p className="text-xs text-muted-foreground">
                       {t.libraries.card.cloudDriveLastEvent(
-                        cloudDriveEvents[library.id] ? new Date(cloudDriveEvents[library.id]).toLocaleString() : null,
+                        cloudDriveEvents[library.id] ? formatDateTime(cloudDriveEvents[library.id]) : null,
                       )}
                     </p>
                   ) : null}

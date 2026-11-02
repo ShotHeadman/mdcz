@@ -42,11 +42,11 @@ export const libraries = {
     fileTemplate: "File name template",
     assetNaming: "Asset file naming",
     nfoNaming: "NFO file naming",
-    namingHint: "Posters, thumbnails, fanart, trailers and NFOs; applies from the next time MDCz writes a movie.",
+    namingHint: "Applies to posters, thumbnails, fanart, trailers, and NFOs; takes effect on next scrape or save.",
     sharedFolderNaming:
-      "Several movies go into one folder, so files follow the video file name, only <file name>.nfo is written and no scene images are downloaded.",
+      "Multiple movies share this folder: files follow video name, only <filename>.nfo is written, no scene images (prevents overwrite).",
     inPlaceNaming:
-      "A source folder that holds several movies gets names that follow the video file name, only <file name>.nfo and no scene images.",
+      "When a source folder holds multiple movies, files follow video name and scene images are skipped (prevents overwrite).",
     automation: "Automation",
     discovery: "Discovery",
     cloudPath: "CloudDrive2 path",
@@ -59,7 +59,7 @@ export const libraries = {
     string
   >,
   nfoNamings: {
-    both: "Generate both",
+    both: "Both (movie.nfo & <filename>.nfo)",
     movie: "movie.nfo only",
     filename: "<file name>.nfo only",
   } satisfies Record<NfoNamingMode, string>,

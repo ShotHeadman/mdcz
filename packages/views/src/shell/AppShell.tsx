@@ -52,6 +52,8 @@ export interface AppShellProps {
   systemNav?: ShellNavItem[];
   /** Counts shown beside nav items, such as the pending items waiting for the user. */
   navBadges?: Partial<Record<DesktopRouteId, number>>;
+  /** Sign-out and password controls; only the browser WebUI has an account. */
+  account?: ReactNode;
 }
 
 const COLLAPSED_STORAGE_KEY = "mdcz-sidebar-collapsed";
@@ -84,6 +86,7 @@ export function AppShell({
   linkComponent: LinkComponent,
   systemNav = SYSTEM_SHELL_NAV,
   navBadges = {},
+  account,
 }: AppShellProps) {
   const { theme, setTheme } = useTheme();
   const t = useT();
@@ -126,6 +129,7 @@ export function AppShell({
           />
           <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col bg-sidebar text-sidebar-foreground shadow-xl">
             <NavContent
+              account={account}
               collapsed={false}
               currentPath={currentPath}
               linkComponent={LinkComponent}
@@ -148,6 +152,7 @@ export function AppShell({
           )}
         >
           <NavContent
+            account={account}
             collapsed={collapsed}
             currentPath={currentPath}
             linkComponent={LinkComponent}
@@ -168,6 +173,7 @@ export function AppShell({
 }
 
 function NavContent({
+  account,
   collapsed,
   currentPath,
   linkComponent,
@@ -178,6 +184,7 @@ function NavContent({
   themeIcon: ThemeIcon,
   themeLabel,
 }: {
+  account?: ReactNode;
   collapsed: boolean;
   currentPath: string;
   linkComponent: (props: ShellLinkProps) => ReactNode;
@@ -232,6 +239,7 @@ function NavContent({
           collapsed ? "flex-col gap-1 px-1.5 py-2" : "justify-between px-3 py-2",
         )}
       >
+        {account}
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
             <Button
