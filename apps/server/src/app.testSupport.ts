@@ -233,7 +233,7 @@ export const startLocalHttpServer = async (
 
 export const createTestPngBytes = (): Buffer => {
   const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAFgwJ/lUOh9QAAAABJRU5ErkJggg==",
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP8z8AAAAMFAQHkHFupAAAAAElFTkSuQmCC",
     "base64",
   );
   return Buffer.concat([png, Buffer.alloc(9000)]);

@@ -9,7 +9,7 @@
     "./*": "./*.ts"
   },
   "dependencies": {
-    "smol-toml": "1.7.0",
-    "zod": "^4.3.6"
+    "smol-toml": "1.9.1",
+    "zod": "^4.6.7"
   }
 }

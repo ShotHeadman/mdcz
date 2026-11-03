@@ -12,7 +12,7 @@ import {
   storageErrorCodes,
 } from "@mdcz/media-store";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import sharp from "sharp";
+import sharp, { type FormatEnum } from "sharp";
 import type { ServerServices } from "../services";
 import { getBearerToken } from "./auth";
 
@@ -31,7 +31,9 @@ const assetContentTypes: Record<string, string> = {
   ".webm": "video/webm",
 };
 
-const sharpFormats: Record<string, keyof sharp.FormatEnum> = {
+type SharpFormat = keyof FormatEnum | "avif";
+
+const sharpFormats: Record<string, SharpFormat> = {
   ".avif": "avif",
   ".gif": "gif",
   ".jpeg": "jpeg",
@@ -118,7 +120,7 @@ const parseRevision = (query: Record<string, unknown>): string =>
 const parseVariant = (
   query: Record<string, unknown>,
   sourceExtension: string,
-): { extension: string; format: keyof sharp.FormatEnum; revision: string; width: number } | null => {
+): { extension: string; format: SharpFormat; revision: string; width: number } | null => {
   if (query.w === undefined && query.format === undefined) {
     return null;
   }
@@ -166,7 +168,7 @@ const ensureVariant = async (
   sourcePath: string,
   cachePath: string,
   width: number,
-  format: keyof sharp.FormatEnum,
+  format: SharpFormat,
 ): Promise<void> => {
   try {
     await stat(cachePath);

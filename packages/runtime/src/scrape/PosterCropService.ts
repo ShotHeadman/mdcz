@@ -5,7 +5,7 @@ import {
   normalizedCropToPixels,
   resolvePosterEditorCropRegion,
 } from "@mdcz/shared/posterCrop";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { type MovieLibrary, writePublishedMovie } from "../library/registeredMedia";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
@@ -15,7 +15,7 @@ import { resolveExistingImageAsset } from "./download/assets/helpers";
 
 const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);
 
-const encodePoster = (pipeline: sharp.Sharp, extension: string): sharp.Sharp => {
+const encodePoster = (pipeline: Sharp, extension: string): Sharp => {
   switch (extension) {
     case ".avif":
       return pipeline.avif({ quality: 90 });

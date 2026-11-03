@@ -18,10 +18,10 @@
     "@trpc/server": "^11.16.0",
     "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.45.2",
-    "fastify": "^5.8.5",
-    "impit": "^0.13.0",
+    "fastify": "^5.12.8",
+    "impit": "^0.14.8",
     "mediainfo.js": "^0.3.7",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
