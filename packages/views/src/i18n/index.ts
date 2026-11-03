@@ -8,6 +8,9 @@ export type Locale = UiLocale;
 
 export const LOCALES: Locale[] = ["en-US", "zh-CN"];
 
+/** Each language is named in itself, so someone in the wrong language can still find theirs. */
+export const LOCALE_NAMES: Record<Locale, string> = { "en-US": "English", "zh-CN": "简体中文" };
+
 const STORAGE_KEY = "mdcz-locale";
 const DICTIONARIES: Record<Locale, Messages> = { "en-US": en, "zh-CN": zh };
 

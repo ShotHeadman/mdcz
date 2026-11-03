@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../client";
+import { LocaleSwitch } from "../components/auth/LocaleSwitch";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
@@ -18,7 +19,8 @@ export const SetupPage = () => {
   const [pending, setPending] = useState(false);
 
   return (
-    <main className="flex min-h-full items-center justify-center bg-surface-canvas px-6 py-12 text-foreground">
+    <main className="relative flex min-h-full items-center justify-center bg-surface-canvas px-6 py-12 text-foreground">
+      <LocaleSwitch />
       <Card className="w-full max-w-xl">
         <CardHeader>
           <CardTitle>{t.web.initAdminTitle}</CardTitle>

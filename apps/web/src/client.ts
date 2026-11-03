@@ -160,11 +160,6 @@ export const api: ServerApiContract = {
       setAdminToken(session.token);
       return session;
     },
-    logout: async () => {
-      const session = await trpcMutation<Awaited<ReturnType<ServerApiContract["auth"]["logout"]>>>("auth.logout");
-      setAdminToken(undefined);
-      return session;
-    },
     changePassword: (input) => trpcMutation("auth.changePassword", input),
     status: () => trpcQuery("auth.status"),
   },

@@ -12,9 +12,9 @@ export const web = {
   tooManyLoginAttempts: "Too many failed attempts. Please wait a moment and try again.",
 
   // Account
-  account: "Account",
   changePassword: "Change password",
-  logout: "Log out",
+  adminPasswordDescription: "Signs in to this web interface. Changing it signs out every other browser.",
+  passwordManagedByEnvironment: "The password is set by the MDCZ_ADMIN_PASSWORD environment variable; change it there.",
   currentPassword: "Current password",
   newPassword: "New password",
   confirmNewPassword: "Confirm new password",

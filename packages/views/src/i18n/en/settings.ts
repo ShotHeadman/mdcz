@@ -178,6 +178,11 @@ export const settings = {
     add: "Add actor",
     remove: "Remove actor",
   },
+  language: {
+    title: "Language",
+    label: "Language",
+    description: "Kept on this device; it is not part of the settings profile.",
+  },
   integrations: {
     access: "Downloader access",
     accessDescription:

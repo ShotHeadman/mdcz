@@ -10,7 +10,6 @@ import {
   FolderCog,
   Inbox,
   Info,
-  Languages,
   LayoutDashboard,
   Library,
   type LucideIcon,
@@ -25,9 +24,9 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import AppLogo from "../assets/logo.png";
-import { useLocaleStore, useT } from "../i18n";
+import { useT } from "../i18n";
 import { preloadSettingsExperience } from "../settings";
 import { useTheme } from "./theme";
 
@@ -52,8 +51,6 @@ export interface AppShellProps {
   systemNav?: ShellNavItem[];
   /** Counts shown beside nav items, such as the pending items waiting for the user. */
   navBadges?: Partial<Record<DesktopRouteId, number>>;
-  /** Sign-out and password controls; only the browser WebUI has an account. */
-  account?: ReactNode;
 }
 
 const COLLAPSED_STORAGE_KEY = "mdcz-sidebar-collapsed";
@@ -86,9 +83,7 @@ export function AppShell({
   linkComponent: LinkComponent,
   systemNav = SYSTEM_SHELL_NAV,
   navBadges = {},
-  account,
 }: AppShellProps) {
-  const { theme, setTheme } = useTheme();
   const t = useT();
   const [collapsed, setCollapsedState] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem(COLLAPSED_STORAGE_KEY) === "1",
@@ -100,15 +95,6 @@ export function AppShell({
   // Open for the path it was opened on, so following any link closes it.
   const [drawerPath, setDrawerPath] = useState<string | null>(null);
   const drawerOpen = drawerPath === currentPath;
-  const themeMeta = useMemo(() => {
-    if (theme === "light") return { icon: Sun, label: t.shell.themeLight };
-    if (theme === "dark") return { icon: Moon, label: t.shell.themeDark };
-    return { icon: Monitor, label: t.shell.themeSystem };
-  }, [t, theme]);
-
-  const cycleTheme = () => {
-    setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light");
-  };
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -129,16 +115,12 @@ export function AppShell({
           />
           <aside className="absolute inset-y-0 left-0 flex w-[200px] flex-col bg-sidebar text-sidebar-foreground shadow-xl">
             <NavContent
-              account={account}
               collapsed={false}
               currentPath={currentPath}
               linkComponent={LinkComponent}
               navBadges={navBadges}
               onCollapse={() => setDrawerPath(null)}
-              onThemeToggle={cycleTheme}
               systemNav={systemNav}
-              themeIcon={themeMeta.icon}
-              themeLabel={themeMeta.label}
             />
           </aside>
         </div>
@@ -152,16 +134,12 @@ export function AppShell({
           )}
         >
           <NavContent
-            account={account}
             collapsed={collapsed}
             currentPath={currentPath}
             linkComponent={LinkComponent}
             navBadges={navBadges}
             onCollapse={setCollapsed}
-            onThemeToggle={cycleTheme}
             systemNav={systemNav}
-            themeIcon={themeMeta.icon}
-            themeLabel={themeMeta.label}
           />
         </aside>
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden md:py-2 md:pl-2">
@@ -173,30 +151,25 @@ export function AppShell({
 }
 
 function NavContent({
-  account,
   collapsed,
   currentPath,
   linkComponent,
   navBadges,
   onCollapse,
-  onThemeToggle,
   systemNav,
-  themeIcon: ThemeIcon,
-  themeLabel,
 }: {
-  account?: ReactNode;
   collapsed: boolean;
   currentPath: string;
   linkComponent: (props: ShellLinkProps) => ReactNode;
   navBadges: Partial<Record<DesktopRouteId, number>>;
   onCollapse: (collapsed: boolean) => void;
-  onThemeToggle: () => void;
   systemNav: ShellNavItem[];
-  themeIcon: LucideIcon;
-  themeLabel: string;
 }) {
   const t = useT();
-  const { locale, setLocale } = useLocaleStore();
+  const { theme, setTheme } = useTheme();
+  const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
+  const themeLabel =
+    theme === "light" ? t.shell.themeLight : theme === "dark" ? t.shell.themeDark : t.shell.themeSystem;
   return (
     <div className={cn("flex h-full flex-col", !collapsed && "min-w-[130px]")}>
       <div className={cn("flex h-20 shrink-0 items-center justify-center", collapsed ? "px-2" : "px-5")}>
@@ -239,7 +212,6 @@ function NavContent({
           collapsed ? "flex-col gap-1 px-1.5 py-2" : "justify-between px-3 py-2",
         )}
       >
-        {account}
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>
             <Button
@@ -247,26 +219,12 @@ function NavContent({
               size="icon"
               className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
               aria-label={themeLabel}
-              onClick={onThemeToggle}
+              onClick={() => setTheme(theme === "light" ? "dark" : theme === "dark" ? "system" : "light")}
             >
               <ThemeIcon />
             </Button>
           </TooltipTrigger>
           <TooltipContent side={collapsed ? "right" : "top"}>{themeLabel}</TooltipContent>
-        </Tooltip>
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-              aria-label={t.shell.switchLanguage}
-              onClick={() => setLocale(locale === "zh-CN" ? "en-US" : "zh-CN")}
-            >
-              <Languages />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side={collapsed ? "right" : "top"}>{t.shell.switchLanguage}</TooltipContent>
         </Tooltip>
         <Tooltip delayDuration={0}>
           <TooltipTrigger asChild>

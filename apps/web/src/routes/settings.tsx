@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { api } from "../client";
+import { AdminPasswordSetting } from "../components/auth/AdminPasswordSetting";
 import { queryKeys } from "../lib/queryKeys";
 import { createProfileActions, createSettingsServices } from "./settingsController";
 
@@ -16,7 +17,10 @@ const SettingsRoute = () => {
     staleTime: Number.POSITIVE_INFINITY,
   });
   const profilesQ = useQuery({ queryKey: queryKeys.config.profiles, queryFn: () => api.config.profiles.list() });
-  const services = useMemo(() => createSettingsServices(queryClient), [queryClient]);
+  const services = useMemo(
+    () => ({ ...createSettingsServices(queryClient), adminPassword: <AdminPasswordSetting /> }),
+    [queryClient],
+  );
   const profileActions = useMemo(() => createProfileActions(queryClient), [queryClient]);
 
   return (

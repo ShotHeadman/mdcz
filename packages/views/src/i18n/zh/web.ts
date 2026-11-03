@@ -11,9 +11,9 @@ export const web: Messages["web"] = {
   incorrectPassword: "管理员密码错误",
   tooManyLoginAttempts: "登录失败次数过多，请稍后再试。",
 
-  account: "账户",
   changePassword: "修改密码",
-  logout: "退出登录",
+  adminPasswordDescription: "用于登录本网页界面。修改后，其他浏览器将退出登录。",
+  passwordManagedByEnvironment: "密码由环境变量 MDCZ_ADMIN_PASSWORD 指定，请在该变量中修改。",
   currentPassword: "当前密码",
   newPassword: "新密码",
   confirmNewPassword: "确认新密码",

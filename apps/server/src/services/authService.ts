@@ -39,7 +39,6 @@ export type ServerAuth = Pick<
   AuthService,
   | "status"
   | "login"
-  | "logout"
   | "assertAuthenticated"
   | "listApiKeys"
   | "createApiKey"
@@ -93,14 +92,6 @@ export class AuthService {
     const credentials = (await this.persistence.getState()).repositories.credentials;
     credentials.deleteOtherSessions(token ? hashSecret(token) : "");
     this.#touchedCredentials.clear();
-  }
-
-  async logout(token?: string): Promise<AuthSessionDto> {
-    if (token) {
-      this.#touchedCredentials.delete(hashSecret(token));
-      (await this.persistence.getState()).repositories.credentials.deleteSession(hashSecret(token));
-    }
-    return { authenticated: false };
   }
 
   /** Accepts a WebUI session or an API key. */

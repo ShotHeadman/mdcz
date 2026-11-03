@@ -9,7 +9,6 @@ export const localAuth: ServerAuth = {
   status: async () => ({ authenticated: true, setupRequired: false, environmentPasswordConfigured: false }),
   assertAuthenticated: async () => undefined,
   login: unavailable,
-  logout: unavailable,
   completeSetup: unavailable,
   changePassword: unavailable,
   listApiKeys: unavailable,

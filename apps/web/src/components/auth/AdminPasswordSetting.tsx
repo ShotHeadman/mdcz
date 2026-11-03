@@ -8,13 +8,10 @@ import {
   DialogTitle,
   Label,
   PasswordInput,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
 } from "@mdcz/ui";
 import { useT } from "@mdcz/views/i18n";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, LogOut, UserRound } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { KeyRound } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../client";
@@ -22,54 +19,23 @@ import { queryKeys } from "../../lib/queryKeys";
 import { ErrorBanner } from "../../routeCommon";
 import { passwordErrorMessage } from "./LoginPage";
 
-export const AccountMenu = () => {
+export const AdminPasswordSetting = () => {
   const t = useT();
-  const queryClient = useQueryClient();
   const authQ = useQuery({ queryKey: queryKeys.auth.status, queryFn: () => api.auth.status() });
-  const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const logout = async () => {
-    await api.auth.logout();
-    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== queryKeys.auth.status[0] });
-    await queryClient.invalidateQueries({ queryKey: queryKeys.auth.status });
-  };
+  if (authQ.data?.environmentPasswordConfigured) {
+    return <p className="py-2 text-xs text-muted-foreground">{t.web.passwordManagedByEnvironment}</p>;
+  }
 
   return (
     <>
-      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-            aria-label={t.web.account}
-            title={t.web.account}
-          >
-            <UserRound />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-48 p-1">
-          {/* MDCZ_ADMIN_PASSWORD owns the password, so there is nothing for the UI to change. */}
-          {authQ.data?.environmentPasswordConfigured ? null : (
-            <Button
-              variant="ghost"
-              className="w-full justify-start"
-              onClick={() => {
-                setMenuOpen(false);
-                setDialogOpen(true);
-              }}
-            >
-              <KeyRound />
-              {t.web.changePassword}
-            </Button>
-          )}
-          <Button variant="ghost" className="w-full justify-start" onClick={() => void logout()}>
-            <LogOut />
-            {t.web.logout}
-          </Button>
-        </PopoverContent>
-      </Popover>
+      <div className="py-2">
+        <Button variant="outline" onClick={() => setDialogOpen(true)}>
+          <KeyRound />
+          {t.web.changePassword}
+        </Button>
+      </div>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         {dialogOpen ? <ChangePasswordDialog onDone={() => setDialogOpen(false)} /> : null}
       </Dialog>

@@ -10,6 +10,7 @@ import {
   AdvancedTopLevelSection,
   AutomationTopLevelSection,
   DownloadTopLevelSection,
+  LanguageTopLevelSection,
   MediaServerTopLevelSection,
   NamingTopLevelSection,
   NetworkTopLevelSection,
@@ -55,6 +56,7 @@ export function SettingsForm({
           <MediaServerTopLevelSection />
           <AutomationTopLevelSection />
           <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
+          <LanguageTopLevelSection />
           <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>
       )}

@@ -7,7 +7,6 @@ import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tan
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../client";
-import { AccountMenu } from "../components/auth/AccountMenu";
 import { LoginPage } from "../components/auth/LoginPage";
 import { DesktopChrome, DesktopTitleBar } from "../components/DesktopChrome";
 import { desktop } from "../desktop";
@@ -98,7 +97,6 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
       currentPath={pathname}
       linkComponent={ShellLink}
       navBadges={{ pending: pendingQ.data?.items.length }}
-      account={desktop ? undefined : <AccountMenu />}
       systemNav={
         desktop && configQ.data?.ui.showLogsPanel === false
           ? SYSTEM_SHELL_NAV.filter((item) => item.to !== "/logs")

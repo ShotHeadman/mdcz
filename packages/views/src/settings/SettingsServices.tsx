@@ -57,6 +57,8 @@ export interface SettingsServices {
   /** A native picker; only the desktop app has one. */
   browsePath?: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<string | null>;
   integrations?: SettingsIntegrationServices;
+  /** Server WebUI only: the admin password control, which the web app owns because it signs the user in. */
+  adminPassword?: ReactNode;
   /** Desktop shows its window and shortcut settings, the server its automation. */
   settingsTarget: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;

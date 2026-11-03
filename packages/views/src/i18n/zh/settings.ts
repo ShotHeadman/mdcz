@@ -162,6 +162,11 @@ export const settings: Messages["settings"] = {
     add: "添加演员",
     remove: "删除演员",
   },
+  language: {
+    title: "语言",
+    label: "语言",
+    description: "仅保存在当前设备，不属于配置档案。",
+  },
   integrations: {
     access: "下载器接入",
     accessDescription:

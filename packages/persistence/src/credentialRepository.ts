@@ -59,10 +59,6 @@ export class CredentialRepository {
     );
   }
 
-  deleteSession(tokenHash: string): void {
-    this.database.db.delete(authSessions).where(eq(authSessions.tokenHash, tokenHash)).run();
-  }
-
   deleteOtherSessions(keptTokenHash: string): void {
     this.database.db.delete(authSessions).where(ne(authSessions.tokenHash, keptTokenHash)).run();
   }

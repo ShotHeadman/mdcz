@@ -119,7 +119,6 @@ export interface ServerApiContract {
   auth: {
     setup(): Promise<AuthSessionDto>;
     login(input: AuthLoginInput): Promise<AuthSessionDto>;
-    logout(): Promise<AuthSessionDto>;
     changePassword(input: AuthChangePasswordInput): Promise<{ success: true }>;
     status(): Promise<AuthSessionDto>;
   };

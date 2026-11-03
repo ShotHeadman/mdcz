@@ -42,7 +42,8 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<Theme>(readStoredTheme);
 
   useLayoutEffect(() => {
-    onResolvedThemeChange?.(applyTheme(theme));
+    const resolved = applyTheme(theme);
+    onResolvedThemeChange?.(resolved);
   }, [onResolvedThemeChange, theme]);
 
   return (
