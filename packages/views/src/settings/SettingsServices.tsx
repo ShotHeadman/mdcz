@@ -2,6 +2,7 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type {
   ApiKeyDto,
+  AppPreviewPosterBadgesInput,
   IntegrationStatusResponse,
   NetworkCheckCookiesResponse,
   SiteConnectivityProbeResponse,
@@ -68,6 +69,8 @@ export interface SettingsServices {
   decrementInFlightSaves: () => void;
   listCrawlerSites: () => Promise<{ sites: SettingsCrawlerSiteInfo[] }>;
   openWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryOpenResult | undefined>;
+  /** Renders the badge settings as edited, saved or not, onto a sample poster; resolves to a PNG data URL. */
+  previewPosterBadges: (input: AppPreviewPosterBadgesInput) => Promise<string>;
   probeSiteConnectivity: (site: Website) => Promise<SiteConnectivityProbeResponse>;
   relaunchApp: () => Promise<void>;
   resetConfig: (path?: string) => Promise<unknown>;

@@ -65,6 +65,11 @@ export const settings: Messages["settings"] = {
   },
   nfoFieldOption: (field, label) => `${field}（${label}）`,
   translateFields: { title: "标题", plot: "简介", genres: "类别" },
+  badgePreview: {
+    title: "角标预览",
+    roundedCorners: "圆角海报",
+    failed: (error) => `生成角标预览失败: ${error}`,
+  },
   badgeOverrides: {
     openFolder: "打开文件夹",
     createDirFailed: (error) => `创建角标图片目录失败: ${error}`,
@@ -75,7 +80,7 @@ export const settings: Messages["settings"] = {
     badge: "角标",
     fileNames: "可用文件名",
     formats: (formats) => `支持格式：${formats}。`,
-    ratio: (ratio) => `推荐比例：${ratio}。角标高度按海报短边约 8% 计算，并限制在 28-64px。`,
+    ratio: (ratio) => `推荐比例：${ratio}。角标高度默认按海报短边约 8% 计算（最小 28px），可通过“角标大小”调整。`,
     scaling: "图片会按角标槽位等比缩放，不会拉伸；方形图片会以槽位高度 x 槽位高度靠左放置。",
     advice: "建议使用透明 PNG 或 WebP。图片过大时会自动缩小，损坏或无法读取的图片会回退到内建角标。",
   },

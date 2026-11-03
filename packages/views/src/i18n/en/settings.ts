@@ -73,6 +73,11 @@ export const settings = {
   } as Record<NfoField, string>,
   nfoFieldOption: (field: string, label: string) => `${field} (${label})`,
   translateFields: { title: "Title", plot: "Plot", genres: "Genres" } as Record<TranslationField, string>,
+  badgePreview: {
+    title: "Badge preview",
+    roundedCorners: "Rounded poster",
+    failed: (error: string) => `Failed to render the badge preview: ${error}`,
+  },
   badgeOverrides: {
     openFolder: "Open folder",
     createDirFailed: (error: string) => `Failed to create the badge image directory: ${error}`,
@@ -85,7 +90,7 @@ export const settings = {
     fileNames: "Accepted file names",
     formats: (formats: string) => `Supported formats: ${formats}.`,
     ratio: (ratio: string) =>
-      `Recommended ratio: ${ratio}. Badge height is about 8% of the poster's short side, clamped to 28–64px.`,
+      `Recommended ratio: ${ratio}. Badge height defaults to about 8% of the poster's short side (minimum 28px) and follows the “Badge size” setting.`,
     scaling:
       "Images are scaled proportionally to fit the badge slot and never stretched; square images are placed left-aligned at slot height × slot height.",
     advice:

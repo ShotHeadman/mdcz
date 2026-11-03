@@ -215,6 +215,21 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "多个角标会按顺序堆叠在同一个角落。",
       aliases: ["角标位置"],
     },
+    "download.tagBadgeSizePercent": {
+      label: "角标大小 (%)",
+      description: "相对默认大小（海报短边的 8%）的比例。",
+      aliases: ["角标大小", "角标尺寸", "badge size"],
+    },
+    "download.tagBadgeOpacity": {
+      label: "角标不透明度 (%)",
+      description: "100 为完全不透明，数值越小角标越透明。",
+      aliases: ["角标透明度", "透明度", "opacity"],
+    },
+    "download.tagBadgeInsetPercent": {
+      label: "角标边距 (%)",
+      description: "角标与所在角落的距离，按海报短边的百分比计算；媒体库圆角海报会遮挡贴边的角标，可用此项避开。",
+      aliases: ["角标边距", "角标偏移", "圆角", "margin"],
+    },
     "download.tagBadgeImageOverrides": {
       label: "覆盖角标图片",
       description: "开启后，使用用户数据目录 watermark 文件夹中的匹配图片替换内建角标。",

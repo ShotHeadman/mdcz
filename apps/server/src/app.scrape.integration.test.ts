@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type AggregationResult, PosterWatermarkService } from "@mdcz/runtime/scrape";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -726,7 +727,7 @@ describe("buildServer scrape integration", () => {
           accentColor: "#CCFBF1",
         },
       ],
-      "bottomRight",
+      { position: "bottomRight", insetPercent: defaultConfiguration.download.tagBadgeInsetPercent },
     );
 
     const serverPoster = await readFile(join(root, "JAV_output/Actor A/ABC-123/poster.png"));

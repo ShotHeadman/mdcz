@@ -56,6 +56,7 @@ import {
 } from "../config-form/FieldRenderer";
 import { useT } from "../i18n";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
+import { PosterBadgePreview } from "./PosterBadgePreview";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
 import { type SettingsIntegrationServices, useSettingsInFlightSaves, useSettingsServices } from "./SettingsServices";
@@ -81,6 +82,9 @@ const ASSET_DOWNLOAD_FIELD_KEYS = [
   "download.tagBadges",
   "download.tagBadgeTypes",
   "download.tagBadgePosition",
+  "download.tagBadgeSizePercent",
+  "download.tagBadgeOpacity",
+  "download.tagBadgeInsetPercent",
   "download.tagBadgeImageOverrides",
   "download.downloadFanart",
   "download.downloadSceneImages",
@@ -282,21 +286,30 @@ export function AssetDownloadsSection() {
       <BoolField name="download.downloadPoster" />
       {shouldMountConditionalSettings(Boolean(downloadPoster), search) && <BoolField name="download.tagBadges" />}
       {shouldMountConditionalSettings(showTagBadgeSettings, search) && (
-        <>
-          <ChipArrayFieldWrapper
-            name="download.tagBadgeTypes"
-            options={POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({ value, label: t.domain.posterBadgeTypes[value] }))}
-            showBulkActions
-          />
-          <EnumField
-            name="download.tagBadgePosition"
-            options={POSTER_TAG_BADGE_POSITION_OPTIONS.map((value) => ({
-              value,
-              label: t.domain.posterBadgePositions[value],
-            }))}
-          />
-          <PosterBadgeImageOverridesField />
-        </>
+        <div className="grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_14rem]">
+          <div>
+            <ChipArrayFieldWrapper
+              name="download.tagBadgeTypes"
+              options={POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({
+                value,
+                label: t.domain.posterBadgeTypes[value],
+              }))}
+              showBulkActions
+            />
+            <EnumField
+              name="download.tagBadgePosition"
+              options={POSTER_TAG_BADGE_POSITION_OPTIONS.map((value) => ({
+                value,
+                label: t.domain.posterBadgePositions[value],
+              }))}
+            />
+            <NumberField name="download.tagBadgeSizePercent" min={25} max={300} />
+            <NumberField name="download.tagBadgeOpacity" min={10} max={100} />
+            <NumberField name="download.tagBadgeInsetPercent" min={0} max={20} />
+            <PosterBadgeImageOverridesField />
+          </div>
+          <PosterBadgePreview />
+        </div>
       )}
       <BoolField name="download.downloadFanart" />
       <BoolField name="download.downloadSceneImages" />

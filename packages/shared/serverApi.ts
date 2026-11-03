@@ -30,6 +30,8 @@ import type {
   ApiKeyCreateResponse,
   ApiKeyListResponse,
   AppEnsureWatermarkDirectoryResponse,
+  AppPreviewPosterBadgesInput,
+  AppPreviewPosterBadgesResponse,
   AuthChangePasswordInput,
   AuthLoginInput,
   AuthSessionDto,
@@ -123,6 +125,7 @@ export interface ServerApiContract {
   };
   app: {
     ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse>;
+    previewPosterBadges(input: AppPreviewPosterBadgesInput): Promise<AppPreviewPosterBadgesResponse>;
   };
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;

@@ -154,12 +154,15 @@ const translateSchema = z.object({
   targetLanguage: translationTargetSchema,
 });
 
-const downloadSchema = z.object({
+export const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
   tagBadges: z.boolean().default(false),
   tagBadgeTypes: z.array(z.enum(POSTER_TAG_BADGE_TYPE_OPTIONS)).default(() => [...DEFAULT_POSTER_TAG_BADGE_TYPES]),
   tagBadgePosition: z.enum(POSTER_TAG_BADGE_POSITION_OPTIONS).default("topLeft"),
+  tagBadgeSizePercent: z.number().int().min(25).max(300).default(100),
+  tagBadgeOpacity: z.number().int().min(10).max(100).default(100),
+  tagBadgeInsetPercent: z.number().int().min(0).max(20).default(3),
   tagBadgeImageOverrides: z.boolean().default(false),
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),

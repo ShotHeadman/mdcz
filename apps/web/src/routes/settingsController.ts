@@ -47,6 +47,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     }
     return { copied: true, message: getT().web.copiedWatermarkDir, path: result.path, unsupported: true };
   },
+  previewPosterBadges: async (input) => (await api.app.previewPosterBadges(input)).imageDataUrl,
   probeSiteConnectivity: async (site) => await api.crawler.probeSiteConnectivity({ site }),
   relaunchApp: async () => (desktop ? await desktop.relaunch() : window.location.reload()),
   resetConfig: async (path) => await api.config.reset(path ? { path } : undefined),

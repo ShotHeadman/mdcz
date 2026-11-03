@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { BAIDU_SERVICE_OPTIONS, type Configuration, type DeepPartial, type notificationsSchema } from "./config";
+import {
+  BAIDU_SERVICE_OPTIONS,
+  type Configuration,
+  type DeepPartial,
+  downloadSchema,
+  type notificationsSchema,
+} from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import {
@@ -1005,6 +1011,23 @@ export const appEnsureWatermarkDirectoryResponseSchema = z.object({
 });
 
 export type AppEnsureWatermarkDirectoryResponse = z.infer<typeof appEnsureWatermarkDirectoryResponseSchema>;
+
+export const appPreviewPosterBadgesInputSchema = downloadSchema.pick({
+  tagBadgeTypes: true,
+  tagBadgePosition: true,
+  tagBadgeSizePercent: true,
+  tagBadgeOpacity: true,
+  tagBadgeInsetPercent: true,
+  tagBadgeImageOverrides: true,
+});
+
+export type AppPreviewPosterBadgesInput = z.input<typeof appPreviewPosterBadgesInputSchema>;
+
+export const appPreviewPosterBadgesResponseSchema = z.object({
+  imageDataUrl: z.string(),
+});
+
+export type AppPreviewPosterBadgesResponse = z.infer<typeof appPreviewPosterBadgesResponseSchema>;
 
 export const crawlerSiteInfoSchema = z.object({
   site: z.nativeEnum(Website),

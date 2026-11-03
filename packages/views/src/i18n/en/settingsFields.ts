@@ -292,6 +292,22 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Multiple badges are stacked in order in the same corner.",
     aliases: ["badge position", "corner", "top left", "top right", "bottom left", "bottom right"],
   },
+  "download.tagBadgeSizePercent": {
+    label: "Badge size (%)",
+    description: "Relative to the default size (8% of the poster's short side).",
+    aliases: ["badge size", "badge scale"],
+  },
+  "download.tagBadgeOpacity": {
+    label: "Badge opacity (%)",
+    description: "100 is fully opaque; lower values make badges more transparent.",
+    aliases: ["badge opacity", "transparency"],
+  },
+  "download.tagBadgeInsetPercent": {
+    label: "Badge margin (%)",
+    description:
+      "Distance from the chosen corner, as a percentage of the poster's short side. Media servers that round poster corners clip badges placed flush in the corner; a margin keeps them clear.",
+    aliases: ["badge margin", "badge inset", "rounded corners", "offset"],
+  },
   "download.tagBadgeImageOverrides": {
     label: "Custom badge images",
     description:

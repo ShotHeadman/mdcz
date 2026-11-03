@@ -20,6 +20,7 @@ import {
   activityListInputSchema,
   actorSyncCancelInputSchema,
   apiKeyCreateInputSchema,
+  appPreviewPosterBadgesInputSchema,
   authChangePasswordInputSchema,
   authLoginInputSchema,
   cancelCandidatesInputSchema,
@@ -94,6 +95,9 @@ export const appRouter = t.router({
     ensureWatermarkDirectory: protectedProcedure.mutation(
       async ({ ctx }) => await ctx.services.runtimeActions.ensureWatermarkDirectory(),
     ),
+    previewPosterBadges: protectedProcedure
+      .input(appPreviewPosterBadgesInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.runtimeActions.previewPosterBadges(input)),
   }),
   browser: t.router({
     list: protectedProcedure

@@ -1,9 +1,11 @@
 import { type CrawlerProvider, probeSiteConnectivity } from "@mdcz/runtime/crawler";
 import { checkConfiguredSiteCookies, type NetworkClient } from "@mdcz/runtime/network";
-import { ensureWatermarkDirectory } from "@mdcz/runtime/scrape";
+import { ensureWatermarkDirectory, PosterWatermarkService } from "@mdcz/runtime/scrape";
 import { testTranslation } from "@mdcz/runtime/translate";
+import type { Configuration } from "@mdcz/shared/config";
 import type {
   AppEnsureWatermarkDirectoryResponse,
+  AppPreviewPosterBadgesResponse,
   CrawlerListSitesResponse,
   CrawlerProbeSiteConnectivityInput,
   NetworkCheckCookiesResponse,
@@ -24,6 +26,30 @@ export class RuntimeActionService {
     return {
       path: await ensureWatermarkDirectory(this.config.runtimePaths.dataDir),
     };
+  }
+
+  async previewPosterBadges(
+    input: Pick<
+      Configuration["download"],
+      | "tagBadgeTypes"
+      | "tagBadgePosition"
+      | "tagBadgeSizePercent"
+      | "tagBadgeOpacity"
+      | "tagBadgeInsetPercent"
+      | "tagBadgeImageOverrides"
+    >,
+  ): Promise<AppPreviewPosterBadgesResponse> {
+    const image = await new PosterWatermarkService({ dataDir: this.config.runtimePaths.dataDir }).renderPreview(
+      input.tagBadgeTypes,
+      {
+        imageOverrides: input.tagBadgeImageOverrides,
+        insetPercent: input.tagBadgeInsetPercent,
+        opacity: input.tagBadgeOpacity,
+        position: input.tagBadgePosition,
+        sizePercent: input.tagBadgeSizePercent,
+      },
+    );
+    return { imageDataUrl: `data:image/png;base64,${image.toString("base64")}` };
   }
 
   async listCrawlerSites(): Promise<CrawlerListSitesResponse> {
