@@ -4,7 +4,7 @@ import { filesystemPathKey } from "@mdcz/media-store";
 import { NotFoundError } from "@mdcz/shared/error";
 import { and, asc, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { writeLibraryRows } from "./libraryWrite";
+import { removeLibraryFile, writeLibraryRows } from "./libraryWrite";
 import {
   type LibraryItemAssetRow,
   type LibraryItemFileRow,
@@ -509,12 +509,7 @@ export class LibraryRepository {
   removeFile(fileId: string): void {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
     if (!file) throw new NotFoundError(`Library file not found: ${fileId}`);
-    this.database.sqlite.transaction(() => {
-      this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.fileId, fileId)).run();
-      this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).run();
-      if (!this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.itemId, file.itemId)).get())
-        this.deleteEntry(file.itemId);
-    })();
+    this.database.sqlite.transaction(() => removeLibraryFile(this.database, file))();
   }
 
   deleteEntry(id: string): void {

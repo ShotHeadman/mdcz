@@ -1040,6 +1040,11 @@ describe("buildServer scrape integration", () => {
     await expect(readFile(join(root, names[0]))).rejects.toMatchObject({ code: "ENOENT" });
 
     if (scenario === "missing") await rm(join(root, originalEntry.files[1].rootRelativePath));
+    // A movie whose folder was deleted by hand still holds the path this confirmation moves the video to.
+    if (scenario === "single")
+      state.repositories.library.writeEntry({ id: "deleted-by-hand" }, [
+        { fileId: "deleted-by-hand", rootId, rootRelativePath: "JAV_output/Actor A/ABP-999-流出/ABP-999-流出.mp4" },
+      ]);
     if (scenario === "commit_failure")
       vi.spyOn(state.repositories.pending, "delete").mockImplementation(() => {
         throw new Error("injected confirmation failure");
@@ -1075,6 +1080,8 @@ describe("buildServer scrape integration", () => {
     }
     expect(confirmResponse.statusCode, confirmResponse.body).toBe(200);
     expect(aggregateCount).toBe(1);
+    if (scenario === "single")
+      await expect(state.repositories.library.getEntryById("deleted-by-hand")).rejects.toThrow("not found");
     const confirmed = await state.repositories.library.getEntryById(originalEntry.id);
     expect(confirmed.files.map((file) => file.id).sort()).toEqual(originalEntry.files.map((file) => file.id).sort());
     for (const file of confirmed.files) {
