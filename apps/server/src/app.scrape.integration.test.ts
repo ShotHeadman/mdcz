@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { assertFoldersHoldNoOtherMovie } from "@mdcz/runtime/publication";
 import { type AggregationResult, PosterWatermarkService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
@@ -383,7 +384,17 @@ describe("buildServer scrape integration", () => {
     await scrape([`${folder}/ABC-123.mp4`]);
     const other = await scrape(["XYZ-999.mp4"], "failed");
 
-    expect(other.items[0]?.error).toContain("Another movie already has this folder");
+    expect(other.items[0]?.error).toContain("add {number} to the library's folder template");
+    // A template that already has {number} can't be fixed by adding it.
+    await expect(
+      assertFoldersHoldNoOtherMovie({
+        target: { placement: "move", folderTemplate: "fixed/{number}" },
+        movieId: "other-movie",
+        sourcePaths: [join(root, "XYZ-999.mp4")],
+        folders: [output],
+        library: repositories.library,
+      }),
+    ).rejects.toThrow("remove one of the two from the library");
     expect(await readFile(join(root, "XYZ-999.mp4"), "utf8")).toBe("other");
     expect((await readdir(output)).sort()).toEqual([
       "ABC-123 - 1080p.mp4",
