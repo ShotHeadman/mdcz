@@ -55,7 +55,9 @@ const SHORT_TOKEN_PATTERNS = [
   "2160P",
   "1080P",
   "720P",
+  "FHD",
   "HD",
+  "SD",
   "HEVC",
   "H264",
   "H265",
@@ -65,6 +67,8 @@ const SHORT_TOKEN_PATTERNS = [
   "DVD",
   "FULL",
 ] as const;
+
+const COMMON_DOMAIN_PATTERN = /(?:^|[-_.\s[])(?:WWW\.)?[A-Z0-9_-]+\.(?:COM|NET|ORG)[@_\-\s]*/giu;
 
 const stripTrailingTokens = (value: string, options: { stripBarePart: boolean }): string => {
   let current = value;
@@ -96,6 +100,8 @@ const normalizeName = (rawName: string, escapeStrings: string[] = [], options: {
     }
     normalized = normalized.replaceAll(token.toUpperCase(), "");
   }
+
+  normalized = normalized.replace(COMMON_DOMAIN_PATTERN, "-");
 
   for (const token of SHORT_TOKEN_PATTERNS) {
     normalized = normalized.replace(new RegExp(`[-_.\\s\\[]${token}[-_.\\s\\]]`, "giu"), "-");
@@ -197,10 +203,10 @@ const ORDERED_NUMBER_EXTRACTION_RULES: NumberExtractionRule[] = [
   { pattern: /([A-Z]{2,})00(\d{3})/iu, format: joinFirstTwoCaptures },
   { pattern: /(\d{2,}[A-Z]{2,}-\d{2,}[A-Z]?)/iu },
   { pattern: /((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,}-\d{2,}[A-Z]?)/iu },
+  { pattern: /(?:^|[^A-Z])(N\d{4})(?:[^A-Z]|$)/iu },
   { pattern: /([A-Z]+-[A-Z]\d+)/iu },
   { pattern: /(\d{2,}[-_]\d{2,})/iu },
   { pattern: /(\d{3,}-[A-Z]{3,})/iu },
-  { pattern: /(?:^|[^A-Z])(N\d{4})(?:[^A-Z]|$)/iu },
   { pattern: /H_\d{3,}([A-Z]{2,})(\d{2,})/iu, format: joinFirstTwoCaptures },
   { pattern: /([A-Z]{3,}).*?(\d{2,})/iu, format: joinFirstTwoCaptures },
   { pattern: /([A-Z]{2,}).*?(\d{3,})/iu, format: joinFirstTwoCaptures },
