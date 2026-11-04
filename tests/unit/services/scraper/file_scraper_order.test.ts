@@ -96,7 +96,7 @@ describe("FileScraper site aggregation", () => {
     {
       name: "does not second-guess a mapped number",
       answer: "MEYD-911",
-      mappings: { "98T.LA": "ABC-123" },
+      mappings: { "ABC-99": "ABC-123" },
       searched: [],
       asked: 0,
     },
@@ -104,7 +104,7 @@ describe("FileScraper site aggregation", () => {
     const crawlerProvider = new OrderedStubCrawlerProvider();
     const directory = await createTempDirectory("scrape-ai-number");
     onTestFinished(directory.cleanup);
-    const filePath = join(directory.path, "www.98T.la@MEYD-911-U.mp4");
+    const filePath = join(directory.path, "abc-99@MEYD-911-U.mp4");
     await writeFile(filePath, "video");
     const config = createConfig({ aiNumberFallback: fallback, numberMappings: mappings });
     const readFileNumber = vi.fn(async () => {
@@ -128,9 +128,9 @@ describe("FileScraper site aggregation", () => {
       roots: [{ id: "test", hostPath: "/tmp" }],
     });
 
-    const parsed = mappings["98T.LA"] ?? "WWW-98T";
+    const parsed = mappings["ABC-99"] ?? "ABC-99";
     expect(readFileNumber).toHaveBeenCalledTimes(asked);
-    if (asked) expect(readFileNumber).toHaveBeenCalledWith("www.98T.la@MEYD-911-U", parsed, config, undefined);
+    if (asked) expect(readFileNumber).toHaveBeenCalledWith("abc-99@MEYD-911-U", parsed, config, undefined);
     expect([...new Set(crawlerProvider.calledNumbers)]).toEqual([parsed, ...searched]);
     expect(result.status === "failed" && result.pending?.kind).toBe("not_found");
   });

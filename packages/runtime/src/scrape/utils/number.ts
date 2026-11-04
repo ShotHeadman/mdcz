@@ -68,7 +68,8 @@ const SHORT_TOKEN_PATTERNS = [
   "FULL",
 ] as const;
 
-const COMMON_DOMAIN_PATTERN = /(?:^|[-_.\s[])(?:WWW\.)?[A-Z0-9_-]+\.(?:COM|NET|ORG)[@_\-\s]*/giu;
+const COMMON_DOMAIN_PATTERN =
+  /(?:^|[-_.\s[])(?:WWW\.)?[A-Z0-9_-]+\.(?:COM|NET|ORG|LA|CC|ME|XYZ|TOP|VIP|TV)[@_\-\s]*/giu;
 
 const stripTrailingTokens = (value: string, options: { stripBarePart: boolean }): string => {
   let current = value;
