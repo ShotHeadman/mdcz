@@ -2,7 +2,7 @@ import { formatDuration } from "@mdcz/shared/format";
 import type { ActivityEntryDto } from "@mdcz/shared/serverDtos";
 import { cn } from "@mdcz/ui";
 import { CircleAlert, CircleCheck, CircleDashed, CircleStop, LoaderCircle, type LucideIcon } from "lucide-react";
-import { useT } from "../i18n";
+import { formatDateTime, useT } from "../i18n";
 
 const ACTIVE_STATUSES: ReadonlySet<ActivityEntryDto["status"]> = new Set([
   "queued",
@@ -14,6 +14,10 @@ const ACTIVE_STATUSES: ReadonlySet<ActivityEntryDto["status"]> = new Set([
 
 export const hasActiveActivity = (entries: readonly ActivityEntryDto[]): boolean =>
   entries.some((entry) => ACTIVE_STATUSES.has(entry.status));
+
+// A run fails whenever any file did; one that still added movies reads as partly done rather than failed.
+const isPartlyDone = (entry: ActivityEntryDto): boolean =>
+  entry.status === "failed" && (entry.counts?.success ?? 0) > 0;
 
 const statusIcon = (status: ActivityEntryDto["status"]): { icon: LucideIcon; className: string } => {
   if (status === "completed") return { icon: CircleCheck, className: "text-emerald-500" };
@@ -39,7 +43,10 @@ export function ActivityTimelineCard({ entries, onOpenMaintenance }: ActivityTim
       <h2 className="mb-4 text-xl font-bold tracking-tight">{t.overview.activity.title}</h2>
       <ol className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {entries.map((entry) => {
-          const { icon: Icon, className } = statusIcon(entry.status);
+          const partlyDone = isPartlyDone(entry);
+          const { icon: Icon, className } = partlyDone
+            ? { icon: CircleAlert, className: "text-amber-500" }
+            : statusIcon(entry.status);
           const duration = entry.durationMs === null ? null : formatDuration(entry.durationMs);
           const details = [
             entry.counts
@@ -61,11 +68,14 @@ export function ActivityTimelineCard({ entries, onOpenMaintenance }: ActivityTim
                     </span>
                   </div>
                   <time className="shrink-0 font-numeric text-[11px] text-muted-foreground" dateTime={entry.updatedAt}>
-                    {new Date(entry.updatedAt).toLocaleString()}
+                    {formatDateTime(entry.updatedAt)}
                   </time>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {[t.overview.activity.statuses[entry.status], ...details].join(" · ")}
+                  {[
+                    partlyDone ? t.overview.activity.partlyDone : t.overview.activity.statuses[entry.status],
+                    ...details,
+                  ].join(" · ")}
                 </div>
                 {entry.error ? <div className="mt-1 break-words text-xs text-destructive">{entry.error}</div> : null}
               </div>

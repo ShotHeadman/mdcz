@@ -42,9 +42,13 @@ export const applyPosterTagBadgesIfNeeded = async (input: {
 
   try {
     const watermarkService = input.watermarkService ?? new PosterWatermarkService({ dataDir: input.dataDir });
-    await watermarkService.applyTagBadges(posterPath, badges, input.config.download.tagBadgePosition, {
+    await watermarkService.applyTagBadges(posterPath, badges, {
       imageOverrides: input.config.download.tagBadgeImageOverrides,
+      insetPercent: input.config.download.tagBadgeInsetPercent,
       onWarn: (message) => input.logger.warn(message),
+      opacity: input.config.download.tagBadgeOpacity,
+      position: input.config.download.tagBadgePosition,
+      sizePercent: input.config.download.tagBadgeSizePercent,
     });
   } catch (error) {
     input.logger.warn(`Failed to apply poster tag badges for ${posterPath}: ${toErrorMessage(error)}`);

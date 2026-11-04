@@ -55,7 +55,9 @@ const SHORT_TOKEN_PATTERNS = [
   "2160P",
   "1080P",
   "720P",
+  "FHD",
   "HD",
+  "SD",
   "HEVC",
   "H264",
   "H265",
@@ -65,6 +67,9 @@ const SHORT_TOKEN_PATTERNS = [
   "DVD",
   "FULL",
 ] as const;
+
+const COMMON_DOMAIN_PATTERN =
+  /(?:^|[-_.\s[])(?:WWW\.)?[A-Z0-9_-]+\.(?:COM|NET|ORG|LA|CC|ME|XYZ|TOP|VIP|TV)[@_\-\s]*/giu;
 
 const stripTrailingTokens = (value: string, options: { stripBarePart: boolean }): string => {
   let current = value;
@@ -96,6 +101,8 @@ const normalizeName = (rawName: string, escapeStrings: string[] = [], options: {
     }
     normalized = normalized.replaceAll(token.toUpperCase(), "");
   }
+
+  normalized = normalized.replace(COMMON_DOMAIN_PATTERN, "-");
 
   for (const token of SHORT_TOKEN_PATTERNS) {
     normalized = normalized.replace(new RegExp(`[-_.\\s\\[]${token}[-_.\\s\\]]`, "giu"), "-");
@@ -197,10 +204,10 @@ const ORDERED_NUMBER_EXTRACTION_RULES: NumberExtractionRule[] = [
   { pattern: /([A-Z]{2,})00(\d{3})/iu, format: joinFirstTwoCaptures },
   { pattern: /(\d{2,}[A-Z]{2,}-\d{2,}[A-Z]?)/iu },
   { pattern: /((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,}-\d{2,}[A-Z]?)/iu },
+  { pattern: /(?:^|[^A-Z])(N\d{4})(?:[^A-Z]|$)/iu },
   { pattern: /([A-Z]+-[A-Z]\d+)/iu },
   { pattern: /(\d{2,}[-_]\d{2,})/iu },
   { pattern: /(\d{3,}-[A-Z]{3,})/iu },
-  { pattern: /(?:^|[^A-Z])(N\d{4})(?:[^A-Z]|$)/iu },
   { pattern: /H_\d{3,}([A-Z]{2,})(\d{2,})/iu, format: joinFirstTwoCaptures },
   { pattern: /([A-Z]{3,}).*?(\d{2,})/iu, format: joinFirstTwoCaptures },
   { pattern: /([A-Z]{2,}).*?(\d{3,})/iu, format: joinFirstTwoCaptures },
@@ -227,6 +234,28 @@ export const extractNumber = (fileName: string, escapeStrings: string[] = []): s
     ? (fileName.match(new RegExp(String.raw`(?<!\d)${dateSequence[1]}[-_]${dateSequence[2]}(?!\d)`, "u"))?.[0] ??
         number)
     : number;
+};
+
+/**
+ * The number an AI read from a file name, or `undefined` when it cannot be trusted: the name must spell the answer
+ * out (separators and zero padding aside), so the AI picks among the name's own characters instead of recalling a
+ * work, and the parser must read a number other than the one that already missed.
+ */
+export const acceptAiNumber = (fileName: string, missedNumber: string, answer: string): string | undefined => {
+  const tokens = answer
+    .normalize("NFKC")
+    .toUpperCase()
+    .match(/[A-Z]+|\d+/gu);
+  if (!tokens) return undefined;
+  const spelledOut = new RegExp(
+    tokens
+      .map((token, index) => `${index ? "[^A-Z0-9]*" : ""}${/\d/u.test(token) ? `0*${token}(?!\\d)` : token}`)
+      .join(""),
+    "u",
+  );
+  if (!spelledOut.test(fileName.normalize("NFKC").toUpperCase())) return undefined;
+  const number = extractNumber(answer.normalize("NFKC"));
+  return number && number !== missedNumber ? number : undefined;
 };
 
 const detectNamedPart = (stem: string, number: string): FileInfo["part"] | undefined => {

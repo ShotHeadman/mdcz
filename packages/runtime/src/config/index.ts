@@ -15,8 +15,10 @@ import {
   parseConfigurationContent,
   parseConfigurationDocument,
   serializeConfiguration,
+  serializeConfigurationDocument,
 } from "@mdcz/shared/configCodec";
-import { convertLegacyConfiguration, type LegacyConfigurationConversion } from "./legacyLibrary";
+import { NotFoundError } from "@mdcz/shared/error";
+import { convertLegacyConfiguration, type LegacyConfigurationConversion, removeLibraryNaming } from "./legacyLibrary";
 
 export {
   buildComputedConfiguration,
@@ -27,6 +29,9 @@ export {
 export type { LegacyConfigurationConversion } from "./legacyLibrary";
 
 export const RUNTIME_ACTIVE_PROFILE_META_FILE = ".active-profile.json";
+/** The server keeps its administrator credential beside the profiles, so it must never be taken for one. */
+const AUTH_STATE_NAME = "auth-state";
+export const RUNTIME_AUTH_STATE_FILE = `${AUTH_STATE_NAME}.json`;
 export const RUNTIME_DEFAULT_PROFILE_NAME = "default";
 export const RUNTIME_PROFILE_NAME_PATTERN = /^[\p{L}\p{N}_-]+$/u;
 
@@ -55,6 +60,9 @@ export const normalizeRuntimeProfileName = (name: string): string => {
   }
   if (!RUNTIME_PROFILE_NAME_PATTERN.test(normalized)) {
     throw new Error('Profile name can only contain letters, numbers, "_" and "-"');
+  }
+  if (normalized === AUTH_STATE_NAME) {
+    throw new Error(`Profile name "${normalized}" is reserved`);
   }
   return normalized;
 };
@@ -343,7 +351,7 @@ export class RuntimeConfigService {
 
     const resetDefault = getConfigurationPathDefault(propertyPath);
     if (!resetDefault.found) {
-      throw new Error(`Path not found: ${propertyPath}`);
+      throw new NotFoundError(`Configuration path not found: ${propertyPath}`);
     }
 
     return await this.runWithValidation(async () => {
@@ -446,6 +454,10 @@ export class RuntimeConfigService {
 
   async cleanupInvalidNonActiveProfiles(logger?: RuntimeCleanupLogger): Promise<void> {
     await this.store.cleanupInvalidNonActiveProfiles(logger);
+  }
+
+  async removeLibraryNamingFromInactiveProfiles(): Promise<void> {
+    await this.store.removeLibraryNamingFromInactiveProfiles();
   }
 
   private async applyAfterLoad(configuration: Configuration): Promise<Configuration> {
@@ -571,9 +583,9 @@ export class RuntimeConfigProfileStore {
     }
     const entries = await readdir(this.options.configDir);
     const profiles = entries
-      .filter((entry) => this.isProfileConfigFile(entry) && entry !== RUNTIME_ACTIVE_PROFILE_META_FILE)
+      .filter((entry) => this.isProfileConfigFile(entry))
       .map((entry) => entry.replace(/\.(json|toml)$/u, ""))
-      .filter((name) => RUNTIME_PROFILE_NAME_PATTERN.test(name));
+      .filter((name) => RUNTIME_PROFILE_NAME_PATTERN.test(name) && name !== AUTH_STATE_NAME);
     if (!profiles.includes(RUNTIME_DEFAULT_PROFILE_NAME)) {
       profiles.unshift(RUNTIME_DEFAULT_PROFILE_NAME);
     }
@@ -595,7 +607,7 @@ export class RuntimeConfigProfileStore {
     const profileName = normalizeRuntimeProfileName(name);
     const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new NotFoundError(`Profile "${profileName}" not found`);
     }
     this.activeProfileName = profileName;
     this.activeProfileLoaded = true;
@@ -613,7 +625,7 @@ export class RuntimeConfigProfileStore {
     }
     const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new NotFoundError(`Profile "${profileName}" not found`);
     }
     await unlink(filePath);
     return { profileName };
@@ -685,16 +697,8 @@ export class RuntimeConfigProfileStore {
 
   async cleanupInvalidNonActiveProfiles(logger?: RuntimeCleanupLogger): Promise<void> {
     await mkdir(this.options.configDir, { recursive: true });
-    if (!this.activeProfileLoaded) {
-      await this.loadActiveProfileName();
-    }
-
-    const entries = await readdir(this.options.configDir);
-    for (const entry of entries) {
-      if (!this.isProfileConfigFile(entry) || entry === RUNTIME_ACTIVE_PROFILE_META_FILE) continue;
-      if (entry === `${this.activeProfileName}.json` || entry === `${this.activeProfileName}.toml`) continue;
-
-      const filePath = path.join(this.options.configDir, entry);
+    for (const filePath of await this.inactiveProfilePaths()) {
+      const entry = path.basename(filePath);
       try {
         await this.readConfigurationFile(filePath);
       } catch {
@@ -708,6 +712,31 @@ export class RuntimeConfigProfileStore {
         }
       }
     }
+  }
+
+  /** Removes library naming from every profile but the active one, which the caller saves itself. */
+  async removeLibraryNamingFromInactiveProfiles(): Promise<void> {
+    for (const filePath of await this.inactiveProfilePaths()) {
+      const format = inferConfigurationFileFormat(filePath);
+      const content = await readFile(filePath, "utf8");
+      let raw: unknown;
+      try {
+        raw = parseConfigurationDocument(content, format);
+      } catch {
+        // A profile that cannot be parsed holds nothing to remove; switching to it reports the error.
+        continue;
+      }
+      if (removeLibraryNaming(raw))
+        await writeFile(filePath, serializeConfigurationDocument(raw as Record<string, unknown>, format), "utf8");
+    }
+  }
+
+  private async inactiveProfilePaths(): Promise<string[]> {
+    if (!this.activeProfileLoaded) await this.loadActiveProfileName();
+    const active = [`${this.activeProfileName}.json`, `${this.activeProfileName}.toml`];
+    return (await readdir(this.options.configDir))
+      .filter((entry) => this.isProfileConfigFile(entry) && !active.includes(entry))
+      .map((entry) => path.join(this.options.configDir, entry));
   }
 
   getProfilePath(profileName: string): string {
@@ -731,6 +760,7 @@ export class RuntimeConfigProfileStore {
   }
 
   private isProfileConfigFile(entry: string): boolean {
+    if (entry === RUNTIME_ACTIVE_PROFILE_META_FILE || entry === RUNTIME_AUTH_STATE_FILE) return false;
     return entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.toml) || entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.json);
   }
 
@@ -781,7 +811,7 @@ export class RuntimeConfigProfileStore {
 
   private async readProfileConfiguration(filePath: string, profileName: string): Promise<Configuration> {
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new NotFoundError(`Profile "${profileName}" not found`);
     }
     return await this.readConfigurationFile(filePath);
   }

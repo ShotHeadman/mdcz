@@ -49,8 +49,6 @@ export const settings = {
       PART: "Normalize to PART1 / PART2",
       DISC: "Normalize to DISC1 / DISC2",
     },
-    assetNaming: { fixed: "Fixed names", followVideo: "Follow the video file name" },
-    nfoNaming: { both: "Generate both", movie: "movie.nfo only", filename: "<file name>.nfo only" },
   },
   nfoFields: {
     num: "code compatibility fields",
@@ -75,6 +73,11 @@ export const settings = {
   } as Record<NfoField, string>,
   nfoFieldOption: (field: string, label: string) => `${field} (${label})`,
   translateFields: { title: "Title", plot: "Plot", genres: "Genres" } as Record<TranslationField, string>,
+  badgePreview: {
+    title: "Badge preview",
+    roundedCorners: "Rounded poster",
+    failed: (error: string) => `Failed to render the badge preview: ${error}`,
+  },
   badgeOverrides: {
     openFolder: "Open folder",
     createDirFailed: (error: string) => `Failed to create the badge image directory: ${error}`,
@@ -87,7 +90,7 @@ export const settings = {
     fileNames: "Accepted file names",
     formats: (formats: string) => `Supported formats: ${formats}.`,
     ratio: (ratio: string) =>
-      `Recommended ratio: ${ratio}. Badge height is about 8% of the poster's short side, clamped to 28–64px.`,
+      `Recommended ratio: ${ratio}. Badge height defaults to about 8% of the poster's short side (minimum 28px) and follows the “Badge size” setting.`,
     scaling:
       "Images are scaled proportionally to fit the badge slot and never stretched; square images are placed left-aligned at slot height × slot height.",
     advice:
@@ -100,6 +103,7 @@ export const settings = {
     waiting: "Waiting for sample data",
     source: (path: string) => `Source: ${path}`,
     organized: (path: string) => `Organized: ${path}`,
+    files: (names: string[]) => `Writes: ${names.join(", ")}`,
     metadataDir: (path: string) => `Metadata directory: ${path}`,
   },
   namingTemplateHelp: {
@@ -143,9 +147,9 @@ export const settings = {
     } as Record<string, string>,
     notes: {
       folder: [
-        "A / or \\ in this template creates nested folders.",
+        "A / or \\ in this template creates nested folders; leave it empty to put every movie directly in the output directory.",
         "Folders are created from this template when moving videos and subtitles, or when outputting metadata only.",
-        "If the template has no per-movie unique field, attached files and NFO names are validated in shared directory mode on save.",
+        "Without the number, title or file name (for example only {actor}), multiple movies share one folder: files follow the video file name, only <filename>.nfo is written, and scene images are skipped (prevents overwrite).",
       ],
       file: [
         "The file name template only sets the video's base name and never creates subfolders; path separators and invalid characters are removed.",
@@ -174,9 +178,15 @@ export const settings = {
     add: "Add actor",
     remove: "Remove actor",
   },
+  language: {
+    title: "Language",
+    label: "Language",
+    description: "Kept on this device; it is not part of the settings profile.",
+  },
   integrations: {
     access: "Downloader access",
-    accessDescription: "Allows downloaders and cloud tools to access automation APIs (cannot log into the web UI).",
+    accessDescription:
+      "Gives downloaders, cloud tools and scripts full access to the MDCz API, except managing keys and the password. It cannot sign in to the web UI; give keys only to tools you trust.",
     notifications: "Notifications",
     keyName: "Key name",
     keyNamePlaceholder: "qBittorrent",

@@ -2,6 +2,7 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type {
   ApiKeyDto,
+  AppPreviewPosterBadgesInput,
   IntegrationStatusResponse,
   NetworkCheckCookiesResponse,
   SiteConnectivityProbeResponse,
@@ -56,6 +57,8 @@ export interface SettingsServices {
   /** A native picker; only the desktop app has one. */
   browsePath?: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<string | null>;
   integrations?: SettingsIntegrationServices;
+  /** Server WebUI only: the admin password control, which the web app owns because it signs the user in. */
+  adminPassword?: ReactNode;
   /** Desktop shows its window and shortcut settings, the server its automation. */
   settingsTarget: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
@@ -68,6 +71,8 @@ export interface SettingsServices {
   decrementInFlightSaves: () => void;
   listCrawlerSites: () => Promise<{ sites: SettingsCrawlerSiteInfo[] }>;
   openWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryOpenResult | undefined>;
+  /** Renders the badge settings as edited, saved or not, onto a sample poster; resolves to a PNG data URL. */
+  previewPosterBadges: (input: AppPreviewPosterBadgesInput) => Promise<string>;
   probeSiteConnectivity: (site: Website) => Promise<SiteConnectivityProbeResponse>;
   relaunchApp: () => Promise<void>;
   resetConfig: (path?: string) => Promise<unknown>;

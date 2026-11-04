@@ -283,7 +283,7 @@ export class LocalScanService {
     // Registered NFOs may have been deleted since; the files on disk decide, then name preference.
     let nfoPaths = await newestNfosFirst(registeredNfos, (path) => inventory.stats(path));
     if (!nfoPaths.length && (registeredNfos.length || !registered))
-      nfoPaths = await this.findNfos(metadataDir, fileInfo, inventory, signal);
+      nfoPaths = await this.findNfos(metadataDir, fileInfo, inventory, rules ?? {}, signal);
     const nfoPath = nfoPaths[0];
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
@@ -319,6 +319,7 @@ export class LocalScanService {
             crawlerData,
             sceneImagesFolder,
             inventory,
+            filenameRules: rules ?? {},
             signal,
           }));
     for (const path of [
@@ -357,13 +358,14 @@ export class LocalScanService {
     crawlerData?: CrawlerData;
     sceneImagesFolder: string;
     inventory: DirectoryInventory;
+    filenameRules: FilenameRules;
     signal?: AbortSignal;
   }): Promise<DiscoveredAssets> {
     throwIfAborted(input.signal);
 
     const allowDirectoryWideAssets =
       resolve(input.dir) !== resolve(input.videoDir) ||
-      (await this.isSingleMovieDirectory(input.videoDir, input.inventory));
+      !(await input.inventory.holdsOtherMovies(input.videoDir, input.fileInfo.filePath, input.filenameRules));
     const movieBaseNames = buildMovieBaseNameCandidates({
       fileName: input.fileInfo.fileName,
       part: input.fileInfo.part,
@@ -425,18 +427,6 @@ export class LocalScanService {
     };
   }
 
-  private async isSingleMovieDirectory(dir: string, inventory: DirectoryInventory): Promise<boolean> {
-    try {
-      const videoFiles = (await inventory.mediaEntries(dir))
-        .map((entry) => join(dir, entry.name))
-        .filter((videoPath) => !isGeneratedSidecarVideo(videoPath));
-      const movieNumbers = new Set(videoFiles.map((videoPath) => parseFileInfo(videoPath).number.toUpperCase()));
-      return movieNumbers.size <= 1;
-    } catch {
-      return false;
-    }
-  }
-
   private async resolveSceneImages(
     dir: string,
     sceneImagesFolder: string,
@@ -478,6 +468,7 @@ export class LocalScanService {
     dir: string,
     fileInfo: LocalScanEntry["fileInfo"],
     inventory: DirectoryInventory,
+    filenameRules: FilenameRules,
     signal?: AbortSignal,
   ): Promise<string[]> {
     try {
@@ -486,7 +477,11 @@ export class LocalScanService {
 
       if (nfoEntries.length === 0) return [];
 
-      const singleMovieDirectory = await this.isSingleMovieDirectory(dirname(fileInfo.filePath), inventory);
+      const singleMovieDirectory = !(await inventory.holdsOtherMovies(
+        dirname(fileInfo.filePath),
+        fileInfo.filePath,
+        filenameRules,
+      ));
       return selectLocalNfoNames(
         nfoEntries.map((entry) => entry.name),
         preferredLocalNfoBaseNames(fileInfo.fileName, fileInfo.part?.suffix, singleMovieDirectory),

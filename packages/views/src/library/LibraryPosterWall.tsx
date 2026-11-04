@@ -23,7 +23,8 @@ function PosterTile({
   linkComponent: LinkComponent,
 }: Pick<LibraryPosterWallProps, "getImageSrc" | "linkComponent"> & { entry: LibraryEntryDto }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const id = entry.number || entry.crawlerData?.number || entry.id;
+  const fileName = entry.fileRefs.find((file) => file.id === entry.displayFileId)?.fileName;
+  const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || fileName || entry.id;
   const title = entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || id;
   const src = !imageFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const tile = (

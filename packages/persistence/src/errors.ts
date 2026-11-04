@@ -1,5 +1,4 @@
 export const persistenceErrorCodes = {
-  NotFound: "NOT_FOUND",
   ConstraintViolation: "CONSTRAINT_VIOLATION",
   MigrationFailed: "MIGRATION_FAILED",
 } as const;

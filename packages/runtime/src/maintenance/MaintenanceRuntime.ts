@@ -1,14 +1,14 @@
 import { mkdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { MaintenanceMovieGroup } from "@mdcz/shared/maintenanceTasks";
-import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
+import type { NamingPolicy, PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type {
   CrawlerData,
   DiscoveredAssets,
@@ -24,10 +24,10 @@ import type {
 } from "@mdcz/shared/types";
 import { registeredMediaLocations } from "../library/registeredMedia";
 import { runWithScrapeItem } from "../network";
-import { resolvePublicationAssetLayout } from "../publication/assetLayout";
+import { resolvePublicationAssetLayout, resolvePublicationNaming } from "../publication/assetLayout";
 import type { CommittedMovie } from "../publication/committedMovie";
 import { toCommittedMovie } from "../publication/committedMovie";
-import { PublicationConflictError } from "../publication/conflicts";
+import { assertFoldersHoldNoOtherMovie, PublicationConflictError } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
 import {
   MANAGED_MOVIE_ASSET_KINDS,
@@ -38,16 +38,15 @@ import {
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
+import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import {
-  applyScrapeNetworkPolicy,
   type DownloadManager,
   downloadCrawlerAssets,
   type FileOrganizer,
   type NfoGenerator,
   prepareOutputCrawlerData,
   type ResolvedPublicationLayout,
-  type ScrapeNetworkPolicyClient,
   type TranslateService,
   writePreparedNfo,
 } from "../scrape";
@@ -89,9 +88,10 @@ export interface MaintenanceRuntimeDependencies {
   /** Development record/replay names the recording an online refresh belongs to. */
   prepareScrapeItem?: PrepareScrapeItem;
   config: MaintenanceRuntimeConfigProvider;
+  /** The naming policy of the library a movie belongs to, for writes that name no library. */
+  findNamingPolicy(hostPath: string): Promise<NamingPolicy | undefined>;
   downloadManager?: DownloadManager;
   fileOrganizer: Pick<FileOrganizer, "plan" | "resolveOutputPlan">;
-  networkPolicyClient?: ScrapeNetworkPolicyClient;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   signalService: MaintenanceSignalService;
   translateService?: TranslateService;
@@ -148,6 +148,7 @@ export interface MaintenanceRuntimeApplyEntryInput {
   };
   publication: {
     commit(movie: CommittedMovie): void;
+    library: Pick<PublicationOutputPort, "publicationSnapshot">;
     roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
     identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
   };
@@ -159,17 +160,17 @@ export interface MaintenanceRuntimeApplyLibraryEntryInput
   root: MediaRoot;
   entry: LibraryEntryRecord;
   localState?: NfoLocalState;
-  /** Where moving presets organize the movie. */
+  /** The movie's library: moving presets organize into it, and every preset names files by its policy. */
   target?: PublicationTarget;
 }
 
 /** Writing presets keep files and metadata where they are; only the default NFO name comes from this. */
-const IN_PLACE_TARGET: PublicationTarget = {
+const IN_PLACE_TARGET = {
   placement: "inPlace",
   outputPath: "",
   folderTemplate: "",
   fileTemplate: "",
-};
+} as const;
 
 export interface MaintenanceRuntimeApplySuccess {
   status: "success";
@@ -244,11 +245,6 @@ export class MaintenanceRuntime {
       input.target,
       input.inventory,
     );
-  }
-
-  async applyNetworkPolicy(): Promise<void> {
-    if (!this.deps.networkPolicyClient) return;
-    applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
   }
 
   async scanRefs(input: {
@@ -469,12 +465,23 @@ export class MaintenanceRuntime {
     if (!crawlerData) throw new Error("Maintenance output requires movie metadata");
 
     const plans = await this.buildPlans(files, config, preset, crawlerData, signal);
-    const sharedPlan = plans[this.memberIndex(files, entry)];
+    const layouts = files.map((file, index) => {
+      const layout = plans[index].plan;
+      if (!layout) throw new Error(`Maintenance file has no resolved layout: ${file.fileId}`);
+      return layout;
+    });
+    const selectedLayout = layouts[this.memberIndex(files, entry)];
+    const movieBaseName = basename(selectedLayout.nfoPath, ".nfo");
+    // Writes stay in place, yet the movie's library still decides whether its folder is shared by template.
+    const naming = await resolvePublicationNaming({
+      layouts,
+      policy: this.target ?? (await this.deps.findNamingPolicy(entry.fileInfo.filePath)),
+      config,
+      inventory: this.inventory,
+    });
     const members = await Promise.all(
       files.map(async (file, index) => {
-        const layout = plans[index].plan;
-        if (!layout) throw new Error(`Maintenance file has no resolved layout: ${file.fileId}`);
-        const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layout;
+        const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layouts[index];
         return {
           source: file.ref,
           fileId: file.fileId,
@@ -482,12 +489,13 @@ export class MaintenanceRuntime {
           layout: outputLayout,
           assetLayout: await resolvePublicationAssetLayout({
             inventory: this.inventory,
-            layout,
+            layout: layouts[index],
             config,
+            naming,
             crawlerData,
             existingAssets: file.assets,
             assetDecisions: committed?.assetDecisions,
-            movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : undefined,
+            movieBaseName,
           }),
           existingAssets: file.assets,
           existingNfoPath: file.nfoPath,
@@ -509,7 +517,7 @@ export class MaintenanceRuntime {
             actorSourceProvider: this.deps.actorSourceProvider,
             config,
             crawlerData,
-            enabled: Boolean(sharedPlan.plan),
+            enabled: true,
             movieDir: stagingDir,
             sourceVideoPath: entry.fileInfo.filePath,
             signal,
@@ -535,11 +543,12 @@ export class MaintenanceRuntime {
         }
         const downloaded = await downloadCrawlerAssets({
           config,
+          naming,
           crawlerData: preparedCrawlerData,
           downloadManager: this.deps.downloadManager,
           fileInfo: entry.fileInfo,
           imageAlternatives: committed?.imageAlternatives,
-          movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : entry.fileInfo.fileName,
+          movieBaseName,
           outputDir: stagingDir,
           existingAssetDir: stagingParent,
           existingAssets: entry.assets,
@@ -591,20 +600,21 @@ export class MaintenanceRuntime {
               return resolveRootRelativePath(root, asset.relativePath);
             }),
         ),
-        nfoNaming: config.download.nfoNaming,
+        naming,
         writeNfo: async (assets, writeFile) =>
           preset.output === "none"
             ? entry.nfoPath
             : await writePreparedNfo({
                 assets,
                 config,
+                naming,
                 crawlerData: preparedCrawlerData,
-                enabled: Boolean((preset.dataSource !== "local" || config.download.generateNfo) && sharedPlan.plan),
+                enabled: preset.dataSource !== "local" || config.download.generateNfo,
                 fileInfo: entry.fileInfo,
                 localState: entry.nfoLocalState,
                 buildTags: buildMovieTags,
                 nfoGenerator: this.deps.nfoGenerator,
-                nfoPath: sharedPlan.plan?.nfoPath,
+                nfoPath: selectedLayout.nfoPath,
                 sourceVideoPath: entry.fileInfo.filePath,
                 sources: undefined,
                 writeFile,
@@ -671,6 +681,29 @@ export class MaintenanceRuntime {
       );
       try {
         throwIfAborted(signal);
+        await assertFoldersHoldNoOtherMovie({
+          target: preset.output === "move" && this.target ? this.target : IN_PLACE_TARGET,
+          movieId: publication.identity.movieId,
+          sourcePaths: files.map((file) => file.fileInfo.filePath),
+          folders: published.folders,
+          library: publication.library,
+        });
+        // Movies of one actor share the photos in their folder's .actors, so a movie leaving takes copies.
+        const snapshot = publication.library.publicationSnapshot({
+          paths: published.artifacts.flatMap((artifact) => artifact.removeSourcesAfterCommit ?? []),
+        });
+        const usedByOthers = new Set(
+          [...snapshot.files, ...snapshot.assets].flatMap((row) => {
+            const root = publication.roots.find((candidate) => candidate.id === row.rootId);
+            return row.itemId !== publication.identity.movieId && root
+              ? [filesystemPathKey(resolveRootRelativePath(root, row.relativePath))]
+              : [];
+          }),
+        );
+        for (const artifact of published.artifacts)
+          artifact.removeSourcesAfterCommit = artifact.removeSourcesAfterCommit?.filter(
+            (path) => !usedByOthers.has(filesystemPathKey(resolve(path))),
+          );
         const validate = async () => {
           throwIfAborted(signal);
           await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
@@ -805,7 +838,6 @@ export class MaintenanceRuntime {
           },
           entry.fileInfo.filePath,
           {
-            allowSharedDirectory: true,
             existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
             inventory: this.inventory,
           },
@@ -818,8 +850,6 @@ export class MaintenanceRuntime {
       this.planMove(entry, config, crawlerData, versionLabel),
       entry.fileInfo.filePath,
       {
-        allowSharedDirectory:
-          config.naming.assetNamingMode === "followVideo" && config.download.nfoNaming === "filename",
         existingMetadataDir: entry.nfoPath ? dirname(entry.nfoPath) : entry.currentDir,
         inventory: this.inventory,
       },

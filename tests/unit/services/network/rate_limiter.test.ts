@@ -22,4 +22,23 @@ describe("RateLimiter", () => {
 
     vi.useRealTimers();
   });
+
+  it("keeps pacing a domain when its unchanged limit is applied again", async () => {
+    vi.useFakeTimers();
+
+    const limiter = new RateLimiter(5, 0);
+    const started: string[] = [];
+    limiter.setDomainInterval("javdb.com", 3_000);
+    await limiter.schedule("https://javdb.com/a", async () => started.push("a"));
+    limiter.setDomainInterval("javdb.com", 3_000);
+    const second = limiter.schedule("https://javdb.com/b", async () => started.push("b"));
+
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(started).toEqual(["a"]);
+    await vi.advanceTimersByTimeAsync(1);
+    await second;
+    expect(started).toEqual(["a", "b"]);
+
+    vi.useRealTimers();
+  });
 });

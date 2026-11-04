@@ -352,7 +352,29 @@ describe("FileOrganizer naming rules", () => {
 
     expect(subtitlePreview?.folder).toContain("ABC-456-SUB");
     expect(subtitlePreview?.folder).toContain("2024 示例导演 121 2160P ABC-456");
-    expect(subtitlePreview?.file).toBe("ABC-456 演员B 2024-01-15 A 4K -SUB 有码 4.5 示例简介 示例发行 dmm.mp4");
+    expect(subtitlePreview?.file).toBe("ABC-456 演员A 2024-01-15 A 4K -SUB 有码 4.5 示例简介 示例发行 dmm.mp4");
+
+    // Two samples by one actor share an actor folder, and the preview shows the per-video names that requires.
+    const [config, target] = createConfig({ target: { folderTemplate: "{actor}", nfoNaming: "movie" } });
+    const sharedPreviews = organizer.buildNamingPreview(config, target);
+    const standard = sharedPreviews.find((item) => item.sample === "standard");
+    expect(sharedPreviews.find((item) => item.sample === "subtitled")?.metadataDir).toBe(standard?.metadataDir);
+    expect(standard?.outputs).toEqual([
+      "ABC-123-CEN.nfo",
+      "ABC-123-CEN-thumb.jpg",
+      "ABC-123-CEN-poster.jpg",
+      "ABC-123-CEN-fanart.jpg",
+      "ABC-123-CEN-trailer.mp4",
+    ]);
+    const ownFolder = organizer.buildNamingPreview(config, { ...target, folderTemplate: "{actor}/{number}" });
+    expect(ownFolder.find((item) => item.sample === "standard")?.outputs).toEqual([
+      "movie.nfo",
+      "thumb.jpg",
+      "poster.jpg",
+      "fanart.jpg",
+      "trailer.mp4",
+      "extrafanart/…",
+    ]);
   });
 
   it("preserves input extension and explicit multipart suffix casing when renaming", () => {

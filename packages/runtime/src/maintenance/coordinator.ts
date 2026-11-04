@@ -8,7 +8,7 @@ import {
 import type { LibraryRepository } from "@mdcz/persistence";
 import type { Configuration } from "@mdcz/shared/config";
 import type { DirectoryTaskScope, DiscoveryProgress } from "@mdcz/shared/directoryTasks";
-import { toErrorMessage } from "@mdcz/shared/error";
+import { NotFoundError, toErrorMessage } from "@mdcz/shared/error";
 import type {
   MaintenanceActiveSessionSnapshot,
   MaintenanceApplyBatch,
@@ -521,7 +521,7 @@ export class MaintenanceSessionCoordinator {
 
   async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (this.session?.id !== sessionId || !this.directoryDefinition) {
-      throw new Error(`Maintenance directory session not found: ${sessionId}`);
+      throw new NotFoundError(`Maintenance directory session not found: ${sessionId}`);
     }
     const definition = this.directoryDefinition;
     return await this.startPreview({
@@ -665,7 +665,6 @@ export class MaintenanceSessionCoordinator {
         initial.fixDiscoveredRefs(selections.map((selection) => selection.ref));
         await this.publishChanged(initial);
       }
-      await this.runtime.applyNetworkPolicy?.();
       initial = this.assertCurrent(sessionId, ["running", "paused"]);
       if (initial.status === "paused") return;
       const selections = initial.refs.map((ref) => {
@@ -766,7 +765,6 @@ export class MaintenanceSessionCoordinator {
 
   private async runApply(sessionId: string): Promise<void> {
     try {
-      await this.runtime.applyNetworkPolicy?.();
       const initial = this.assertCurrent(sessionId, ["running"]);
       const pending = initial.pendingBatchItems();
       await this.executeItems<MaintenanceBatchItem, void>(sessionId, pending, {
@@ -805,6 +803,7 @@ export class MaintenanceSessionCoordinator {
               files,
               signal: context.signal,
               publication: {
+                library,
                 roots: publicationRoots,
                 commit: (movie) => writeCommittedMovie(library, movie),
                 identity: {
@@ -950,7 +949,8 @@ export class MaintenanceSessionCoordinator {
   }
 
   private require(sessionId: string): MaintenanceSession {
-    if (!this.session || this.session.id !== sessionId) throw new Error(`Maintenance session not found: ${sessionId}`);
+    if (!this.session || this.session.id !== sessionId)
+      throw new NotFoundError(`Maintenance session not found: ${sessionId}`);
     return this.session;
   }
 

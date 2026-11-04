@@ -8,6 +8,9 @@ export type Locale = UiLocale;
 
 export const LOCALES: Locale[] = ["en-US", "zh-CN"];
 
+/** Each language is named in itself, so someone in the wrong language can still find theirs. */
+export const LOCALE_NAMES: Record<Locale, string> = { "en-US": "English", "zh-CN": "简体中文" };
+
 const STORAGE_KEY = "mdcz-locale";
 const DICTIONARIES: Record<Locale, Messages> = { "en-US": en, "zh-CN": zh };
 
@@ -40,6 +43,10 @@ export const useLocaleStore = create<LocaleState>((set) => {
 });
 
 export const useT = (): Messages => DICTIONARIES[useLocaleStore((state) => state.locale)];
+
+/** Dates and times read in the UI language rather than the browser's. */
+export const formatDateTime = (value: string | number | Date, options?: Intl.DateTimeFormatOptions): string =>
+  new Date(value).toLocaleString(useLocaleStore.getState().locale, options);
 
 /** Non-reactive access for callbacks, stores, and adapters outside React render. */
 export const getT = (): Messages => DICTIONARIES[useLocaleStore.getState().locale];

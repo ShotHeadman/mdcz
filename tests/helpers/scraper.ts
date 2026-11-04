@@ -79,6 +79,8 @@ export const testPublicationTarget = (
   outputPath: join(dirname(filePath), "JAV_output"),
   folderTemplate: "{actor}/{number}",
   fileTemplate: "{number}",
+  assetNaming: "fixed",
+  nfoNaming: "both",
   ...overrides,
 });
 

@@ -269,7 +269,8 @@ export const NAMING_PREVIEW_SAMPLES: Array<{
   {
     sample: "subtitled",
     fileInfo: previewFileInfo("ABC-456", { isSubtitled: true, subtitleTag: "中文字幕", resolution: "2160P" }),
-    data: previewData("ABC-456", { title_zh: "中文字幕示例", actors: ["演员B"], studio: "Studio X" }),
+    // The standard sample's actor, so a template that groups movies by actor shows two movies in one folder.
+    data: previewData("ABC-456", { title_zh: "中文字幕示例", studio: "Studio X" }),
   },
   {
     sample: "multiActor",

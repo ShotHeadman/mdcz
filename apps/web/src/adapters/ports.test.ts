@@ -3,7 +3,7 @@ import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
 import { getT } from "@mdcz/views/i18n";
 import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
-import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
+import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -185,7 +185,7 @@ describe("web detail action port", () => {
     const session = await port.preparePosterCrop(item);
     const result = await port.savePosterCrop(item, initialCrop);
 
-    expect(session.sourceUrl).toBe(
+    expect(session?.sourceUrl).toBe(
       "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
     expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });
@@ -198,9 +198,12 @@ describe("web scrape action port", () => {
   it.each([
     [1, { manualUrl: "https://javdb.com/v/abc123" }],
     [2, { unpin: true }],
-  ] as const)("starts a new run in the task's library for exactly the %s selected targets", async (count, source) => {
+  ] as const)("starts and shows a new run in the task's library for exactly the %s selected targets", async (count, source) => {
     const start = vi.spyOn(api.scrape, "start").mockResolvedValue({ runId: "manual-run" });
     const retry = vi.spyOn(api.scrape, "retry");
+    vi.spyOn(api.scrape, "snapshot").mockImplementation(async ({ taskId }) =>
+      buildFailedScrapeSnapshot({ task: { ...buildFailedScrapeSnapshot().task, id: taskId } }),
+    );
     useScrapeStore.getState().setSnapshot(buildFailedScrapeSnapshot());
     const targets = ["ABC-001.mp4", "ABC-001-CD2.mp4"].slice(0, count).map((relativePath) => ({
       filePath: relativePath,
@@ -214,6 +217,8 @@ describe("web scrape action port", () => {
       ...source,
     });
     expect(retry).not.toHaveBeenCalled();
+    // The run may already be over and missing from the live runs.
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("manual-run");
   });
   it("removes records through the explicit record API", async () => {
     const removeRecord = vi.spyOn(api.scrape, "removeRecord").mockResolvedValue({
@@ -235,6 +240,9 @@ describe("web scrape action port", () => {
 
   it("retries the current run and rescans directories through separate APIs", async () => {
     const retry = vi.spyOn(api.scrape, "retry").mockResolvedValue({ runId: "session-run" });
+    vi.spyOn(api.scrape, "snapshot").mockImplementation(async ({ taskId }) =>
+      buildFailedScrapeSnapshot({ task: { ...buildFailedScrapeSnapshot().task, id: taskId } }),
+    );
     useScrapeStore.getState().setSnapshot(
       buildFailedScrapeSnapshot({
         task: { ...buildFailedScrapeSnapshot().task, id: "session-run" },
@@ -249,6 +257,7 @@ describe("web scrape action port", () => {
     const rerunDirectory = vi.spyOn(api.scrape, "rerunDirectory").mockResolvedValue({ runId: "new-run" });
     await port.rerunDirectory("directory-run");
     expect(rerunDirectory).toHaveBeenCalledWith({ taskId: "directory-run" });
+    expect(selectScrapeTaskId(useScrapeStore.getState())).toBe("new-run");
     expect(retry).toHaveBeenCalledTimes(2);
 
     useScrapeStore.getState().reset();

@@ -474,7 +474,7 @@ describe("FileScraper movie groups", () => {
       ),
       downloadedAssets: { downloaded: [], sceneImages: [] },
       actorPhotoPaths: [],
-      nfoNaming: "movie",
+      naming: { nfoNaming: "movie", sceneImages: true },
       writeNfo: async () => undefined,
     });
     if (!group.output.scrape) throw new Error("Scrape output requires movie metadata");
@@ -523,7 +523,7 @@ describe("FileScraper movie groups", () => {
       stagingDir,
       downloadedAssets: { poster: posterSource, downloaded: [posterSource], sceneImages: [] },
       actorPhotoPaths: [],
-      nfoNaming: "movie",
+      naming: { nfoNaming: "movie", sceneImages: true },
       writeNfo: async () => undefined,
     });
     await new WriteOutput().install(artwork.artifacts, {

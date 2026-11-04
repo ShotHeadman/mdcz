@@ -1,11 +1,13 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
-import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { RUNTIME_AUTH_STATE_FILE } from "@mdcz/runtime/config";
 import type {
   ApiKeyCreateInput,
   ApiKeyCreateResponse,
   ApiKeyListResponse,
+  AuthChangePasswordInput,
   AuthSessionDto,
   SetupCompleteInput,
 } from "@mdcz/shared/serverDtos";
@@ -15,9 +17,12 @@ import type { ServerPersistenceService } from "./persistenceService";
 
 const deriveKey = promisify(scrypt);
 const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
-// Recording every request's use would write the database per request; a session's last use is only needed coarsely.
-const SESSION_TOUCH_INTERVAL_MS = 10 * 60 * 1000;
+// Recording every request's use would write the database per request; a credential's last use is only needed coarsely.
+const CREDENTIAL_TOUCH_INTERVAL_MS = 10 * 60 * 1000;
 const API_KEY_PREFIX = "mdcz_";
+const FREE_LOGIN_FAILURES = 5;
+const LOGIN_LOCK_BASE_MS = 30 * 1000;
+const LOGIN_LOCK_MAX_MS = 15 * 60 * 1000;
 
 /** Authentication failures answer 401 on plain HTTP routes; tRPC maps them to UNAUTHORIZED itself. */
 export class AuthenticationError extends Error {
@@ -27,26 +32,29 @@ export class AuthenticationError extends Error {
 
 const hashSecret = (secret: string): string => createHash("sha256").update(secret).digest("hex");
 
+export const isApiKey = (token?: string): token is string => Boolean(token?.startsWith(API_KEY_PREFIX));
+
 /** What the API asks of authentication. The server checks sessions and API keys; desktop admits its one window. */
 export type ServerAuth = Pick<
   AuthService,
   | "status"
   | "login"
-  | "logout"
   | "assertAuthenticated"
-  | "assertAutomation"
   | "listApiKeys"
   | "createApiKey"
   | "deleteApiKey"
   | "completeSetup"
+  | "changePassword"
 >;
 
 /**
  * WebUI sessions and API keys are stored as hashes in the database, so sessions survive restarts and container
- * updates. API keys authorize only the automation endpoints, never the WebUI.
+ * updates. An API key authorizes the API as a session does, except managing API keys and the password; it never
+ * signs in to the WebUI.
  */
 export class AuthService {
-  readonly #touchedSessions = new Map<string, number>();
+  readonly #touchedCredentials = new Map<string, number>();
+  readonly #loginFailures = new Map<string, { count: number; lastFailureAt: number; lockedUntil: number }>();
 
   constructor(
     private readonly paths: Pick<ServerRuntimePaths, "configDir">,
@@ -67,43 +75,32 @@ export class AuthService {
     };
   }
 
-  async login(password: string): Promise<AuthSessionDto> {
-    const passwordHash = await this.readPasswordHash();
-    let valid = false;
-    if (this.environmentPassword) {
-      const supplied = Buffer.from(password);
-      const expected = Buffer.from(this.environmentPassword);
-      valid = supplied.length === expected.length && timingSafeEqual(supplied, expected);
-    } else if (passwordHash) {
-      const [, salt, hash] = passwordHash.split("$") as [string, string, string];
-      const actual = (await deriveKey(password, Buffer.from(salt, "hex"), 64)) as Buffer;
-      valid = timingSafeEqual(actual, Buffer.from(hash, "hex"));
-    }
-    if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect administrator password" });
+  async login(password: string, clientAddress = "unknown"): Promise<AuthSessionDto> {
+    await this.verifyPassword(password, clientAddress);
     const token = randomBytes(24).toString("base64url");
     (await this.persistence.getState()).repositories.credentials.createSession(hashSecret(token));
     return { authenticated: true, token };
   }
 
-  async logout(token?: string): Promise<AuthSessionDto> {
-    if (token) {
-      this.#touchedSessions.delete(hashSecret(token));
-      (await this.persistence.getState()).repositories.credentials.deleteSession(hashSecret(token));
+  async changePassword(input: AuthChangePasswordInput, token?: string, clientAddress = "unknown"): Promise<void> {
+    if (this.environmentPassword) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "The password is set by MDCZ_ADMIN_PASSWORD" });
     }
-    return { authenticated: false };
+    await this.verifyPassword(input.currentPassword, clientAddress);
+    await this.writePasswordHash(input.newPassword, "replace");
+    // A changed password must also lock out whoever might have signed in with the old one.
+    const credentials = (await this.persistence.getState()).repositories.credentials;
+    credentials.deleteOtherSessions(token ? hashSecret(token) : "");
+    this.#touchedCredentials.clear();
   }
 
+  /** Accepts a WebUI session or an API key. */
   async assertAuthenticated(token?: string): Promise<void> {
-    if (!(await this.isSession(token))) throw new AuthenticationError("Authentication required");
-  }
-
-  /** Automation endpoints accept an API key or a WebUI session. */
-  async assertAutomation(token?: string): Promise<void> {
-    if (token?.startsWith(API_KEY_PREFIX)) {
-      if ((await this.persistence.getState()).repositories.credentials.touchApiKey(hashSecret(token))) return;
+    if (isApiKey(token)) {
+      if (await this.touchCredential(token, "apiKey")) return;
       throw new AuthenticationError("Invalid API key");
     }
-    await this.assertAuthenticated(token);
+    if (!(await this.isSession(token))) throw new AuthenticationError("Authentication required");
   }
 
   async listApiKeys(): Promise<ApiKeyListResponse> {
@@ -133,16 +130,60 @@ export class AuthService {
 
   async deleteApiKey(id: string): Promise<void> {
     (await this.persistence.getState()).repositories.credentials.deleteApiKey(id);
+    // A revoked key must stop working at once, not when its cached use expires.
+    this.#touchedCredentials.clear();
   }
 
   async completeSetup(input: SetupCompleteInput): Promise<AuthSessionDto> {
     if (!(await this.status()).setupRequired) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Setup is already complete; please sign in" });
     }
+    await this.writePasswordHash(input.password, "create");
+    return await this.login(input.password);
+  }
+
+  private async verifyPassword(password: string, clientAddress: string): Promise<void> {
+    const now = Date.now();
+    for (const [address, entry] of this.#loginFailures) {
+      if (now - entry.lastFailureAt > LOGIN_LOCK_MAX_MS && entry.lockedUntil <= now)
+        this.#loginFailures.delete(address);
+    }
+    const failures = this.#loginFailures.get(clientAddress);
+    if (failures && failures.lockedUntil > now) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: `Too many failed sign-ins; try again in ${Math.ceil((failures.lockedUntil - now) / 1000)} s`,
+      });
+    }
+    const passwordHash = await this.readPasswordHash();
+    let valid = false;
+    if (this.environmentPassword) {
+      const supplied = Buffer.from(password);
+      const expected = Buffer.from(this.environmentPassword);
+      valid = supplied.length === expected.length && timingSafeEqual(supplied, expected);
+    } else if (passwordHash) {
+      const [, salt, hash] = passwordHash.split("$") as [string, string, string];
+      const actual = (await deriveKey(password, Buffer.from(salt, "hex"), 64)) as Buffer;
+      valid = timingSafeEqual(actual, Buffer.from(hash, "hex"));
+    }
+    if (valid) {
+      this.#loginFailures.delete(clientAddress);
+      return;
+    }
+    const count = (failures?.count ?? 0) + 1;
+    const lockMs =
+      count < FREE_LOGIN_FAILURES
+        ? 0
+        : Math.min(LOGIN_LOCK_BASE_MS * 2 ** (count - FREE_LOGIN_FAILURES), LOGIN_LOCK_MAX_MS);
+    this.#loginFailures.set(clientAddress, { count, lastFailureAt: now, lockedUntil: now + lockMs });
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect administrator password" });
+  }
+
+  private async writePasswordHash(password: string, mode: "create" | "replace"): Promise<void> {
     const salt = randomBytes(16);
-    const hash = (await deriveKey(input.password, salt, 64)) as Buffer;
+    const hash = (await deriveKey(password, salt, 64)) as Buffer;
     await mkdir(this.paths.configDir, { recursive: true, mode: 0o700 });
-    const statePath = path.join(this.paths.configDir, "auth-state.json");
+    const statePath = path.join(this.paths.configDir, RUNTIME_AUTH_STATE_FILE);
     const temporaryPath = `${statePath}.${randomBytes(12).toString("hex")}.tmp`;
     try {
       await writeFile(
@@ -151,7 +192,8 @@ export class AuthService {
         { encoding: "utf8", flag: "wx", mode: 0o600, flush: true },
       );
       // Publishing a complete file with link() also rejects concurrent registration.
-      await link(temporaryPath, statePath);
+      if (mode === "create") await link(temporaryPath, statePath);
+      else await rename(temporaryPath, statePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
         throw new TRPCError({ code: "CONFLICT", message: "Administrator already exists; please sign in" });
@@ -160,27 +202,30 @@ export class AuthService {
     } finally {
       await rm(temporaryPath, { force: true });
     }
-    return await this.login(input.password);
   }
 
   private async isSession(token?: string): Promise<boolean> {
-    if (!token || token.startsWith(API_KEY_PREFIX)) return false;
+    if (!token || isApiKey(token)) return false;
+    return await this.touchCredential(token, "session");
+  }
+
+  private async touchCredential(token: string, kind: "session" | "apiKey"): Promise<boolean> {
     const tokenHash = hashSecret(token);
     const now = Date.now();
-    const touched = this.#touchedSessions.get(tokenHash);
-    if (touched !== undefined && now - touched < SESSION_TOUCH_INTERVAL_MS) return true;
-    const valid = (await this.persistence.getState()).repositories.credentials.touchSession(
-      tokenHash,
-      new Date(now - SESSION_IDLE_MS),
-      new Date(now),
-    );
-    if (valid) this.#touchedSessions.set(tokenHash, now);
-    else this.#touchedSessions.delete(tokenHash);
+    const touched = this.#touchedCredentials.get(tokenHash);
+    if (touched !== undefined && now - touched < CREDENTIAL_TOUCH_INTERVAL_MS) return true;
+    const credentials = (await this.persistence.getState()).repositories.credentials;
+    const valid =
+      kind === "session"
+        ? credentials.touchSession(tokenHash, new Date(now - SESSION_IDLE_MS), new Date(now))
+        : credentials.touchApiKey(tokenHash, new Date(now));
+    if (valid) this.#touchedCredentials.set(tokenHash, now);
+    else this.#touchedCredentials.delete(tokenHash);
     return valid;
   }
 
   private async readPasswordHash(): Promise<string | null> {
-    const statePath = path.join(this.paths.configDir, "auth-state.json");
+    const statePath = path.join(this.paths.configDir, RUNTIME_AUTH_STATE_FILE);
     let content: string;
     try {
       content = await readFile(statePath, "utf8");

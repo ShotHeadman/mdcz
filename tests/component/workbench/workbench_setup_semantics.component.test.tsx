@@ -33,6 +33,8 @@ const library: MediaLibraryDto = {
   folderTemplate: "{actor}/{number}",
   fileTemplate: "{number}",
   placement: "move",
+  assetNaming: "fixed",
+  nfoNaming: "both",
   automation: "off",
   discovery: "events",
   cloudPath: "",
@@ -205,6 +207,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   const remounted = await render(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
   expect(requests).toHaveLength(5);
   await expect.element(remounted.getByRole("button", { name: "开始维护", exact: true })).toBeDisabled();
+  await expect.element(remounted.getByText("设置已变更，请刷新文件列表后再开始。")).toBeVisible();
   await remounted.unmount();
   useWorkbenchSetupStore.setState({ activePreview: { id: "reset-preview", stop: async () => undefined } });
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);

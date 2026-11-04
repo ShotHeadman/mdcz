@@ -4,6 +4,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { MoveOutput, WriteOutput } from "@mdcz/runtime/publication";
+import { resolvePublicationNaming } from "@mdcz/runtime/publication/assetLayout";
 import { prepareMovieArtifacts } from "@mdcz/runtime/publication/movieArtifacts";
 import { toRootFileRef } from "@mdcz/runtime/publication/outputRefs";
 import { FileOrganizer, type ResolvedPublicationLayout } from "@mdcz/runtime/scrape";
@@ -33,7 +34,7 @@ const publishVideo = async (
     members: [{ source, fileId: randomUUID(), layout: plan, assetLayout: { staged: new Map(), retained: new Map() } }],
     downloadedAssets: { downloaded: [], sceneImages: [] },
     actorPhotoPaths: [],
-    nfoNaming: config.download.nfoNaming,
+    naming: { nfoNaming: "both", sceneImages: config.download.downloadSceneImages },
     writeNfo: async () => undefined,
   });
   const commit = () => undefined;
@@ -218,7 +219,7 @@ describe("FileOrganizer filesystem organize", () => {
     await expect(access(join(root, "output", "XYZ-999-CEN", "XYZ-999-CEN.zh.srt"))).rejects.toThrow();
   });
 
-  it("writes in place only into a directory that holds one movie", async () => {
+  it("writes in place with fixed names only into a directory that holds one movie", async () => {
     const organizer = new FileOrganizer();
     const [config, target] = createConfig({ target: { placement: "inPlace", outputPath: "" } });
     const resolveInPlace = async (files: string[], fileInfo: Partial<ReturnType<typeof createFileInfo>> = {}) => {
@@ -230,25 +231,49 @@ describe("FileOrganizer filesystem organize", () => {
         ...fileInfo,
       });
       const plan = organizer.plan(info, createCrawlerData({ number: info.number }), config, target);
-      return { root, layout: organizer.resolveOutputPlan(plan, info.filePath) };
+      const layout = await organizer.resolveOutputPlan(plan, info.filePath);
+      const naming = await resolvePublicationNaming({
+        layouts: [layout],
+        policy: target,
+        config,
+        inventory: new DirectoryInventory(),
+      });
+      return { root, layout, naming };
     };
 
     const single = await resolveInPlace(["source.mp4", "trailer.mp4"], { number: "XYZ-999" });
-    await expect(single.layout).resolves.toMatchObject({
+    expect(single.layout).toMatchObject({
       targetVideoPath: join(single.root, "source.mp4"),
       nfoPath: join(single.root, "source.nfo"),
     });
+    expect(single.naming).toMatchObject({ sharedFolder: false, assetNaming: "fixed", nfoNaming: "both" });
     const multipart = await resolveInPlace(["FC2-123456-1.mp4", "FC2-123456-2.mp4", "FC2-123456-花絮.mp4"], {
       number: "FC2-123456",
       part: { number: 1, suffix: "-1" },
     });
-    await expect(multipart.layout).resolves.toMatchObject({
+    expect(multipart.layout).toMatchObject({
       targetVideoPath: join(multipart.root, "FC2-123456-1.mp4"),
       nfoPath: join(multipart.root, "FC2-123456.nfo"),
     });
-    await expect((await resolveInPlace(["source.mp4", "another.mkv"], { number: "XYZ-999" })).layout).rejects.toThrow(
-      "Source directory contains multiple movies; scrape it into a library that writes metadata to its own folder",
-    );
+    expect(multipart.naming.sharedFolder).toBe(false);
+    // Two names without a readable number are two movies, not one.
+    const shared = await resolveInPlace(["source.mp4", "another.mkv"], { number: "XYZ-999" });
+    expect(shared.layout.nfoPath).toBe(join(shared.root, "source.nfo"));
+    expect(shared.naming).toEqual({
+      sharedFolder: true,
+      assetNaming: "followVideo",
+      nfoNaming: "filename",
+      sceneImages: false,
+    });
+    // One naming per movie: a version alone in its folder follows the version that shares one.
+    await expect(
+      resolvePublicationNaming({
+        layouts: [single.layout, shared.layout],
+        policy: target,
+        config,
+        inventory: new DirectoryInventory(),
+      }),
+    ).resolves.toMatchObject({ sharedFolder: true });
   });
 
   it("allows multipart videos to reuse an existing shared base NFO without hanging", async () => {

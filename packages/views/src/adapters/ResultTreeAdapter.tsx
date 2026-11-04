@@ -5,6 +5,7 @@ import {
   buildScrapeResultGroupActionContext,
   buildScrapeResultGroups,
   type ScrapeResultGroup,
+  type ScrapeResultGroupActionContext,
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, copyText } from "@mdcz/ui";
 import { selectScrapeResults, selectScrapeStatus, useScrapeStore } from "@mdcz/views/state/scrapeStore";
@@ -22,6 +23,12 @@ function getFileNameFromPath(filePath: string) {
   const slash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
+
+/** A published movie is scraped again from its library files: after a move, the run's recorded source is gone. */
+export const rescrapeResult = (port: ScrapeActionPort, context: ScrapeResultGroupActionContext): Promise<void> =>
+  context.selectedItem.status === "success"
+    ? port.rescrape(context.targets)
+    : port.retryFailed([context.selectedItem.fileId]);
 
 function buildMenuContent(
   t: Messages,
@@ -55,8 +62,9 @@ function buildMenuContent(
   };
 
   const handleRetryScrape = async () => {
+    activateNewScrapeTask();
     try {
-      await port.retryFailed([result.fileId]);
+      await rescrapeResult(port, actionContext);
     } catch (error) {
       toast.error(toErrorMessage(error, t.scrape.rescrapeFailed), { id: "scrape-launch" });
     }

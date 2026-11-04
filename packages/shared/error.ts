@@ -30,6 +30,11 @@ const summarizeImpitError = (message: string): string | null => {
   return null;
 };
 
+/** A record, session or profile the caller named does not exist; the API answers 404. */
+export class NotFoundError extends Error {
+  override readonly name = "NotFoundError";
+}
+
 export const DomainErrorCode = {
   CONFIG_VALIDATION: "CONFIG_VALIDATION",
   LIBRARY_TASK_CONFLICT: "LIBRARY_TASK_CONFLICT",
@@ -70,6 +75,24 @@ export const toConfigValidationDomainError = (input: {
     fieldErrors: input.fieldErrors,
   },
 });
+
+type ValidationIssue = { path: PropertyKey[]; message: string; errors?: ValidationIssue[][] };
+
+const describeValidationIssues = (issues: readonly ValidationIssue[], prefix: PropertyKey[] = []): string[] =>
+  issues.flatMap((issue) => {
+    const path = [...prefix, ...issue.path];
+    // A union reports each alternative's issues; the alternative with the fewest is the one the input meant.
+    const closest = issue.errors?.toSorted((left, right) => left.length - right.length)[0];
+    if (closest?.length) return describeValidationIssues(closest, path);
+    return [path.length ? `${path.map(String).join(".")}: ${issue.message}` : issue.message];
+  });
+
+/** A schema validation error as people read it, when `error` is one; its own message is the issues as JSON. */
+export const formatValidationError = (error: unknown): string | undefined => {
+  if (!(error instanceof Error) || error.name !== "ZodError" || !("issues" in error) || !Array.isArray(error.issues))
+    return undefined;
+  return describeValidationIssues(error.issues as ValidationIssue[]).join("; ");
+};
 
 export function formatErrorMessage(message: string): string {
   const normalized = normalizeWhitespace(message)

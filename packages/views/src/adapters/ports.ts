@@ -25,7 +25,8 @@ export interface DetailActionPort extends Partial<FileActions> {
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
-  preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
+  /** Null when the item has no saved cover to crop. */
+  preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession | null>;
   savePosterCrop(item: DetailViewItem, crop: NormalizedCropRegion): Promise<{ posterUrl: string }>;
 }
 
@@ -44,8 +45,8 @@ export interface ScrapeActionTarget {
 export interface ScrapeActionPort extends Partial<FileActions> {
   rerunDirectory(runId: string): Promise<void>;
   cancelActorSync(runId: string): Promise<void>;
-  /** Re-scrapes from one detail page (pinning it), or by number with `unpin` (dropping a pinned page). */
-  rescrape(targets: ScrapeActionTarget[], source: { manualUrl: string } | { unpin: true }): Promise<void>;
+  /** Re-scrapes library files, from one detail page (pinning it), or by number with `unpin` (dropping a pinned page). */
+  rescrape(targets: ScrapeActionTarget[], source?: { manualUrl: string } | { unpin: true }): Promise<void>;
   retryFailed(itemIds?: readonly string[]): Promise<void>;
   removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;
   openNfo(path: string): Promise<void> | void;

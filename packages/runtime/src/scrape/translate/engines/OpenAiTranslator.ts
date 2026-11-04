@@ -43,6 +43,9 @@ export const LLM_METADATA_TRANSLATION_SCHEMA: LlmJsonSchema = {
   schema: z.toJSONSchema(metadataTranslationSchema),
 };
 
+const fileNumberSchema = z.strictObject({ number: z.string().trim().min(1).nullable() });
+const LLM_FILE_NUMBER_SCHEMA: LlmJsonSchema = { name: "file_number", schema: z.toJSONSchema(fileNumberSchema) };
+
 const buildTranslationPrompt = (prompt: string): string => `${prompt.trim()}
 
 ${TRANSLATION_ONLY_INSTRUCTION}`;
@@ -176,6 +179,41 @@ export class OpenAiTranslator {
       throw new Error(`LLM metadata translation returned invalid structured output: ${toErrorMessage(error)}`, {
         cause: error,
       });
+    }
+  }
+
+  /** Reads the number out of a file name whose parsed number no site has; the caller checks the answer against the name. */
+  async readFileNumber(
+    fileName: string,
+    missedNumber: string,
+    config: Configuration,
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    if (
+      !config.translate.llmModelName.trim() ||
+      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
+    ) {
+      throw new Error("AI number reading requires an LLM model and the endpoint's required API key");
+    }
+
+    throwIfAborted(signal);
+
+    const prompt = [
+      "从视频文件名中找出影片番号。文件名常夹杂网址、域名、广告语、画质或字幕标记等无关文字。",
+      `按常规规则识别出的「${missedNumber}」在所有站点都找不到，很可能是误识别。`,
+      "只能使用文件名中实际出现的字母和数字，不要根据片名、演员或记忆推测番号。",
+      "网址和域名（如 www.98t.la、hhd800.com）里的字符不是番号。",
+      "常见番号形如 ABC-123、300MIUM-123、FC2-PPV-1234567、HEYZO-1234、123456_789，字母段与数字段之间用连字符连接。",
+      '只返回一个 JSON 对象，格式为 {"number":"番号"}；找不到番号时返回 {"number":null}。不要返回解释或其他字段。',
+      `文件名：${fileName}`,
+    ].join("\n");
+    const content = await this.requestText(config, prompt, signal, LLM_FILE_NUMBER_SCHEMA);
+    try {
+      // Without a JSON output mode, models may wrap the object in a think block or a code fence.
+      const json = (content ?? "").replace(COMPLETE_LEADING_THINK_PATTERN, "").match(/\{[\s\S]*\}/u)?.[0] ?? "";
+      return fileNumberSchema.parse(JSON.parse(json)).number;
+    } catch (error) {
+      throw new Error(`AI number reading returned invalid output: ${toErrorMessage(error)}`, { cause: error });
     }
   }
 

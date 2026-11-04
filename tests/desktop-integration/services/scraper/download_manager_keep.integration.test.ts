@@ -9,8 +9,9 @@ import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/as
 import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
 import { TrailerAssetDownloader } from "@mdcz/runtime/scrape/download/assets/TrailerAssetDownloader";
 import * as imageUtils from "@mdcz/runtime/scrape/utils/image";
-import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
+import { type Configuration, configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory, type TempDirectoryHarness } from "../../../harness/tempDirectory";
@@ -35,6 +36,24 @@ const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData =>
   website: Website.DMM,
   ...overrides,
 });
+
+/** A movie in a folder of its own, in a library with the default naming. */
+const ownFolderNaming = (config: Configuration): MovieNaming => ({
+  sharedFolder: false,
+  assetNaming: "fixed",
+  nfoNaming: "both",
+  sceneImages: config.download.downloadSceneImages,
+});
+
+type DownloadRest =
+  Parameters<DownloadManager["downloadAll"]> extends [unknown, unknown, unknown, unknown, ...infer R] ? R : never;
+const download = (
+  manager: DownloadManager,
+  outputDir: string,
+  data: CrawlerData,
+  config: Configuration,
+  ...rest: DownloadRest
+) => manager.downloadAll(outputDir, data, config, ownFolderNaming(config), ...rest);
 
 const dl = (overrides: Partial<typeof defaultConfiguration.download> = {}) =>
   createConfig({ download: { ...defaultConfiguration.download, ...overrides } });
@@ -207,7 +226,7 @@ const downloadPrimary = (
   root: string,
   data: Partial<CrawlerData>,
   alternatives: { thumb_url?: string[]; poster_url?: string[] } = {},
-) => manager.downloadAll(root, createCrawlerData(data), primaryOnly(), alternatives);
+) => download(manager, root, createCrawlerData(data), primaryOnly(), alternatives);
 
 const expectPrimary = async (
   root: string,
@@ -240,6 +259,7 @@ describe("DownloadManager keep flags", () => {
     });
     const assets = await downloadCrawlerAssets({
       config,
+      naming: ownFolderNaming(config),
       crawlerData,
       downloadManager: manager,
       fileInfo: {
@@ -269,6 +289,13 @@ describe("DownloadManager keep flags", () => {
   it("names companion assets after the shared movie base when follow-video naming is enabled", async () => {
     const { root, manager } = await createSubject();
     mockValid();
+    const config = dl({
+      keepThumb: false,
+      keepPoster: false,
+      keepFanart: false,
+      keepTrailer: false,
+      downloadSceneImages: false,
+    });
     const assets = await manager.downloadAll(
       root,
       createCrawlerData({
@@ -276,17 +303,8 @@ describe("DownloadManager keep flags", () => {
         poster_url: "https://example.com/poster.jpg",
         trailer_url: "https://example.com/trailer.mp4",
       }),
-      createConfig({
-        naming: { ...defaultConfiguration.naming, assetNamingMode: "followVideo" },
-        download: {
-          ...defaultConfiguration.download,
-          keepThumb: false,
-          keepPoster: false,
-          keepFanart: false,
-          keepTrailer: false,
-          downloadSceneImages: false,
-        },
-      }),
+      config,
+      { ...ownFolderNaming(config), assetNaming: "followVideo" },
       {},
       undefined,
       { movieBaseName: "ABC-123-CEN" },
@@ -314,7 +332,8 @@ describe("DownloadManager keep flags", () => {
       "extrafanart/fanart1.jpg": "scene",
     });
     const stagingDir = await createTempDir();
-    const assets = await manager.downloadAll(
+    const assets = await download(
+      manager,
       stagingDir,
       createCrawlerData({
         thumb_url: "https://example.com/thumb.jpg",
@@ -347,7 +366,8 @@ describe("DownloadManager keep flags", () => {
     ] as const) {
       vi.restoreAllMocks();
       const { root, manager, networkClient } = await createSubject({ "trailer.mp4": "old-trailer" });
-      const assets = await manager.downloadAll(
+      const assets = await download(
+        manager,
         root,
         createCrawlerData({ trailer_url: trailerUrl }),
         dl({
@@ -371,7 +391,8 @@ describe("DownloadManager keep flags", () => {
     const { root, manager, networkClient } = await createSubject({ "fanart.jpg": "fanart" });
     mockValid();
     const sceneUrls = ["https://example.com/scene-001.jpg", "https://example.com/scene-002.jpg"];
-    const assets = await manager.downloadAll(
+    const assets = await download(
+      manager,
       root,
       createCrawlerData({ scene_images: sceneUrls }),
       dl({ downloadThumb: false, downloadPoster: false, downloadTrailer: false }),
@@ -388,7 +409,8 @@ describe("DownloadManager keep flags", () => {
         ? { valid: true, width: 640, height: 360 }
         : { valid: false, width: 0, height: 0, reason: "file_too_small" },
     );
-    const assets = await manager.downloadAll(
+    const assets = await download(
+      manager,
       root,
       createCrawlerData({ scene_images: ["https://example.com/scene-001.jpg"] }),
       sceneOnly(),
@@ -404,7 +426,8 @@ describe("DownloadManager keep flags", () => {
       height: 360,
       format: "webp",
     });
-    const assets = await manager.downloadAll(
+    const assets = await download(
+      manager,
       root,
       createCrawlerData({ scene_images: ["https://example.com/scene-001.jpg"] }),
       sceneOnly({ keepSceneImages: false }),
@@ -528,7 +551,7 @@ describe("DownloadManager keep flags", () => {
       testCase.setup();
       await testCase.assert(
         root,
-        await manager.downloadAll(root, testCase.data, testCase.config, testCase.alternatives),
+        await download(manager, root, testCase.data, testCase.config, testCase.alternatives),
         networkClient,
       );
     }
@@ -577,7 +600,8 @@ describe("DownloadManager keep flags", () => {
       vi.restoreAllMocks();
       const { root, manager, networkClient } = await createSubject({ "thumb.jpg": "old-thumb" });
       mockValid(testCase.valid);
-      const assets = await manager.downloadAll(
+      const assets = await download(
+        manager,
         root,
         createCrawlerData({ thumb_url: "https://example.com/thumb-new.jpg" }),
         dl({
@@ -607,7 +631,8 @@ describe("DownloadManager keep flags", () => {
     });
     const stagingDir = await createTempDir();
     mockValid();
-    const preserved = await manager.downloadAll(
+    const preserved = await download(
+      manager,
       stagingDir,
       createCrawlerData({
         thumb_url: "https://example.com/thumb-new.jpg",
@@ -634,7 +659,8 @@ describe("DownloadManager keep flags", () => {
     const replacement = await createSubject({ "poster.jpg": "old-poster", "fanart.jpg": "old-fanart" });
     const replacementStage = await createTempDir();
     mockValid();
-    const replaced = await replacement.manager.downloadAll(
+    const replaced = await download(
+      replacement.manager,
       replacementStage,
       createCrawlerData({ poster_url: "https://example.com/poster-new.jpg" }),
       dl({ downloadThumb: false, keepPoster: true, downloadSceneImages: false, downloadTrailer: false }),
@@ -657,7 +683,8 @@ describe("DownloadManager keep flags", () => {
       height: 360,
       format: "webp",
     });
-    const assets = await manager.downloadAll(
+    const assets = await download(
+      manager,
       root,
       createCrawlerData({
         thumb_url: "https://example.com/thumb.jpg",
@@ -703,7 +730,8 @@ describe("DownloadManager keep flags", () => {
       poster_url: undefined,
     });
     const onDerivedPosterSource = vi.fn();
-    const assets = await manager.downloadAll(
+    const assets = await download(
+      manager,
       root,
       data,
       dl({
@@ -768,7 +796,7 @@ describe("DownloadManager keep flags", () => {
         downloadSceneImages: false,
         downloadTrailer: false,
       });
-      const assets = await manager.downloadAll(root, data, config, {}, { onDerivedPosterSource });
+      const assets = await download(manager, root, data, config, {}, { onDerivedPosterSource });
       validateSpy.mockRestore();
       const cropRegion = resolveThumbToPosterCropRegion(800, 500);
       expect(assets.poster).toBe(join(root, "poster.jpg"));
@@ -813,7 +841,8 @@ describe("DownloadManager keep flags", () => {
       const { root, manager } = await createSubject();
       await testCase.seed(root);
       const data = createCrawlerData({ thumb_url: "https://example.com/thumb.jpg" });
-      const assets = await manager.downloadAll(
+      const assets = await download(
+        manager,
         root,
         data,
         dl({
@@ -980,10 +1009,7 @@ describe("DownloadManager keep flags", () => {
       vi.restoreAllMocks();
       const { root, manager } = await createSubject({ ...testCase.seed } as Record<string, string>);
       testCase.setup();
-      await testCase.assert(
-        root,
-        await manager.downloadAll(root, testCase.data, testCase.config, {}, testCase.options),
-      );
+      await testCase.assert(root, await download(manager, root, testCase.data, testCase.config, {}, testCase.options));
     }
   });
 
@@ -1015,7 +1041,7 @@ describe("DownloadManager keep flags", () => {
       });
       const config = sequentialSceneSet(3);
       const data = createCrawlerData({ scene_images: testCase.primary.map(url) });
-      const assets = await manager.downloadAll(root, data, config, { scene_images: [testCase.fallback.map(url)] });
+      const assets = await download(manager, root, data, config, { scene_images: [testCase.fallback.map(url)] });
 
       await expectSceneImages(root, assets, testCase.expected.map(url));
       await expect(access(scenePath(root, testCase.expected.length + 1))).rejects.toThrow();
@@ -1031,6 +1057,7 @@ describe("DownloadManager keep flags", () => {
           sidecars: [],
         },
         config,
+        naming: ownFolderNaming(config),
         crawlerData: data,
       });
       expect(assets.sceneImages.filter((path) => !staged.has(relative(root, path)))).toEqual([]);
@@ -1050,7 +1077,8 @@ describe("DownloadManager keep flags", () => {
       return writeDownloadedFile(outputPath, url);
     });
     const config = sequentialSceneSet(1);
-    const firstAssets = await manager.downloadAll(
+    const firstAssets = await download(
+      manager,
       root,
       createCrawlerData({ scene_images: ["https://blocked.example.com/scene-001.jpg"] }),
       config,
@@ -1073,7 +1101,8 @@ describe("DownloadManager keep flags", () => {
       }),
     });
     const before = networkClient.download.mock.calls.length;
-    const secondAssets = await reloadedManager.downloadAll(
+    const secondAssets = await download(
+      reloadedManager,
       secondRoot,
       createCrawlerData({ scene_images: ["https://blocked.example.com/scene-005.jpg"] }),
       config,

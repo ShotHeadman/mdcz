@@ -3,5 +3,4 @@ export const logs = {
   searchLogsPlaceholder: "Search log content…",
   autoScroll: "Auto-scroll",
   noLogs: "No logs.",
-  noMatchingLogs: "No matching logs",
 };

@@ -106,7 +106,7 @@ export class LibraryService {
       state.repositories.library.getAvailabilityEntriesByIds(input.ids),
       this.loadRootMap(),
     ]);
-    return await this.availabilityChecker.entries(records, rootMap);
+    return await this.availabilityChecker.entries(records, rootMap, input.fresh);
   }
 
   async removeRecentAcquisition(id: string): Promise<{ success: true }> {

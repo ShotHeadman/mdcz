@@ -125,7 +125,7 @@ describe("FileScraper .strm support", () => {
     const movieNfoPath = join(root, "movie.nfo");
     await writeFile(nfoPath, "<movie><title>Kept Title</title></movie>", "utf8");
 
-    const config = createConfig({ generateNfo: false, nfoNaming: "both" });
+    const config = createConfig({ generateNfo: false });
     const crawlerData = createCrawlerData();
     const plan: OrganizePlan = {
       outputDir: root,

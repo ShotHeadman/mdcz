@@ -89,18 +89,18 @@ export function SingleFileScraperDetail({
     <div className="space-y-5">
       <div className="grid gap-4 lg:grid-cols-2">
         <Field label={t.tools.mediaDirectory}>
-          <select
-            className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
-            value={rootId}
-            onChange={(event) => selectRoot(event.target.value)}
-          >
-            <option value="">{t.tools.selectMediaDirectory}</option>
-            {roots.map((root) => (
-              <option key={root.id} value={root.id}>
-                {root.displayName}
-              </option>
-            ))}
-          </select>
+          <Select value={rootId} onValueChange={selectRoot}>
+            <SelectTrigger aria-label={t.tools.mediaDirectory}>
+              <SelectValue placeholder={t.tools.selectMediaDirectory} />
+            </SelectTrigger>
+            <SelectContent>
+              {roots.map((root) => (
+                <SelectItem key={root.id} value={root.id}>
+                  {root.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
         <Field label={t.tools.manualUrl}>
           <Input
@@ -110,17 +110,18 @@ export function SingleFileScraperDetail({
           />
         </Field>
         <Field label={t.tools.library}>
-          <select
-            className="h-10 rounded-quiet border border-border bg-surface-low px-3 text-sm text-foreground"
-            value={libraryId}
-            onChange={(event) => setLibraryId(event.target.value)}
-          >
-            {libraries.map((library) => (
-              <option key={library.id} value={library.id}>
-                {library.name}
-              </option>
-            ))}
-          </select>
+          <Select value={libraryId} onValueChange={setLibraryId}>
+            <SelectTrigger aria-label={t.tools.library}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {libraries.map((library) => (
+                <SelectItem key={library.id} value={library.id}>
+                  {library.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
         <div className="flex items-center gap-2 self-end pb-2 text-sm text-muted-foreground">
           <Checkbox id={unpinId} checked={unpin} onCheckedChange={(checked) => setUnpin(checked === true)} />
@@ -153,7 +154,9 @@ export function SingleFileScraperDetail({
             onClick={() => setRelativePath(entry.relativePath)}
           >
             <span className="block truncate font-medium">{entry.name}</span>
-            <span className="mt-1 block truncate font-mono text-xs text-muted-foreground">{entry.relativePath}</span>
+            {entry.relativePath !== entry.name ? (
+              <span className="mt-1 block truncate font-mono text-xs text-muted-foreground">{entry.relativePath}</span>
+            ) : null}
           </button>
         ))}
         {rootId && files.length === 0 && (
@@ -180,7 +183,7 @@ export function SingleFileScraperDetail({
         </Button>
         {workbenchLink}
       </div>
-      <ToolState state={state} />
+      <ToolState state={state} summary={() => t.tools.singleFileScrapeStarted} />
     </div>
   );
 }
@@ -282,7 +285,7 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
         {state?.pending ? t.tools.testing : siteOptions ? t.tools.startTest : t.tools.runCrawlerTest}
       </Button>
       {result ? <CrawlerTesterResult result={result} /> : null}
-      <ToolState state={state} pre />
+      <ToolState state={state} />
     </div>
   );
 }
@@ -420,7 +423,13 @@ export function SymlinkManagerDetail({ state, onBrowseDestDir, onBrowseSourceDir
       >
         {state?.pending ? t.tools.processing : t.tools.createMappingNow}
       </Button>
-      <ToolState state={state} pre />
+      <ToolState
+        state={state}
+        summary={(data) => {
+          const result = data as { total: number; linked: number; copied: number; skipped: number; failed: number };
+          return t.tools.symlinkSummary(result.total, result.linked, result.copied, result.skipped, result.failed);
+        }}
+      />
     </div>
   );
 }
@@ -430,19 +439,18 @@ export function ToolDetailShell({ toolId, children }: { toolId: ToolId; children
   return tool ? <ToolShell tool={tool}>{children}</ToolShell> : null;
 }
 
-function ToolState({ state, pre = false }: { state?: ToolRunState; pre?: boolean }) {
+/** A tool's outcome: its error, a sentence summarizing its data, or the data itself for the crawler tester. */
+function ToolState({ state, summary }: { state?: ToolRunState; summary?: (data: unknown) => string }) {
   if (!state) return null;
   if (state.error) return <p className="text-sm text-destructive">{state.error}</p>;
-  if (state.data && pre) {
+  if (state.data && summary) {
+    return <p className="rounded-quiet bg-surface-low p-3 text-sm text-muted-foreground">{summary(state.data)}</p>;
+  }
+  if (state.data) {
     return (
       <pre className="max-h-[360px] overflow-auto rounded-quiet bg-surface-low p-3 text-xs text-muted-foreground">
         {JSON.stringify(state.data, null, 2)}
       </pre>
-    );
-  }
-  if (state.data) {
-    return (
-      <p className="rounded-quiet bg-surface-low p-3 text-sm text-muted-foreground">{JSON.stringify(state.data)}</p>
     );
   }
   if (state.message) return <p className="text-sm text-muted-foreground">{state.message}</p>;

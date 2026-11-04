@@ -36,6 +36,9 @@ export const scrape = {
   scanningVideoFiles: "Scanning video files",
   stoppingWaitingCurrent: "Stopping, waiting for current file to complete",
   noVideosFound: "No processable videos found",
+  allVideosInLibrary: "All videos in this directory are already in the library",
+  allVideosInLibraryHint:
+    "Folder scrapes skip already imported movies. To rescrape, do so from the library or manually check them under Preview files.",
   taskStopped: "Task stopped",
   taskInterrupted: "Task interrupted",
   preparingTask: "Preparing task",
@@ -74,5 +77,6 @@ export const scrape = {
   saveNfoFailed: (error: string) => `Failed to save NFO: ${error}`,
   discardNfoChanges: "Discard unsaved NFO changes?",
   discardPosterChanges: "Discard unsaved thumbnail changes?",
+  coverSaved: "Cover saved",
   saveCoverFailed: (error: string) => `Failed to save thumbnail: ${error}`,
 };

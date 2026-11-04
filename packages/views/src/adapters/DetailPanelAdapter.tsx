@@ -152,7 +152,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
       .then((session) => {
         if (cancelled) return;
         setPosterCropSession(session);
-        setPosterCrop(session.initialCrop);
+        setPosterCrop(session?.initialCrop ?? null);
       })
       .catch(() => undefined);
     return () => {
@@ -257,11 +257,12 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
       const result = await port.savePosterCrop(item, posterCrop);
       setPosterOverride(result.posterUrl);
       setPosterEditorOpen(false);
+      toast.success(getT().scrape.coverSaved, { id: "poster-crop" });
       void port
         .preparePosterCrop(item)
         .then((refreshed) => {
           setPosterCropSession(refreshed);
-          setPosterCrop(refreshed.initialCrop);
+          setPosterCrop(refreshed?.initialCrop ?? null);
         })
         .catch(() => undefined);
     } catch (error) {

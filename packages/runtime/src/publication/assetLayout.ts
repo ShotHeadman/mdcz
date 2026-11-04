@@ -1,6 +1,7 @@
-import { basename, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
+import { type MovieNaming, type NamingPolicy, resolveMovieNaming } from "@mdcz/shared/mediaLibrary";
 import type { CrawlerData, DiscoveredAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { buildSceneImageFileName, SCENE_IMAGE_FILE_PATTERN } from "../scrape/download/assets/helpers";
@@ -12,25 +13,46 @@ export interface PublicationAssetLayout {
   retained: ReadonlyMap<string, string>;
 }
 
+/**
+ * One naming per movie: when any of its metadata folders holds another movie, every folder gets the shared naming.
+ * Per-video names are valid in a folder of its own too, so one name set serves the whole group.
+ */
+export const resolvePublicationNaming = async (input: {
+  layouts: readonly Pick<ResolvedPublicationLayout, "metadataDir" | "sourceVideoPath">[];
+  policy?: NamingPolicy;
+  config: Configuration;
+  inventory: DirectoryInventory;
+}): Promise<MovieNaming> => {
+  const holdsOtherMovies = await Promise.all(
+    input.layouts.map((layout) =>
+      input.inventory.holdsOtherMovies(layout.metadataDir, layout.sourceVideoPath, input.config.scrape),
+    ),
+  );
+  return resolveMovieNaming({
+    policy: input.policy,
+    holdsOtherMovies: holdsOtherMovies.some(Boolean),
+    downloadSceneImages: input.config.download.downloadSceneImages,
+  });
+};
+
 export const resolvePublicationAssetLayout = async (input: {
   layout: ResolvedPublicationLayout;
   config: Configuration;
+  naming: MovieNaming;
   crawlerData?: CrawlerData;
   movieBaseName?: string;
   existingAssets?: DiscoveredAssets;
   assetDecisions?: MaintenanceAssetDecisions;
   inventory?: DirectoryInventory;
 }): Promise<PublicationAssetLayout> => {
-  const { layout, config } = input;
-  const names = buildMovieAssetFileNames(
-    input.movieBaseName ?? basename(layout.nfoPath, ".nfo"),
-    config.naming.assetNamingMode,
-  );
+  const { layout, config, naming } = input;
+  const names = buildMovieAssetFileNames(input.movieBaseName ?? basename(layout.nfoPath, ".nfo"), naming.assetNaming);
   const staged = new Map<string, string>();
   const retained = new Map<string, string>();
   const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"] as const;
 
   for (const [kind, value] of Object.entries(input.existingAssets ?? {})) {
+    if (kind === "sceneImages" && !naming.sceneImages) continue;
     for (const source of Array.isArray(value) ? value : value ? [value] : []) {
       const name = relative(layout.existingMetadataDir, source);
       const collection = kind === "sceneImages" || kind === "actorPhotos";
@@ -39,7 +61,14 @@ export const resolvePublicationAssetLayout = async (input: {
           ? name
           : join(basename(parse(source).dir), basename(source))
         : `${parse(names[kind as keyof typeof names]).name}${parse(source).ext}`;
-      retained.set(source, layout.mode === "move" ? join(layout.metadataDir, targetName) : source);
+      // A fixed name such as poster.jpg in a folder shared with other movies does not say whose it is.
+      const target =
+        layout.mode === "move"
+          ? join(layout.metadataDir, targetName)
+          : naming.sharedFolder && !collection
+            ? join(dirname(source), targetName)
+            : source;
+      retained.set(source, target);
     }
   }
 
@@ -47,7 +76,10 @@ export const resolvePublicationAssetLayout = async (input: {
 
   const scanDirectoryAssets = async (directory: string, isSourceDir: boolean) => {
     const sceneFolder = join(directory, config.paths.sceneImagesFolder);
-    for (const entry of await inventory.files(sceneFolder, (name) => SCENE_IMAGE_FILE_PATTERN.test(name))) {
+    const sceneEntries = naming.sceneImages
+      ? await inventory.files(sceneFolder, (name) => SCENE_IMAGE_FILE_PATTERN.test(name))
+      : [];
+    for (const entry of sceneEntries) {
       const source = join(sceneFolder, entry.name);
       if (!retained.has(source)) {
         const target =
@@ -121,7 +153,7 @@ export const resolvePublicationAssetLayout = async (input: {
     }
   }
 
-  if (config.download.downloadSceneImages && input.assetDecisions?.sceneImages !== "preserve") {
+  if (naming.sceneImages && input.assetDecisions?.sceneImages !== "preserve") {
     // The downloader can fall back to an alternative set that is longer than the aggregated one, up to the same cap.
     for (let index = 0; index < config.aggregation.behavior.maxSceneImages; index++) {
       for (const ext of imageExtensions) {

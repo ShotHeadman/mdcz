@@ -37,6 +37,7 @@ const baseSettingsServices = {
   listCrawlerSites: vi.fn(async () => ({ sites: [] })),
   openWatermarkDirectory: vi.fn(async () => undefined),
   probeSiteConnectivity: vi.fn(async () => ({ ok: true, latencyMs: 0, status: 200 })),
+  previewPosterBadges: vi.fn(async () => "data:image/png;base64,"),
   relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
   saveConfig: vi.fn(async () => undefined),
@@ -385,12 +386,13 @@ test("settings sections expose public labels and the library template notice", a
   await expect.element(paths.getByText("路径", { exact: true })).toBeVisible();
 
   const naming = await render(
-    <FormHarness values={{ naming: { assetNamingMode: "fixed" } }}>
+    <FormHarness values={{ naming: { nfoTitleTemplate: "{title}" } }}>
       <NamingSection />
     </FormHarness>,
   );
-  // Folder and file templates are per library now, so the naming section points there instead.
+  // Templates and file naming are per library now, so the naming section points there instead.
   await expect.element(naming.getByText("文件夹与文件名模板按库设置", { exact: false })).toBeVisible();
+  await expect.element(naming.getByText("附属文件命名")).not.toBeInTheDocument();
 
   const advancedDownload = await render(
     <FormHarness values={{ download: { downloadPoster: true, sceneImageConcurrency: 4 } }}>
@@ -417,7 +419,6 @@ test("NFO settings render the configured enum list only while NFO generation is 
         download: {
           generateNfo: true,
           nfoIgnoreFields: ["num", "director", "trailer"],
-          nfoNaming: "both",
         },
       }}
     >
@@ -456,6 +457,7 @@ test("poster badge controls follow download and badge visibility gates", async (
   await expect.element(badgeOff.getByText("角标类型", { exact: true })).not.toBeInTheDocument();
   await expect.element(badgeOff.getByText("角标位置", { exact: true })).not.toBeInTheDocument();
   await expect.element(badgeOff.getByText("覆盖角标图片", { exact: true })).not.toBeInTheDocument();
+  await expect.element(badgeOff.getByText("角标预览", { exact: true })).not.toBeInTheDocument();
 
   const badgeOn = await render(
     <FormHarness
@@ -473,6 +475,10 @@ test("poster badge controls follow download and badge visibility gates", async (
   );
   await expect.element(badgeOn.getByText("角标类型", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("角标位置", { exact: true })).toBeVisible();
+  await expect.element(badgeOn.getByText("角标大小 (%)", { exact: true })).toBeVisible();
+  await expect.element(badgeOn.getByText("角标不透明度 (%)", { exact: true })).toBeVisible();
+  await expect.element(badgeOn.getByText("角标边距 (%)", { exact: true })).toBeVisible();
+  await expect.element(badgeOn.getByText("角标预览", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("覆盖角标图片", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("中字")).toBeVisible();
   await expect.element(badgeOn.getByText("流出")).toBeVisible();

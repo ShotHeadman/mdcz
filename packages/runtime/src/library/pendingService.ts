@@ -136,9 +136,9 @@ export class PendingService {
         if (item.kind !== "uncensored" || !item.movieId)
           throw new Error("This entry has no uncensored type to confirm");
         const entry = await repositories.library.getEntryById(item.movieId);
-        const library = item.libraryId ? toMediaLibrary(repositories.mediaLibraries.get(item.libraryId)) : undefined;
+        const record = item.libraryId ? repositories.mediaLibraries.get(item.libraryId) : undefined;
         // A library that placed the files reorganizes them under the new name; others only rewrite the NFO in place.
-        const reorganize = library && ["move", "hardlink", "copy"].includes(library.placement);
+        const reorganize = record && ["move", "hardlink", "copy"].includes(toMediaLibrary(record).placement);
         const roots = await this.deps.mediaRoots.listRoots();
         const root = roots.find((candidate) => candidate.id === entry.files[0]?.rootId);
         if (!root) throw new Error("Movie is missing valid media files");
@@ -148,13 +148,11 @@ export class PendingService {
         const result = await this.deps.maintenanceRuntime.applyLibraryEntry({
           root,
           presetId: reorganize ? "local_organize" : "remerge",
-          target:
-            reorganize && item.libraryId
-              ? toPublicationTarget(repositories.mediaLibraries.get(item.libraryId))
-              : undefined,
+          target: record && toPublicationTarget(record),
           entry,
           localState: { uncensoredChoice: input.choice },
           publication: {
+            library: repositories.library,
             roots,
             identity: {
               movieId: entry.id,

@@ -11,8 +11,20 @@ export const settingsFields: Messages["settingsFields"] = {
     download: { label: "下载选项" },
     mediaServer: { label: "媒体服务器", aliases: ["媒体服务器", "Jellyfin", "Emby", "人物", "演员"] },
     automation: {
-      label: "集成",
-      aliases: ["集成", "自动化", "下载器", "qBittorrent", "CloudDrive", "API Key", "通知", "推送"],
+      label: "集成与安全",
+      aliases: [
+        "集成",
+        "安全",
+        "密码",
+        "管理员密码",
+        "自动化",
+        "下载器",
+        "qBittorrent",
+        "CloudDrive",
+        "API Key",
+        "通知",
+        "推送",
+      ],
     },
     system: { label: "界面与快捷键", aliases: ["系统", "界面", "快捷键"] },
   },
@@ -48,6 +60,11 @@ export const settingsFields: Messages["settingsFields"] = {
     "scrape.filenameIgnoreTokens": {
       label: "番号识别忽略词",
       description: "番号识别前忽略这些文字；仅影响识别，不修改文件名。支持 Enter、逗号或空格分割添加。",
+    },
+    "scrape.aiNumberFallback": {
+      label: "AI 兜底识别番号",
+      description: "所有站点均未找到番号时，由翻译配置的 LLM 从文件名重新提取（仅采纳文件名中真实包含的番号）。",
+      aliases: ["ai", "llm"],
     },
     "scrape.filenameBlacklistTokens": {
       label: "自动扫描黑名单词",
@@ -210,13 +227,31 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "多个角标会按顺序堆叠在同一个角落。",
       aliases: ["角标位置"],
     },
+    "download.tagBadgeSizePercent": {
+      label: "角标大小 (%)",
+      description: "相对默认大小（海报短边的 8%）的比例。",
+      aliases: ["角标大小", "角标尺寸", "badge size"],
+    },
+    "download.tagBadgeOpacity": {
+      label: "角标不透明度 (%)",
+      description: "100 为完全不透明，数值越小角标越透明。",
+      aliases: ["角标透明度", "透明度", "opacity"],
+    },
+    "download.tagBadgeInsetPercent": {
+      label: "角标边距 (%)",
+      description: "角标与所在角落的距离，按海报短边的百分比计算；媒体库圆角海报会遮挡贴边的角标，可用此项避开。",
+      aliases: ["角标边距", "角标偏移", "圆角", "margin"],
+    },
     "download.tagBadgeImageOverrides": {
       label: "覆盖角标图片",
       description: "开启后，使用用户数据目录 watermark 文件夹中的匹配图片替换内建角标。",
       aliases: ["覆盖角标", "角标图片", "水印"],
     },
     "download.downloadFanart": { label: "下载背景图" },
-    "download.downloadSceneImages": { label: "下载剧照" },
+    "download.downloadSceneImages": {
+      label: "下载剧照",
+      description: "剧照存放在 extrafanart 子目录中；多部影片共用同一文件夹时自动跳过（防止混淆）。",
+    },
     "download.downloadTrailer": { label: "下载预告片" },
     "download.sceneImageConcurrency": {
       label: "剧照下载并发",
@@ -224,7 +259,6 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["剧照并发"],
     },
     "download.generateNfo": { label: "生成 NFO" },
-    "download.nfoNaming": { label: "NFO 文件命名" },
     "download.nfoIgnoreFields": {
       label: "NFO 忽略字段",
       description: "选择不写入 NFO 的可选字段；标题、番号、演员等核心字段始终保留。空白表示写入全部可选字段。",
@@ -265,7 +299,6 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "部分站点把演员名附在标题末尾（如「…… 三上悠亜」）；开启后按本片演员名单移除。",
       aliases: ["标题演员", "女优名"],
     },
-    "naming.assetNamingMode": { label: "附属文件命名", description: "海报、横版缩略图、背景图与预告片的文件名规则。" },
     "naming.nfoTitleTemplate": {
       label: "NFO 标题模板",
       description: "NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}",

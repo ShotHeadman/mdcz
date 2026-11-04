@@ -23,9 +23,9 @@ import {
   selectScrapeTaskId,
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
-import { api, getLibraryAssetSrc } from "../client";
+import { api, getLibraryAssetSrc, markLibraryAssetChanged } from "../client";
 import { desktop } from "../desktop";
-import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
+import { showScrapeRun } from "../taskHydration";
 
 const fileActions: Partial<FileActions> = desktop
   ? { play: desktop.playMedia, openFolder: desktop.showItemInFolder }
@@ -174,6 +174,7 @@ export const createWebDetailPort = (): DetailActionPort => ({
   preparePosterCrop: async (item) => {
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
     const response = await api.scrape.posterCropSession(item.fileRef);
+    if (!response) return null;
     return {
       ...response,
       sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
@@ -182,9 +183,8 @@ export const createWebDetailPort = (): DetailActionPort => ({
   savePosterCrop: async (item, crop) => {
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
     const response = await api.scrape.posterCropSave({ ...item.fileRef, crop });
-    const posterUrl = new URL(getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }));
-    if (response.revision) posterUrl.searchParams.set("revision", response.revision);
-    return { posterUrl: posterUrl.toString() };
+    markLibraryAssetChanged(response.rootId, response.targetRelativePath, response.revision ?? String(Date.now()));
+    return { posterUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }) };
   },
 });
 
@@ -195,14 +195,14 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
     if (!refs[0]) throw new Error(getT().web.selectFileToScrape);
     const libraryId = selectScrapeSnapshot(useScrapeStore.getState())?.task.libraryId;
     if (!libraryId) throw new Error(getT().workbench.noLibraries);
-    await runScrapeRequest(async () =>
-      api.scrape.start({ executionMode: refs.length === 1 ? "single" : "batch", libraryId, refs, ...source }),
+    await showScrapeRun(
+      await runScrapeRequest(async () =>
+        api.scrape.start({ executionMode: refs.length === 1 ? "single" : "batch", libraryId, refs, ...source }),
+      ),
     );
-    requestScrapeLiveRunsRefresh();
   },
   rerunDirectory: async (taskId) => {
-    await api.scrape.rerunDirectory({ taskId });
-    requestScrapeLiveRunsRefresh();
+    await showScrapeRun(await api.scrape.rerunDirectory({ taskId }));
   },
   cancelActorSync: async (runId) => {
     await api.scrape.cancelActorSync({ runId });
@@ -210,11 +210,12 @@ export const createWebScrapeActionPort = (): ScrapeActionPort => ({
   retryFailed: async (itemIds) => {
     const runId = selectScrapeTaskId(useScrapeStore.getState());
     if (!runId) throw new Error(getT().web.noScrapeTaskToRetry);
-    await runScrapeRequest(
-      async () => api.scrape.retry({ taskId: runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
-      runId,
+    await showScrapeRun(
+      await runScrapeRequest(
+        async () => api.scrape.retry({ taskId: runId, ...(itemIds ? { itemIds: [...itemIds] } : {}) }),
+        runId,
+      ),
     );
-    requestScrapeLiveRunsRefresh();
   },
   removeRecord: async (targets) => {
     for (const target of targets) {

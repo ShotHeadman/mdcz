@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import {
   type MediaRoot,
   readRootFile,
@@ -6,6 +7,7 @@ import {
   storageErrorCodes,
   toRootRelativePath,
 } from "@mdcz/media-store";
+import { resolveFileNaming } from "@mdcz/runtime/library";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   getNfoReadCandidates,
@@ -55,11 +57,22 @@ export class ServerNfoAdapter {
     private readonly persistence: ServerPersistenceService,
   ) {}
 
+  private async nfoNaming(root: MediaRoot, input: Pick<NfoReadInput, "relativePath" | "videoRelativePath">) {
+    const nfoPath = resolveRootRelativePath(root, input.relativePath);
+    const naming = await resolveFileNaming({
+      libraries: (await this.persistence.getState()).repositories.mediaLibraries.list(),
+      videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : nfoPath,
+      metadataDir: dirname(nfoPath),
+      configuration: await this.config.get(),
+    });
+    return naming.nfoNaming;
+  }
+
   async read(input: NfoReadInput): Promise<NfoReadResponse> {
-    const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
+    const root = await this.mediaRoots.get(input.rootId);
     const candidates = getNfoReadCandidates(
       input.relativePath,
-      configuration.download.nfoNaming,
+      await this.nfoNaming(root, input),
       input.videoRelativePath,
     );
     const existing = await readExistingNfo(root, candidates);
@@ -81,6 +94,7 @@ export class ServerNfoAdapter {
       videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : undefined,
       data: input.data,
       configuration,
+      nfoNaming: await this.nfoNaming(root, input),
       nfoGenerator: this.nfoGenerator,
       publication: {
         roots: await this.mediaRoots.listRoots(),
@@ -112,12 +126,25 @@ export class ServerPosterCropAdapter {
     const context = await registeredPosterCropContext(videoPath, state.repositories.library, (id) =>
       this.mediaRoots.get(id),
     );
-    return { ...context, root: context.root ?? sourceRoot };
+    return context && { ...context, root: context.root ?? sourceRoot };
   }
 
-  async session(video: RootFileRef) {
-    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(video), this.config.get()]);
-    const session = await this.posterCropService.prepare(videoPath, configuration.naming.assetNamingMode, assets);
+  private async assetNaming(videoPath: string, assets: { thumb?: string; poster?: string }) {
+    const naming = await resolveFileNaming({
+      libraries: (await this.persistence.getState()).repositories.mediaLibraries.list(),
+      videoPath,
+      metadataDir: dirname(assets.poster ?? assets.thumb ?? videoPath),
+      configuration: await this.config.get(),
+    });
+    return naming.assetNaming;
+  }
+
+  /** Null when there is no saved cover to crop: the video is not in the library, or its movie has no local image. */
+  async session(video: RootFileRef): Promise<PosterCropSessionResponse | null> {
+    const context = await this.context(video);
+    if (!context || (!context.assets.thumb && !context.assets.poster)) return null;
+    const { root, videoPath, assets } = context;
+    const session = await this.posterCropService.prepare(videoPath, await this.assetNaming(videoPath, assets), assets);
     return {
       rootId: root.id,
       sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
@@ -129,14 +156,13 @@ export class ServerPosterCropAdapter {
   }
 
   async save(input: PosterCropSaveInput) {
-    const [{ root, videoPath, assets, movieId }, configuration] = await Promise.all([
-      this.context(input),
-      this.config.get(),
-    ]);
+    const context = await this.context(input);
+    if (!context) throw new Error("Current video is not in library; cannot retrieve saved cover");
+    const { root, videoPath, assets, movieId } = context;
     const state = await this.persistence.getState();
     const result = await this.posterCropService.save(
       videoPath,
-      configuration.naming.assetNamingMode,
+      await this.assetNaming(videoPath, assets),
       input.crop,
       assets,
       {

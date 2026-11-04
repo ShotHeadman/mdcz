@@ -1,13 +1,20 @@
-import { PersistenceError, persistenceErrorCodes } from "@mdcz/persistence";
 import { LibraryTaskConflictError } from "@mdcz/runtime/tasks";
-import { DomainErrorCode, type DomainErrorShape, type LibraryTaskConflictDomainError } from "@mdcz/shared/error";
+import {
+  DomainErrorCode,
+  type DomainErrorShape,
+  formatValidationError,
+  type LibraryTaskConflictDomainError,
+  NotFoundError,
+} from "@mdcz/shared/error";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ServerServices } from "../services";
+import { isApiKey } from "../services/authService";
 import { ServerConfigValidationError } from "../services/configService";
 
 export interface RouterContext {
   services: ServerServices;
   token?: string;
+  clientAddress?: string;
 }
 
 export const t = initTRPC.context<RouterContext>().create({
@@ -23,7 +30,9 @@ export const t = initTRPC.context<RouterContext>().create({
         details: { running: error.cause.running },
       } satisfies LibraryTaskConflictDomainError;
     }
-    return { ...shape, data: { ...shape.data, domainError } };
+    // Input validation fails with the schema's issue list as JSON; people read the issues.
+    const message = (error.code === "BAD_REQUEST" && formatValidationError(error.cause)) || shape.message;
+    return { ...shape, message, data: { ...shape.data, domainError } };
   },
 });
 
@@ -38,11 +47,18 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   }
   const result = await next({ ctx });
   const cause = result.ok ? undefined : result.error.cause;
-  if (cause instanceof PersistenceError && cause.code === persistenceErrorCodes.NotFound)
-    throw new TRPCError({ code: "NOT_FOUND", message: cause.message, cause });
+  if (cause instanceof NotFoundError) throw new TRPCError({ code: "NOT_FOUND", message: cause.message, cause });
   if (cause instanceof LibraryTaskConflictError)
     throw new TRPCError({ code: "CONFLICT", message: cause.message, cause });
   return result;
+});
+
+// A key that could mint keys or change the password would keep its holder in after the key is revoked.
+export const sessionProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  if (isApiKey(ctx.token)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "API keys cannot manage API keys or the password" });
+  }
+  return next({ ctx });
 });
 
 export const mapConfigError = (error: unknown): never => {

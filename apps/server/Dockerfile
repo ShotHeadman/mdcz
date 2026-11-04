@@ -44,7 +44,7 @@ LABEL org.opencontainers.image.version=$MDCZ_RELEASE_VERSION \
       org.opencontainers.image.revision=$MDCZ_REVISION
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends fonts-wqy-zenhei gosu \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app /app
 COPY docker/server-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

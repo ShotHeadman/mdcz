@@ -24,9 +24,11 @@ const sections: Record<FieldAnchor, SectionText> = {
   download: { label: "Downloads", aliases: ["download", "asset", "poster", "fanart", "nfo"] },
   mediaServer: { label: "Media servers", aliases: ["media server", "jellyfin", "emby", "person", "actor"] },
   automation: {
-    label: "Integrations",
+    label: "Integrations & security",
     aliases: [
       "integration",
+      "security",
+      "password",
       "automation",
       "downloader",
       "qbittorrent",
@@ -111,6 +113,12 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Code detection ignore words",
     description:
       "Ignored before detecting the movie code; only affects detection and never renames files. Add with Enter, comma or space.",
+  },
+  "scrape.aiNumberFallback": {
+    label: "AI number fallback",
+    description:
+      "When no site matches the number, asks the Translation LLM to re-extract it from the filename (uses only numbers actually in the filename).",
+    aliases: ["ai", "llm"],
   },
   "scrape.filenameBlacklistTokens": {
     label: "Auto-scan blacklist words",
@@ -286,6 +294,22 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Multiple badges are stacked in order in the same corner.",
     aliases: ["badge position", "corner", "top left", "top right", "bottom left", "bottom right"],
   },
+  "download.tagBadgeSizePercent": {
+    label: "Badge size (%)",
+    description: "Relative to the default size (8% of the poster's short side).",
+    aliases: ["badge size", "badge scale"],
+  },
+  "download.tagBadgeOpacity": {
+    label: "Badge opacity (%)",
+    description: "100 is fully opaque; lower values make badges more transparent.",
+    aliases: ["badge opacity", "transparency"],
+  },
+  "download.tagBadgeInsetPercent": {
+    label: "Badge margin (%)",
+    description:
+      "Distance from the chosen corner, as a percentage of the poster's short side. Media servers that round poster corners clip badges placed flush in the corner; a margin keeps them clear.",
+    aliases: ["badge margin", "badge inset", "rounded corners", "offset"],
+  },
   "download.tagBadgeImageOverrides": {
     label: "Custom badge images",
     description:
@@ -293,7 +317,11 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["watermark", "badge image", "custom badge", "poster badge image"],
   },
   "download.downloadFanart": { label: "Download fanart" },
-  "download.downloadSceneImages": { label: "Download scene images" },
+  "download.downloadSceneImages": {
+    label: "Download scene images",
+    description:
+      "Scene images are saved into the extrafanart subfolder; skipped when multiple movies share a folder (prevents mixing).",
+  },
   "download.downloadTrailer": { label: "Download trailer" },
   "download.sceneImageConcurrency": {
     label: "Scene image download concurrency",
@@ -301,7 +329,6 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["scene images", "download concurrency", "parallel"],
   },
   "download.generateNfo": { label: "Generate NFO", aliases: ["nfo", "metadata file"] },
-  "download.nfoNaming": { label: "NFO file naming", aliases: ["nfo", "naming", "metadata file"] },
   "download.nfoIgnoreFields": {
     label: "Excluded NFO fields",
     description:
@@ -346,10 +373,6 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       'Some sites append actor names to the title (e.g. "… Yua Mikami"); when enabled they are removed based on the movie\'s actor list.',
     aliases: ["title actors", "actress name"],
-  },
-  "naming.assetNamingMode": {
-    label: "Asset file naming",
-    description: "File name rule for posters, thumbnails, fanart and trailers.",
   },
   "naming.nfoTitleTemplate": {
     label: "NFO title template",

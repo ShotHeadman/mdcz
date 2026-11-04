@@ -11,10 +11,10 @@ const keyFor = (root: Root, relativePath: string): string => `${root.hostPath}\0
 export class LibraryAvailabilityChecker {
   private readonly cache = new Map<string, { available: boolean; error: string | null; expiresAt: number }>();
 
-  async check(root: Root, relativePath: string): Promise<boolean> {
+  async check(root: Root, relativePath: string, fresh = false): Promise<boolean> {
     const key = keyFor(root, relativePath);
     const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.available;
+    if (!fresh && cached && cached.expiresAt > Date.now()) return cached.available;
     let available = false;
     let error: string | null = null;
     try {
@@ -44,6 +44,7 @@ export class LibraryAvailabilityChecker {
   async entries(
     records: readonly AvailabilityEntry[],
     roots: ReadonlyMap<string, Root>,
+    fresh = false,
   ): Promise<LibraryAvailabilityResponse> {
     const paths = new Map<string, { root: Root; relativePath: string }>();
     for (const entry of records) {
@@ -58,7 +59,7 @@ export class LibraryAvailabilityChecker {
       Array.from({ length: Math.min(8, pending.length) }, async () => {
         while (next < pending.length) {
           const path = pending[next++];
-          if (path) await this.check(path[1].root, path[1].relativePath);
+          if (path) await this.check(path[1].root, path[1].relativePath, fresh);
         }
       }),
     );

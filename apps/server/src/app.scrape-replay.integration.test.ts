@@ -209,7 +209,19 @@ const runScenario = async ({
   const results = [first.items];
   if (rescrape) {
     for (const [path, content] of Object.entries(rescrape)) await writeFile(join(root, path), content);
-    results.push((await scrapeDirectory(targetDir)).items);
+    // Folder scrapes skip library movies, so a rescrape selects the published files.
+    const published = await (await services.persistence.getState()).repositories.library.listEntries();
+    results.push(
+      (
+        await scrape("start", {
+          executionMode: "batch",
+          refs: published.flatMap((entry) =>
+            entry.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+          ),
+          libraryId,
+        })
+      ).items,
+    );
   }
   if (rerunConfig) {
     await services.config.update(rerunConfig);

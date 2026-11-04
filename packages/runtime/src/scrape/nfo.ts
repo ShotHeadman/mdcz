@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
+import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
@@ -28,7 +29,6 @@ const parser = new XMLParser({
 
 const OUTLINE_MAX_CHARS = 200;
 const JELLYFIN_MOVIE_NFO_NAME = "movie.nfo";
-export type NfoNamingMode = "both" | "movie" | "filename";
 
 type NfoFileWriter = (path: string, content: string) => Promise<void>;
 type PathExists = (path: string) => Promise<boolean>;

@@ -40,13 +40,6 @@ const isSameOrSubPath = (candidate: string, parent: string): boolean => {
   return rel.length === 0 || (!rel.startsWith("..") && !isAbsolute(rel));
 };
 
-const shouldSkipFileName = (fileName: string): boolean => {
-  const lower = fileName.toLowerCase();
-  return (
-    lower.startsWith(".") || lower.includes("trailer.") || lower.includes("trailers.") || lower.includes("theme_video.")
-  );
-};
-
 const listAllFiles = async (sourceDir: string, excludedDir?: string, recursive = true): Promise<string[]> => {
   const files: string[] = [];
   const stack: string[] = [sourceDir];
@@ -146,7 +139,8 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
 
   for (const sourcePath of await listAllFiles(sourceDir, destDir)) {
     const fileName = sourcePath.slice(Math.max(sourcePath.lastIndexOf("/"), sourcePath.lastIndexOf("\\")) + 1);
-    if (shouldSkipFileName(fileName)) continue;
+    // Hidden files are system clutter; trailers stay, since the movie's NFO points at them.
+    if (fileName.startsWith(".")) continue;
 
     const extension = normalizeExtension(extname(fileName));
     if (!DEFAULT_MEDIA_EXTENSIONS.has(extension) && !copyExtensions.has(extension)) continue;

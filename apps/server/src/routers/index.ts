@@ -20,6 +20,8 @@ import {
   activityListInputSchema,
   actorSyncCancelInputSchema,
   apiKeyCreateInputSchema,
+  appPreviewPosterBadgesInputSchema,
+  authChangePasswordInputSchema,
   authLoginInputSchema,
   cancelCandidatesInputSchema,
   configImportInputSchema,
@@ -62,7 +64,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
 import { decorateTaskLog } from "../services/runtimeLogService";
-import { mapConfigError, protectedProcedure, setupProcedure, t } from "./context";
+import { mapConfigError, protectedProcedure, sessionProcedure, setupProcedure, t } from "./context";
 
 const rejectInvalidLibrary = (error: unknown): never => {
   if (error instanceof MediaLibrarySettingsError || error instanceof MediaDirectoryUnavailableError)
@@ -79,8 +81,11 @@ export const appRouter = t.router({
     }),
     login: t.procedure
       .input(authLoginInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.auth.login(input.password)),
-    logout: t.procedure.mutation(async ({ ctx }) => await ctx.services.auth.logout(ctx.token)),
+      .mutation(async ({ ctx, input }) => await ctx.services.auth.login(input.password, ctx.clientAddress)),
+    changePassword: sessionProcedure.input(authChangePasswordInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.auth.changePassword(input, ctx.token, ctx.clientAddress);
+      return { success: true as const };
+    }),
     status: t.procedure.query(async ({ ctx }) => {
       return await ctx.services.auth.status(ctx.token);
     }),
@@ -89,6 +94,9 @@ export const appRouter = t.router({
     ensureWatermarkDirectory: protectedProcedure.mutation(
       async ({ ctx }) => await ctx.services.runtimeActions.ensureWatermarkDirectory(),
     ),
+    previewPosterBadges: protectedProcedure
+      .input(appPreviewPosterBadgesInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.runtimeActions.previewPosterBadges(input)),
   }),
   browser: t.router({
     list: protectedProcedure
@@ -298,11 +306,11 @@ export const appRouter = t.router({
     }),
   }),
   apiKeys: t.router({
-    list: protectedProcedure.query(async ({ ctx }) => await ctx.services.auth.listApiKeys()),
-    create: protectedProcedure
+    list: sessionProcedure.query(async ({ ctx }) => await ctx.services.auth.listApiKeys()),
+    create: sessionProcedure
       .input(apiKeyCreateInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.auth.createApiKey(input)),
-    delete: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
+    delete: sessionProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
       await ctx.services.auth.deleteApiKey(input.id);
       return { success: true as const };
     }),

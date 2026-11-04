@@ -1,5 +1,25 @@
-import { expandScrapeRetryItems, extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
+import {
+  acceptAiNumber,
+  expandScrapeRetryItems,
+  extractNumber,
+  parseFileInfo,
+} from "@mdcz/runtime/scrape/utils/number";
 import { describe, expect, it } from "vitest";
+
+describe("acceptAiNumber", () => {
+  it.each([
+    { name: "www.98T.la@MEYD-911-U", missed: "WWW-98T", answer: "MEYD-911", expected: "MEYD-911" },
+    { name: "hd1080-mide00123hhb", missed: "HD-1080", answer: "MIDE-123", expected: "MIDE-123" },
+    { name: "www.98T.la@FC2-PPV-1234567", missed: "WWW-98T", answer: "FC2-PPV-1234567", expected: "FC2-1234567" },
+    { name: "ＭＥＹＤ－９１１ 新作", missed: "X-1", answer: "meyd-911", expected: "MEYD-911" },
+    { name: "三上悠亜 新作 4K60fps", missed: "X-1", answer: "SSIS-123", expected: undefined },
+    { name: "www.98T.la@ABP-1234", missed: "WWW-98T", answer: "ABP-123", expected: undefined },
+    { name: "www.98T.la@MEYD-911", missed: "WWW-98T", answer: "www.98T", expected: undefined },
+    { name: "www.98T.la@MEYD-911", missed: "WWW-98T", answer: "未找到", expected: undefined },
+  ])("reads $answer from $name as $expected", ({ name, missed, answer, expected }) => {
+    expect(acceptAiNumber(name, missed, answer)).toBe(expected);
+  });
+});
 
 describe("extractNumber", () => {
   it("preserves explicit hyphenated catalog codes before bare part stripping", () => {
@@ -42,6 +62,23 @@ describe("extractNumber", () => {
       { input: "IDBD-905-A", expected: "IDBD-905" },
       { input: "IDBD-905-H", expected: "IDBD-905" },
       { input: "123-456", expected: "123-456" },
+      { input: "[FHD] 300MIUM-688", expected: "300MIUM-688" },
+      { input: "[SD] MIDV-123", expected: "MIDV-123" },
+      { input: "FHD_MIDV-123", expected: "MIDV-123" },
+      { input: "Tokyo-Hot-n1234", expected: "N1234" },
+      { input: "Tokyo-Hot_n1234", expected: "N1234" },
+      { input: "btbtt12.com@SSIS-888", expected: "SSIS-888" },
+      { input: "javdb.com_MIDV-123", expected: "MIDV-123" },
+      { input: "hhd800.com-ABP-456", expected: "ABP-456" },
+      { input: "www.98t.la@MEYD-911-U", expected: "MEYD-911" },
+      { input: "javdb.cc_MIDV-123", expected: "MIDV-123" },
+      { input: "thz.me-ABP-456", expected: "ABP-456" },
+      { input: "test.xyz@SSIS-888", expected: "SSIS-888" },
+      { input: "bt.top-WANZ-123", expected: "WANZ-123" },
+      { input: "vip.vip_WWVR-01", expected: "WWVR-01" },
+      { input: "av.tv@FC2-1234567", expected: "FC2-1234567" },
+      { input: "WANZ-123", expected: "WANZ-123" },
+      { input: "WWVR-01", expected: "WWVR-01" },
       { input: "甘えたいカラダ 真田まこと", expected: "" },
       { input: "sample", expected: "" },
     ];

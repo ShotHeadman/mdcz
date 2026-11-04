@@ -308,6 +308,10 @@ export function WorkbenchSetupAdapter({
       totalSize={totalSize}
       scanStatus={scanStatus}
       scanError={scanError}
+      // Scanning stays explicit, so a list made for another mode, directory or option asks to be refreshed.
+      previewStale={
+        previewMode && scanStatus !== "scanning" && scanStatus !== "error" && committedPlanKey !== scanPlan.scanKey
+      }
       startPending={startPending}
       supportedExtensions={supportedExtensions}
       presetId={presetId}

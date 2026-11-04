@@ -16,7 +16,7 @@ import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore"
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api, getLibraryAssetSrc } from "../client";
@@ -35,6 +35,8 @@ export function LibraryPage() {
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
+  // Only a refresh the user asks for skips the server's recent availability checks.
+  const freshAvailability = useRef(false);
   const libraryQ = useInfiniteQuery({
     queryKey: queryKeys.library.list({ query, ...scope }),
     queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100, ...scope }),
@@ -58,7 +60,7 @@ export function LibraryPage() {
     queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
       chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
         queryKey: [...queryKeys.library.list({ query, ...scope }), "availability", ids],
-        queryFn: async () => await api.library.availability({ ids }),
+        queryFn: async () => await api.library.availability({ ids, fresh: freshAvailability.current }),
         staleTime: 30_000,
       })),
     ),
@@ -131,8 +133,13 @@ export function LibraryPage() {
         }}
         onOpenFolder={openFolder}
         onQueryChange={setQuery}
-        onRefresh={() => {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+        onRefresh={async () => {
+          freshAvailability.current = true;
+          try {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          } finally {
+            freshAvailability.current = false;
+          }
         }}
         query={query}
         total={libraryQ.data?.pages[0]?.total ?? 0}

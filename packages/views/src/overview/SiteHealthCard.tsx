@@ -2,7 +2,7 @@ import type { Website } from "@mdcz/shared/enums";
 import type { SiteHealth } from "@mdcz/shared/siteResults";
 import { Button } from "@mdcz/ui";
 import { TriangleAlert } from "lucide-react";
-import { type Messages, useT } from "../i18n";
+import { formatDateTime, type Messages, useT } from "../i18n";
 
 export const describeSiteHealth = (t: Messages, site: string, health: SiteHealth) => {
   const reason = t.domain.failureReasons[health.reason];
@@ -10,7 +10,7 @@ export const describeSiteHealth = (t: Messages, site: string, health: SiteHealth
     summary:
       health.until === undefined
         ? t.domain.siteHealth.unavailable(site, reason)
-        : t.domain.siteHealth.paused(site, reason, new Date(health.until).toLocaleTimeString()),
+        : t.domain.siteHealth.paused(site, reason, formatDateTime(health.until, { timeStyle: "medium" })),
     remedy: t.domain.siteHealth.remedies[health.reason],
   };
 };

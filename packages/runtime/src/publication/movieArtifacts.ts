@@ -1,5 +1,6 @@
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
 import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
@@ -34,6 +35,8 @@ export interface PreparedMovieFile {
 }
 
 export interface MovieArtifacts {
+  /** The folders that hold the movie's metadata. */
+  folders: string[];
   files: PreparedMovieFile[];
   movieAssets: AssetRef[];
   artifacts: WriteArtifact[];
@@ -117,7 +120,7 @@ export const prepareMovieArtifacts = async (input: {
   assetDecisions?: MaintenanceAssetDecisions;
   relocateExistingArtifacts?: boolean;
   ownedAssetPaths?: readonly string[];
-  nfoNaming: "both" | "movie" | "filename";
+  naming: Pick<MovieNaming, "nfoNaming" | "sceneImages">;
   remoteData?: CrawlerData;
   writeNfo(
     assets: DownloadedAssets,
@@ -291,7 +294,11 @@ export const prepareMovieArtifacts = async (input: {
       },
       {
         key: "sceneImages" as const,
-        paths: downloaded.sceneImages.length ? downloaded.sceneImages : (existing?.sceneImages ?? []),
+        paths: !input.naming.sceneImages
+          ? []
+          : downloaded.sceneImages.length
+            ? downloaded.sceneImages
+            : (existing?.sceneImages ?? []),
       },
       {
         key: "actorPhotos" as const,
@@ -315,7 +322,11 @@ export const prepareMovieArtifacts = async (input: {
               targetPath,
               size: (await input.inventory.stats(sourcePath)).size,
               consume: Boolean(stagedName),
-              removeSourcesAfterCommit: input.relocateExistingArtifacts && !stagedName ? [sourcePath] : undefined,
+              // Kept files are moved or renamed in place, never left behind under their old names.
+              removeSourcesAfterCommit:
+                !stagedName && (input.relocateExistingArtifacts || file.layout.mode === "preserve")
+                  ? [sourcePath]
+                  : undefined,
             });
             publishedTargets.push(target);
             if (stagedName) downloadedTargets.add(targetPath);
@@ -336,7 +347,7 @@ export const prepareMovieArtifacts = async (input: {
 
   const allowedNfoPaths = new Set(
     input.members.flatMap((file) =>
-      getNfoWritePaths(file.layout.nfoPath, input.nfoNaming).requiredPaths.map((path) => resolve(path)),
+      getNfoWritePaths(file.layout.nfoPath, input.naming.nfoNaming).requiredPaths.map((path) => resolve(path)),
     ),
   );
   const existingNfoPath = first.existingNfoPath;
@@ -353,7 +364,7 @@ export const prepareMovieArtifacts = async (input: {
   );
   if (writtenNfos.length > 0) {
     for (const file of input.members) {
-      const required = getNfoWritePaths(file.layout.nfoPath, input.nfoNaming).requiredPaths;
+      const required = getNfoWritePaths(file.layout.nfoPath, input.naming.nfoNaming).requiredPaths;
       for (const reqPath of required) {
         if (!artifacts.some((a) => resolve(a.targetPath) === resolve(reqPath))) {
           const baseName = basename(reqPath);
@@ -366,7 +377,7 @@ export const prepareMovieArtifacts = async (input: {
     }
   }
   if (!nfoPath && existingNfoPath) {
-    const paths = getNfoWritePaths(first.layout.nfoPath, input.nfoNaming);
+    const paths = getNfoWritePaths(first.layout.nfoPath, input.naming.nfoNaming);
     nfoPath = paths.canonicalPath;
     let content = await input.inventory.readNfo(existingNfoPath);
     if (content === undefined) throw new Error(`NFO source is missing: ${existingNfoPath}`);
@@ -458,6 +469,7 @@ export const prepareMovieArtifacts = async (input: {
       throw new Error(`Artifact target cannot overwrite a source media file: ${artifact.targetPath}`);
   }
   return {
+    folders: [...new Set(input.members.map((member) => member.layout.metadataDir))],
     assets,
     nfoPath,
     files,

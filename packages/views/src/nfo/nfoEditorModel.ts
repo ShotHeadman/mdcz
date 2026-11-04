@@ -156,6 +156,12 @@ export const validateEditableNfoData = (data: EditableNfoData): NfoValidationRes
   if (!validWebsite) {
     errors.website = getT().nfo.errors.websiteRequired;
   }
+  const releaseDate = normalized.release_date.trim();
+  const releaseTime = /^\d{4}-\d{2}-\d{2}$/u.test(releaseDate) ? Date.parse(releaseDate) : Number.NaN;
+  // Date.parse rolls an impossible day such as 02-30 into the next month, so the date must survive the round trip.
+  if (releaseDate && (Number.isNaN(releaseTime) || !new Date(releaseTime).toISOString().startsWith(releaseDate))) {
+    errors.release_date = getT().nfo.errors.releaseDateInvalid;
+  }
   if (Number.isNaN(durationSeconds)) {
     errors.durationSeconds = getT().nfo.errors.durationInvalid;
   }

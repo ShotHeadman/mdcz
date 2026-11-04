@@ -4,6 +4,7 @@ import {
   buildScrapeResultGroupActionContext,
   findScrapeResultGroup,
 } from "@mdcz/shared/viewModels/scrapeResultGrouping";
+import { rescrapeResult } from "@mdcz/views/adapters";
 import { useT } from "@mdcz/views/i18n";
 import {
   runScrapeRequest,
@@ -100,7 +101,7 @@ export function DesktopChrome({ desktop }: { desktop: DesktopBridge }) {
             } else run(async () => await useWorkbenchSetupStore.getState().startTask?.());
             return;
           case "retry-scrape":
-            if (item) run(() => createWebScrapeActionPort().retryFailed([item.fileId]));
+            if (context) run(() => rescrapeResult(createWebScrapeActionPort(), context));
             return;
           case "open-folder":
             if (file) run(() => desktop.showItemInFolder(file));

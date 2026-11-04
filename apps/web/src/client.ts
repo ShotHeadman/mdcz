@@ -50,6 +50,14 @@ const encodePathSegments = (value: string): string =>
     .map((segment) => encodeURIComponent(segment))
     .join("/");
 
+// An <img> reuses a URL it already loaded in this page whatever the cache headers say, so a rewritten asset needs a
+// new URL everywhere it shows.
+const assetRevisions = new Map<string, string>();
+
+export const markLibraryAssetChanged = (rootId: string, path: string, revision: string): void => {
+  assetRevisions.set(`${rootId}\0${path}`, revision);
+};
+
 export const getLibraryAssetSrc = (input: {
   format?: "avif" | "source" | "webp";
   revision?: string;
@@ -82,8 +90,9 @@ export const getLibraryAssetSrc = (input: {
       url.searchParams.set("format", input.format);
     }
   }
-  if (input.revision) {
-    url.searchParams.set("revision", input.revision);
+  const revision = input.revision ?? assetRevisions.get(`${rootId}\0${assetPath}`);
+  if (revision) {
+    url.searchParams.set("revision", revision);
   }
   return url.toString();
 };
@@ -151,15 +160,12 @@ export const api: ServerApiContract = {
       setAdminToken(session.token);
       return session;
     },
-    logout: async () => {
-      const session = await trpcMutation<Awaited<ReturnType<ServerApiContract["auth"]["logout"]>>>("auth.logout");
-      setAdminToken(undefined);
-      return session;
-    },
+    changePassword: (input) => trpcMutation("auth.changePassword", input),
     status: () => trpcQuery("auth.status"),
   },
   app: {
     ensureWatermarkDirectory: () => trpcMutation("app.ensureWatermarkDirectory"),
+    previewPosterBadges: (input) => trpcMutation("app.previewPosterBadges", input),
   },
   browser: {
     list: (input) => trpcQuery("browser.list", input),

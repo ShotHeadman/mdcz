@@ -1,10 +1,13 @@
+import { ASSET_NAMING_MODES, NFO_NAMING_MODES } from "@mdcz/shared/assetNaming";
 import {
   AUTOMATION_LEVELS,
   DISCOVERY_MODES,
+  isSharedDirectoryTarget,
   type MediaLibraryDto,
   type MediaLibrarySettingsInput,
   mediaLibrarySettingsSchema,
   PLACEMENT_MODES,
+  resolveMovieNaming,
 } from "@mdcz/shared/mediaLibrary";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
 import {
@@ -51,6 +54,8 @@ const emptySettings = (): MediaLibrarySettingsInput => ({
   folderTemplate: "{actor}/{number}",
   fileTemplate: "{number}",
   placement: "move",
+  assetNaming: "fixed",
+  nfoNaming: "both",
   automation: "off",
   discovery: "events",
   cloudPath: "",
@@ -115,6 +120,15 @@ export function LibraryEditorDialog({
     setSettings((current) => ({ ...current, [key]: value }));
   const placement = settings.placement ?? "move";
   const needsOutput = placement !== "inPlace";
+  const namingPolicy = {
+    placement,
+    folderTemplate: settings.folderTemplate ?? "",
+    assetNaming: settings.assetNaming ?? "fixed",
+    nfoNaming: settings.nfoNaming ?? "both",
+  };
+  // A shared template overrides the stored naming without changing it, so a per-movie template brings it back.
+  const sharedTemplate = isSharedDirectoryTarget(namingPolicy);
+  const naming = resolveMovieNaming({ policy: namingPolicy, holdsOtherMovies: false, downloadSceneImages: false });
 
   const handleSave = async () => {
     setShowErrors(true);
@@ -240,6 +254,56 @@ export function LibraryEditorDialog({
               </Field>
             </div>
           ) : null}
+          <div className="space-y-1.5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={t.libraries.fields.assetNaming}>
+                {(id) => (
+                  <Select
+                    value={naming.assetNaming}
+                    disabled={sharedTemplate}
+                    onValueChange={(value) => set("assetNaming", value as typeof naming.assetNaming)}
+                  >
+                    <SelectTrigger id={id} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ASSET_NAMING_MODES.map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {t.libraries.assetNamings[mode]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+              <Field label={t.libraries.fields.nfoNaming}>
+                {(id) => (
+                  <Select
+                    value={naming.nfoNaming}
+                    disabled={sharedTemplate}
+                    onValueChange={(value) => set("nfoNaming", value as typeof naming.nfoNaming)}
+                  >
+                    <SelectTrigger id={id} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NFO_NAMING_MODES.map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {t.libraries.nfoNamings[mode]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+            </div>
+            <p className="text-xs text-muted-foreground">{t.libraries.fields.namingHint}</p>
+            {sharedTemplate || placement === "inPlace" ? (
+              <p className="text-xs text-muted-foreground">
+                {sharedTemplate ? t.libraries.fields.sharedFolderNaming : t.libraries.fields.inPlaceNaming}
+              </p>
+            ) : null}
+          </div>
           {parsed.success ? <NamingPreview settings={parsed.data} onPreviewNaming={onPreviewNaming} /> : null}
           {showAutomation ? (
             <div className="space-y-5 border-t border-border/60 pt-5">
@@ -430,6 +494,7 @@ function NamingPreview({
                 <div>{t.settings.namingPreview.source(item.sourcePath)}</div>
                 <div>{t.settings.namingPreview.organized(item.mediaPath)}</div>
                 {item.metadataDir ? <div>{t.settings.namingPreview.metadataDir(item.metadataDir)}</div> : null}
+                {item.outputs.length ? <div>{t.settings.namingPreview.files(item.outputs)}</div> : null}
               </div>
             </div>
           ))}

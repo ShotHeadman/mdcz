@@ -36,6 +36,7 @@ export function WorkbenchTaskStatePanel({
     ? [
         { label: t.workbench.taskStateVideos, value: discovery.candidates },
         { label: t.workbench.taskStateSkipped, value: discovery.skipped },
+        ...(discovery.inLibrary ? [{ label: t.workbench.taskStateInLibrary, value: discovery.inLibrary }] : []),
       ]
     : [];
 
@@ -58,7 +59,7 @@ export function WorkbenchTaskStatePanel({
       ) : null}
 
       {stats.length > 0 ? (
-        <dl className="grid w-full max-w-xs grid-cols-2 gap-2">
+        <dl className={cn("grid w-full auto-cols-fr grid-flow-col gap-2", stats.length > 2 ? "max-w-sm" : "max-w-xs")}>
           {stats.map(({ label, value }) => (
             <div key={label} className="rounded-quiet bg-surface-low/70 px-3 py-3">
               <dd className="font-numeric text-2xl font-semibold tabular-nums">{value}</dd>

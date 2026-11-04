@@ -43,6 +43,8 @@ export const createOrganizerConfig = (overrides: OrganizerConfigOverrides = {}):
     outputPath: resolve("/media/output"),
     folderTemplate: "{actor}/{number}",
     fileTemplate: "{number}",
+    assetNaming: "fixed",
+    nfoNaming: "both",
     ...overrides.target,
   },
 ];

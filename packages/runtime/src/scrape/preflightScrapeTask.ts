@@ -1,4 +1,4 @@
-import { dirname, join, parse } from "node:path";
+import { basename, dirname, join, parse } from "node:path";
 import { filesystemPathKey } from "@mdcz/media-store";
 import type { DirectoryInventory } from "./DirectoryInventory";
 
@@ -81,6 +81,8 @@ export async function checkScrapeTargets(
       planned.set(key, siblings);
       directories.add(dirname(target));
       for (const artifact of member.artifactPaths ?? []) {
+        // Movies of one actor share the photos in their folder's .actors; each writes the same photo.
+        if (basename(dirname(artifact)) === ".actors") continue;
         groupArtifacts.add(filesystemPathKey(await inventory.entryPath(artifact)));
       }
     }

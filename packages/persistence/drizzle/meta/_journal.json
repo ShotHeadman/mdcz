@@ -57,6 +57,13 @@
       "when": 1792281600000,
       "tag": "0007_publication_temporary_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793491200000,
+      "tag": "0008_library_naming",
+      "breakpoints": true
     }
   ]
 }

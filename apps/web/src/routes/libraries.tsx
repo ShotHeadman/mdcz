@@ -1,9 +1,12 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { prepareMaintenanceSetup } from "@mdcz/views/adapters";
+import { openNewWorkbenchTask, prepareMaintenanceSetup } from "@mdcz/views/adapters";
 import { LibrariesView } from "@mdcz/views/libraries";
+import { useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { toast } from "sonner";
+import { createWebMaintenanceActionPort } from "../adapters/ports";
 import { api } from "../client";
 import { browseDirectory, desktop } from "../desktop";
 import { queryKeys } from "../lib/queryKeys";
@@ -11,6 +14,7 @@ import { queryKeys } from "../lib/queryKeys";
 export function LibrariesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const maintenancePort = useMemo(() => createWebMaintenanceActionPort(), []);
   const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list() });
   const libraries = librariesQ.data?.libraries ?? [];
   const summaryQs = useQueries({
@@ -38,9 +42,25 @@ export function LibrariesPage() {
       summaries={Object.fromEntries(libraries.map((library, index) => [library.id, summaryQs[index]?.data]))}
       pendingCounts={pendingCounts}
       cloudDriveEvents={integrationsQ.data?.cloudDrive.libraries}
-      onImport={(library) => {
-        prepareMaintenanceSetup({ scanDir: library.sourcePath, libraryId: library.id, presetId: "import_local" });
-        void navigate({ to: "/workbench", search: { intent: "maintenance" } });
+      onImport={async (library) => {
+        // The library's movies live in its output; only an in-place library keeps them where they arrive.
+        const scanDir = library.outputPath || library.sourcePath;
+        try {
+          await openNewWorkbenchTask("maintenance", () => maintenancePort.discardSession());
+          prepareMaintenanceSetup({ scanDir, libraryId: library.id, presetId: "import_local" });
+          void navigate({ to: "/workbench", search: { intent: "maintenance" } });
+          // Importing only reads the directory, and its preview still waits for confirmation, so it starts at once.
+          useMaintenanceStore.getState().setPending(true);
+          await api.maintenance.start({
+            source: { kind: "directory", scanDir, recursive: true },
+            libraryId: library.id,
+            presetId: "import_local",
+          });
+          useMaintenanceStore.getState().setSnapshot(await api.maintenance.getActiveSession());
+        } catch (error) {
+          useMaintenanceStore.getState().setPending(false);
+          toast.error(toErrorMessage(error), { id: "library-import" });
+        }
       }}
       onViewIssue={(library, health) => void navigate({ to: "/library", search: { libraryId: library.id, health } })}
       onViewPending={() => void navigate({ to: "/pending" })}

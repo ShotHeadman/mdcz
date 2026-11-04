@@ -1,11 +1,12 @@
 import { cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createMediaRoot } from "@mdcz/media-store";
+import { NotFoundError } from "@mdcz/shared/error";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
 
 import { createPersistenceDatabase, type PersistenceDatabase } from "./database";
-import { PersistenceError, persistenceErrorCodes } from "./errors";
+import { persistenceErrorCodes } from "./errors";
 import { LibraryRepository, selectRepresentativeFile } from "./libraryRepository";
 import { MediaRootRepository } from "./mediaRootRepository";
 import { defaultMigrationsFolder, runMigrations } from "./migrate";
@@ -181,7 +182,7 @@ describe("Persistence migrations", () => {
       expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_runs'").all()).toEqual([
         { name: "scrape_runs" },
       ]);
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -249,7 +250,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -308,7 +309,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 6 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
@@ -380,16 +381,17 @@ describe("MediaRootRepository", () => {
     }
   });
 
-  it("uses stable not-found errors", async () => {
+  it("reports a missing record as NotFoundError", async () => {
     database = createTestPersistenceDatabase();
-    const repository = new MediaRootRepository(database);
+    const lookups: Array<(database: PersistenceDatabase) => Promise<unknown>> = [
+      async (database) => await new MediaRootRepository(database).get("missing"),
+      async (database) => await new LibraryRepository(database).getEntryById("missing"),
+      async (database) => await new LibraryRepository(database).getEntryByFileId("missing"),
+      async (database) => new PendingRepository(database).get("missing"),
+      async (database) => await new ScanTaskRepository(database).get("missing"),
+    ];
 
-    await expect(repository.get("missing")).rejects.toEqual(
-      expect.objectContaining({
-        code: persistenceErrorCodes.NotFound,
-        name: PersistenceError.name,
-      }),
-    );
+    for (const lookup of lookups) await expect(lookup(database)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -570,7 +572,7 @@ describe("LibraryRepository", () => {
     await addRoots("root-1", "root-2");
     const repository = new LibraryRepository(database);
     await repository.upsertEntry({
-      movie: { id: "entry-1", actors: ["Actor One"], title: "First title" },
+      movie: { id: "entry-1", actors: ["Actor One"], title: "First title", number: "ABC-123" },
       files: [
         {
           rootId: "root-1",
@@ -594,10 +596,11 @@ describe("LibraryRepository", () => {
       entries: [expect.objectContaining({ id: "entry-1" })],
       total: 1,
     });
-    await expect(repository.listEntriesPage({ limit: 10, query: "abc-123" })).resolves.toMatchObject({
-      entries: [expect.objectContaining({ id: "entry-1" })],
-      total: 1,
-    });
+    for (const query of ["abc-123", "abc123"])
+      await expect(repository.listEntriesPage({ limit: 10, query })).resolves.toMatchObject({
+        entries: [expect.objectContaining({ id: "entry-1" })],
+        total: 1,
+      });
     await expect(repository.listEntriesPage({ limit: 10, rootId: "root-2" })).resolves.toMatchObject({
       entries: [expect.objectContaining({ id: "entry-2" })],
       total: 1,

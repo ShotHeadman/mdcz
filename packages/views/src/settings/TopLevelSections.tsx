@@ -7,6 +7,7 @@ import { useSettingsServices } from "./SettingsServices";
 import { SitePriorityEditorField } from "./SitePriorityEditorField";
 import { Subsection } from "./Subsection";
 import { IntegrationAccessPanel, QbittorrentStatusLine, useIntegrationStatus } from "./sections/IntegrationAccessPanel";
+import { LanguageSection } from "./sections/LanguageSection";
 import { MediaServerSection } from "./sections/MediaServerSections";
 import {
   AggregationBehaviorSection,
@@ -182,6 +183,11 @@ export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: b
       title={t.settingsFields.sections.automation.label}
       forceOpen={forceOpen}
     >
+      {services.adminPassword && !search.hasActiveFilters ? (
+        <Subsection title={t.web.adminPassword} description={t.web.adminPasswordDescription} className="mb-6 last:mb-0">
+          {services.adminPassword}
+        </Subsection>
+      ) : null}
       <Subsection
         title={t.settings.integrations.access}
         description={t.settings.integrations.accessDescription}
@@ -232,6 +238,24 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
       <Subsection title={t.settings.subsections.shortcuts} className="mb-6 last:mb-0">
         <ShortcutsSection />
       </Subsection>
+    </SectionAnchor>
+  );
+}
+
+/** The language belongs to the device, not the profile; a settings search matches only profile fields. */
+export function LanguageTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
+  const search = useSettingsSearch();
+  if (search.hasActiveFilters) return null;
+
+  return (
+    <SectionAnchor
+      id="language"
+      label={t.settings.language.title}
+      title={t.settings.language.title}
+      forceOpen={forceOpen}
+    >
+      <LanguageSection />
     </SectionAnchor>
   );
 }

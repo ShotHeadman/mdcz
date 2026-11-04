@@ -3,7 +3,7 @@ import { useT } from "@mdcz/views/i18n";
 import { AppShell, CrashFallback, ErrorBoundary, type ShellLinkProps, SYSTEM_SHELL_NAV } from "@mdcz/views/shell";
 import { ToolsRouteView } from "@mdcz/views/tools";
 import { useQuery } from "@tanstack/react-query";
-import { createRootRoute, Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
+import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../client";
@@ -25,8 +25,9 @@ const ShellLink = ({ to, className, onFocus, onMouseEnter, children }: ShellLink
 export const RootLayout = ({ children }: { children: ReactNode }) => {
   const t = useT();
   const navigate = useNavigate();
-  const location = useLocation();
-  const pathname = location.pathname;
+  // The rendered route, not the one being navigated to: right after a redirect to /setup the outlet still shows the
+  // previous page, which must not mount and query the API without a session.
+  const pathname = useRouterState({ select: (state) => (state.resolvedLocation ?? state.location).pathname });
   const authQ = useQuery({ queryKey: queryKeys.auth.status, queryFn: () => api.auth.status() });
   const setupRequired = Boolean(authQ.data?.setupRequired);
   const authenticated = Boolean(authQ.data?.authenticated);

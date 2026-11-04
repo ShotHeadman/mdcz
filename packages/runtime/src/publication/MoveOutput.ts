@@ -268,7 +268,13 @@ export class MoveOutput {
       for (const move of input.moves) {
         if (move.transfer !== "move") continue;
         let directory = path.dirname(move.sourcePath);
-        for (let depth = move.source.relativePath.split("/").length - 1; depth > 0; depth--) {
+        let depth = move.source.relativePath.split("/").length - 1;
+        // The renamed folder left as a whole, so its old parent is the first folder it may have emptied.
+        if (renamedFolder && filesystemPathKey(directory) === filesystemPathKey(renamedFolder.from)) {
+          directory = path.dirname(directory);
+          depth--;
+        }
+        for (; depth > 0; depth--) {
           if (!(await removeEmptyDirectory(fs, directory, warn))) break;
           directory = path.dirname(directory);
         }

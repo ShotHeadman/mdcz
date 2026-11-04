@@ -208,10 +208,11 @@ describe("MoveOutput", () => {
     expect(existsSync(path.join(downloaded.directory, "a"))).toBe(false);
     expect(existsSync(downloaded.directory)).toBe(true);
 
-    // Reorganizing renames the movie's own folder, carrying files the publication does not know about along.
+    // Reorganizing renames the movie's own folder, carrying files the publication does not know about along and
+    // removing the parent it emptied.
     const renamed = await fixture();
     const oldFolder = path.join(renamed.directory, "Actor", "ABC-123");
-    const newFolder = path.join(renamed.directory, "Actor", "ABC-123-破解");
+    const newFolder = path.join(renamed.directory, "Studio", "ABC-123-破解");
     await fs.mkdir(path.join(oldFolder, "extrafanart"), { recursive: true });
     const oldVideo = path.join(oldFolder, "ABC-123.mp4");
     const oldNfo = path.join(oldFolder, "ABC-123.nfo");
@@ -227,7 +228,7 @@ describe("MoveOutput", () => {
           {
             ...renamed.move,
             source: { rootId: "root", relativePath: "Actor/ABC-123/ABC-123.mp4" },
-            target: { rootId: "root", relativePath: "Actor/ABC-123-破解/ABC-123-破解.mp4" },
+            target: { rootId: "root", relativePath: "Studio/ABC-123-破解/ABC-123-破解.mp4" },
             sourcePath: oldVideo,
             targetPath: path.join(newFolder, "ABC-123-破解.mp4"),
           },
@@ -253,13 +254,13 @@ describe("MoveOutput", () => {
     await reorganize(() => undefined);
     expect((await fs.readdir(renamed.directory, { recursive: true })).sort()).toEqual(
       [
-        "Actor",
-        "Actor/ABC-123-破解",
-        "Actor/ABC-123-破解/ABC-123-破解.mp4",
-        "Actor/ABC-123-破解/ABC-123-破解.nfo",
-        "Actor/ABC-123-破解/extrafanart",
-        "Actor/ABC-123-破解/extrafanart/fanart1.jpg",
-        "Actor/ABC-123-破解/notes.txt",
+        "Studio",
+        "Studio/ABC-123-破解",
+        "Studio/ABC-123-破解/ABC-123-破解.mp4",
+        "Studio/ABC-123-破解/ABC-123-破解.nfo",
+        "Studio/ABC-123-破解/extrafanart",
+        "Studio/ABC-123-破解/extrafanart/fanart1.jpg",
+        "Studio/ABC-123-破解/notes.txt",
       ].map((name) => name.replaceAll("/", path.sep)),
     );
   });

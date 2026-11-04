@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import PQueue from "p-queue";
 
 export interface DomainRateLimit {
@@ -32,23 +33,20 @@ export class RateLimiter {
   }
 
   setDomainLimit(domain: string, requestsPerSecond: number, concurrency = 1): void {
-    this.domainLimits.set(domain, { requestsPerSecond, concurrency });
-    this.disposeQueue(domain);
+    this.replaceDomainLimit(domain, { requestsPerSecond, concurrency });
   }
 
   setDomainInterval(domain: string, intervalMs: number, intervalCap = 1, concurrency = 1): void {
-    this.domainLimits.set(domain, {
+    this.replaceDomainLimit(domain, {
       requestsPerSecond: Math.max(1, intervalCap),
       intervalMs: Math.max(1, Math.trunc(intervalMs)),
       intervalCap: Math.max(1, Math.trunc(intervalCap)),
       concurrency,
     });
-    this.disposeQueue(domain);
   }
 
   clearDomainLimit(domain: string): void {
-    this.domainLimits.delete(domain);
-    this.disposeQueue(domain);
+    if (this.domainLimits.delete(domain)) this.disposeQueue(domain);
   }
 
   async schedule<T>(urlOrDomain: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -123,6 +121,13 @@ export class RateLimiter {
 
     clearTimeout(entry.cleanupTimer);
     entry.cleanupTimer = null;
+  }
+
+  // A replaced queue keeps draining at the old pace beside its successor, so an unchanged limit keeps its queue.
+  private replaceDomainLimit(domain: string, limit: DomainRateLimit): void {
+    if (isDeepStrictEqual(this.domainLimits.get(domain), limit)) return;
+    this.domainLimits.set(domain, limit);
+    this.disposeQueue(domain);
   }
 
   private disposeQueue(domain: string): void {

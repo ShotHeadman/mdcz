@@ -99,6 +99,12 @@ const POSTER_BADGE_DEFINITIONS: Array<
   },
 ];
 
+const toBadgeDefinition = ({ matches: _matches, ...definition }: (typeof POSTER_BADGE_DEFINITIONS)[number]) =>
+  definition;
+
+export const listPosterBadgeDefinitions = (types: readonly PosterTagBadgeType[]): PosterBadgeDefinition[] =>
+  POSTER_BADGE_DEFINITIONS.filter(({ id }) => types.includes(id)).map(toBadgeDefinition);
+
 export const resolvePosterBadgeDefinitions = (
   data: CrawlerData,
   fileInfo: FileInfo | undefined,
@@ -112,5 +118,5 @@ export const resolvePosterBadgeDefinitions = (
 
   return POSTER_BADGE_DEFINITIONS.filter(
     (definition) => enabledTypeSet.has(definition.id) && definition.matches({ tags, fileInfo, classification }),
-  ).map(({ matches: _matches, ...definition }) => definition);
+  ).map(toBadgeDefinition);
 };

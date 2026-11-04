@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,14 +55,16 @@ describe("PosterWatermarkService pure rendering helpers", () => {
   });
 
   it("resolves normal, single-badge, and height-constrained layouts", () => {
-    for (const [posterWidth, posterHeight, badgeWidth, badgeHeight, badgeGap, overlayHeight] of [
-      [1000, 1500, 128, 64, 6, 204],
-      [1500, 1000, 128, 64, 6, 204],
-      [400, 600, 64, 32, 3, 102],
-      [600, 400, 64, 32, 3, 102],
-      [200, 300, 56, 28, 3, 90],
+    for (const [posterWidth, posterHeight, sizePercent, badgeWidth, badgeHeight, badgeGap, overlayHeight] of [
+      [1000, 1500, 100, 160, 80, 8, 256],
+      [1500, 1000, 100, 160, 80, 8, 256],
+      [400, 600, 100, 64, 32, 3, 102],
+      [600, 400, 100, 64, 32, 3, 102],
+      [200, 300, 100, 56, 28, 3, 90],
+      [400, 600, 200, 128, 64, 6, 204],
+      [400, 600, 50, 56, 28, 3, 90],
     ]) {
-      expect(resolveBadgeOverlayLayout(posterWidth, posterHeight, 3)).toEqual({
+      expect(resolveBadgeOverlayLayout(posterWidth, posterHeight, 3, sizePercent)).toEqual({
         badgeWidth,
         badgeHeight,
         badgeGap,
@@ -69,10 +72,10 @@ describe("PosterWatermarkService pure rendering helpers", () => {
       });
     }
     expect(resolveBadgeOverlayLayout(1000, 1500, 1)).toEqual({
-      badgeWidth: 128,
-      badgeHeight: 64,
+      badgeWidth: 160,
+      badgeHeight: 80,
       badgeGap: 0,
-      overlayHeight: 64,
+      overlayHeight: 80,
     });
 
     const constrained = resolveBadgeOverlayLayout(20, 5, 3);
@@ -86,6 +89,9 @@ describe("PosterWatermarkService pure rendering helpers", () => {
     expect(resolveBadgeOverlayPlacement(1000, 1500, 184, 294, "topRight")).toEqual({ left: 816, top: 0 });
     expect(resolveBadgeOverlayPlacement(1000, 1500, 184, 294, "bottomLeft")).toEqual({ left: 0, top: 1206 });
     expect(resolveBadgeOverlayPlacement(100, 100, 184, 294, "bottomRight")).toEqual({ left: 0, top: 0 });
+    expect(resolveBadgeOverlayPlacement(1000, 1500, 184, 294, "topLeft", 30)).toEqual({ left: 30, top: 30 });
+    expect(resolveBadgeOverlayPlacement(1000, 1500, 184, 294, "bottomRight", 30)).toEqual({ left: 786, top: 1176 });
+    expect(resolveBadgeOverlayPlacement(1000, 1500, 184, 294, "topRight", 5000)).toEqual({ left: 0, top: 1206 });
   });
 });
 
@@ -96,12 +102,44 @@ describe("PosterWatermarkService", () => {
     await createPoster(posterPath);
     const original = await readFile(posterPath);
 
-    await new PosterWatermarkService({ dataDir }).applyTagBadges(posterPath, [subtitleBadge], "bottomRight");
+    await new PosterWatermarkService({ dataDir }).applyTagBadges(posterPath, [subtitleBadge], {
+      position: "bottomRight",
+    });
 
     const rendered = await readFile(posterPath);
     const metadata = await sharp(rendered).metadata();
     expect(rendered.equals(original)).toBe(false);
     expect(metadata).toMatchObject({ format: "png", width: 400, height: 600 });
+  });
+
+  it("moves badges off the corner by the inset and blends them by the opacity", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "mdcz-watermark-style-"));
+    const service = new PosterWatermarkService({ dataDir });
+    const greenAt = async (options: { insetPercent?: number; opacity?: number }, x: number, y: number) => {
+      const posterPath = join(dataDir, `poster-${randomUUID()}.png`);
+      await createPoster(posterPath);
+      await service.applyTagBadges(posterPath, [subtitleBadge], options);
+      const { data, info } = await sharp(posterPath).raw().toBuffer({ resolveWithObject: true });
+      return data[(y * info.width + x) * info.channels + 1];
+    };
+
+    const opaque = await greenAt({}, 3, 26);
+    const translucent = await greenAt({ opacity: 50 }, 3, 26);
+    expect(opaque).toBeLessThan(100);
+    expect(translucent).toBeGreaterThan(130);
+    expect(translucent).toBeLessThan(240);
+    expect(await greenAt({ insetPercent: 10 }, 3, 26)).toBe(240);
+    expect(await greenAt({ insetPercent: 10 }, 43, 66)).toBeLessThan(100);
+  });
+
+  it("renders a preview of the selected badges on a generated sample poster", async () => {
+    const service = new PosterWatermarkService({ dataDir: await mkdtemp(join(tmpdir(), "mdcz-watermark-preview-")) });
+
+    const withBadges = await service.renderPreview(["subtitle", "fourK"], {});
+    const withoutBadges = await service.renderPreview([], {});
+
+    expect(await sharp(withBadges).metadata()).toMatchObject({ format: "png", width: 800, height: 1200 });
+    expect(withBadges.equals(withoutBadges)).toBe(false);
   });
 
   it("uses valid custom badge images and falls back with a warning for invalid images", async () => {
@@ -124,11 +162,11 @@ describe("PosterWatermarkService", () => {
     const service = new PosterWatermarkService({ dataDir });
     const onWarn = vi.fn();
 
-    await service.applyTagBadges(posterPath, [subtitleBadge], "topLeft", { imageOverrides: true, onWarn });
+    await service.applyTagBadges(posterPath, [subtitleBadge], { imageOverrides: true, onWarn });
     expect(onWarn).not.toHaveBeenCalled();
 
     await writeFile(customBadgePath, "invalid image");
-    await service.applyTagBadges(posterPath, [subtitleBadge], "topLeft", { imageOverrides: true, onWarn });
+    await service.applyTagBadges(posterPath, [subtitleBadge], { imageOverrides: true, onWarn });
     expect(onWarn).toHaveBeenCalledWith(expect.stringContaining("Failed to apply custom poster badge image"));
   });
 

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -250,26 +250,45 @@ describe("LocalScanService", () => {
     expect(entries[0]?.fileInfo.subtitleTag).toBe("中文字幕");
   });
 
-  it("prefers follow-video artwork and ignores ambiguous fixed artwork in shared directories", async () => {
-    const root = await createTempDir();
-    const actorDir = join(root, "Actor A");
-    const firstVideoPath = join(actorDir, "ABC-123.mp4");
-    const secondVideoPath = join(actorDir, "DEF-456.mp4");
-    const firstPosterPath = join(actorDir, "ABC-123-poster.jpg");
-    const ambiguousPosterPath = join(actorDir, "poster.jpg");
+  it("prefers follow-video artwork and gives fixed artwork only to a folder of one movie", async () => {
+    for (const { videos, numberMappings, posters } of [
+      // Different numbers are different movies: poster.jpg belongs to neither.
+      { videos: ["ABC-123", "DEF-456"], numberMappings: {}, posters: ["ABC-123-poster.jpg", undefined] },
+      // Names without a readable number are a movie each, not one movie.
+      { videos: ["holiday", "beach"], numberMappings: {}, posters: [undefined, undefined] },
+      // The scrape's number mappings read both names as one movie.
+      {
+        videos: ["holiday", "holiday cut"],
+        numberMappings: { holiday: "ABC-777" },
+        posters: ["poster.jpg", "poster.jpg"],
+      },
+    ]) {
+      const root = await createTempDir();
+      const actorDir = join(root, "Actor A");
+      await mkdir(actorDir, { recursive: true });
+      for (const video of videos) await writeFile(join(actorDir, `${video}.mp4`), "video");
+      await writeFile(join(actorDir, "ABC-123-poster.jpg"), "poster-a");
+      await writeFile(join(actorDir, "poster.jpg"), "poster-shared");
 
-    await mkdir(actorDir, { recursive: true });
-    await writeFile(firstVideoPath, "video-a");
-    await writeFile(secondVideoPath, "video-b");
-    await writeFile(firstPosterPath, "poster-a");
-    await writeFile(ambiguousPosterPath, "poster-shared");
-
-    const entries = await new LocalScanService().scan(root, "extrafanart");
-    const firstEntry = entries.find((entry) => entry.fileInfo.filePath === firstVideoPath);
-    const secondEntry = entries.find((entry) => entry.fileInfo.filePath === secondVideoPath);
-
-    expect(firstEntry?.assets.poster).toBe(firstPosterPath);
-    expect(secondEntry?.assets.poster).toBeUndefined();
+      const mediaRoot = {
+        id: "root",
+        displayName: root,
+        hostPath: root,
+        realPath: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const entries = await new LocalScanService().scan(mediaRoot, "extrafanart", undefined, {
+        filenameRules: { numberMappings },
+      });
+      expect(
+        videos.map((video) => {
+          const poster = entries.find((entry) => entry.fileInfo.filePath === join(actorDir, `${video}.mp4`))?.assets
+            .poster;
+          return poster && basename(poster);
+        }),
+      ).toEqual(posters);
+    }
   });
 
   it("keeps shared .actors photos discoverable even when multiple movies share a directory", async () => {

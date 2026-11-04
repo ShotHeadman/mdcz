@@ -98,6 +98,8 @@ export function MaintenanceBatchBarView({
       : hasPreviewResults
         ? t.maintenance.executeOrganize
         : t.maintenance.generateOrganizePreview;
+  // Once a comparison can be applied, applying it is the next step and refreshing it the alternative.
+  const replacementIsNextStep = usesDiffView && canRunReplacement;
 
   return (
     <>
@@ -125,6 +127,7 @@ export function MaintenanceBatchBarView({
                   await onPreview();
                 }}
                 disabled={!canRunPrimaryAction || (!usesDiffView && hasPreviewResults && readyCount === 0)}
+                variant={replacementIsNextStep ? "secondary" : "default"}
                 className="h-9 rounded-lg px-4"
               >
                 <Play className="mr-2 h-4 w-4" />
@@ -132,7 +135,7 @@ export function MaintenanceBatchBarView({
               </Button>
               {usesDiffView && (
                 <Button
-                  variant="secondary"
+                  variant={replacementIsNextStep ? "default" : "secondary"}
                   onClick={() => onExecuteDialogOpenChange(true)}
                   disabled={!canRunReplacement}
                   className="h-9 rounded-lg px-4"

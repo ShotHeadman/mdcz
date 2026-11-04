@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { NotFoundError } from "@mdcz/shared/error";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { PersistenceError, persistenceErrorCodes } from "./errors";
 import type { LibraryFileInput, LibraryMovieInput } from "./libraryRepository";
 import { writeLibraryRows } from "./libraryWrite";
 import { type PendingItemRow, type PendingKind, pendingItems } from "./schema";
@@ -32,7 +32,7 @@ export class PendingRepository {
 
   get(id: string): PendingItemRecord {
     const row = this.database.db.select().from(pendingItems).where(eq(pendingItems.id, id)).get();
-    if (!row) throw new PersistenceError(persistenceErrorCodes.NotFound, `Pending item not found: ${id}`);
+    if (!row) throw new NotFoundError(`Pending item not found: ${id}`);
     return row;
   }
 

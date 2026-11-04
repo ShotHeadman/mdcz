@@ -82,7 +82,7 @@ describe("inventory target conflicts", () => {
     expect(stats).not.toHaveBeenCalled();
   });
 
-  it("allows in-place alias rescrapes, multipart targets, separate directories, and generated sidecars", async () => {
+  it("allows in-place alias rescrapes, multipart targets, separate directories, generated sidecars and shared actor photos", async () => {
     const source = join(root, "media");
     const alias = join(root, "alias");
     await fs.mkdir(source);
@@ -127,6 +127,16 @@ describe("inventory target conflicts", () => {
             target("two", join(source, "ABC-123-CD2.mp4"), join(source, "ABC-123-CD2.mp4")),
           ),
           group(target("three", join(source, "other.mp4"), join(root, "other", "ABC-123-CD1.mkv"))),
+          group(
+            target("four", join(source, "DEF-1.mp4"), join(root, "actor", "DEF-1.mp4"), [
+              join(root, "actor", ".actors", "Actor A.jpg"),
+            ]),
+          ),
+          group(
+            target("five", join(source, "DEF-2.mp4"), join(root, "actor", "DEF-2.mp4"), [
+              join(root, "actor", ".actors", "Actor A.jpg"),
+            ]),
+          ),
         ],
         inventory,
       ),

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ASSET_NAMING_MODES, type AssetNamingMode, NFO_NAMING_MODES, type NfoNamingMode } from "./assetNaming";
 import { localPathStyle } from "./localPath";
 import { isAbsoluteHostPath } from "./mediaCandidate";
 
@@ -68,6 +69,8 @@ export const mediaLibrarySettingsSchema = z
     folderTemplate: z.string().default("{actor}/{number}"),
     fileTemplate: z.string().default("{number}"),
     placement: z.enum(PLACEMENT_MODES).default("move"),
+    assetNaming: z.enum(ASSET_NAMING_MODES).default("fixed"),
+    nfoNaming: z.enum(NFO_NAMING_MODES).default("both"),
     automation: z.enum(AUTOMATION_LEVELS).default("off"),
     discovery: z.enum(DISCOVERY_MODES).default("events"),
     cloudPath: z.string().trim().default(""),
@@ -126,6 +129,8 @@ export const mediaLibraryDtoSchema = z.object({
   folderTemplate: z.string(),
   fileTemplate: z.string(),
   placement: z.enum(PLACEMENT_MODES),
+  assetNaming: z.enum(ASSET_NAMING_MODES),
+  nfoNaming: z.enum(NFO_NAMING_MODES),
   automation: z.enum(AUTOMATION_LEVELS),
   discovery: z.enum(DISCOVERY_MODES),
   cloudPath: z.string(),
@@ -157,8 +162,11 @@ export type MediaLibraryStubProbeResponse = { hasStubs: boolean };
 /** The publication side of a library: where and how one scrape run writes its output. */
 export type PublicationTarget = Pick<
   MediaLibrarySettings,
-  "placement" | "outputPath" | "folderTemplate" | "fileTemplate"
+  "placement" | "outputPath" | "folderTemplate" | "fileTemplate" | "assetNaming" | "nfoNaming"
 >;
+
+/** What decides a library's file names. */
+export type NamingPolicy = Pick<PublicationTarget, "placement" | "folderTemplate" | "assetNaming" | "nfoNaming">;
 
 /** A folder template without a per-movie field puts several movies in one directory, which constrains asset names. */
 export const isSharedDirectoryTarget = (target: Pick<PublicationTarget, "placement" | "folderTemplate">): boolean => {
@@ -169,3 +177,32 @@ export const isSharedDirectoryTarget = (target: Pick<PublicationTarget, "placeme
   }
   return true;
 };
+
+export interface MovieNaming {
+  /** The movie shares a folder with other movies, so nothing it writes may use a fixed name. */
+  sharedFolder: boolean;
+  assetNaming: AssetNamingMode;
+  nfoNaming: NfoNamingMode;
+  sceneImages: boolean;
+}
+
+/**
+ * One naming for everything MDCz writes for a movie. Movies that share a folder would collide on fixed names
+ * (poster.jpg, movie.nfo, extrafanart), so a movie whose library template or any of whose folders holds other movies
+ * names its files after its video and keeps no scene images. `policy` is the movie's library, not the placement of the
+ * current write: a refresh writes in place, yet a movie of an `{actor}` library still shares its folder. Movies outside
+ * every library use the defaults.
+ */
+export const resolveMovieNaming = (input: {
+  policy?: NamingPolicy;
+  holdsOtherMovies: boolean;
+  downloadSceneImages: boolean;
+}): MovieNaming =>
+  input.holdsOtherMovies || (input.policy !== undefined && isSharedDirectoryTarget(input.policy))
+    ? { sharedFolder: true, assetNaming: "followVideo", nfoNaming: "filename", sceneImages: false }
+    : {
+        sharedFolder: false,
+        assetNaming: input.policy?.assetNaming ?? "fixed",
+        nfoNaming: input.policy?.nfoNaming ?? "both",
+        sceneImages: input.downloadSceneImages,
+      };

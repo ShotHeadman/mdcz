@@ -37,7 +37,7 @@ export function RecentAcquisitionRemoveDialog({ open, onConfirm, onOpenChange }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t.overview.recent.removeDialogTitle}</DialogTitle>
         </DialogHeader>
@@ -158,7 +158,7 @@ function AcquisitionCard<TItem extends RecentAcquisitionViewItem>({
         )}
       </div>
       <div className="absolute inset-x-0 bottom-0 flex h-2/5 flex-col justify-end rounded-b-quiet-lg bg-linear-to-t from-surface-floating/94 via-surface-floating/72 to-transparent p-4 text-foreground opacity-95 backdrop-blur-sm transition-opacity group-hover:opacity-100">
-        <div className="mb-1 inline-flex max-w-full truncate rounded-quiet-sm font-numeric text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/70">
+        <div className="mb-1 inline-flex max-w-full truncate rounded-quiet-sm font-numeric text-[11px] font-semibold tracking-[0.08em] text-foreground/70">
           {item.number}
         </div>
         <div className="line-clamp-1 text-sm font-bold leading-tight">{title}</div>

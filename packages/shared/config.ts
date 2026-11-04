@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { normalizeActorAliasGroups, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
-import { ASSET_NAMING_MODES } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, UI_LOCALES, Website } from "./enums";
 import {
   DEFAULT_LLM_BASE_URL,
@@ -42,7 +41,6 @@ const DEFAULT_SITES: Website[] = [
 ];
 
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
-const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 export const NFO_FIELD_OPTIONS = [
   "num",
   "plot",
@@ -107,10 +105,11 @@ const scrapeSchema = z.object({
   restDuration: z.number().int().min(0).default(60),
   /** Filename keyword -> number, for files whose names no parser rule can read; saved from repairs. */
   numberMappings: z.record(z.string(), z.string().trim().min(1)).default({}),
+  /** Asks the translation LLM to read the number again when no site has the parsed one. */
+  aiNumberFallback: z.boolean().default(false),
 });
 
 const namingSchema = z.object({
-  assetNamingMode: z.enum(ASSET_NAMING_MODES).default("fixed"),
   nfoTitleTemplate: z.string().default("{title}"),
   actorNameMax: z.number().int().min(1).max(20).default(3),
   actorNameMore: z.string().default("等演员"),
@@ -155,18 +154,20 @@ const translateSchema = z.object({
   targetLanguage: translationTargetSchema,
 });
 
-const downloadSchema = z.object({
+export const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
   tagBadges: z.boolean().default(false),
   tagBadgeTypes: z.array(z.enum(POSTER_TAG_BADGE_TYPE_OPTIONS)).default(() => [...DEFAULT_POSTER_TAG_BADGE_TYPES]),
   tagBadgePosition: z.enum(POSTER_TAG_BADGE_POSITION_OPTIONS).default("topLeft"),
+  tagBadgeSizePercent: z.number().int().min(25).max(300).default(100),
+  tagBadgeOpacity: z.number().int().min(10).max(100).default(100),
+  tagBadgeInsetPercent: z.number().int().min(0).max(20).default(3),
   tagBadgeImageOverrides: z.boolean().default(false),
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
   generateNfo: z.boolean().default(true),
-  nfoNaming: z.enum(NFO_NAMING_OPTIONS).default("both"),
   nfoIgnoreFields: z.array(z.enum(NFO_FIELD_OPTIONS)).default([]),
   sceneImageConcurrency: z.number().int().min(1).max(20).default(5),
   keepThumb: z.boolean().default(true),

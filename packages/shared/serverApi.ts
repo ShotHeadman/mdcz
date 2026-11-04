@@ -30,6 +30,9 @@ import type {
   ApiKeyCreateResponse,
   ApiKeyListResponse,
   AppEnsureWatermarkDirectoryResponse,
+  AppPreviewPosterBadgesInput,
+  AppPreviewPosterBadgesResponse,
+  AuthChangePasswordInput,
   AuthLoginInput,
   AuthSessionDto,
   ConfigImportInput,
@@ -116,11 +119,12 @@ export interface ServerApiContract {
   auth: {
     setup(): Promise<AuthSessionDto>;
     login(input: AuthLoginInput): Promise<AuthSessionDto>;
-    logout(): Promise<AuthSessionDto>;
+    changePassword(input: AuthChangePasswordInput): Promise<{ success: true }>;
     status(): Promise<AuthSessionDto>;
   };
   app: {
     ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse>;
+    previewPosterBadges(input: AppPreviewPosterBadgesInput): Promise<AppPreviewPosterBadgesResponse>;
   };
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;
@@ -250,7 +254,7 @@ export interface ServerApiContract {
     history(input?: ScrapeTaskControlInput): Promise<ScrapeHistoryResponse>;
     nfoRead(input: NfoReadInput): Promise<NfoReadResponse>;
     nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse>;
-    posterCropSession(input: RootFileRef): Promise<PosterCropSessionResponse>;
+    posterCropSession(input: RootFileRef): Promise<PosterCropSessionResponse | null>;
     posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse>;
     pause(input: ScrapeTaskControlInput): Promise<ScrapeMutationAckDto>;
     result(input: ScrapeResultIdInput): Promise<ScrapeResultDetailResponse>;

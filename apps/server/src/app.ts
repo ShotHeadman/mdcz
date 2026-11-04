@@ -4,14 +4,15 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
+import { findNamingPolicy, MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { ActorSyncFollowUp, PersonSyncLock } from "@mdcz/runtime/mediaserver";
 import { type CookieResolver, NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
+import { ActorImageService, applyScrapeNetworkPolicy, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
+import { formatValidationError, NotFoundError } from "@mdcz/shared/error";
 import {
   automationRecentInputSchema,
   automationScrapeStartInputSchema,
@@ -111,6 +112,9 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       getTimeoutMs: () => config.getComputed().networkTimeoutMs,
       getRetryCount: () => config.getComputed().networkRetryCount,
     });
+  // Every site request shares this client, crawler-tester lookups included, so pacing starts with the first load
+  // rather than the first scrape.
+  config.onChange(({ configuration }) => applyScrapeNetworkPolicy(networkClient, configuration));
   const fetchGateway = options.resources?.fetchGateway ?? new FetchGateway(networkClient);
   const crawlerProvider =
     options.resources?.crawlerProvider ??
@@ -182,6 +186,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       recordSiteResults: async (number, results) =>
         (await persistence.getState()).repositories.siteResults.record(number, results),
       loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
+      findNamingPolicy: async (hostPath) => findNamingPolicy(await libraries.list(), hostPath),
     });
   const maintenance =
     options.services?.maintenance ??
@@ -280,6 +285,13 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (error instanceof AuthenticationError) {
       return reply.code(401).send({ statusCode: 401, error: "Unauthorized", message: error.message });
     }
+    if (error instanceof NotFoundError) {
+      return reply.code(404).send({ statusCode: 404, error: "Not Found", message: error.message });
+    }
+    const validationMessage = formatValidationError(error);
+    if (validationMessage) {
+      return reply.code(400).send({ statusCode: 400, error: "Bad Request", message: validationMessage });
+    }
     reply.send(error);
   });
   const shutdownController = new AbortController();
@@ -287,10 +299,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.addHook("onReady", async () => {
     await services.persistence.initialize();
     await services.config.load();
-    // Settings that moved into libraries become the first library before the configuration is saved without them.
+    // Settings that moved into libraries reach them before the configuration is saved without them. Saving the active
+    // profile comes last: until then it still holds the settings, so an interrupted start converts again.
     const legacy = services.config.takeLegacyConversion();
     if (legacy) {
       await services.libraries.adoptLegacyConfiguration(legacy);
+      await services.config.removeLibraryNamingFromInactiveProfiles();
       await services.config.save(await services.config.get());
     }
     await services.scans.recoverInterrupted();
@@ -352,18 +366,18 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   });
 
   fastify.get("/api/automation/library/recent", async (request) => {
-    await services.auth.assertAutomation(getBearerToken(request));
+    await services.auth.assertAuthenticated(getBearerToken(request));
     const input = automationRecentInputSchema.parse(request.query);
     return await services.automation.recent(input);
   });
 
   fastify.get("/api/automation/webhooks/status", async (request) => {
-    await services.auth.assertAutomation(getBearerToken(request));
+    await services.auth.assertAuthenticated(getBearerToken(request));
     return await services.automation.deliveryStatus();
   });
 
   fastify.post("/api/automation/scrape/start", async (request) => {
-    await services.auth.assertAutomation(getBearerToken(request));
+    await services.auth.assertAuthenticated(getBearerToken(request));
     // Downloaders pass the path as a query parameter (see the qBittorrent command); scripts may send JSON.
     const input = automationScrapeStartInputSchema.parse({
       ...(request.query as object),
@@ -374,7 +388,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
 
   // CloudDrive2's file system watcher. Answered at once, so scanning a FUSE subtree never stalls CloudDrive.
   fastify.post("/api/webhooks/clouddrive", async (request, reply) => {
-    await services.auth.assertAutomation(getBearerToken(request));
+    await services.auth.assertAuthenticated(getBearerToken(request));
     services.libraryWatch.submitCloudDriveChanges(cloudDriveNotifySchema.parse(request.body).data);
     return reply.code(204).send();
   });
@@ -384,7 +398,11 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     trpcOptions: {
       router: appRouter,
       allowMethodOverride: true,
-      createContext: ({ req }: CreateFastifyContextOptions) => ({ services, token: getBearerToken(req) }),
+      createContext: ({ req }: CreateFastifyContextOptions) => ({
+        services,
+        token: getBearerToken(req),
+        clientAddress: req.ip,
+      }),
     },
   });
 

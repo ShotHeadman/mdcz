@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { NotFoundError } from "@mdcz/shared/error";
 import { and, desc, eq, getTableColumns, isNotNull, isNull } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
-import { PersistenceError, persistenceErrorCodes } from "./errors";
 import { scrapeRuns } from "./schema";
 
 export type ScrapeExecutionMode = "single" | "batch";
@@ -97,8 +97,7 @@ export interface FinalizeScrapeRunInput {
   totalBytes?: number;
 }
 
-const notFound = (entity: string, id: string): PersistenceError =>
-  new PersistenceError(persistenceErrorCodes.NotFound, `${entity} not found: ${id}`);
+const notFound = (entity: string, id: string): NotFoundError => new NotFoundError(`${entity} not found: ${id}`);
 
 export class ScrapeRunRepository {
   constructor(private readonly database: PersistenceDatabase) {}

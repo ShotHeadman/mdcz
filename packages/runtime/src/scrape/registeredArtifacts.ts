@@ -6,6 +6,7 @@ import {
   StorageError,
   storageErrorCodes,
 } from "@mdcz/media-store";
+import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
@@ -29,6 +30,8 @@ export async function writeNfoPublication(input: {
   videoPath?: string;
   data: CrawlerData;
   configuration: Configuration;
+  /** The names an unregistered movie is written under; a library movie keeps its registered NFOs. */
+  nfoNaming: NfoNamingMode;
   nfoGenerator: Pick<NfoGenerator, "mergeEditableXml" | "buildXml">;
   publication: {
     roots: readonly MediaRoot[];
@@ -36,9 +39,9 @@ export async function writeNfoPublication(input: {
     library?: MovieLibrary;
   };
 }): Promise<string> {
-  const { nfoPath, videoPath, data, configuration, nfoGenerator, publication } = input;
+  const { nfoPath, videoPath, data, configuration, nfoNaming, nfoGenerator, publication } = input;
   let existingXml: string | undefined;
-  for (const candidate of getNfoReadCandidates(nfoPath, configuration.download.nfoNaming, videoPath)) {
+  for (const candidate of getNfoReadCandidates(nfoPath, nfoNaming, videoPath)) {
     const { root, relativePath } = resolveRootFile(publication.roots, candidate);
     const content = await readRootFile(root, relativePath).catch((error: unknown) => {
       if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
@@ -53,14 +56,14 @@ export async function writeNfoPublication(input: {
     buildTags: buildMovieTags,
     localState: existingXml ? parseNfoSnapshot(existingXml).localState : undefined,
     enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
-    nfoNaming: configuration.download.nfoNaming,
+    nfoNaming,
     nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
   };
   const xml = existingXml
     ? nfoGenerator.mergeEditableXml(existingXml, data, options)
     : nfoGenerator.buildXml(data, options);
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
-  const paths = getNfoWritePaths(plannedPath, configuration.download.nfoNaming);
+  const paths = getNfoWritePaths(plannedPath, nfoNaming);
   const owned = publication.outputs
     ? await resolveRegisteredNfoPaths(nfoPath, publication.outputs, async (id) => {
         const root = publication.roots.find((root) => root.id === id);
@@ -112,7 +115,7 @@ export async function registeredPosterCropContext(
   const owners = [...new Set(snapshot.files.map((file) => file.itemId))];
   if (owners.length > 1)
     throw new Error("The same video file is referenced by multiple library movies; cannot determine cover");
-  if (!owners.length) throw new Error("Current video is not in library; cannot retrieve saved cover");
+  if (!owners.length) return null;
   const movieId = owners[0];
   const entry = await library.getEntryById(movieId);
   const assets: { thumb?: string; poster?: string } = {};

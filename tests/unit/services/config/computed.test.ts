@@ -1,9 +1,10 @@
+import type { MediaLibraryRecord } from "@mdcz/persistence";
 import { buildComputedConfiguration } from "@mdcz/runtime/config";
+import { findNamingPolicy } from "@mdcz/runtime/library";
 import { buildCrawlerOptions } from "@mdcz/runtime/scrape";
-import { assertTargetLayout } from "@mdcz/runtime/scrape/FileOrganizer";
 import { configurationSchema } from "@mdcz/shared/config";
 import { ProxyType, Website } from "@mdcz/shared/enums";
-import { mediaLibrarySettingsSchema } from "@mdcz/shared/mediaLibrary";
+import { mediaLibrarySettingsSchema, type NamingPolicy, resolveMovieNaming } from "@mdcz/shared/mediaLibrary";
 import { DEFAULT_R18_METADATA_LANGUAGE } from "@mdcz/shared/r18";
 import { describe, expect, it } from "vitest";
 
@@ -63,26 +64,83 @@ describe("buildComputedConfiguration", () => {
     ).toBeUndefined();
   });
 
-  it("enforces shared-directory library layouts, overview sources, and Jellyfin userId", () => {
-    const sharedDirectory = {
-      placement: "move",
-      outputPath: "/out",
-      folderTemplate: "{actor}",
-      fileTemplate: "{number}",
-    } as const;
-    const valid = { assetNamingMode: "followVideo", nfoNaming: "filename", downloadSceneImages: false };
-    for (const [override, message] of [
-      [{}, undefined],
-      [{ assetNamingMode: "fixed" }, "asset naming"],
-      [{ nfoNaming: "movie" }, "NFO naming"],
-      [{ downloadSceneImages: true }, "scene images"],
+  it("names a movie's files by its library unless the movie shares a folder with other movies", () => {
+    const library = (placement: NamingPolicy["placement"], folderTemplate: string): NamingPolicy => ({
+      placement,
+      folderTemplate,
+      assetNaming: "fixed",
+      nfoNaming: "movie",
+    });
+    const shared = { sharedFolder: true, assetNaming: "followVideo", nfoNaming: "filename", sceneImages: false };
+    for (const [policy, holdsOtherMovies, expected] of [
+      [library("move", "{actor}/{number}"), false, { sharedFolder: false, assetNaming: "fixed", nfoNaming: "movie" }],
+      [library("move", "{actor}"), false, shared],
+      [library("move", ""), false, shared],
+      // The policy, not the in-place write that maintenance makes, says the folder is shared by template.
+      [library("metadataOnly", "{actor}"), false, shared],
+      // An in-place library has no template; its folders are shared when they hold other movies.
+      [library("inPlace", "{actor}"), false, { sharedFolder: false, nfoNaming: "movie", sceneImages: true }],
+      [library("inPlace", ""), true, shared],
+      // Any folder of the movie that holds another movie decides for all of them.
+      [library("move", "{actor}/{number}"), true, shared],
+      [undefined, false, { sharedFolder: false, assetNaming: "fixed", nfoNaming: "both", sceneImages: true }],
+      [undefined, true, shared],
     ] as const) {
-      const { assetNamingMode, ...download } = { ...valid, ...override };
-      const configuration = configurationSchema.parse({ naming: { assetNamingMode }, download });
-      if (message) expect(() => assertTargetLayout(configuration, sharedDirectory)).toThrow(message);
-      else expect(() => assertTargetLayout(configuration, sharedDirectory)).not.toThrow();
+      expect(resolveMovieNaming({ policy, holdsOtherMovies, downloadSceneImages: true })).toMatchObject(expected);
     }
+    expect(
+      resolveMovieNaming({ policy: library("move", "{number}"), holdsOtherMovies: false, downloadSceneImages: false })
+        .sceneImages,
+    ).toBe(false);
+  });
 
+  it("takes a path's naming policy from the closest library and refuses libraries that disagree", () => {
+    const record = (
+      name: string,
+      settings: Partial<Pick<MediaLibraryRecord, "sourcePath" | "outputPath" | "folderTemplate" | "nfoNaming">>,
+    ): MediaLibraryRecord => ({
+      id: name,
+      name,
+      sourcePath: `/sources/${name}`,
+      outputPath: "",
+      folderTemplate: "{actor}/{number}",
+      fileTemplate: "{number}",
+      placement: "move",
+      assetNaming: "fixed",
+      nfoNaming: "both",
+      automation: "off",
+      discovery: "events",
+      cloudPath: "",
+      scanIntervalMinutes: 15,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      ...settings,
+    });
+    const libraries = [
+      record("outer", { outputPath: "/out", nfoNaming: "movie" }),
+      record("inner", { outputPath: "/out/inner", nfoNaming: "filename" }),
+      record("twinA", { outputPath: "/shared" }),
+      record("twinB", { outputPath: "/shared" }),
+      // Different stored values, yet both templates share folders, so both name files the same way.
+      record("actorA", { outputPath: "/actors", folderTemplate: "{actor}", nfoNaming: "movie" }),
+      record("actorB", { outputPath: "/actors", folderTemplate: "{actor}" }),
+    ];
+    for (const [path, nfoNaming] of [
+      ["/sources/outer/ABC-1.mp4", "movie"],
+      ["/out/X/ABC-1.nfo", "movie"],
+      ["/out/inner/X/ABC-1.nfo", "filename"],
+      ["/shared/X/ABC-1.nfo", "both"],
+      ["/actors/X/ABC-1.nfo", "movie"],
+      ["/elsewhere/ABC-1.mp4", undefined],
+    ] as const) {
+      expect(findNamingPolicy(libraries, path)?.nfoNaming).toBe(nfoNaming);
+    }
+    expect(() =>
+      findNamingPolicy([...libraries, record("rival", { outputPath: "/shared", nfoNaming: "movie" })], "/shared/X"),
+    ).toThrow('"twinA" and "twinB" and "rival"');
+  });
+
+  it("rejects invalid overview sources and Jellyfin userId", () => {
     const cases = [
       {
         result: configurationSchema.safeParse({

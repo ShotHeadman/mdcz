@@ -40,8 +40,11 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
       if (!previous || previous.task.id !== snapshot.task.id) {
         return {
           snapshot,
+          // A directory rerun lists everything it found itself; only a retry run needs its chain beneath it.
           ancestors:
-            previous && snapshot.task.previousTaskId === previous.task.id ? [...state.ancestors, previous] : [],
+            previous && snapshot.task.previousTaskId === previous.task.id && !snapshot.directorySource
+              ? [...state.ancestors, previous]
+              : [],
           retiredTaskIds: previous ? [...state.retiredTaskIds, previous.task.id] : state.retiredTaskIds,
           error: null,
         };

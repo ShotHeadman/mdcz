@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { toErrorMessage } from "../../../shared";
 
 const SMALL_POSTER_THRESHOLD_BYTES = 50_000;
@@ -24,7 +24,7 @@ export interface DerivePosterFromThumbOptions {
 
 const inferOutputExtension = (filePath: string): string => extname(filePath) || ".jpg";
 
-const encodePoster = (pipeline: sharp.Sharp, outputPath: string): sharp.Sharp => {
+const encodePoster = (pipeline: Sharp, outputPath: string): Sharp => {
   switch (inferOutputExtension(outputPath).toLowerCase()) {
     case ".png":
       return pipeline.png();

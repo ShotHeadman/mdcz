@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeRuntimeConfig,
   parseRuntimeConfiguration,
+  RUNTIME_AUTH_STATE_FILE,
   RuntimeConfigProfileStore,
   RuntimeConfigService,
   RuntimeConfigValidationError,
@@ -41,6 +42,7 @@ describe("RuntimeConfigProfileStore", () => {
     await store.load();
     await store.createProfile("windows-dev");
     await store.switchProfile("windows-dev");
+    await expect(store.createProfile("auth-state")).rejects.toThrow("reserved");
 
     expect(await store.listProfiles()).toEqual({
       profiles: ["default", "windows-dev"],
@@ -80,20 +82,24 @@ describe("RuntimeConfigProfileStore", () => {
     await expect(
       store.importProfile({
         name: "bad",
-        content: '[download]\nnfoNaming = "invalid"\n',
+        content: '[naming]\npartStyle = "invalid"\n',
       }),
     ).rejects.toBeInstanceOf(RuntimeConfigValidationError);
   });
 
-  it("cleans invalid inactive legacy profiles without touching the active profile", async () => {
+  it("cleans invalid inactive legacy profiles without touching the active profile or the admin credential", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });
     await store.load();
     await writeFile(join(configDir, "broken.json"), JSON.stringify({ jellyfin: { userId: "not-a-uuid" } }), "utf8");
+    const authStatePath = join(configDir, RUNTIME_AUTH_STATE_FILE);
+    await writeFile(authStatePath, JSON.stringify({ passwordHash: "scrypt$x$y", jellyfin: 1 }), "utf8");
 
     await store.cleanupInvalidNonActiveProfiles();
+    await store.removeLibraryNamingFromInactiveProfiles();
 
     expect((await store.listProfiles()).profiles).toEqual(["default"]);
+    expect(JSON.parse(await readFile(authStatePath, "utf8"))).toEqual({ passwordHash: "scrypt$x$y", jellyfin: 1 });
   });
 });
 
@@ -105,9 +111,7 @@ describe("runtime config helpers", () => {
     expect(() => parseRuntimeConfiguration({ paths: { actorPhotoFolder: "actors" } })).toThrow(
       RuntimeConfigValidationError,
     );
-    expect(() => parseRuntimeConfiguration({ download: { nfoNaming: "invalid" } })).toThrow(
-      RuntimeConfigValidationError,
-    );
+    expect(() => parseRuntimeConfiguration({ naming: { partStyle: "invalid" } })).toThrow(RuntimeConfigValidationError);
 
     const configDir = await createTempDir();
     const mediaPath = join(configDir, "media");
@@ -122,6 +126,9 @@ describe("runtime config helpers", () => {
         "successFileRename = false",
         "[naming]",
         'folderTemplate = "{number}"',
+        'assetNamingMode = "followVideo"',
+        "[download]",
+        'nfoNaming = "movie"',
         "[watch]",
         "enabled = true",
         "intervalMinutes = 30",
@@ -141,6 +148,8 @@ describe("runtime config helpers", () => {
         folderTemplate: "{number}",
         fileTemplate: "{filename}",
         placement: "move",
+        assetNaming: "followVideo",
+        nfoNaming: "movie",
         automation: "scrape",
         discovery: "events",
         cloudPath: "",
@@ -148,6 +157,46 @@ describe("runtime config helpers", () => {
       },
     });
     expect(service.takeLegacyConversion()).toBeUndefined();
+
+    // A 0.20 configuration names files for every library; its libraries take that naming over.
+    const libraryDir = await createTempDir();
+    await writeFile(
+      join(libraryDir, "default.toml"),
+      '[naming]\nassetNamingMode = "followVideo"\n[download]\nnfoNaming = "bogus"\n',
+      "utf8",
+    );
+    const libraryService = new RuntimeConfigService({
+      store: new RuntimeConfigProfileStore({ configDir: libraryDir }),
+    });
+    expect((await libraryService.load()).naming).not.toHaveProperty("assetNamingMode");
+    expect(libraryService.takeLegacyConversion()).toEqual({
+      naming: { assetNaming: "followVideo", nfoNaming: "both" },
+    });
+  });
+
+  it("removes library naming from inactive profiles but keeps a single-directory profile whole", async () => {
+    const configDir = await createTempDir();
+    const active = '[download]\nnfoNaming = "movie"\n';
+    const singleDirectory = '[paths]\nmediaPath = "/media"\n[download]\nnfoNaming = "filename"\n';
+    await writeFile(join(configDir, "default.toml"), active, "utf8");
+    await writeFile(
+      join(configDir, "other.json"),
+      JSON.stringify({ naming: { assetNamingMode: "followVideo", actorNameMax: 2 }, download: { nfoNaming: "both" } }),
+      "utf8",
+    );
+    await writeFile(join(configDir, "old.toml"), singleDirectory, "utf8");
+    await writeFile(join(configDir, "broken.toml"), "[[[", "utf8");
+    const store = new RuntimeConfigProfileStore({ configDir });
+
+    await store.removeLibraryNamingFromInactiveProfiles();
+
+    expect(JSON.parse(await readFile(join(configDir, "other.json"), "utf8"))).toEqual({
+      naming: { actorNameMax: 2 },
+      download: {},
+    });
+    await expect(readFile(join(configDir, "old.toml"), "utf8")).resolves.toBe(singleDirectory);
+    await expect(readFile(join(configDir, "default.toml"), "utf8")).resolves.toBe(active);
+    await expect(readFile(join(configDir, "broken.toml"), "utf8")).resolves.toBe("[[[");
   });
 });
 

@@ -7,7 +7,7 @@ import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api, subscribeTaskNotifications } from "../client";
-import { queryKeys } from "../lib/queryKeys";
+import { refreshPendingQueries } from "../lib/pendingQueries";
 import { applyScrapeLiveRunsSnapshot, readScrapeRunsSnapshot } from "../taskHydration";
 
 const FAST_POLL_INTERVAL_MS = 2_000;
@@ -78,7 +78,7 @@ export const useWebTaskSync = (): void => {
       void maintenanceCoordinator.request();
     };
     const refreshPending = (): void => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.pending.all });
+      void refreshPendingQueries(queryClient);
     };
     // Actor sync events have no replay, so every (re)connect rereads the jobs the server still holds.
     const refreshActorSync = (): void => {

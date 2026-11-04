@@ -41,8 +41,6 @@ export const settings: Messages["settings"] = {
       PART: "统一为 PART1 / PART2",
       DISC: "统一为 DISC1 / DISC2",
     },
-    assetNaming: { fixed: "固定命名", followVideo: "跟随影片文件名" },
-    nfoNaming: { both: "同时生成两种", movie: "仅 movie.nfo", filename: "仅 文件名.nfo" },
   },
   nfoFields: {
     num: "番号兼容字段",
@@ -67,6 +65,11 @@ export const settings: Messages["settings"] = {
   },
   nfoFieldOption: (field, label) => `${field}（${label}）`,
   translateFields: { title: "标题", plot: "简介", genres: "类别" },
+  badgePreview: {
+    title: "角标预览",
+    roundedCorners: "圆角海报",
+    failed: (error) => `生成角标预览失败: ${error}`,
+  },
   badgeOverrides: {
     openFolder: "打开文件夹",
     createDirFailed: (error) => `创建角标图片目录失败: ${error}`,
@@ -77,7 +80,7 @@ export const settings: Messages["settings"] = {
     badge: "角标",
     fileNames: "可用文件名",
     formats: (formats) => `支持格式：${formats}。`,
-    ratio: (ratio) => `推荐比例：${ratio}。角标高度按海报短边约 8% 计算，并限制在 28-64px。`,
+    ratio: (ratio) => `推荐比例：${ratio}。角标高度默认按海报短边约 8% 计算（最小 28px），可通过“角标大小”调整。`,
     scaling: "图片会按角标槽位等比缩放，不会拉伸；方形图片会以槽位高度 x 槽位高度靠左放置。",
     advice: "建议使用透明 PNG 或 WebP。图片过大时会自动缩小，损坏或无法读取的图片会回退到内建角标。",
   },
@@ -89,6 +92,7 @@ export const settings: Messages["settings"] = {
     source: (path) => `源文件：${path}`,
     organized: (path) => `整理后：${path}`,
     metadataDir: (path) => `元数据目录：${path}`,
+    files: (names) => `写入：${names.join("、")}`,
   },
   namingTemplateHelp: {
     folder: "文件夹模板",
@@ -128,9 +132,9 @@ export const settings: Messages["settings"] = {
     },
     notes: {
       folder: [
-        "该配置里的 / 或 \\ 会创建多级文件夹；",
-        "移动视频与字幕或仅输出元数据时，会按文件夹模板创建目录；",
-        "如果模板不包含影片级唯一字段，保存时会按共享目录模式校验附属文件和 NFO 命名",
+        "该配置里的 / 或 \\ 会创建多级文件夹；留空则直接放在输出目录",
+        "移动视频与字幕或仅输出元数据时，会按文件夹模板创建目录",
+        "模板不含番号、标题或文件名时（例如只有 {actor}），多部影片共用文件夹：按视频名命名，仅生成 <文件名>.nfo，不下载剧照（防止覆盖）",
       ],
       file: [
         "文件名模板只决定视频基础文件名，不会创建子目录；路径分隔符和非法文件名字符都会被清理",
@@ -158,9 +162,15 @@ export const settings: Messages["settings"] = {
     add: "添加演员",
     remove: "删除演员",
   },
+  language: {
+    title: "语言",
+    label: "语言",
+    description: "仅保存在当前设备，不属于配置档案。",
+  },
   integrations: {
     access: "下载器接入",
-    accessDescription: "供下载器与网盘调用自动化接口，无法用于登录网页界面。",
+    accessDescription:
+      "供下载器、网盘与脚本完整调用 MDCz API（管理 Key 与修改密码除外），无法用于登录网页界面。请只交给你信任的工具。",
     notifications: "通知",
     keyName: "名称",
     keyNamePlaceholder: "qBittorrent",

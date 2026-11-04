@@ -27,6 +27,7 @@ export interface ServerMaintenanceRuntimeDependencies {
   mappingStore?: TranslationMappingStore;
   recordSiteResults: SiteResultSink;
   loadSiteResults: MaintenanceRuntimeDependencies["loadSiteResults"];
+  findNamingPolicy: MaintenanceRuntimeDependencies["findNamingPolicy"];
 }
 
 export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDependencies): MaintenanceRuntime => {
@@ -40,12 +41,12 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
     logger,
     prepareScrapeItem: deps.prepareScrapeItem,
     config: deps.config,
+    findNamingPolicy: deps.findNamingPolicy,
     downloadManager: new DownloadManager(deps.networkClient, {
       imageHostCooldownStore: deps.imageHostCooldownStore,
       logger,
     }),
-    fileOrganizer: new FileOrganizer(logger),
-    networkPolicyClient: deps.networkClient,
+    fileOrganizer: new FileOrganizer(),
     nfoGenerator: new NfoGenerator(),
     postProcessAssets: async ({ configuration, ...input }) =>
       await applyPosterTagBadgesIfNeeded({

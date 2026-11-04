@@ -5,6 +5,7 @@ export const nfo: Messages["nfo"] = {
     titleRequired: "标题不能为空",
     numberRequired: "番号不能为空",
     websiteRequired: "请选择来源站点",
+    releaseDateInvalid: "发行日期需为有效日期，格式 YYYY-MM-DD",
     durationInvalid: "时长必须是有效数字",
     ratingInvalid: "评分必须是有效数字",
     actorNameRequired: "演员资料的姓名不能为空",

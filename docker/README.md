@@ -1,153 +1,202 @@
-# Docker 部署与维护
+# Docker 部署与维护指南
 
-推荐使用仓库根目录提供的 `compose.yaml` 进行部署。镜像支持 Linux amd64 与 arm64 架构；服务内置 SQLite 数据库，无需额外部署 MySQL / PostgreSQL 等数据库容器。
+MDCz 官方提供多架构 Docker 镜像（支持 Linux x86_64 / amd64 与 ARM64），内置轻量 SQLite 数据库，开箱即用，无需额外配置 MySQL 或 PostgreSQL。
 
-## 首次部署
+---
 
-1. 将仓库根目录的 `compose.yaml` 复制到部署目录，并在同级目录下将 `docker/compose.env.example` 复制命名为 `.env`。
-2. 编辑 `.env` 文件：
-   - 前往项目 [Releases](https://github.com/ShotHeadman/mdcz/releases) 页面查看最新版本号并填入 `MDCZ_VERSION`（例如 `0.15.0`，注意不要带 `v` 前缀）。
-   - 填写宿主机上真实的影片目录绝对路径 `MDCZ_MEDIA_PATH`。
-   - 配置目录所有者的数字用户与组 ID（`PUID`、`PGID`，可在宿主机终端运行 `id` 命令获取）。
-   - 若在 NAS 或局域网服务器部署，建议将 `MDCZ_BIND_IP` 改为 `0.0.0.0` 或 NAS 的局域网 IP。
-3. 创建数据存放目录（默认命令 `mkdir -p ./data`）。为防止因路径手误拼错而挂载出空目录，Compose 默认不会自动创建不存在的宿主机挂载目录。
-4. 启动服务并查看日志：
+## 快速上手
+
+### 1. 编写配置文件
+推荐新建一个专属目录（例如 `~/mdcz` 或群晖上的 `/volume1/docker/mdcz`），并在该目录下创建 `docker-compose.yml`：
+
+```yaml
+services:
+  mdcz:
+    # 请前往 Releases 页面查看最新版本号（例如 0.15.0，不要带 v）
+    image: ghcr.io/shotheadman/mdcz:0.15.0
+    container_name: mdcz
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      # 0.0.0.0 允许局域网设备访问，若仅允许本机访问可改为 127.0.0.1:3838:3838
+      - "0.0.0.0:3838:3838"
+    environment:
+      # 建议设置为媒体目录所有者的数字用户与组 ID（在宿主机运行 id 命令查看）
+      PUID: 1000
+      PGID: 1000
+      UMASK: 022
+      # 【可选】直接指定管理员密码（留空则首次打开网页时设置）
+      # MDCZ_ADMIN_PASSWORD: ""
+    volumes:
+      # 数据目录：存放数据库、配置文件与刮削记录
+      - ./data:/data
+      # 媒体目录：请修改为宿主机真实的影片存放路径（必须已存在）
+      - /volume1/video:/media
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+> [!TIP]
+> **喜欢使用 `.env` 环境变量解耦？**  
+> 仓库根目录提供了标准版 [`compose.yaml`](file:///home/doublechu/Documents/mdcz/compose.yaml) 与 [`docker/compose.env.example`](file:///home/doublechu/Documents/mdcz/docker/compose.env.example)，可将其复制到部署目录并重命名为 `.env` 进行分离配置。
+
+---
+
+### 2. 启动服务与访问
+
+在 `docker-compose.yml` 所在目录执行：
 
 ```sh
+# 创建数据存储目录（请确保此目录与媒体目录在宿主机上均已存在）
+mkdir -p ./data
+
+# 启动容器
 docker compose up -d
+
+# 查看实时日志
 docker compose logs -f mdcz
 ```
 
-5. 在浏览器中打开 `http://<服务器IP>:3838`。首次访问时，直接设置管理员密码即可完成初始化。密码无特殊字符或长度限制，系统没有默认 `admin` 密码。
-6. 登录后进入系统设置添加媒体库。
+1. **打开网页**：浏览器访问 `http://<服务器或NAS的IP>:3838`。
+2. **初始化**：首次访问直接输入密码，即可完成管理员账号初始化。
+3. **添加媒体库**：登录后在【设置】->【媒体库】中添加影片目录。
 
-> [!IMPORTANT]
-> **媒体库路径填写提示**：在 WebUI 设置中添加媒体库时，**必须填写容器内映射的路径**（例如 `/media` 或 `/media/movies`），切勿填写宿主机的物理路径（如群晖的 `/volume1/...` 或 Unraid 的 `/mnt/user/...`）。
+---
 
-> [!TIP]
-> **关于环境变量密码**：如果你希望跳过网页初始化、直接在容器启动时指定管理员密码，可以在 `.env` 中取消注释并配置 `MDCZ_ADMIN_PASSWORD`。该环境变量优先级高于网页设置的密码，且不会写入磁盘文件。
+## NAS 用户避坑指南（必读）
 
-## 持久化与权限
+1. **媒体库路径填写规则（最常见错误）**：  
+   在 WebUI 设置中添加媒体库时，**必须填写容器内部映射的路径**（如 `/media` 或 `/media/movies`），**千万不要**填写宿主机的物理路径（如 `/volume1/video` 或 `/mnt/user/...`）。
+2. **局域网连不上 Web 界面**：  
+   如果打不开 `http://<IP>:3838`，检查端口映射是否写成了 `127.0.0.1:3838:3838`（仅允许宿主机访问）。NAS / 家庭服务器请务必写为 `0.0.0.0:3838:3838`。
+3. **文件权限与刮削失败（PUID / PGID）**：  
+   容器启动后会自动降权运行。请在宿主机终端输入 `id` 查看你当前用户的数字 ID，并将 `PUID` 和 `PGID` 填入配置，确保容器有权限在宿主机的媒体文件夹中创建海报与 `.nfo` 文件。
+4. **网页中设置刮削网络代理**：  
+   若在 WebUI【系统设置 -> 网络代理】中配置代理（HTTP / SOCKS5），**严禁填写 `127.0.0.1`**。容器内的 `127.0.0.1` 指向容器本身，请填写宿主机或软路由在局域网中的真实 IP（例如 `http://192.168.1.100:7890`）。
+5. **秒级整理建议**：  
+   如果启用自动整理功能，建议把“下载目录”和“归档影片库”放在**同一个挂载卷**下（例如映射宿主机 `/volume1/media` 到容器 `/media`，内部划分为 `/media/downloads` 和 `/media/movies`）。跨挂载卷移动无法秒级完成，而会变成漫长耗时的全量拷贝。
+6. **数据库存储限制**：  
+   数据目录（`/data`）内置 SQLite 数据库，**必须存放在本地物理磁盘或本地存储池**，切勿挂载在远程 SMB / NFS 网络共享文件夹上，否则极易发生文件锁失效导致数据库损坏。
 
-| 容器路径 | 用途 |
-| --- | --- |
-| `/data/config` | 配置文件目录：存放 TOML 规则档案及管理员密码哈希（`auth-state.json`） |
-| `/data/data` | 运行数据目录：存放 SQLite 数据库、任务记录与运行缓存 |
-| `/media` | 媒体挂载目录：挂载宿主机上的影片文件夹 |
+---
 
-- **账号凭据安全**：管理员密码以加盐哈希（scrypt）的形式安全保存在 `auth-state.json`（文件权限为 `0600`）。管理员账号一旦设置便长期有效，即使媒体库中没有任何影片或被清空，也不会重新要求注册。
-- **旧版本明文凭据说明**：旧版本明文格式的认证文件不做自动迁移。从旧版升级前，请先停止服务并备份数据，删除旧的 `auth-state.json` 后启动，随后在网页上重新设置管理员密码即可（这不会影响数据库与已有影片）。
-- **用户权限（PUID / PGID）**：容器启动时会自动降权为你指定的 `PUID`/`PGID` 用户（默认 1000:1000）运行，确保 MDCz 生成的刮削海报与 NFO 文件在宿主机上能被正常读写。创建文件的掩码默认为 `UMASK=022`；若共享文件夹组内需要写权限，可设置为 `002`。
-  - **注意**：容器不会递归修改宿主机上已有媒体文件的所有权。请确保宿主机上的媒体目录对所配置的 `PUID`/`PGID` 用户具备读写权限。若需补充宿主机用户组，可利用 Compose 的 `group_add` 参数。
-  - 若你希望完全不使用 root 引导，也可以在 Compose 中直接声明 `user: "1026:100"`，此时环境中的 `PUID`/`PGID` 必须与之保持一致。
-- **数据库存储位置限制**：运行中的 SQLite 数据库（`mdcz.sqlite`）**必须存放在宿主机的本地硬盘上**（NAS 本地的存储池属于本地磁盘，可放心使用）。**切勿将数据目录挂载在远程 NFS / SMB 网络共享上**，因为网络文件系统不支持 SQLite 严格的文件锁机制，极易导致数据库损坏。同目录下的 `.lock.sqlite` 是防多实例并发写入锁，正常退出后由系统自动释放，请勿手动删除。
-- **文件自动整理建议**：如果你的工作流包含自动整理（将未刮削的影片移动到整理库），强烈建议将“下载目录”与“影片库目录”挂载在同一个 `/media` 目录下（如 `/media/downloads` 和 `/media/movies`）。如果是跨挂载卷移动，系统底层无法实现秒级的原子移动，而会触发耗时的全量文件拷贝；软链接与硬链接也要求路径在同一个容器卷内可解析。
+## 日常管理与更新
 
-## 健康检查与诊断
-
-- `/health`：仅检查 HTTP 服务进程是否存活。
-- `/ready`：检查数据库连接是否可用（镜像默认以此作为健康检查依据），不探测外部刮削网站。
-- 注意：Docker 的健康状态仅供监控，不会自动重启容器；容器的自动拉起由 `restart: unless-stopped` 策略在进程异常退出时代为处理。
-
-常用排错命令：
-
+### 常用命令
 ```sh
 # 查看容器状态与健康情况
 docker compose ps
 
-# 查看实时运行日志
+# 查看最近 200 行日志
 docker compose logs --tail=200 -f mdcz
 
-# 运行自检工具（检查数据库路径、SQLite 版本、数据完整性及外键约束）
-docker compose exec mdcz docker-entrypoint.sh node server.js doctor
+# 重启服务
+docker compose restart mdcz
+
+# 停止服务
+docker compose stop mdcz
 ```
 
-`doctor` 命令仅输出系统自检状态，不会暴露密码或任何敏感配置。当容器处于停止状态时，也可通过独立容器运行自检：
+### 备份与迁移（最推荐）
+停止容器后，将宿主机上的数据目录（即 `./data`）整体打包即可完成全量备份：
+```sh
+docker compose stop mdcz
+tar -czvf mdcz-backup-$(date +%Y%m%d).tar.gz ./data
+docker compose up -d
+```
+> `./data` 中包含登录账号凭据、自定义 TOML 规则、SQLite 数据库及任务缓存。恢复时只需解压回原处并启动容器。
+
+### 版本升级
+1. 前往 [Releases 页面](https://github.com/ShotHeadman/mdcz/releases) 确认最新版本号。
+2. 修改 `docker-compose.yml`（或 `.env`）中的版本号。
+3. 执行更新：
+   ```sh
+   docker compose pull
+   docker compose up -d
+   ```
+> 容器启动时会自动处理增量数据库升级迁移。
+
+---
+
+## 高级运维与进阶配置
+
+<details>
+<summary><strong>1. 系统体检命令 (Doctor)</strong></summary>
+
+MDCz 内置了体检工具，可快速检查数据库路径、SQLite 版本、数据完整性及外键约束：
 
 ```sh
+# 容器运行中执行
+docker compose exec mdcz docker-entrypoint.sh node server.js doctor
+
+# 容器已停止时执行
 docker compose run --rm --no-deps mdcz node server.js doctor
 ```
+若输出中 `"healthy": true` 表示系统与数据状态良好。
+</details>
 
-**优雅停机机制**：当执行 `docker compose stop` 时，程序会在 25 秒的缓冲期内依次平滑关闭前端推送长连接、中止正在执行的任务并安全断开数据库连接（Compose 预留了 30 秒停机缓冲）。若发生超时强制退出，下次启动时会自动恢复中断的任务。
+<details>
+<summary><strong>2. 数据库在线热备份与还原 (CLI)</strong></summary>
 
-## 备份与恢复
-
-### 1. 数据库热备份（服务运行中直接备份）
+除了直接复制 `./data` 目录外，你也可以在**容器不停止运行**的情况下安全热备份数据库（基于 SQLite Backup API）：
 
 ```sh
+# 热备份数据库（目标文件必须是不存在的新路径）
 docker compose exec mdcz docker-entrypoint.sh node server.js database backup /data/backups/manual.sqlite
+
+# 校验备份文件完整性
 docker compose exec mdcz docker-entrypoint.sh node server.js database verify /data/backups/manual.sqlite
 ```
 
-备份命令基于 SQLite 官方 Backup API，可安全生成一致的快照副本。
-> [!WARNING]
-> **切勿在运行中直接 `cp` 拷贝数据库**：由于 SQLite 采用 WAL（预写日志）模式，在服务运行期间直接复制 `mdcz.sqlite` 主文件会导致数据不一致甚至损坏，请务必使用官方命令热备份。注意备份目标路径必须是一个尚未存在的新文件。
-
-### 2. 完整整机备份（最推荐）
-停止服务后，将宿主机上的整个数据持久化目录（即 `./data` 目录，包含 `config` 与 `data`）打包备份到其他独立的存储介质。仅备份数据库不包含账号凭据（`auth-state.json`）与自定义 TOML 配置。
-
-### 3. 恢复数据库（需先停止服务）
-
+**还原数据库**（需停止服务）：
 ```sh
-# 1. 停止容器服务
 docker compose stop mdcz
-
-# 2. 执行恢复命令（必须带有 --confirm 参数）
 docker compose run --rm --no-deps mdcz node server.js database restore /data/backups/manual.sqlite --confirm
-
-# 3. 重新启动服务
 docker compose up -d
 ```
+> 还原程序会在覆盖前自动将现有数据库保留为 `*.before-restore-*.sqlite` 备份副本。注意数据库还原不会修改或回滚磁盘上已移动的文件或海报。
+</details>
 
-恢复程序会自动校验备份文件的完整性与 MDCz 表结构，并在覆盖前**先将当前旧数据库自动备份为 `*.before-restore-*.sqlite`**。
-注意：数据库恢复仅还原刮削历史、元数据与任务状态，**不会撤销或回滚磁盘上已经移动、重命名或生成的影片文件及海报**。
+<details>
+<summary><strong>3. 跨版本异常：数据库重建</strong></summary>
 
-## 升级与版本
-
-1. 停止当前服务：`docker compose stop mdcz`。
-2. 备份数据持久化目录。
-3. 修改 `.env` 中的 `MDCZ_VERSION` 为新版本号。
-4. 拉取新镜像并启动：`docker compose pull && docker compose up -d`。
-5. 查看日志与容器状态：`docker compose logs -f mdcz`。
-
-> [!NOTE]
-> 服务启动时会自动执行增量数据库迁移。如果升级后需要降级回滚，必须同时恢复升级前匹配的数据库备份，仅切换旧镜像可能因数据库结构向前不兼容而报错。生产部署建议锁定具体的版本号，避免使用 `latest` 引起非预期的破坏性更新。
-
-若日志提示数据库无法升级到当前版本（通常是数据库来自过旧或不兼容的版本），服务会拒绝启动，日志中会给出带数据库路径的重建命令。确认后执行：
+若跨越多个旧版本升级遇到数据库无法自动升级报错，可执行强制重建命令：
 
 ```sh
 docker compose stop mdcz
 docker compose run --rm --no-deps mdcz node server.js database rebuild /data/data/mdcz.sqlite --confirm
 docker compose up -d
 ```
+> 重建会将旧库备份为 `mdcz.sqlite.bak-*`，并初始化全新数据库；管理员账号与配置均会保留，媒体库重新扫描即可重新建立索引。
+</details>
 
-重建会把旧数据库重命名为同目录下的 `mdcz.sqlite.bak-*` 保留，下次启动时创建新数据库。媒体库索引、扫描与刮削历史会清空，可通过重新扫描恢复；账号凭据与 TOML 配置不受影响。
+<details>
+<summary><strong>4. 反向代理配置 (Nginx / SSE 实时任务流)</strong></summary>
 
-## 反向代理与网络设置
-
-如果需要通过 Nginx 反向代理访问 MDCz，可参考以下配置：
+若使用 Nginx 反向代理，**必须对任务流接口禁用缓冲**，否则前端无法实时获取扫描与刮削进度推送：
 
 ```nginx
+# 主站点反代
 location / {
-  proxy_pass http://127.0.0.1:3838;
-  proxy_set_header Host $host;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://127.0.0.1:3838;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 
-# SSE 实时任务事件流（必须禁用缓冲并保持长连接）
+# SSE 任务事件流（必须禁用缓冲）
 location /events/tasks {
-  proxy_pass http://127.0.0.1:3838;
-  proxy_http_version 1.1;
-  proxy_buffering off;
-  proxy_read_timeout 90s;
-  proxy_set_header Host $host;
-  proxy_set_header Connection "";
+    proxy_pass http://127.0.0.1:3838;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 90s;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
 }
 ```
-
-上述配置适用于 Nginx 部署在宿主机上的场景。如果 Nginx 同样运行在 Docker 容器中，请将它们接入同一个 Docker 网络，并将代理目标设置为 `http://mdcz:3838`。
-
-> [!WARNING]
-> **外部刮削代理配置注意**：如果在 WebUI 的网络设置中配置刮削代理（HTTP / SOCKS5），**请勿填写 `127.0.0.1` 或 `localhost`**（在容器内部它指向容器自己，无法访问到宿主机上的代理软件）。请填写宿主机的真实局域网 IP（例如 `http://192.168.1.100:7890`）或局域网中代理服务器的实际 IP。
-
+</details>

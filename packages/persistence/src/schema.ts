@@ -66,6 +66,8 @@ export const mediaLibraries = sqliteTable("media_libraries", {
   folderTemplate: text("folder_template").notNull(),
   fileTemplate: text("file_template").notNull(),
   placement: text("placement").notNull(),
+  assetNaming: text("asset_naming").notNull(),
+  nfoNaming: text("nfo_naming").notNull(),
   automation: text("automation").notNull(),
   discovery: text("discovery").notNull(),
   cloudPath: text("cloud_path").notNull(),

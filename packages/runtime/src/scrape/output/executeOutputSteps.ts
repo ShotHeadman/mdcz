@@ -1,4 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
+import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
 import type {
   CrawlerData,
   DiscoveredAssets,
@@ -51,6 +52,7 @@ export const prepareOutputCrawlerData = async (input: {
 
 export const downloadCrawlerAssets = async (input: {
   config: Configuration;
+  naming: MovieNaming;
   crawlerData: CrawlerData;
   downloadManager: DownloadManager;
   fileInfo: FileInfo;
@@ -77,6 +79,7 @@ export const downloadCrawlerAssets = async (input: {
     input.outputDir,
     input.crawlerData,
     input.config,
+    input.naming,
     preparedImageAlternatives,
     {
       ...input.callbacks,
@@ -113,6 +116,7 @@ export const downloadCrawlerAssets = async (input: {
 export const writePreparedNfo = async (input: {
   assets: DownloadedAssets;
   config: Pick<Configuration, "download" | "naming">;
+  naming: Pick<MovieNaming, "nfoNaming" | "sceneImages">;
   crawlerData?: CrawlerData;
   enabled: boolean;
   fileInfo: FileInfo;
@@ -141,11 +145,11 @@ export const writePreparedNfo = async (input: {
     assets: input.assets,
     buildTags: input.buildTags,
     enabledFields: nfoIgnoreFieldsToEnabledFields(input.config.download.nfoIgnoreFields),
-    includeRemoteSceneImageUrls: input.config.download.downloadSceneImages,
+    includeRemoteSceneImageUrls: input.naming.sceneImages,
     allowRemoteTrailerFallback: input.config.download.downloadTrailer,
     fileInfo: input.fileInfo,
     localState: input.localState,
-    nfoNaming: input.config.download.nfoNaming,
+    nfoNaming: input.naming.nfoNaming,
     nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
     sources: input.sources,
     videoMeta,

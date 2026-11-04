@@ -13,6 +13,7 @@ export const overview = {
   activity: {
     title: "Recent activity",
     kinds: { scan: "Scan", scrape: "Scrape", maintenance: "Maintenance" },
+    partlyDone: "Partially completed",
     statuses: {
       queued: "Queued",
       discovering: "Looking for videos",

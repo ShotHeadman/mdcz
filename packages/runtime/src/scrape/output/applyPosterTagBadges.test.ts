@@ -68,8 +68,14 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     expect(watermarkService.applyTagBadges).toHaveBeenCalledWith(
       "/tmp/poster.jpg",
       [expect.objectContaining({ label: "中字" }), expect.objectContaining({ label: "4K" })],
-      "bottomRight",
-      expect.objectContaining({ imageOverrides: true, onWarn: expect.any(Function) }),
+      expect.objectContaining({
+        imageOverrides: true,
+        position: "bottomRight",
+        sizePercent: 100,
+        opacity: 100,
+        insetPercent: 3,
+        onWarn: expect.any(Function),
+      }),
     );
   });
 

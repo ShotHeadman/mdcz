@@ -1,18 +1,21 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, extname, join, parse } from "node:path";
 import {
   POSTER_TAG_BADGE_ASPECT_RATIO,
   POSTER_TAG_BADGE_IMAGE_EXTENSIONS,
   POSTER_TAG_BADGE_IMAGE_FILENAMES,
   type PosterTagBadgePosition,
+  type PosterTagBadgeType,
 } from "@mdcz/shared/posterBadges";
 import sharp from "sharp";
-import type { PosterBadgeDefinition } from "./posterBadges";
+import { listPosterBadgeDefinitions, type PosterBadgeDefinition } from "./posterBadges";
 import { resolveWatermarkDirectory } from "./watermarkDirectory";
 
 const BADGE_GAP_RATIO = 0.1;
 const BADGE_HEIGHT_RATIO = 0.08;
+const MIN_BADGE_HEIGHT = 28;
 const FONT_STACK = [
   "'Microsoft YaHei'",
   "'PingFang SC'",
@@ -22,8 +25,6 @@ const FONT_STACK = [
   "'WenQuanYi Zen Hei'",
   "sans-serif",
 ].join(", ");
-
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 export interface BadgeOverlayLayout {
   badgeWidth: number;
@@ -46,7 +47,11 @@ interface BadgeOverlayInput {
 
 export interface PosterWatermarkOptions {
   imageOverrides?: boolean;
+  insetPercent?: number;
   onWarn?: (message: string) => void;
+  opacity?: number;
+  position?: PosterTagBadgePosition;
+  sizePercent?: number;
   watermarkDirectory?: string;
 }
 
@@ -80,7 +85,7 @@ export const buildBadgeMarkup = (
   const tailWidth = Math.max(14, Math.round(badgeWidth * 0.15));
   const bodyWidth = badgeWidth - tailWidth;
   const halfHeight = Math.round(badgeHeight / 2);
-  const fontSize = clamp(Math.round(badgeHeight * 0.46), 18, 34);
+  const fontSize = Math.max(18, Math.round(badgeHeight * 0.46));
   const highlightWidth = Math.max(12, Math.round(bodyWidth * 0.18));
   const baselineY = Math.round(badgeHeight * 0.68);
   const groupY = index * (badgeHeight + badgeGap);
@@ -116,11 +121,12 @@ export const resolveBadgeOverlayLayout = (
   posterWidth: number,
   posterHeight: number,
   badgeCount: number,
+  sizePercent = 100,
 ): BadgeOverlayLayout => {
   const maxPosterWidth = Math.max(1, Math.round(posterWidth));
   const maxPosterHeight = Math.max(1, Math.round(posterHeight));
   const referenceSize = Math.min(maxPosterWidth, maxPosterHeight);
-  let badgeHeight = clamp(Math.round(referenceSize * BADGE_HEIGHT_RATIO), 28, 64);
+  let badgeHeight = Math.max(MIN_BADGE_HEIGHT, Math.round((referenceSize * BADGE_HEIGHT_RATIO * sizePercent) / 100));
   let badgeWidth = Math.min(Math.round(badgeHeight * POSTER_TAG_BADGE_ASPECT_RATIO), maxPosterWidth);
   let badgeGap = badgeCount > 1 ? Math.max(1, Math.round(badgeHeight * BADGE_GAP_RATIO)) : 0;
   let overlayHeight = badgeHeight * badgeCount + badgeGap * Math.max(0, badgeCount - 1);
@@ -160,9 +166,12 @@ export const resolveBadgeOverlayPlacement = (
   overlayWidth: number,
   overlayHeight: number,
   position: PosterTagBadgePosition,
+  inset = 0,
 ): { left: number; top: number } => {
-  const left = position.endsWith("Right") ? Math.max(0, posterWidth - overlayWidth) : 0;
-  const top = position.startsWith("bottom") ? Math.max(0, posterHeight - overlayHeight) : 0;
+  const maxLeft = Math.max(0, posterWidth - overlayWidth);
+  const maxTop = Math.max(0, posterHeight - overlayHeight);
+  const left = position.endsWith("Right") ? Math.max(0, maxLeft - inset) : Math.min(inset, maxLeft);
+  const top = position.startsWith("bottom") ? Math.max(0, maxTop - inset) : Math.min(inset, maxTop);
 
   return { left, top };
 };
@@ -211,7 +220,7 @@ const renderGeneratedBadgeImage = (badge: PosterBadgeDefinition, badgeWidth: num
   return Buffer.from(overlay.svg);
 };
 
-const renderBadgeImage = async (
+const renderBadgeSource = async (
   badge: PosterBadgeDefinition,
   badgeWidth: number,
   badgeHeight: number,
@@ -238,20 +247,40 @@ const renderBadgeImage = async (
   }
 };
 
+const renderBadgeImage = async (
+  badge: PosterBadgeDefinition,
+  badgeWidth: number,
+  badgeHeight: number,
+  options: ResolvedPosterWatermarkOptions,
+): Promise<Buffer> => {
+  const source = await renderBadgeSource(badge, badgeWidth, badgeHeight, options);
+  const opacity = options.opacity ?? 100;
+  if (opacity >= 100) {
+    return source;
+  }
+
+  return await sharp(source)
+    .ensureAlpha()
+    .linear([1, 1, 1, opacity / 100], [0, 0, 0, 0])
+    .png()
+    .toBuffer();
+};
+
 const buildBadgeOverlayInputs = async (
   posterWidth: number,
   posterHeight: number,
   badges: readonly PosterBadgeDefinition[],
-  position: PosterTagBadgePosition,
   options: ResolvedPosterWatermarkOptions,
 ): Promise<BadgeOverlayInput[]> => {
-  const layout = resolveBadgeOverlayLayout(posterWidth, posterHeight, badges.length);
+  const layout = resolveBadgeOverlayLayout(posterWidth, posterHeight, badges.length, options.sizePercent);
+  const insetPixels = Math.round((Math.min(posterWidth, posterHeight) * (options.insetPercent ?? 0)) / 100);
   const placement = resolveBadgeOverlayPlacement(
     posterWidth,
     posterHeight,
     layout.badgeWidth,
     layout.overlayHeight,
-    position,
+    options.position ?? "topLeft",
+    insetPixels,
   );
 
   const overlays = await Promise.all(
@@ -265,13 +294,42 @@ const buildBadgeOverlayInputs = async (
   return overlays.filter((overlay) => overlay.top < posterHeight && overlay.left < posterWidth);
 };
 
+// Light and dark blocks at every corner make the badge's opacity and the poster edge visible.
+const PREVIEW_POSTER_SVG = `
+  <svg width="800" height="1200" viewBox="0 0 800 1200" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="800" y2="1200" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#e9d8c4" />
+        <stop offset="1" stop-color="#3b4a63" />
+      </linearGradient>
+    </defs>
+    <rect width="800" height="1200" fill="url(#sky)" />
+    <rect x="0" y="0" width="260" height="170" fill="#ffffff" fill-opacity="0.85" />
+    <rect x="540" y="0" width="260" height="170" fill="#1f2937" fill-opacity="0.85" />
+    <rect x="0" y="1030" width="260" height="170" fill="#1f2937" fill-opacity="0.85" />
+    <rect x="540" y="1030" width="260" height="170" fill="#ffffff" fill-opacity="0.85" />
+    <circle cx="400" cy="600" r="190" fill="#c2543f" fill-opacity="0.7" />
+  </svg>
+`;
+
 export class PosterWatermarkService {
   constructor(private readonly options: { dataDir: string }) {}
+
+  async renderPreview(types: readonly PosterTagBadgeType[], options: PosterWatermarkOptions): Promise<Buffer> {
+    const previewDirectory = await mkdtemp(join(tmpdir(), "mdcz-badge-preview-"));
+    try {
+      const posterPath = join(previewDirectory, "poster.png");
+      await sharp(Buffer.from(PREVIEW_POSTER_SVG)).png().toFile(posterPath);
+      await this.applyTagBadges(posterPath, listPosterBadgeDefinitions(types), options);
+      return await readFile(posterPath);
+    } finally {
+      await rm(previewDirectory, { recursive: true, force: true });
+    }
+  }
 
   async applyTagBadges(
     posterPath: string,
     badges: readonly PosterBadgeDefinition[],
-    position: PosterTagBadgePosition = "topLeft",
     options: PosterWatermarkOptions = {},
   ): Promise<void> {
     if (badges.length === 0) {
@@ -294,7 +352,7 @@ export class PosterWatermarkService {
     try {
       pipeline = pipeline
         .composite(
-          await buildBadgeOverlayInputs(width, height, badges, position, {
+          await buildBadgeOverlayInputs(width, height, badges, {
             ...options,
             watermarkDirectory: options.watermarkDirectory ?? resolveWatermarkDirectory(this.options.dataDir),
           }),

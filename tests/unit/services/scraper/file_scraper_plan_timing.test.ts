@@ -145,7 +145,7 @@ describe("FileScraper plan timing", () => {
       undefined,
       { versionLabel: undefined },
     );
-    expect(downloadAll.mock.calls[0]?.[5]).toMatchObject({
+    expect(downloadAll.mock.calls[0]?.[6]).toMatchObject({
       movieBaseName: "ABC-123",
       existingAssetDir: plan.outputDir,
     });
