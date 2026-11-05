@@ -750,6 +750,10 @@ export const libraryDetailInputSchema = z.object({
 
 export type LibraryDetailInput = z.infer<typeof libraryDetailInputSchema>;
 
+export const libraryDeleteInputSchema = z.object({ ids: z.array(z.string().trim().min(1)).min(1) });
+
+export type LibraryDeleteInput = z.infer<typeof libraryDeleteInputSchema>;
+
 export const libraryRelinkInputSchema = z.object({
   fileId: z.string().trim().min(1),
   rootId: z.string().trim().min(1),

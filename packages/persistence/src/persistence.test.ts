@@ -993,9 +993,21 @@ describe("LibraryRepository", () => {
       ],
     });
 
-    await repository.deleteEntry("entry-1");
+    await repository.upsertEntry({
+      movie: { id: "entry-3" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "GHI-789/GHI-789.mp4",
+          fileId: "root-1:GHI-789/GHI-789.mp4",
+        },
+      ],
+    });
+
+    repository.deleteEntries(["entry-1", "entry-3", "already-gone"]);
 
     await expect(repository.getEntryById("entry-1")).rejects.toThrow("Library entry not found");
+    await expect(repository.getEntryById("entry-3")).rejects.toThrow("Library entry not found");
     await expect(repository.listEntries()).resolves.toEqual([
       expect.objectContaining({
         id: "entry-2",

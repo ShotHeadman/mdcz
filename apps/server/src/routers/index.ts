@@ -32,6 +32,7 @@ import {
   crawlerProbeSiteConnectivityInputSchema,
   fileActionInputSchema,
   libraryAvailabilityInputSchema,
+  libraryDeleteInputSchema,
   libraryDetailInputSchema,
   libraryFileRemoveInputSchema,
   libraryListInputSchema,
@@ -227,8 +228,8 @@ export const appRouter = t.router({
       .input(libraryRelinkInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.library.relink(input)),
     delete: protectedProcedure
-      .input(libraryDetailInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntry(input.id)),
+      .input(libraryDeleteInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntries(input.ids)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);

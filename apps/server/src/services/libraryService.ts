@@ -119,13 +119,8 @@ export class LibraryService {
     return { success: true };
   }
 
-  async deleteEntry(id: string): Promise<{ success: true }> {
-    const normalizedId = id.trim();
-    if (!normalizedId) {
-      throw new Error("Library entry id is required");
-    }
-    const state = await this.persistence.getState();
-    state.repositories.library.deleteEntry(normalizedId);
+  async deleteEntries(ids: readonly string[]): Promise<{ success: true }> {
+    (await this.persistence.getState()).repositories.library.deleteEntries(ids);
     return { success: true };
   }
 

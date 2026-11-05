@@ -52,6 +52,10 @@ export const library = {
   scrapeInfo: "Scrape Info",
   openFolder: "Open folder",
   removeFromLibrary: "Remove from library",
+  multiSelect: "Multi-select",
+  selectEntry: (id: string) => `Select ${id}`,
+  selectAllLoaded: "Select all loaded",
+  selectedCount: (count: number) => `${count} movie(s) selected`,
   availabilityNotChecked: "Availability not yet checked",
 
   // Availability labels
@@ -62,8 +66,8 @@ export const library = {
 
   // Delete dialog
   removeDialogTitle: "Remove from Library",
-  removeDialogDescription: (fileCount: number, assetCount: number) =>
-    `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s).`,
+  removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
+    `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s) for ${movieCount} movie(s). Files on disk are not deleted.`,
   removing: "Removing…",
   confirmRemove: "Confirm Remove",
 

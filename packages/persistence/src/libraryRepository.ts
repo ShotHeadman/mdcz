@@ -512,13 +512,14 @@ export class LibraryRepository {
     this.database.sqlite.transaction(() => removeLibraryFile(this.database, file))();
   }
 
-  deleteEntry(id: string): void {
-    const item = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
-    if (!item) throw new NotFoundError(`Library entry not found: ${id}`);
+  /** An id already gone is the state the caller asked for, so a stale selection still removes the rest. */
+  deleteEntries(ids: readonly string[]): void {
     this.database.sqlite.transaction(() => {
-      this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
-      this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).run();
-      this.database.db.delete(libraryItems).where(eq(libraryItems.id, id)).run();
+      for (const id of ids) {
+        this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
+        this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).run();
+        this.database.db.delete(libraryItems).where(eq(libraryItems.id, id)).run();
+      }
     })();
   }
 

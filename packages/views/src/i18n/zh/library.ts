@@ -54,6 +54,10 @@ export const library: Messages["library"] = {
   scrapeInfo: "刮削信息",
   openFolder: "打开所在目录",
   removeFromLibrary: "从媒体库移除",
+  multiSelect: "多选",
+  selectEntry: (id: string) => `选择 ${id}`,
+  selectAllLoaded: "全选已加载",
+  selectedCount: (count: number) => `已选 ${count} 部影片`,
   availabilityNotChecked: "可用性尚未检查",
 
   // Availability labels
@@ -64,8 +68,8 @@ export const library: Messages["library"] = {
 
   // Delete dialog
   removeDialogTitle: "从媒体库移除",
-  removeDialogDescription: (fileCount: number, assetCount: number) =>
-    `将移除 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录。`,
+  removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
+    `将移除 ${movieCount} 部影片的 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录，磁盘上的文件不会被删除。`,
   removing: "正在移除...",
   confirmRemove: "确认移除",
 

@@ -52,6 +52,7 @@ import type {
   IntegrationStatusResponse,
   LibraryAvailabilityInput,
   LibraryAvailabilityResponse,
+  LibraryDeleteInput,
   LibraryDetailInput,
   LibraryDetailResponse,
   LibraryListInput,
@@ -190,7 +191,7 @@ export interface ServerApiContract {
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
-    delete(input: LibraryDetailInput): Promise<{ success: true }>;
+    delete(input: LibraryDeleteInput): Promise<{ success: true }>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;

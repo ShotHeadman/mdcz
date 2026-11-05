@@ -34,7 +34,7 @@ export function LibraryPage() {
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
-  const [deleteTarget, setDeleteTarget] = useState<LibraryEntryDto | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<LibraryEntryDto[]>([]);
   // Only a refresh the user asks for skips the server's recent availability checks.
   const freshAvailability = useRef(false);
   const libraryQ = useInfiniteQuery({
@@ -44,11 +44,11 @@ export function LibraryPage() {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
   const deleteLibraryM = useMutation({
-    mutationFn: async (entry: LibraryEntryDto) => {
-      await api.library.delete({ id: entry.id });
+    mutationFn: async (entries: LibraryEntryDto[]) => {
+      await api.library.delete({ ids: entries.map((entry) => entry.id) });
     },
     onSuccess: async () => {
-      setDeleteTarget(null);
+      setDeleteTargets([]);
       await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
     },
     onError: (error) => {
@@ -119,7 +119,7 @@ export function LibraryPage() {
         isLoadingMore={libraryQ.isFetchingNextPage}
         linkComponent={LibraryEntryLink}
         onAvailabilityFilterChange={setAvailabilityFilter}
-        onDeleteEntry={setDeleteTarget}
+        onDeleteEntries={setDeleteTargets}
         onRemoveFile={async (input) => {
           await api.library.removeFile(input);
           await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
@@ -147,16 +147,13 @@ export function LibraryPage() {
         totalBytes={libraryQ.data?.pages[0]?.totalBytes ?? 0}
       />
       <LibraryDeleteDialog
-        entry={deleteTarget}
-        open={Boolean(deleteTarget)}
+        entries={deleteTargets}
         submitting={deleteLibraryM.isPending}
         onCancel={() => {
-          if (!deleteLibraryM.isPending) setDeleteTarget(null);
+          if (!deleteLibraryM.isPending) setDeleteTargets([]);
         }}
         onConfirm={() => {
-          const target = deleteTarget;
-          if (!target || deleteLibraryM.isPending) return;
-          deleteLibraryM.mutate(target);
+          if (!deleteLibraryM.isPending) deleteLibraryM.mutate(deleteTargets);
         }}
       />
     </>
