@@ -11,6 +11,7 @@ import {
   mergeLibraryAvailability,
   parseLibraryBrowseSearch,
   toLibraryListScope,
+  useLibraryView,
 } from "@mdcz/views/library";
 import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,6 +31,7 @@ export function LibraryPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const scope = toLibraryListScope(search);
+  const libraryView = useLibraryView();
   const isScraping = useScrapeStore(selectIsScraping);
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
   const [query, setQuery] = useState("");
@@ -84,6 +86,7 @@ export function LibraryPage() {
           libraries: librariesQ.data?.libraries ?? [],
           summary: summaryQ.data,
           update: (next) => void navigate({ to: "/library", search: next }),
+          ...libraryView,
           fixBlockedReason: isScraping ? t.workbench.taskConflict.scrape : undefined,
           onFix: async (issue) => {
             const matches: LibraryEntryDto[] = [];
