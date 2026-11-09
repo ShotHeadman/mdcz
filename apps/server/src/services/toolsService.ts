@@ -1,7 +1,7 @@
 import { registeredMediaLocations } from "@mdcz/runtime";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
-import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
+import { LocalScanService } from "@mdcz/runtime/maintenance";
 import {
   checkEmbyConnection,
   checkJellyfinConnection,
@@ -126,7 +126,6 @@ export class ToolsService {
               llmApiClient: this.llmApiClient,
               localScanService: this.localScanService,
               nfoGenerator: this.nfoGenerator,
-              writeNfo: writePreparedNfo,
               publication: {
                 outputs: state.repositories.library,
                 library: state.repositories.library,

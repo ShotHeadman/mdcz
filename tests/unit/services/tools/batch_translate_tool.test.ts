@@ -2,7 +2,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
-import { writePreparedNfo } from "@mdcz/runtime/maintenance";
 import { type LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   applyBatchNfoTranslations,
@@ -54,7 +53,7 @@ const createEntry = (overrides: EntryOverrides = {}): LocalScanEntry => {
       ...overrides.fileInfo,
     },
     nfoPath,
-    nfoPaths: [nfoPath],
+    nfoPaths: overrides.nfoPaths ?? [nfoPath],
     crawlerData: {
       title: "Original Title",
       title_zh: "Original Title",
@@ -84,8 +83,8 @@ const createService = (
     scan?: (dirPath: string, sceneImagesFolder: string) => Promise<LocalScanEntry[]>;
     scanVideo?: (root: MediaRoot, videoPath: string, sceneImagesFolder: string) => Promise<LocalScanEntry>;
     generateText?: LlmApiClient["generateText"];
-    writeNfo?: BatchNfoTranslatorDependencies["writeNfo"];
     rootPath?: string;
+    publication?: Omit<NonNullable<BatchNfoTranslatorDependencies["publication"]>, "roots">;
   } = {},
 ) => {
   const localScanService = {
@@ -95,11 +94,6 @@ const createService = (
   const llmApiClient = {
     generateText: options.generateText ?? vi.fn(),
   } as unknown as LlmApiClient;
-  const writeNfo =
-    options.writeNfo ??
-    vi.fn(async ({ nfoPath }: { nfoPath?: string }) => {
-      return nfoPath;
-    });
   const roots = [{ id: "library", hostPath: options.rootPath ?? "/library" }];
   const service = {
     scan: (directory: string, mode: BatchTranslateMode, config: Configuration) =>
@@ -108,7 +102,12 @@ const createService = (
       applyBatchNfoTranslations(
         items,
         config,
-        { localScanService, llmApiClient, nfoGenerator: new NfoGenerator(), writeNfo, publication: { roots } },
+        {
+          localScanService,
+          llmApiClient,
+          nfoGenerator: new NfoGenerator(),
+          publication: { roots, ...options.publication },
+        },
         applyOptions,
       ),
   };
@@ -117,7 +116,6 @@ const createService = (
     service,
     localScanService,
     llmApiClient,
-    writeNfo,
   };
 };
 
@@ -179,12 +177,15 @@ describe("batch NFO translation tool", () => {
     ]);
   });
 
-  it("restores the source title and plot without calling the LLM", async () => {
+  it("restores every NFO copy of a library movie, whichever one the scan read", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-restore-"));
     tempDirs.push(root);
+    const nfoNames = ["movie.nfo", "CCC-003.nfo"];
+    const nfoPaths = nfoNames.map((name) => join(root, name));
     const entry = createEntry({
       fileInfo: { filePath: join(root, "CCC-003.mp4"), fileName: "CCC-003.mp4", number: "CCC-003" },
-      nfoPath: join(root, "CCC-003.nfo"),
+      nfoPath: nfoPaths[0],
+      nfoPaths,
       currentDir: root,
       crawlerData: {
         title: "元のタイトル",
@@ -194,20 +195,37 @@ describe("batch NFO translation tool", () => {
         plot_zh: "中文简介",
       },
     });
-    await writeFile(join(root, "CCC-003.nfo"), "<movie><title>中文标题</title></movie>");
+    for (const nfoPath of nfoPaths) await writeFile(nfoPath, "<movie><title>中文标题</title></movie>");
+    const writeEntry = vi.fn(() => "movie-a");
+    const library = {
+      publicationRoots: () => [{ id: "library", hostPath: root }],
+      publicationSnapshot: () => ({
+        files: [{ itemId: "movie-a", fileId: "file-a", rootId: "library", relativePath: "CCC-003.mp4" }],
+        assets: nfoNames.map((relativePath) => ({
+          itemId: "movie-a",
+          fileId: null,
+          rootId: "library",
+          relativePath,
+          kind: "nfo",
+          published: true,
+        })),
+      }),
+      getEntryById: async () => ({ assets: [] }),
+      writeEntry,
+    };
     const generateText = vi.fn();
     const { service } = createService({
       scanVideo: async () => entry,
       generateText,
-      writeNfo: writePreparedNfo,
       rootPath: root,
+      publication: { outputs: library, library },
     });
 
     const [result] = await service.apply(
       [
         {
           filePath: entry.fileInfo.filePath,
-          nfoPath: join(root, "CCC-003.nfo"),
+          nfoPath: nfoPaths[0],
           directory: root,
           number: "CCC-003",
           title: "中文标题",
@@ -220,13 +238,23 @@ describe("batch NFO translation tool", () => {
 
     expect(generateText).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, translatedFields: ["title", "plot"] });
-    const xml = await readFile(join(root, "CCC-003.nfo"), "utf8");
-    expect(xml).toContain("<title>元のタイトル</title>");
-    expect(xml).toContain("<plot>元の説明</plot>");
-    expect(xml).not.toContain("中文");
+    for (const nfoPath of nfoPaths) {
+      const xml = await readFile(nfoPath, "utf8");
+      expect(xml).toContain("<title>元のタイトル</title>");
+      expect(xml).toContain("<plot>元の説明</plot>");
+      expect(xml).not.toContain("中文");
+    }
+    expect(writeEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assets: expect.arrayContaining(
+          nfoNames.map((relativePath) => expect.objectContaining({ kind: "nfo", relativePath })),
+        ),
+      }),
+      [],
+    );
   });
 
-  it("batches unique texts and writes translated NFOs without a journal", async () => {
+  it("translates each unique text once and writes the NFOs the scan found", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-translation-"));
     tempDirs.push(root);
     const config = createConfig({
@@ -236,94 +264,57 @@ describe("batch NFO translation tool", () => {
       },
     });
     const generateText = vi.fn().mockResolvedValue('{"translations":["相同标题","剧情一"]}');
-    const writeNfo = vi.fn(writePreparedNfo);
-
-    const entriesByPath = new Map<string, LocalScanEntry>([
-      [
-        "/library/AAA-001.mp4",
-        createEntry({
-          fileInfo: {
-            filePath: "/library/AAA-001.mp4",
-            fileName: "AAA-001.mp4",
-            number: "AAA-001",
-          },
-          nfoPath: "/library/AAA-001.nfo",
-          crawlerData: {
-            title: "Same English Title",
-            title_zh: "Same English Title",
-            number: "AAA-001",
-            plot: "Plot 1",
-            plot_zh: "Plot 1",
-          },
-        }),
-      ],
-      [
-        "/library/BBB-002.mp4",
-        createEntry({
-          fileInfo: {
-            filePath: "/library/BBB-002.mp4",
-            fileName: "BBB-002.mp4",
-            number: "BBB-002",
-          },
-          nfoPath: "/library/BBB-002.nfo",
-          crawlerData: {
-            title: "Same English Title",
-            title_zh: "Same English Title",
-            number: "BBB-002",
-            plot: "",
-            plot_zh: "",
-          },
-        }),
-      ],
-    ]);
-    for (const [key, entry] of [...entriesByPath]) {
-      entriesByPath.delete(key);
-      entry.fileInfo.filePath = key.replace("/library", root);
-      entry.nfoPath = entry.nfoPath?.replace("/library", root);
-      entry.currentDir = root;
-      entriesByPath.set(entry.fileInfo.filePath, entry);
-      if (!entry.nfoPath) throw new Error("Fixture NFO path is required");
-      await writeFile(entry.nfoPath, "<movie><title>Original</title></movie>");
-    }
+    const entries = [
+      createEntry({
+        fileInfo: { filePath: join(root, "AAA-001.mp4"), fileName: "AAA-001.mp4", number: "AAA-001" },
+        nfoPath: join(root, "AAA-001.nfo"),
+        currentDir: root,
+        crawlerData: {
+          title: "Same English Title",
+          title_zh: "Same English Title",
+          number: "AAA-001",
+          director: "Director",
+          plot: "Plot 1",
+          plot_zh: "Plot 1",
+        },
+      }),
+      createEntry({
+        fileInfo: { filePath: join(root, "BBB-002.mp4"), fileName: "BBB-002.mp4", number: "BBB-002" },
+        nfoPath: join(root, "BBB-002.nfo"),
+        currentDir: root,
+        crawlerData: {
+          title: "Same English Title",
+          title_zh: "Same English Title",
+          number: "BBB-002",
+          plot: "",
+          plot_zh: "",
+        },
+      }),
+    ];
+    const nfoPaths = entries.map((entry) => entry.nfoPaths[0]);
+    for (const nfoPath of nfoPaths) await writeFile(nfoPath, "<movie><title>Original</title></movie>");
 
     const { service, localScanService } = createService({
       scanVideo: async (_root, videoPath) => {
-        const matched = entriesByPath.get(videoPath);
-        if (!matched) {
-          throw new Error(`Unexpected scan path: ${videoPath}`);
-        }
+        const matched = entries.find((entry) => entry.fileInfo.filePath === videoPath);
+        if (!matched) throw new Error(`Unexpected scan path: ${videoPath}`);
         return matched;
       },
       generateText,
-      writeNfo,
       rootPath: root,
     });
 
     const results = await service.apply(
-      [
-        {
-          filePath: "/library/AAA-001.mp4",
-          nfoPath: "/library/AAA-001.nfo",
-          directory: "/library",
-          number: "AAA-001",
+      entries.map(
+        (entry, index): BatchTranslateScanItem => ({
+          filePath: entry.fileInfo.filePath,
+          nfoPath: nfoPaths[index],
+          directory: root,
+          number: entry.fileInfo.number,
           title: "Same English Title",
-          pendingFields: ["title", "plot"],
-        },
-        {
-          filePath: "/library/BBB-002.mp4",
-          nfoPath: "/library/BBB-002.nfo",
-          directory: "/library",
-          number: "BBB-002",
-          title: "Same English Title",
-          pendingFields: ["title"],
-        },
-      ].map((item) => ({
-        ...item,
-        filePath: item.filePath.replace("/library", root),
-        nfoPath: item.nfoPath.replace("/library", root),
-        directory: root,
-        pendingFields: item.pendingFields as BatchTranslateScanItem["pendingFields"],
-      })),
+          pendingFields: index === 0 ? ["title", "plot"] : ["title"],
+        }),
+      ),
       config,
       { mode: "untranslated" },
     );
@@ -331,25 +322,13 @@ describe("batch NFO translation tool", () => {
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
     expect(generateText).toHaveBeenCalledTimes(1);
     expect(generateText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        prompt: expect.stringContaining('"Same English Title"'),
-      }),
+      expect.objectContaining({ prompt: expect.stringContaining('["Same English Title","Plot 1"]') }),
     );
-    expect(writeNfo).toHaveBeenCalledTimes(2);
-
-    const firstWrite = writeNfo.mock.calls[0]?.[0] as {
-      config: { download: { nfoIgnoreFields: string[] } };
-      crawlerData: { title_zh?: string; plot_zh?: string };
-    };
-    expect(firstWrite.crawlerData.title_zh).toBe("相同标题");
-    expect(firstWrite.crawlerData.plot_zh).toBe("剧情一");
-    expect(firstWrite.config.download.nfoIgnoreFields).toEqual(["director"]);
-
-    const secondWrite = writeNfo.mock.calls[1]?.[0] as { crawlerData: { title_zh?: string } };
-    expect(secondWrite.crawlerData.title_zh).toBe("相同标题");
     expect(results.every(({ success }) => success)).toBe(true);
-    for (const number of ["AAA-001", "BBB-002"]) {
-      expect(await readFile(join(root, `${number}.nfo`), "utf8")).toContain("相同标题");
-    }
+    const [first, second] = await Promise.all(nfoPaths.map((nfoPath) => readFile(nfoPath, "utf8")));
+    expect(first).toContain("<title>相同标题</title>");
+    expect(first).toContain("<plot>剧情一</plot>");
+    expect(first).not.toContain("<director>");
+    expect(second).toContain("<title>相同标题</title>");
   });
 });

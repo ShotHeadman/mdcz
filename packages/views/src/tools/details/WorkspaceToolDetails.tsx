@@ -559,7 +559,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
                   const status = itemStatusByPath[item.filePath] ?? "idle";
                   const result = resultByPath.get(item.filePath);
                   const displayFields = result ? result.translatedFields : item.pendingFields;
-                  const displayPath = result?.savedNfoPath || item.nfoPath;
+                  const displayPath = result?.nfoPath || item.nfoPath;
 
                   return (
                     <tr key={item.filePath} className="transition-colors hover:bg-surface-low/45">
