@@ -1,5 +1,6 @@
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { NfoGenerator } from "@mdcz/runtime/scrape";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -226,7 +227,7 @@ describe("parseNfo", () => {
       scene_images: [],
       website: Website.DMM,
     };
-    const options = { nfoTitleTemplate: "{number} {title}" };
+    const options = { titleNaming: { ...defaultConfiguration.naming, nfoTitleTemplate: "{number} {title}" } };
     const editsOf = (xml: string) => Object.keys(parseNfoSnapshot(xml).localState?.edits ?? {});
 
     // Emby's rewrite: actor thumbs dropped, <set><name>, CDATA, and "A/B" genres split and moved.

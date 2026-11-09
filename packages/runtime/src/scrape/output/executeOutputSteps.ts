@@ -150,7 +150,7 @@ export const writePreparedNfo = async (input: {
     fileInfo: input.fileInfo,
     localState: input.localState,
     nfoNaming: input.naming.nfoNaming,
-    nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
+    titleNaming: input.config.naming,
     sources: input.sources,
     videoMeta,
     writeFile: input.writeFile,

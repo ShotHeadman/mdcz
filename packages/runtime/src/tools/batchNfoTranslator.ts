@@ -175,7 +175,7 @@ const defaultWriteNfo: BatchTranslateWriteNfo = async ({
   return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
     nfoNaming: naming.nfoNaming,
     enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
-    nfoTitleTemplate: config.naming.nfoTitleTemplate,
+    titleNaming: config.naming,
     writeFile,
   });
 };

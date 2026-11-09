@@ -376,7 +376,7 @@ const fields: Record<FieldKey, FieldText> = {
   },
   "naming.nfoTitleTemplate": {
     label: "NFO title template",
-    description: "Format of the NFO title field. Available placeholders: {number} {title} {originaltitle}",
+    description: "Format of the NFO title field; takes the metadata placeholders of the file name template",
   },
   "naming.actorNameMax": { label: "Maximum actor names" },
   "naming.actorNameMore": { label: "Suffix for extra actors" },

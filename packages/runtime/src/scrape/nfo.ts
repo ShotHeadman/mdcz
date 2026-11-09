@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
-import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
+import { type Configuration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
@@ -13,6 +13,8 @@ import {
   parseFingerprints,
   publishedFingerprints,
 } from "./nfoEdits";
+import { renderTextTemplate } from "./utils/path";
+import { buildMetadataTemplateData, type MetadataNaming } from "./utils/templateData";
 
 const builder = new XMLBuilder({
   attributeNamePrefix: "@_",
@@ -40,7 +42,7 @@ export interface NfoOptions {
   fileInfo?: FileInfo;
   localState?: NfoLocalState;
   nfoNaming?: NfoNamingMode;
-  nfoTitleTemplate?: string;
+  titleNaming?: MetadataNaming & Pick<Configuration["naming"], "nfoTitleTemplate">;
   enabledFields?: readonly NfoField[];
   includeRemoteSceneImageUrls?: boolean;
   allowRemoteTrailerFallback?: boolean;
@@ -51,12 +53,6 @@ export interface NfoOptions {
 
 const toArray = <T>(value: T | T[] | undefined): T[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
-
-const renderPathTemplate = (template: string, data: Record<string, string | number | undefined>): string =>
-  template.replace(/\{([^{}]+)\}/gu, (_match, key: string) => {
-    const value = data[key];
-    return value === undefined || value === null ? "" : String(value);
-  });
 
 const normalizeActorKey = (value: string): string =>
   value
@@ -193,12 +189,16 @@ export class NfoGenerator {
     const localState = options?.localState;
     const rawTitle = data.title_zh?.trim() || data.title;
     const originaltitle = data.original_title?.trim() || data.title.trim();
-    const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
+    const titleNaming = options?.titleNaming;
     // A title the user edited is final as written; wrapping it in the template again would repeat the template.
+    // `{number}` stays raw because its naming markers come from the video file, which not every NFO writer has.
     const title =
-      localState?.edits?.title === fingerprintNfoField({ title: rawTitle }, "title")
+      !titleNaming || localState?.edits?.title === fingerprintNfoField({ title: rawTitle }, "title")
         ? rawTitle
-        : renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
+        : renderTextTemplate(titleNaming.nfoTitleTemplate, {
+            ...buildMetadataTemplateData(data, titleNaming),
+            number: data.number,
+          }) || rawTitle;
     const sourcePlot = data.plot?.trim();
     const plot = data.plot_zh?.trim() || sourcePlot;
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;

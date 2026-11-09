@@ -57,7 +57,7 @@ export async function writeNfoPublication(input: {
     localState: existingXml ? parseNfoSnapshot(existingXml).localState : undefined,
     enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
     nfoNaming,
-    nfoTitleTemplate: configuration.naming.nfoTitleTemplate,
+    titleNaming: configuration.naming,
   };
   const xml = existingXml
     ? nfoGenerator.mergeEditableXml(existingXml, data, options)
