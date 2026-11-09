@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { type LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   applyBatchNfoTranslations,
@@ -177,7 +178,7 @@ describe("batch NFO translation tool", () => {
     ]);
   });
 
-  it("restores every NFO copy of a library movie, whichever one the scan read", async () => {
+  it("restores only the translated text in every NFO copy of a library movie", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-restore-"));
     tempDirs.push(root);
     const nfoNames = ["movie.nfo", "CCC-003.nfo"];
@@ -195,7 +196,18 @@ describe("batch NFO translation tool", () => {
         plot_zh: "中文简介",
       },
     });
-    for (const nfoPath of nfoPaths) await writeFile(nfoPath, "<movie><title>中文标题</title></movie>");
+    const untouched = [
+      "<dateadded>2025-01-01 00:00:00</dateadded>",
+      "<tag>自定义标签</tag>",
+      "<lockdata>true</lockdata>",
+      "<image>https://example.com/scene-1.jpg</image>",
+    ];
+    // The copy the scan did not read holds content of its own, which a translation must not drop.
+    await writeFile(nfoPaths[0], "<movie><title>中文标题</title><num>CCC-003</num></movie>");
+    await writeFile(
+      nfoPaths[1],
+      `<movie><title>中文标题</title><num>CCC-003</num>${untouched.slice(0, 3).join("")}<mdcz><scene_images>${untouched[3]}</scene_images></mdcz></movie>`,
+    );
     const writeEntry = vi.fn(() => "movie-a");
     const library = {
       publicationRoots: () => [{ id: "library", hostPath: root }],
@@ -238,12 +250,15 @@ describe("batch NFO translation tool", () => {
 
     expect(generateText).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, translatedFields: ["title", "plot"] });
-    for (const nfoPath of nfoPaths) {
-      const xml = await readFile(nfoPath, "utf8");
+    const [readCopy, otherCopy] = await Promise.all(nfoPaths.map((nfoPath) => readFile(nfoPath, "utf8")));
+    for (const xml of [readCopy, otherCopy]) {
       expect(xml).toContain("<title>元のタイトル</title>");
       expect(xml).toContain("<plot>元の説明</plot>");
       expect(xml).not.toContain("中文");
+      // MDCz wrote the restored text, so it must not read back as someone's edit.
+      expect(parseNfoSnapshot(xml).localState?.edits).toBeUndefined();
     }
+    for (const element of untouched) expect(otherCopy).toContain(element);
     expect(writeEntry).toHaveBeenCalledWith(
       expect.objectContaining({
         assets: expect.arrayContaining(

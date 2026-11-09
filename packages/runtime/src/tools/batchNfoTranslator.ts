@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
@@ -396,22 +397,24 @@ export const applyBatchNfoTranslations = async (
             return root;
           })
         : undefined;
-      const xml = nfoGenerator.buildXml(nextCrawlerData, {
-        enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
-        fileInfo: entry.fileInfo,
-        localState: entry.nfoLocalState,
-        includeRemoteSceneImageUrls: config.download.downloadSceneImages,
-        allowRemoteTrailerFallback: config.download.downloadTrailer,
-        titleNaming: config.naming,
-      });
       // Metadata is read from one NFO, but every copy a media server may read must carry the translation.
-      const artifacts = (registered?.paths ?? entry.nfoPaths).map((targetPath) => ({ targetPath, data: xml }));
+      const targetPaths = registered?.paths ?? entry.nfoPaths;
       const inventory = new DirectoryInventory();
-      const release = await acquireOutputDirectories(
-        artifacts.map((artifact) => artifact.targetPath),
-        (directory) => inventory.canonicalDirectory(directory),
+      const release = await acquireOutputDirectories(targetPaths, (directory) =>
+        inventory.canonicalDirectory(directory),
       );
       try {
+        const nfoOptions = {
+          enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
+          localState: entry.nfoLocalState,
+          titleNaming: config.naming,
+        };
+        const artifacts = await Promise.all(
+          targetPaths.map(async (targetPath) => ({
+            targetPath,
+            data: nfoGenerator.mergeTranslatedXml(await readFile(targetPath, "utf8"), nextCrawlerData, nfoOptions),
+          })),
+        );
         await new WriteOutput().install(artifacts, {
           protectedMediaFiles: registered?.mediaPaths,
           commit: async () => {

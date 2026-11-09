@@ -3,7 +3,14 @@ import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import { type Configuration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
-import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
+import type {
+  CrawlerData,
+  DownloadedAssets,
+  FileInfo,
+  NfoEditableField,
+  NfoLocalState,
+  VideoMeta,
+} from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
 import {
@@ -282,7 +289,11 @@ export class NfoGenerator {
   }
 
   mergeEditableXml(existingXml: string, data: CrawlerData, options?: NfoOptions): string {
-    return mergeEditableNfoDocuments(existingXml, this.buildXml(data, options));
+    return mergeNfoDocuments(existingXml, this.buildXml(data, options), EDITOR_MERGE);
+  }
+
+  mergeTranslatedXml(existingXml: string, data: CrawlerData, options?: NfoOptions): string {
+    return mergeNfoDocuments(existingXml, this.buildXml(data, options), TRANSLATION_MERGE);
   }
 
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {
@@ -315,40 +326,59 @@ export const getNfoReadCandidates = (
   return Array.from(new Set([canonicalPath, primaryPath, moviePath, replaceExtension(nfoPath, ".nfo")]));
 };
 
-const EDITABLE_MOVIE_FIELDS = [
-  "title",
-  "originaltitle",
-  "num",
-  "plot",
-  "outline",
-  "premiered",
-  "releasedate",
-  "year",
-  "runtime",
-  "rating",
-  "studio",
-  "director",
-  "publisher",
-  "set",
-  "trailer",
-  "uniqueid",
-  "genre",
-  "thumb",
-  "fanart",
-  "tag",
-  "lockedfields",
-] as const;
-const EDITABLE_MDCZ_FIELDS = [
-  "raw_title",
-  "original_plot",
-  "source_url",
-  "thumb_source_url",
-  "poster_source_url",
-  "fanart_source_url",
-  "trailer_source_url",
-  "scene_images",
-  "published",
-] as const;
+type NfoMerge = {
+  movieFields: readonly string[];
+  mdczFields: readonly string[];
+  /** Fields whose new values MDCz publishes, so they are not read back as someone's edits. */
+  publishedFields: readonly NfoEditableField[];
+};
+
+const EDITOR_MERGE: NfoMerge = {
+  movieFields: [
+    "title",
+    "originaltitle",
+    "num",
+    "plot",
+    "outline",
+    "premiered",
+    "releasedate",
+    "year",
+    "runtime",
+    "rating",
+    "studio",
+    "director",
+    "publisher",
+    "set",
+    "trailer",
+    "uniqueid",
+    "genre",
+    "thumb",
+    "fanart",
+    "tag",
+    "lockedfields",
+    "actor",
+  ],
+  mdczFields: [
+    "raw_title",
+    "original_plot",
+    "source_url",
+    "thumb_source_url",
+    "poster_source_url",
+    "fanart_source_url",
+    "trailer_source_url",
+    "scene_images",
+    "published",
+  ],
+  // Editing is not publishing: keeping the fingerprints of what MDCz published makes the changed values read as edits.
+  publishedFields: [],
+};
+
+// A translation replaces only the text it translated; whatever else the NFO holds stays as written.
+const TRANSLATION_MERGE: NfoMerge = {
+  movieFields: ["title", "originaltitle", "plot", "outline"],
+  mdczFields: ["raw_title", "original_plot", "published"],
+  publishedFields: ["title", "originaltitle", "plot"],
+};
 
 const requireXmlRecord = (value: unknown, message: string): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -360,30 +390,29 @@ const requireXmlRecord = (value: unknown, message: string): Record<string, unkno
 const toRecordOrEmpty = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
-const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): string => {
+const mergeNfoDocuments = (existingXml: string, generatedXml: string, merge: NfoMerge): string => {
   const existingRoot = requireXmlRecord(parser.parse(existingXml), "Invalid NFO root");
   const existingMovie = requireXmlRecord(existingRoot.movie, "Invalid NFO movie node");
   const generatedRoot = requireXmlRecord(parser.parse(generatedXml), "Invalid generated NFO root");
   const generatedMovie = requireXmlRecord(generatedRoot.movie, "Invalid generated NFO movie node");
   const existingMdcz = toRecordOrEmpty(existingMovie.mdcz);
-  // Editing is not publishing: keeping the fingerprints of what MDCz published makes the changed values read as edits.
+  const generatedMdcz = requireXmlRecord(generatedMovie.mdcz, "Invalid generated NFO mdcz node");
+  const generatedPublished = parseFingerprints(generatedMdcz.published);
   const published = formatFingerprints({
     ...fingerprintNfo(existingMovie),
     ...parseFingerprints(existingMdcz.published),
+    ...Object.fromEntries(merge.publishedFields.map((field) => [field, generatedPublished[field]])),
   });
 
-  for (const field of EDITABLE_MOVIE_FIELDS) {
-    if (field in generatedMovie) existingMovie[field] = generatedMovie[field];
+  for (const field of merge.movieFields) {
+    if (field === "actor") existingMovie.actor = mergeActorNodes(existingMovie.actor, generatedMovie.actor);
+    else if (field in generatedMovie) existingMovie[field] = generatedMovie[field];
     else delete existingMovie[field];
   }
-  existingMovie.actor = mergeActorNodes(existingMovie.actor, generatedMovie.actor);
 
-  const generatedMdcz: Record<string, unknown> = {
-    ...requireXmlRecord(generatedMovie.mdcz, "Invalid generated NFO mdcz node"),
-    published,
-  };
-  for (const field of EDITABLE_MDCZ_FIELDS) {
-    if (field in generatedMdcz) existingMdcz[field] = generatedMdcz[field];
+  const mdcz: Record<string, unknown> = { ...generatedMdcz, published };
+  for (const field of merge.mdczFields) {
+    if (field in mdcz) existingMdcz[field] = mdcz[field];
     else delete existingMdcz[field];
   }
   existingMovie.mdcz = existingMdcz;
