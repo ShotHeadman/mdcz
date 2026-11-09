@@ -38,6 +38,39 @@ const parser = new XMLParser({
   ignoreDeclaration: true,
 });
 
+/**
+ * Every `<movie>` child `buildXml` can write. The rest of an NFO belongs to the media server or another tool, and a
+ * rewrite carries it over the way Jellyfin's own saver does.
+ */
+export const MDCZ_NFO_ELEMENTS: ReadonlySet<string> = new Set([
+  "title",
+  "originaltitle",
+  "plot",
+  "outline",
+  "premiered",
+  "releasedate",
+  "dateadded",
+  "lockedfields",
+  "year",
+  "runtime",
+  "rating",
+  "studio",
+  "director",
+  "publisher",
+  "mpaa",
+  "set",
+  "trailer",
+  "num",
+  "uniqueid",
+  "genre",
+  "tag",
+  "actor",
+  "thumb",
+  "fanart",
+  "mdcz",
+  "fileinfo",
+]);
+
 const OUTLINE_MAX_CHARS = 200;
 const JELLYFIN_MOVIE_NFO_NAME = "movie.nfo";
 
@@ -236,7 +269,8 @@ export class NfoGenerator {
       isNfoFieldEnabled(enabledFields, "plot") && isNfoFieldEnabled(enabledFields, "outline") ? outline : undefined;
     movie.premiered = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.releasedate = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
-    movie.dateadded = new Date().toISOString();
+    // Media servers sort "recently added" by this date, and a rewrite is not the movie arriving again.
+    movie.dateadded = localState?.dateAdded ?? new Date().toISOString();
     movie.lockedfields = localState?.lockedFields?.length ? localState.lockedFields.join("|") : undefined;
     movie.year = isNfoFieldEnabled(enabledFields, "release") ? parseReleaseYear(data.release_date) : undefined;
     movie.runtime = isNfoFieldEnabled(enabledFields, "runtime") ? runtimeMinutes : undefined;
@@ -284,7 +318,7 @@ export class NfoGenerator {
     const fileinfo = videoNode ? { streamdetails: { video: videoNode } } : localState?.fileinfo;
     if (isNfoFieldEnabled(enabledFields, "fileinfo") && fileinfo) movie.fileinfo = fileinfo;
 
-    const xmlBody = builder.build({ movie });
+    const xmlBody = builder.build({ movie: { ...movie, ...localState?.foreignElements } });
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xmlBody}`;
   }
 

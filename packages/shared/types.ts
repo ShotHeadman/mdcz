@@ -153,6 +153,10 @@ export interface NfoLocalState {
   fileinfo?: Record<string, unknown>;
   /** The detail page someone chose for this movie; scrapes and refreshes use it instead of searching by number. */
   sourcePin?: { site: Website; url: string };
+  /** `<dateadded>` as first written; a rewrite keeps it. */
+  dateAdded?: string;
+  /** `<movie>` children (and root attributes) MDCz doesn't write, as parsed; a rewrite carries them over. */
+  foreignElements?: Record<string, unknown>;
 }
 
 export type NamingPreviewSampleId = "standard" | "subtitled" | "multiActor" | "noActor";

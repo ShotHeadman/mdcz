@@ -1,13 +1,19 @@
 import { Website } from "@mdcz/shared/enums";
 import type { ActorProfile, CrawlerData, NfoLocalState } from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";
+import { MDCZ_NFO_ELEMENTS } from "../scrape/nfo";
 import { detectNfoEdits, parseFingerprints } from "../scrape/nfoEdits";
 import { isManagedMovieTag, normalizeNfoLocalState, parseManagedMovieTags, tagToUncensoredChoice } from "./movieTags";
 
 const WEBSITE_VALUES: Readonly<Record<Website, true>> = Object.fromEntries(
   Object.values(Website).map((website) => [website, true]),
 ) as Record<Website, true>;
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  // Elements MDCz doesn't write go back into its rewrites, so their text must stay as written: "007", not 7.
+  tagValueProcessor: (_name, value, path) => (MDCZ_NFO_ELEMENTS.has(String(path).split(".")[1]) ? value : null),
+});
 
 // MDCx writes external IDs as <{site}id>. Keep only sites present in both projects.
 const MDCX_PROVIDER_TAGS: Readonly<Record<string, Website>> = {
@@ -229,6 +235,8 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       edits,
       fileinfo: toRecord(movieNode.fileinfo),
       sourcePin: pinnedSite && pinnedUrl ? { site: pinnedSite, url: pinnedUrl } : undefined,
+      dateAdded: toStringValue(movieNode.dateadded),
+      foreignElements: Object.fromEntries(Object.entries(movieNode).filter(([name]) => !MDCZ_NFO_ELEMENTS.has(name))),
     }),
   };
 };

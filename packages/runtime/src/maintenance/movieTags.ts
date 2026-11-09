@@ -30,13 +30,19 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
   const published =
     localState.published && Object.keys(localState.published).length > 0 ? localState.published : undefined;
   const edits = localState.edits && Object.keys(localState.edits).length > 0 ? localState.edits : undefined;
+  const foreignElements =
+    localState.foreignElements && Object.keys(localState.foreignElements).length > 0
+      ? localState.foreignElements
+      : undefined;
   if (
     !localState.uncensoredChoice &&
     tags.length === 0 &&
     lockedFields.length === 0 &&
     !published &&
     !localState.fileinfo &&
-    !localState.sourcePin
+    !localState.sourcePin &&
+    !localState.dateAdded &&
+    !foreignElements
   )
     return undefined;
   return {
@@ -47,6 +53,8 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     edits,
     fileinfo: localState.fileinfo,
     sourcePin: localState.sourcePin,
+    dateAdded: localState.dateAdded,
+    foreignElements,
   };
 };
 
