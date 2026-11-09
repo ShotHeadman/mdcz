@@ -821,6 +821,13 @@ export class MaintenanceSessionCoordinator {
             };
           }
           await this.commitItem(sessionId, item, result);
+          if (result.status === "failed" && result.error) {
+            await this.publishLog(
+              this.assertCurrent(sessionId, ["running", "paused", "stopping"]),
+              "failed",
+              `${active.preview.relativePath}: ${result.error}`,
+            );
+          }
         },
         applyResult: async () => undefined,
       });

@@ -181,7 +181,7 @@ export function LibraryIndexView({
   const resolvedFileCount = fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0);
   const summaryText = `${t.library.metrics.movies} ${total} · ${t.library.metrics.files} ${resolvedFileCount} · ${formatBytes(totalBytes ?? totalSize)}`;
   const listView = browse?.view !== "wall";
-  const selectionMode = selecting && listView;
+  const selectionMode = selecting;
   // Entries that left the list or the filter drop out of the selection on their own.
   const selected = filteredEntries.filter((entry) => selectedIds.has(entry.id));
   const toggleSelected = (id: string) =>
@@ -263,27 +263,37 @@ export function LibraryIndexView({
                 ))}
               </div>
 
-              {listView ? (
-                <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
+              <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
+                <Button
+                  aria-pressed={selecting}
+                  className={cn(
+                    "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
+                    selecting && "bg-surface text-foreground shadow-sm",
+                  )}
+                  onClick={() => {
+                    setSelecting(!selecting);
+                    setSelectedIds(new Set());
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  {t.library.multiSelect}
+                </Button>
+                {unavailableCount > 0 ? (
                   <Button
-                    aria-pressed={selecting}
-                    className={cn(
-                      "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
-                      selecting && "bg-surface text-foreground shadow-sm",
-                    )}
-                    onClick={() => {
-                      setSelecting(!selecting);
-                      setSelectedIds(new Set());
-                    }}
+                    className="h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => onDeleteEntries(entries.filter((entry) => entry.available === "unavailable"))}
                     size="sm"
                     type="button"
                     variant="ghost"
                   >
-                    <ListChecks className="h-3.5 w-3.5" />
-                    {t.library.multiSelect}
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {t.library.removeUnavailable(unavailableCount)}
                   </Button>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
 
             <div className="flex flex-1 flex-wrap items-center gap-2.5 sm:justify-end">
@@ -414,7 +424,14 @@ export function LibraryIndexView({
 
           <section aria-label={t.library.listAriaLabel} className="flex flex-col gap-3" ref={listRef}>
             {filteredEntries.length > 0 && browse?.view === "wall" && (
-              <LibraryPosterWall entries={filteredEntries} getImageSrc={getImageSrc} linkComponent={LinkComponent} />
+              <LibraryPosterWall
+                entries={filteredEntries}
+                getImageSrc={getImageSrc}
+                linkComponent={LinkComponent}
+                onToggleSelected={toggleSelected}
+                selectable={selectionMode}
+                selectedIds={selectedIds}
+              />
             )}
             {filteredEntries.length > 0 && listView && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>

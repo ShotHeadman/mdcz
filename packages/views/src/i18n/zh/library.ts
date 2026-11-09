@@ -85,6 +85,7 @@ export const library: Messages["library"] = {
   scrapeInfo: "刮削信息",
   openFolder: "打开所在目录",
   removeFromLibrary: "从媒体库移除",
+  removeUnavailable: (count: number) => `清理不可用 (${count})`,
   multiSelect: "多选",
   exitMultiSelect: "退出多选",
   selectEntry: (id: string) => `选择 ${id}`,

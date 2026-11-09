@@ -85,6 +85,7 @@ export const library = {
   scrapeInfo: "Scrape Info",
   openFolder: "Open folder",
   removeFromLibrary: "Remove from library",
+  removeUnavailable: (count: number) => `Remove unavailable (${count})`,
   multiSelect: "Multi-select",
   exitMultiSelect: "Exit multi-select",
   selectEntry: (id: string) => `Select ${id}`,

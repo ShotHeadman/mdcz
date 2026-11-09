@@ -148,6 +148,26 @@ describe("buildServer maintenance integration", () => {
     }
     const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
+    if (kind === "files") {
+      const incoming = join(directory, "incoming");
+      await mkdir(incoming);
+      await writeFile(join(source, "poster.jpg"), "shared fixed poster");
+      await createTestLibrary(fastify, token, incoming, {
+        name: "Organized Output",
+        sourcePath: incoming,
+        outputPath: source,
+        placement: "move",
+        folderTemplate: "{actor}/{number}",
+        fileTemplate: "{number}",
+        assetNaming: "fixed",
+        nfoNaming: "both",
+      });
+      await createTestLibrary(fastify, token, source, {
+        name: "InPlace Fitch",
+        sourcePath: source,
+        placement: "inPlace",
+      });
+    }
     const response = await fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.start",
