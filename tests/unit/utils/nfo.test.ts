@@ -259,6 +259,7 @@ describe("parseNfo", () => {
 
     const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, options);
     expect(editsOf(editorSaved)).toEqual(["genre"]);
+    expect(editorSaved.match(/<\?xml/gu)).toHaveLength(1);
   });
 
   it("does not restore mirrored genre tags as localState tags", () => {

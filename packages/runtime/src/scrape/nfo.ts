@@ -27,6 +27,8 @@ const parser = new XMLParser({
   attributeNamePrefix: "@_",
   ignoreAttributes: false,
   commentPropName: "#comment",
+  // A merged NFO is rebuilt under its own declaration; keeping the parsed one would put a second one after it.
+  ignoreDeclaration: true,
 });
 
 const OUTLINE_MAX_CHARS = 200;
