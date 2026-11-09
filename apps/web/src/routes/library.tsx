@@ -31,6 +31,7 @@ export function LibraryPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const scope = toLibraryListScope(search);
+  const { libraryId, actor, studio, tag } = scope;
   const libraryView = useLibraryView();
   const isScraping = useScrapeStore(selectIsScraping);
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
@@ -103,6 +104,14 @@ export function LibraryPage() {
               port: ports.maintenance,
             });
             void navigate({ to: "/workbench", search: { intent: "maintenance" } });
+          },
+          onIgnore: async (health) => {
+            await api.library.ignoreHealth({ libraryId, actor, studio, tag, query, health });
+            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          },
+          onRestore: async () => {
+            await api.library.restoreIgnored({ libraryId, actor, studio, tag, query });
+            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
           },
         })}
         entries={entries}

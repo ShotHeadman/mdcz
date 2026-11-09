@@ -189,6 +189,18 @@ export const libraryItemAssets = sqliteTable(
   ],
 );
 
+// A health issue the user chose to stop counting for a movie, such as a synopsis no site has.
+export const libraryHealthIgnores = sqliteTable(
+  "library_health_ignores",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => libraryItems.id, { onDelete: "cascade" }),
+    issue: text("issue").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.itemId, table.issue] })],
+);
+
 // The latest outcome per movie and site; `data_json` keeps the last answer the site gave about the movie.
 export const siteResults = sqliteTable(
   "site_results",

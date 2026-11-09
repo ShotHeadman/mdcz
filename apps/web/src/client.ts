@@ -232,6 +232,8 @@ export const api: ServerApiContract = {
     rescan: (input) => trpcMutation("library.rescan", input),
     relink: (input) => trpcMutation("library.relink", input),
     delete: (input) => trpcMutation("library.delete", input),
+    ignoreHealth: (input) => trpcMutation("library.ignoreHealth", input),
+    restoreIgnored: (input) => trpcMutation("library.restoreIgnored", input),
   },
   overview: {
     summary: () => trpcQuery("overview.summary"),

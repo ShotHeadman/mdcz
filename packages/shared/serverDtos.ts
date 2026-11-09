@@ -715,6 +715,8 @@ export type LibraryHealthIssue = z.infer<typeof libraryHealthIssueSchema>;
 const libraryScopeFields = {
   libraryId: z.string().trim().min(1).optional(),
   health: libraryHealthIssueSchema.optional(),
+  /** The movies whose ignored issues still apply, in place of one issue. */
+  ignored: z.boolean().optional(),
   actor: z.string().trim().min(1).optional(),
   studio: z.string().trim().min(1).optional(),
   tag: z.string().trim().min(1).optional(),
@@ -740,9 +742,21 @@ const libraryFacetSchema = z.array(z.object({ name: z.string(), count: z.number(
 export const librarySummaryResponseSchema = z.object({
   total: z.number().int(),
   issues: z.record(libraryHealthIssueSchema, z.number().int()),
+  ignored: z.number().int(),
   facets: z.object({ actors: libraryFacetSchema, studios: libraryFacetSchema, tags: libraryFacetSchema }),
 });
 export type LibrarySummaryResponse = z.infer<typeof librarySummaryResponseSchema>;
+
+/** Restoring and ignoring act on what the list shows, so they take the list's scope and search. */
+export const libraryRestoreIgnoredInputSchema = z
+  .object({ ...libraryScopeFields, query: z.string().optional() })
+  .omit({ health: true, ignored: true });
+export type LibraryRestoreIgnoredInput = z.infer<typeof libraryRestoreIgnoredInputSchema>;
+
+export const libraryIgnoreHealthInputSchema = libraryRestoreIgnoredInputSchema.extend({
+  health: libraryHealthIssueSchema,
+});
+export type LibraryIgnoreHealthInput = z.infer<typeof libraryIgnoreHealthInputSchema>;
 
 export const libraryDetailInputSchema = z.object({
   id: z.string().trim().min(1),

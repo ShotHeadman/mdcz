@@ -7,6 +7,8 @@ import type { LibraryBrowseControls } from "./LibraryBrowsePanel";
 export interface LibraryBrowseSearch {
   libraryId?: string;
   health?: LibraryHealthIssue;
+  /** The ignored movies, in place of one issue. */
+  ignored?: true;
   actor?: string;
   studio?: string;
   tag?: string;
@@ -16,15 +18,17 @@ const text = (value: unknown): string | undefined => (typeof value === "string" 
 
 export const parseLibraryBrowseSearch = (search: Record<string, unknown>): LibraryBrowseSearch => ({
   libraryId: text(search.libraryId),
-  health: LIBRARY_HEALTH_ISSUES.find((issue) => issue === search.health),
+  health: search.ignored === true ? undefined : LIBRARY_HEALTH_ISSUES.find((issue) => issue === search.health),
+  ignored: search.ignored === true ? true : undefined,
   actor: text(search.actor),
   studio: text(search.studio),
   tag: text(search.tag),
 });
 
-export const toLibraryListScope = ({ libraryId, health, actor, studio, tag }: LibraryBrowseSearch) => ({
+export const toLibraryListScope = ({ libraryId, health, ignored, actor, studio, tag }: LibraryBrowseSearch) => ({
   libraryId,
   health,
+  ignored,
   actor,
   studio,
   tag,
@@ -64,6 +68,8 @@ export const createLibraryBrowseControls = (input: {
   onViewChange: (view: LibraryView) => void;
   fixBlockedReason?: string;
   onFix: LibraryBrowseControls["onFix"];
+  onIgnore: LibraryBrowseControls["onIgnore"];
+  onRestore: LibraryBrowseControls["onRestore"];
 }): LibraryBrowseControls => {
   const { search, update } = input;
   return {
@@ -71,19 +77,25 @@ export const createLibraryBrowseControls = (input: {
     libraryId: search.libraryId,
     summary: input.summary,
     health: search.health,
+    ignored: search.ignored === true,
     facet: facetFromSearch(search),
     view: input.view,
     // Another library has other actors and issues, so its filters start over.
     onLibraryChange: (libraryId) => update({ libraryId }),
-    onHealthChange: (health) => update({ ...search, health }),
+    onHealthChange: (health) => update({ ...search, health, ignored: undefined }),
+    onIgnoredChange: (ignored) => update({ ...search, health: undefined, ignored: ignored || undefined }),
     onFacetChange: (facet) =>
       update({
         libraryId: search.libraryId,
         health: search.health,
+        ignored: search.ignored,
         ...(facet ? { [facet.kind]: facet.name } : {}),
       }),
+    onClear: () => update({ libraryId: search.libraryId }),
     onViewChange: input.onViewChange,
     fixBlockedReason: input.fixBlockedReason,
     onFix: input.onFix,
+    onIgnore: input.onIgnore,
+    onRestore: input.onRestore,
   };
 };

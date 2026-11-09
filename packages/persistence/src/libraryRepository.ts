@@ -96,6 +96,8 @@ export interface LibraryEntryFilter {
   /** Host directories; a movie matches when one of its files is inside one of them. */
   pathPrefixes?: readonly string[];
   health?: LibraryHealthIssue;
+  /** Movies with an issue that still applies but was ignored; ignored issues never match `health`. */
+  healthIgnored?: boolean;
   includeBackdrop?: boolean;
   actor?: string;
   studio?: string;
@@ -115,6 +117,7 @@ export interface LibraryFacetCount {
 export interface LibrarySummary {
   total: number;
   issues: Record<LibraryHealthIssue, number>;
+  ignored: number;
   facets: { actors: LibraryFacetCount[]; studios: LibraryFacetCount[]; tags: LibraryFacetCount[] };
 }
 
@@ -680,8 +683,10 @@ export class LibraryRepository {
       ),
       sql`, `,
     );
-    const counts = this.database.db.get<Record<"total" | LibraryHealthIssue, number>>(
-      sql`SELECT count(*) AS total, ${issueColumns} FROM library_items WHERE ${scope}`,
+    const counts = this.database.db.get<Record<"total" | "ignored" | LibraryHealthIssue, number>>(
+      sql`SELECT count(*) AS total, ${issueColumns},
+        coalesce(sum(CASE WHEN ${healthIgnoredCondition(filter)} THEN 1 ELSE 0 END), 0) AS ignored
+        FROM library_items WHERE ${scope}`,
     );
     const jsonFacet = (values: SQL): LibraryFacetCount[] =>
       this.database.db.all<LibraryFacetCount>(
@@ -693,6 +698,7 @@ export class LibraryRepository {
       issues: Object.fromEntries(
         LIBRARY_HEALTH_ISSUES.map((issue) => [issue, counts[issue]]),
       ) as LibrarySummary["issues"],
+      ignored: counts.ignored,
       facets: {
         actors: jsonFacet(sql`${libraryItems.actorsJson}`),
         studios: this.database.db.all<LibraryFacetCount>(
@@ -702,6 +708,23 @@ export class LibraryRepository {
         tags: jsonFacet(sql`json_extract(${libraryItems.crawlerDataJson}, '$.genres')`),
       },
     };
+  }
+
+  /** Stops counting `filter.health` for every movie the filter lists. */
+  ignoreHealth(filter: LibraryEntryFilter & { health: LibraryHealthIssue }): void {
+    this.database.db.run(
+      sql`INSERT OR IGNORE INTO library_health_ignores (item_id, issue)
+        SELECT ${libraryItems.id}, ${filter.health} FROM library_items WHERE ${buildLibraryListWhere(filter)}`,
+    );
+  }
+
+  /** Counts every issue again for the ignored movies the filter lists. */
+  restoreIgnored(filter: Omit<LibraryEntryFilter, "health" | "healthIgnored">): void {
+    this.database.db.run(
+      sql`DELETE FROM library_health_ignores WHERE item_id IN (
+        SELECT ${libraryItems.id} FROM library_items WHERE ${buildLibraryListWhere({ ...filter, healthIgnored: true })}
+      )`,
+    );
   }
 
   async getOverviewSummary(recentLimit: number): Promise<LibraryOverviewSummary> {
@@ -879,7 +902,7 @@ const pathPrefixCondition = (prefixes: readonly string[], itemId: SQL): SQL => {
   )`;
 };
 
-const healthCondition = (
+const unresolvedCondition = (
   issue: LibraryHealthIssue,
   filter: Pick<LibraryEntryFilter, "includeBackdrop" | "pathPrefixes">,
 ): SQL => {
@@ -893,10 +916,27 @@ const healthCondition = (
   )`;
 };
 
+const ignoredCondition = (issue: LibraryHealthIssue): SQL =>
+  sql`EXISTS (SELECT 1 FROM library_health_ignores AS health_ignore
+    WHERE health_ignore.item_id = ${libraryItems.id} AND health_ignore.issue = ${issue})`;
+
+const healthCondition = (
+  issue: LibraryHealthIssue,
+  filter: Pick<LibraryEntryFilter, "includeBackdrop" | "pathPrefixes">,
+): SQL => sql`((${unresolvedCondition(issue, filter)}) AND NOT ${ignoredCondition(issue)})`;
+
+// An ignore only shows while its issue still applies, so a movie fixed since then leaves the ignored view.
+const healthIgnoredCondition = (filter: Pick<LibraryEntryFilter, "includeBackdrop" | "pathPrefixes">): SQL =>
+  sql`(${sql.join(
+    LIBRARY_HEALTH_ISSUES.map((issue) => sql`(${ignoredCondition(issue)} AND (${unresolvedCondition(issue, filter)}))`),
+    sql` OR `,
+  )})`;
+
 const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   const filters: SQL[] = [];
   if (input.pathPrefixes) filters.push(pathPrefixCondition(input.pathPrefixes, sql`${libraryItems.id}`));
   if (input.health) filters.push(healthCondition(input.health, input));
+  if (input.healthIgnored) filters.push(healthIgnoredCondition(input));
   if (input.actor)
     filters.push(sql`EXISTS (SELECT 1 FROM json_each(${libraryItems.actorsJson}) WHERE value = ${input.actor})`);
   if (input.studio) filters.push(sql`${STUDIO} = ${input.studio}`);

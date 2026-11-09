@@ -17,8 +17,10 @@ import type {
   LibraryAvailabilityResponse,
   LibraryDetailResponse,
   LibraryEntryDto,
+  LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
+  LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
   LibrarySummaryResponse,
   MediaRootDto,
@@ -47,6 +49,18 @@ export class LibraryService {
     return state.repositories.library.summary(
       await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
     );
+  }
+
+  async ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }> {
+    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
+    (await this.persistence.getState()).repositories.library.ignoreHealth({ ...filter, health: input.health });
+    return { success: true };
+  }
+
+  async restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }> {
+    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
+    (await this.persistence.getState()).repositories.library.restoreIgnored(filter);
+    return { success: true };
   }
 
   async removeFile(input: { fileId: string }): Promise<{ success: true }> {

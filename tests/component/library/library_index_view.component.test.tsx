@@ -1,5 +1,5 @@
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
-import { LibraryDeleteDialog, LibraryIndexView } from "@mdcz/views/library";
+import { type LibraryBrowseControls, LibraryDeleteDialog, LibraryIndexView } from "@mdcz/views/library";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
@@ -88,6 +88,50 @@ test("batch removal acts on the selected movies the list still shows", async () 
   await multiSelect.click();
   await expect.element(selectAvailable).not.toBeChecked();
   await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+});
+
+test("a health filter offers to ignore its movies, and the ignored view only restores them", async () => {
+  const browse = {
+    libraries: [],
+    summary: {
+      total: 3,
+      issues: { missingPoster: 0, missingBackdrop: 0, missingSynopsis: 3, noNfo: 0, duplicate: 3 },
+      ignored: 1,
+      facets: { actors: [], studios: [], tags: [] },
+    },
+    ignored: false,
+    view: "list",
+    onLibraryChange: vi.fn(),
+    onHealthChange: vi.fn(),
+    onIgnoredChange: vi.fn(),
+    onFacetChange: vi.fn(),
+    onClear: vi.fn(),
+    onViewChange: vi.fn(),
+    onFix: vi.fn(async () => undefined),
+    onIgnore: vi.fn(async () => undefined),
+    onRestore: vi.fn(async () => undefined),
+  } satisfies LibraryBrowseControls;
+  const view = (controls: Partial<LibraryBrowseControls>) => (
+    <LibraryIndexView {...baseProps} availabilityFilter="all" browse={{ ...browse, ...controls }} />
+  );
+  const screen = await render(view({ health: "missingSynopsis" }));
+  const refresh = screen.getByRole("button", { name: "从站点刷新 3 部" });
+  const ignore = screen.getByRole("button", { name: "忽略这 3 部" });
+  const restore = screen.getByRole("button", { name: "取消忽略 3 部" });
+
+  await expect.element(refresh).toBeVisible();
+  await ignore.click();
+  expect(browse.onIgnore).toHaveBeenCalledWith("missingSynopsis");
+
+  await screen.rerender(view({ health: "duplicate" }));
+  await expect.element(refresh).not.toBeInTheDocument();
+  await expect.element(ignore).toBeVisible();
+
+  await screen.rerender(view({ ignored: true }));
+  await expect.element(screen.getByRole("button", { name: /^已忽略\s*1$/u })).toHaveAttribute("aria-pressed", "true");
+  await expect.element(ignore).not.toBeInTheDocument();
+  await restore.click();
+  expect(browse.onRestore).toHaveBeenCalledOnce();
 });
 
 test("the removal dialog totals the selection and says files stay on disk", async () => {

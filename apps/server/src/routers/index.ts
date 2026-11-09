@@ -35,8 +35,10 @@ import {
   libraryDeleteInputSchema,
   libraryDetailInputSchema,
   libraryFileRemoveInputSchema,
+  libraryIgnoreHealthInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
+  libraryRestoreIgnoredInputSchema,
   librarySummaryInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
@@ -230,6 +232,12 @@ export const appRouter = t.router({
     delete: protectedProcedure
       .input(libraryDeleteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntries(input.ids)),
+    ignoreHealth: protectedProcedure
+      .input(libraryIgnoreHealthInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.ignoreHealth(input)),
+    restoreIgnored: protectedProcedure
+      .input(libraryRestoreIgnoredInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.restoreIgnored(input)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);
