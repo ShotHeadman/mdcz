@@ -1,3 +1,4 @@
+import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { FieldDiff, LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@mdcz/shared/types";
 import {
@@ -28,7 +29,7 @@ import { type Dispatch, type SetStateAction, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
 import { NaturalAspectImageFrame } from "../common";
 import { useT } from "../i18n";
-import { ChangeDiffView, type MaintenanceFieldSelectionSide, PathPlanView } from "../maintenance";
+import { ChangeDiffView, PathPlanView } from "../maintenance";
 import { type EditableNfoData, NfoEditorDialog, type NfoValidationErrors } from "../nfo";
 import { formatBitrate, formatDuration } from "./detailViewAdapters";
 import { PosterCropDialog } from "./PosterCropDialog";
@@ -459,6 +460,9 @@ export function DetailPanelView({
 
                 {item.sceneImages?.length || trailerSrc ? (
                   <section className="space-y-3">
+                    <DetailSectionTitle>
+                      {trailerSrc ? t.detail.sections.trailerAndStills : t.detail.sections.stills}
+                    </DetailSectionTitle>
                     <SceneImageGallery
                       images={item.sceneImages ?? []}
                       trailerSrc={trailerSrc}

@@ -9,12 +9,6 @@ export const maintenance: Messages["maintenance"] = {
 
   // ChangeDiffView
   empty: "(空)",
-  galleryTitle: "剧照预览",
-  galleryDescription: (current: number, total: number) =>
-    `查看剧照大图预览，当前第 ${current} 张，共 ${total} 张，可使用左右方向键切换。`,
-  closeGallery: "关闭剧照预览",
-  prevGallery: "上一张剧照",
-  nextGallery: "下一张剧照",
   oldCurrent: "旧 (当前)",
   oldEdited: "旧 (手动修改过)",
   oldValueEmpty: "旧值为空",
@@ -27,7 +21,6 @@ export const maintenance: Messages["maintenance"] = {
   currentValue: "当前值",
   currentValueEmpty: "当前值为空",
   noStills: "当前没有剧照",
-  currentTrailer: "当前预告片",
   fetchingDataAndDiff: "正在获取数据并生成对比...",
   waitingInQueue: "排队等待中...",
   noFieldDiffs: "当前预览未生成字段差异",

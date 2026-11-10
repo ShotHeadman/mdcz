@@ -1,4 +1,4 @@
-import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
+import { getDefaultMaintenanceFieldSelection, type MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
 import type {
   CrawlerData,
   FieldDiff,
@@ -88,38 +88,6 @@ const toLocalImageFieldValue = (value: string): string | undefined => {
 
   const leafName = getPathLeafName(normalized);
   return leafName || undefined;
-};
-
-export const hasMaintenanceFieldValue = (value: unknown): boolean => {
-  if (value == null) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  return true;
-};
-
-export const hasMaintenanceDiffSideValue = (diff: FieldDiff, side: MaintenanceFieldSelectionSide): boolean => {
-  if (diff.kind === "image") {
-    const preview = side === "old" ? diff.oldPreview : diff.newPreview;
-    return preview.src.length > 0 || preview.fallbackSrcs.length > 0;
-  }
-
-  if (diff.kind === "imageCollection") {
-    const preview = side === "old" ? diff.oldPreview : diff.newPreview;
-    return preview.items.length > 0;
-  }
-
-  return hasMaintenanceFieldValue(side === "old" ? diff.oldValue : diff.newValue);
-};
-
-export const getDefaultMaintenanceFieldSelection = (diff: FieldDiff): MaintenanceFieldSelectionSide => {
-  const hasOldValue = hasMaintenanceDiffSideValue(diff, "old");
-  const hasNewValue = hasMaintenanceDiffSideValue(diff, "new");
-
-  if (diff.userEdited) return "old";
-  if (!hasOldValue && hasNewValue) return "new";
-  // An emptied translation is the publish step choosing the source text, not a site dropping the field.
-  if (hasOldValue && !hasNewValue && diff.field !== "title_zh" && diff.field !== "plot_zh") return "old";
-  return "new";
 };
 
 const buildSelectedImageSourceValue = (diff: FieldDiff): string | undefined => {

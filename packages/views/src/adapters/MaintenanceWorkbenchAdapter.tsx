@@ -70,7 +70,7 @@ export function MaintenanceWorkbenchAdapter({ ports }: { ports: SharedWorkbenchP
   const handleFieldSelectionChange = (
     fileId: string,
     field: import("@mdcz/shared/types").FieldDiff["field"],
-    side: import("../maintenance").MaintenanceFieldSelectionSide,
+    side: import("@mdcz/shared/maintenanceTasks").MaintenanceFieldSelectionSide,
   ) => {
     const state = useMaintenanceStore.getState();
     const previewId = selectMaintenancePreviewResults(state)[fileId]?.previewId;

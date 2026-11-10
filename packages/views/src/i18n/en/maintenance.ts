@@ -7,12 +7,6 @@ export const maintenance = {
 
   // ChangeDiffView
   empty: "(Empty)",
-  galleryTitle: "Still Preview",
-  galleryDescription: (current: number, total: number) =>
-    `Viewing still preview (${current} of ${total}). Use left and right arrow keys to switch.`,
-  closeGallery: "Close still preview",
-  prevGallery: "Previous still",
-  nextGallery: "Next still",
   oldCurrent: "Old (Current)",
   oldEdited: "Old (Edited by hand)",
   oldValueEmpty: "Old value is empty",
@@ -25,7 +19,6 @@ export const maintenance = {
   currentValue: "Current value",
   currentValueEmpty: "Current value is empty",
   noStills: "No stills currently",
-  currentTrailer: "Current trailer",
   fetchingDataAndDiff: "Fetching data and generating comparison…",
   waitingInQueue: "Waiting in queue…",
   noFieldDiffs: "Current preview generated no field diffs",

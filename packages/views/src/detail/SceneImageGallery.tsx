@@ -1,7 +1,8 @@
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
+import { cn, Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
 import { ChevronLeft, ChevronRight, ImageIcon, Play, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "../i18n";
+import { TrailerPlayer } from "./TrailerPlayer";
 
 export type ResolveImageCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
 
@@ -9,17 +10,30 @@ interface SceneImageGalleryProps {
   images: string[];
   trailerSrc?: string;
   baseDir?: string;
+  /** Small tiles for side-by-side comparisons. */
+  compact?: boolean;
   resolveImageCandidates: ResolveImageCandidates;
   onTrailerError?: () => void;
 }
 
 const MAX_THUMBNAILS = 10;
-const TILE_CLASS =
-  "relative h-[136px] w-[240px] shrink-0 overflow-hidden rounded-quiet transition-transform hover:-translate-y-0.5";
+const STYLES = {
+  filmstrip: {
+    strip: "gap-4 pb-4",
+    tile: "h-[136px] w-[240px] rounded-quiet transition-transform hover:-translate-y-0.5",
+    image:
+      "border border-black/5 bg-surface-low/55 shadow-[0_10px_24px_rgba(0,0,0,0.06)] hover:shadow-[0_16px_32px_rgba(0,0,0,0.08)]",
+    more: "border border-dashed border-black/10 bg-surface-low/45 text-sm font-semibold text-foreground/70 hover:bg-surface-low/60",
+  },
+  compact: {
+    strip: "gap-1.5 p-1 scrollbar-thin",
+    tile: "h-14 w-20 rounded-md",
+    image: "border bg-muted/20 transition-shadow hover:ring-2 hover:ring-primary/50",
+    more: "border bg-muted/30 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50",
+  },
+};
 
-// Only an explicit play creates the trailer's <video>. Clicking through results used to build and tear down a
-// hardware decoder for every movie, the prime suspect for unkillable freezes on macOS.
-type Slide = { kind: "trailer"; playing: boolean } | { kind: "image"; index: number };
+type Slide = { kind: "trailer"; autoPlay: boolean } | { kind: "image"; index: number };
 
 const useResolvedImageSrc = (
   resolveImageCandidates: ResolveImageCandidates,
@@ -54,11 +68,13 @@ export function SceneImageGallery({
   images,
   trailerSrc,
   baseDir,
+  compact = false,
   resolveImageCandidates,
   onTrailerError,
 }: SceneImageGalleryProps) {
   const t = useT();
   const [slide, setSlide] = useState<Slide | null>(null);
+  const styles = STYLES[compact ? "compact" : "filmstrip"];
   const trailerSlots = trailerSrc ? 1 : 0;
   const total = images.length + trailerSlots;
   const isOpen = slide !== null && (slide.kind === "image" || Boolean(trailerSrc));
@@ -71,7 +87,7 @@ export function SceneImageGallery({
         const position = current.kind === "trailer" ? 0 : current.index + trailerSlots;
         const next = (position + direction + total) % total;
         return next < trailerSlots
-          ? { kind: "trailer", playing: false }
+          ? { kind: "trailer", autoPlay: false }
           : { kind: "image", index: next - trailerSlots };
       }),
     [total, trailerSlots],
@@ -97,21 +113,18 @@ export function SceneImageGallery({
     return null;
   }
 
-  const playTrailer = () => setSlide({ kind: "trailer", playing: true });
-
   return (
     <div>
-      <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
-        {trailerSrc ? t.detail.sections.trailerAndStills : t.detail.sections.stills}
-      </div>
-
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className={cn("flex overflow-x-auto", styles.strip)}>
         {trailerSrc ? (
           <button
             type="button"
             aria-label={t.detail.playTrailer}
-            onClick={playTrailer}
-            className={`${TILE_CLASS} group flex items-end bg-gradient-to-br from-neutral-800 via-neutral-900 to-black p-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]`}
+            onClick={() => setSlide({ kind: "trailer", autoPlay: true })}
+            className={cn(
+              "group relative flex shrink-0 items-end overflow-hidden bg-gradient-to-br from-neutral-800 via-neutral-900 to-black p-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]",
+              styles.tile,
+            )}
           >
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25 transition-colors group-hover:bg-white/25">
@@ -126,7 +139,7 @@ export function SceneImageGallery({
             key={imagePath}
             type="button"
             onClick={() => setSlide({ kind: "image", index })}
-            className={`${TILE_CLASS} border border-black/5 bg-surface-low/55 shadow-[0_10px_24px_rgba(0,0,0,0.06)] hover:shadow-[0_16px_32px_rgba(0,0,0,0.08)]`}
+            className={cn("relative shrink-0 overflow-hidden", styles.tile, styles.image)}
           >
             <LazyImage
               alt={`Scene ${index + 1}`}
@@ -140,9 +153,9 @@ export function SceneImageGallery({
           <button
             type="button"
             onClick={() => setSlide({ kind: "image", index: MAX_THUMBNAILS })}
-            className={`${TILE_CLASS} flex items-center justify-center border border-dashed border-black/10 bg-surface-low/45 text-muted-foreground hover:bg-surface-low/60`}
+            className={cn("flex shrink-0 items-center justify-center overflow-hidden", styles.tile, styles.more)}
           >
-            <span className="text-sm font-semibold text-foreground/70">+{remainingCount}</span>
+            +{remainingCount}
           </button>
         ) : null}
       </div>
@@ -208,25 +221,14 @@ export function SceneImageGallery({
                 resolveImageCandidates={resolveImageCandidates}
                 src={images[slide.index]}
               />
-            ) : (
-              <div className="aspect-video w-[min(90vw,1280px,calc(82vh*16/9))] bg-black">
-                {slide?.playing ? (
-                  // biome-ignore lint/a11y/useMediaCaption: Remote trailers do not provide a caption track.
-                  <video autoPlay controls src={trailerSrc} onError={onTrailerError} className="h-full w-full" />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={playTrailer}
-                    className="flex h-full w-full flex-col items-center justify-center gap-3 text-white"
-                  >
-                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25">
-                      <Play className="ml-1 h-7 w-7 fill-white" />
-                    </span>
-                    <span className="text-sm font-medium">{t.detail.playTrailer}</span>
-                  </button>
-                )}
-              </div>
-            )}
+            ) : slide && trailerSrc ? (
+              <TrailerPlayer
+                src={trailerSrc}
+                autoPlay={slide.autoPlay}
+                onError={onTrailerError}
+                className="w-[min(90vw,1280px,calc(82vh*16/9))]"
+              />
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
@@ -321,7 +323,7 @@ function LazyImage({
   }
 
   return (
-    <div className="h-full w-full overflow-hidden rounded-quiet">
+    <>
       {!loaded ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
       <img
         key={resolvedSrc}
@@ -329,8 +331,8 @@ function LazyImage({
         alt={alt}
         onLoad={() => setLoaded(true)}
         onError={() => setError(true)}
-        className={`h-full w-full object-cover ${loaded ? "" : "invisible"}`}
+        className={cn("h-full w-full object-cover", !loaded && "invisible")}
       />
-    </div>
+    </>
   );
 }
