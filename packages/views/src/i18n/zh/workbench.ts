@@ -2,8 +2,9 @@ import type { Messages } from "../en";
 
 export const workbench: Messages["workbench"] = {
   taskConflict: {
-    scrape: "刮削任务正在运行中，无法同时执行维护或修复。请等待刮削完成或先停止当前任务。",
-    maintenance: "维护任务正在运行中，无法启动新的刮削。请等待维护完成或先停止任务。",
+    edit: "媒体库批量编辑正在运行，请等待完成。",
+    scrape: "刮削任务正在运行，请等待完成或停止后再启动其他媒体库任务。",
+    maintenance: "维护任务正在运行，请等待完成或停止后再启动其他媒体库任务。",
   },
 
   // Return button

@@ -1,4 +1,5 @@
 import type { Configuration } from "./config";
+import type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
   MediaLibraryDto,
@@ -185,6 +186,10 @@ export interface ServerApiContract {
     list(input?: ActivityListInput): Promise<ActivityListResponse>;
   };
   library: {
+    edit: {
+      start(input: LibraryEditStartInput): Promise<LibraryEditJobDto>;
+      status(): Promise<LibraryEditJobDto | null>;
+    };
     removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;

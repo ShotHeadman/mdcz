@@ -162,13 +162,11 @@ export const resolveRegisteredNfoPaths = async (
     path: absolute(asset),
     key: filesystemPathKey(absolute(asset)),
   }));
-  const owners = new Set(nfos.filter((asset) => asset.key === target && asset.published).map((asset) => asset.itemId));
+  const owners = new Set(nfos.filter((asset) => asset.key === target).map((asset) => asset.itemId));
   if (!owners.size) return undefined;
   if (owners.size > 1) throw new Error("The same NFO is referenced by multiple movies in the media library");
   const movieId = [...owners][0];
-  const paths = [
-    ...new Set(nfos.filter((asset) => asset.published && asset.itemId === movieId).map((asset) => asset.path)),
-  ];
+  const paths = [...new Set(nfos.filter((asset) => asset.itemId === movieId).map((asset) => asset.path))];
   for (const path of paths)
     if (!(await stat(path)).isFile()) throw new Error(`Registered NFO output does not exist: ${path}`);
   const mediaPaths = snapshot.files.filter((file) => file.itemId === movieId).map(absolute);

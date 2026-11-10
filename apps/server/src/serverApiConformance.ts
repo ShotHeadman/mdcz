@@ -18,11 +18,7 @@ type ProcedureArgs<TInput> = [TInput] extends [undefined]
 type ProcedureFn<TInput, TOutput> = (...args: ProcedureArgs<TInput>) => Promise<TOutput>;
 
 type MapProcedures<TInputs, TOutputs> = {
-  [K in keyof TInputs & keyof TOutputs]: ProcedureFn<TInputs[K], TOutputs[K]>;
-};
-
-type MapConfig<TInputs, TOutputs> = {
-  [K in keyof TInputs & keyof TOutputs]: K extends "profiles"
+  [K in keyof TInputs & keyof TOutputs]: K extends "profiles" | "edit"
     ? MapProcedures<TInputs[K], TOutputs[K]>
     : ProcedureFn<TInputs[K], TOutputs[K]>;
 };
@@ -44,9 +40,7 @@ type Jsonify<T> = T extends Date
           : T;
 
 type RouterContract = {
-  [K in keyof RouterInputs & keyof RouterOutputs]: K extends "config"
-    ? MapConfig<RouterInputs[K], RouterOutputs[K]>
-    : MapProcedures<RouterInputs[K], RouterOutputs[K]>;
+  [K in keyof RouterInputs & keyof RouterOutputs]: MapProcedures<RouterInputs[K], RouterOutputs[K]>;
 };
 
 type JsonServerApiContract = Jsonify<ServerApiContract>;

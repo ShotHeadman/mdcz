@@ -1,7 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryHealthIssue, LibrarySummaryResponse } from "@mdcz/shared/serverDtos";
 import { Button, cn } from "@mdcz/ui";
-import { ChevronDown, EyeOff, LoaderCircle, RotateCcw, Wrench, X } from "lucide-react";
+import { ChevronDown, EyeOff, LoaderCircle, Pencil, RotateCcw, Wrench, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { DisabledReason } from "../common";
@@ -43,14 +43,16 @@ export function LibraryBrowsePanel({
   browse,
   matchCount,
   summaryText,
+  onEditAll,
 }: {
   browse: LibraryBrowseControls;
   matchCount: number;
   summaryText?: string;
+  onEditAll?: () => Promise<void>;
 }) {
   const t = useT();
   const [facetsOpen, setFacetsOpen] = useState(false);
-  const [running, setRunning] = useState<"fix" | "ignore" | "restore">();
+  const [running, setRunning] = useState<"fix" | "ignore" | "restore" | "edit">();
   const { summary, health, ignored, facet } = browse;
   const shownIssues = summary
     ? (Object.keys(t.library.health.issues) as LibraryHealthIssue[]).filter(
@@ -143,6 +145,17 @@ export function LibraryBrowsePanel({
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          {onEditAll && (
+            <Button
+              disabled={running !== undefined || matchCount === 0}
+              size="sm"
+              variant="outline"
+              onClick={() => run("edit", onEditAll)}
+            >
+              {actionIcon("edit", Pencil)}
+              {t.library.edit.all(matchCount)}
+            </Button>
+          )}
           {(shownIssues.length > 0 || showIgnored || facet) && summaryText ? (
             <span className="hidden font-numeric text-xs text-muted-foreground sm:inline">{summaryText}</span>
           ) : null}

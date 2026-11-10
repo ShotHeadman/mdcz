@@ -223,6 +223,10 @@ export const api: ServerApiContract = {
     list: (input) => trpcQuery("activity.list", input),
   },
   library: {
+    edit: {
+      start: (input) => trpcMutation("library.edit.start", input),
+      status: () => trpcQuery("library.edit.status"),
+    },
     removeFile: (input) => trpcMutation("library.removeFile", input),
     availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),

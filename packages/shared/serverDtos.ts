@@ -8,12 +8,17 @@ import {
 } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
+import { libraryEditJobSchema } from "./libraryEdit";
 import {
   LLM_API_FORMAT_OPTIONS,
   LLM_OUTPUT_FORMAT_OPTIONS,
   LLM_REASONING_OPTIONS,
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
+
+export type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
+export { libraryEditStartInputSchema } from "./libraryEdit";
+
 import { assetRefSchema, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
 import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
@@ -646,9 +651,10 @@ export type ActorSyncCancelInput = z.infer<typeof actorSyncCancelInputSchema>;
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
-    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending"])),
+    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending", "library"])),
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),
+  z.object({ kind: z.literal("library-edit"), job: libraryEditJobSchema }),
   z.object({ kind: z.literal("person-sync"), job: personSyncJobSchema }),
   z.object({ kind: z.literal("actor-sync"), job: actorSyncJobSchema }),
 ]);

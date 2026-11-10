@@ -1,3 +1,4 @@
+import { normalizeActorName, toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { UiLocale } from "@mdcz/shared/enums";
 import type { ActorProfile } from "@mdcz/shared/types";
 
@@ -40,21 +41,6 @@ const fillLabel = (label: string, value: string | number): string => label.repla
 
 const normalizeText = (value: string | undefined): string => value?.trim().replace(/\s+/gu, " ") ?? "";
 
-const normalizeActorName = (value: string): string => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-
-const toUniqueActorNames = (values: string[]): string[] => {
-  const seen = new Set<string>();
-  const outputs: string[] = [];
-  for (const value of values) {
-    const normalized = normalizeText(value);
-    const key = normalizeActorName(normalized);
-    if (!normalized || seen.has(key)) continue;
-    seen.add(key);
-    outputs.push(normalized);
-  }
-  return outputs;
-};
-
 const isActorManagedTag = (value: string): boolean => value.startsWith(MANAGED_TAG_PREFIX);
 
 const isActorManagedTagline = (value: string): boolean => value.startsWith(MANAGED_TAGLINE_PREFIX);
@@ -79,7 +65,7 @@ const buildAliasesLine = (
   profile: Pick<ActorProfile, "name" | "aliases">,
   labels: (typeof BIO_LABELS)[UiLocale],
 ): string | undefined => {
-  const aliases = toUniqueActorNames(profile.aliases ?? []).filter(
+  const aliases = toUniqueActorNames(profile.aliases ?? [], normalizeText).filter(
     (alias) => normalizeActorName(alias) !== normalizeActorName(profile.name),
   );
 

@@ -5,6 +5,7 @@ import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import { type Configuration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import type { LibraryEdit } from "@mdcz/shared/libraryEdit";
 import type {
   CrawlerData,
   DownloadedAssets,
@@ -226,6 +227,10 @@ export class NfoGenerator {
       throw new Error("NFO missing website");
     }
 
+    return this.#buildXml(data, options);
+  }
+
+  #buildXml(data: CrawlerData, options?: NfoOptions): string {
     const localState = options?.localState;
     const rawTitle = data.title_zh?.trim() || data.title;
     const originaltitle = data.original_title?.trim() || data.title.trim();
@@ -286,7 +291,7 @@ export class NfoGenerator {
           : undefined
       : undefined;
     movie.num = isNfoFieldEnabled(enabledFields, "num") ? data.number : undefined;
-    movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
+    movie.uniqueid = data.website ? { "@_type": data.website, "@_default": "true", "#text": data.number } : undefined;
     movie.genre = isNfoFieldEnabled(enabledFields, "genres") ? genres : undefined;
     movie.tag = isNfoFieldEnabled(enabledFields, "tags") && tags.length > 0 ? tags : undefined;
     movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
@@ -325,6 +330,7 @@ export class NfoGenerator {
     data: CrawlerData,
     changedFields: readonly NfoEditorField[],
     options?: NfoOptions,
+    edit?: LibraryEdit,
   ): string {
     if (!changedFields.length) return existingXml;
     const validation = XMLValidator.validate(existingXml);
@@ -334,7 +340,7 @@ export class NfoGenerator {
       return !enabled || isNfoFieldEnabled(options?.enabledFields, enabled);
     });
     if (!fields.length) return existingXml;
-    return mergeNfoDocuments(existingXml, this.buildXml(data, options), {
+    return mergeNfoDocuments(existingXml, this.#buildXml(data, options), {
       movieFields: [...new Set(fields.flatMap((field) => EDITOR_FIELDS[field].movie ?? []))].filter(
         (field) =>
           (field !== "num" || isNfoFieldEnabled(options?.enabledFields, "num")) &&
@@ -345,11 +351,12 @@ export class NfoGenerator {
       publishedFields: [],
       editorFields: fields,
       editorData: data,
+      libraryEdit: edit,
     });
   }
 
   mergeTranslatedXml(existingXml: string, data: CrawlerData, options?: NfoOptions): string {
-    return mergeNfoDocuments(existingXml, this.buildXml(data, options), TRANSLATION_MERGE);
+    return mergeNfoDocuments(existingXml, this.#buildXml(data, options), TRANSLATION_MERGE);
   }
 
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {
@@ -389,6 +396,7 @@ type NfoMerge = {
   publishedFields: readonly NfoEditableField[];
   editorFields?: readonly NfoEditorField[];
   editorData?: CrawlerData;
+  libraryEdit?: LibraryEdit;
 };
 
 const EDITOR_FIELDS: Record<NfoEditorField, { movie?: string[]; mdcz?: string[]; enabled?: NfoField }> = {
@@ -458,7 +466,8 @@ const mergeNfoDocuments = (existingXml: string, generatedXml: string, merge: Nfo
         existingMovie.actor,
         generated,
         merge.editorFields?.includes("actor_profiles") ?? false,
-        merge.editorFields?.includes("actors") ?? false,
+        !merge.libraryEdit && (merge.editorFields?.includes("actors") ?? false),
+        merge.libraryEdit,
       );
       continue;
     }
@@ -551,12 +560,18 @@ const mergeActorNodes = (
   generated: unknown,
   updateProfiles: boolean,
   updateOrder: boolean,
+  edit?: LibraryEdit,
 ): unknown => {
   const existingActors = toArray(existing);
   const generatedActors = toArray(generated);
   const existingByName = new Map(existingActors.map((actor) => [normalizeActorName(actorNodeName(actor)), actor]));
   return generatedActors.map((actor) => {
-    const previous = existingByName.get(normalizeActorName(actorNodeName(actor)));
+    const name = normalizeActorName(actorNodeName(actor));
+    const previous =
+      existingByName.get(name) ??
+      (edit?.field === "actors" && edit.operation === "rename" && name === normalizeActorName(edit.to)
+        ? existingByName.get(normalizeActorName(edit.from))
+        : undefined);
     if (!(previous && typeof previous === "object" && actor && typeof actor === "object")) return actor;
     const next = actor as Record<string, unknown>;
     const merged: Record<string, unknown> = { ...(previous as Record<string, unknown>), name: next.name };

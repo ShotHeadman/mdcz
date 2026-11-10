@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { LibraryEditJobDto, LibraryEditStartInput } from "@mdcz/shared/libraryEdit";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { startHealthFix } from "@mdcz/views/adapters";
 import { useT } from "@mdcz/views/i18n";
@@ -7,12 +8,14 @@ import {
   chunkLibraryEntryIds,
   createLibraryBrowseControls,
   LibraryDeleteDialog,
+  LibraryEditDialog,
   LibraryIndexView,
   mergeLibraryAvailability,
   parseLibraryBrowseSearch,
   toLibraryListScope,
   useLibraryView,
 } from "@mdcz/views/library";
+import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -33,11 +36,75 @@ export function LibraryPage() {
   const scope = toLibraryListScope(search);
   const { libraryId, actor, studio, tag } = scope;
   const libraryView = useLibraryView();
+  const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const isScraping = useScrapeStore(selectIsScraping);
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
   const [query, setQuery] = useState("");
   const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
   const [deleteTargets, setDeleteTargets] = useState<LibraryEntryDto[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTargets, setEditTargets] = useState<LibraryEntryDto[]>([]);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [showEditJob, setShowEditJob] = useState(true);
+  const editSource = useRef<{ selected?: LibraryEntryDto[]; scope: typeof scope; query: string }>(null);
+  const readEditStatus = async () => {
+    const before = queryClient.getQueryData<LibraryEditJobDto | null>(queryKeys.libraryEdit);
+    const response = await api.library.edit.status();
+    const current = queryClient.getQueryData<LibraryEditJobDto | null>(queryKeys.libraryEdit);
+    return current !== before && current !== undefined ? current : response;
+  };
+  const editStatusQ = useQuery({
+    queryKey: queryKeys.libraryEdit,
+    queryFn: readEditStatus,
+    enabled: editOpen,
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 2_000 : false),
+  });
+  const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read(), enabled: editOpen });
+  const collectEditTargets = async () => {
+    const source = editSource.current;
+    if (!source) return;
+    const matches: LibraryEntryDto[] = [];
+    if (source.selected) matches.push(...source.selected);
+    else {
+      let cursor: string | undefined;
+      do {
+        const page = await api.library.list({ cursor, query: source.query, limit: 500, ...source.scope });
+        matches.push(...page.entries);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+    }
+    setEditTargets(matches);
+  };
+  const openEdit = async (selected?: LibraryEntryDto[]) => {
+    editSource.current = { selected, scope, query };
+    setEditOpen(true);
+    setEditLoading(true);
+    setEditError(null);
+    setEditTargets([]);
+    setShowEditJob(true);
+    try {
+      const job = await queryClient.fetchQuery({
+        queryKey: queryKeys.libraryEdit,
+        queryFn: readEditStatus,
+        staleTime: 0,
+      });
+      if (!job) await collectEditTargets();
+    } catch (error) {
+      setEditError(toErrorMessage(error));
+    } finally {
+      setEditLoading(false);
+    }
+  };
+  const editM = useMutation({
+    mutationFn: (input: LibraryEditStartInput) => api.library.edit.start(input),
+    onMutate: () => setEditError(null),
+    onSuccess: async () => {
+      setShowEditJob(true);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.libraryEdit });
+    },
+    onError: (error) => setEditError(toErrorMessage(error)),
+  });
   // Only a refresh the user asks for skips the server's recent availability checks.
   const freshAvailability = useRef(false);
   const libraryQ = useInfiniteQuery({
@@ -132,6 +199,8 @@ export function LibraryPage() {
         linkComponent={LibraryEntryLink}
         onAvailabilityFilterChange={setAvailabilityFilter}
         onDeleteEntries={setDeleteTargets}
+        onEditEntries={(entries) => void openEdit(entries)}
+        onEditAll={() => openEdit()}
         onRemoveFile={async (input) => {
           await api.library.removeFile(input);
           await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
@@ -157,6 +226,38 @@ export function LibraryPage() {
         total={libraryQ.data?.pages[0]?.total ?? 0}
         fileCount={libraryQ.data?.pages[0]?.fileCount ?? 0}
         totalBytes={libraryQ.data?.pages[0]?.totalBytes ?? 0}
+      />
+      <LibraryEditDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        entries={editTargets}
+        ignoredFields={configQ.data?.download.nfoIgnoreFields ?? []}
+        submitting={editM.isPending}
+        loading={editLoading || configQ.isLoading}
+        error={
+          editError ||
+          (configQ.error ? toErrorMessage(configQ.error) : null) ||
+          (editStatusQ.error ? toErrorMessage(editStatusQ.error) : null)
+        }
+        blockedReason={
+          isScraping
+            ? t.workbench.taskConflict.scrape
+            : maintenanceStatus !== "idle"
+              ? t.workbench.taskConflict.maintenance
+              : configQ.error
+                ? toErrorMessage(configQ.error)
+                : undefined
+        }
+        job={editStatusQ.data?.status === "running" || showEditJob ? (editStatusQ.data ?? null) : null}
+        onSubmit={(input) => editM.mutate(input)}
+        onNewEdit={() => {
+          setEditLoading(true);
+          setEditError(null);
+          void collectEditTargets()
+            .then(() => setShowEditJob(false))
+            .catch((error) => setEditError(toErrorMessage(error)))
+            .finally(() => setEditLoading(false));
+        }}
       />
       <LibraryDeleteDialog
         entries={deleteTargets}

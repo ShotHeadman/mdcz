@@ -265,6 +265,9 @@ describe("MaintenanceSessionCoordinator", () => {
 
     await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("A scrape task is running");
     scraping = false;
+    taskGate.track("edit", () => true);
+    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("A library edit is running");
+    taskGate.track("edit", () => false);
     vi.mocked(fixture.runtime.scanRefs).mockImplementationOnce(async () => await scanned.promise);
     const preview = await fixture.coordinator.startPreview(input);
     expect(() => taskGate.assertAvailable("scrape")).toThrow("A maintenance task is running");

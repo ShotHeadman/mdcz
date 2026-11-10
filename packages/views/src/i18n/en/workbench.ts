@@ -1,8 +1,9 @@
 export const workbench = {
   /** Keyed by the task already running. */
   taskConflict: {
-    scrape: "A scrape is currently running. Stop it before starting maintenance or repair.",
-    maintenance: "Maintenance is currently running. Stop it before starting a new scrape.",
+    edit: "A library edit is running. Wait for it to finish.",
+    scrape: "A scrape is running. Finish or stop it before starting another library task.",
+    maintenance: "Maintenance is running. Finish or stop it before starting another library task.",
   },
 
   // Return button

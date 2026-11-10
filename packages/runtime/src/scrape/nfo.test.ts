@@ -1,5 +1,6 @@
 import { NFO_FIELD_OPTIONS } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import { applyLibraryEdit, type LibraryEdit } from "@mdcz/shared/libraryEdit";
 import { applyNfoEditorChanges } from "@mdcz/shared/nfoEditor";
 import type { CrawlerData, NfoEditorField } from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";
@@ -127,6 +128,48 @@ describe("NFO editor merge", () => {
       if (fields.includes("content_type"))
         expect(movie.tag).toEqual(["Custom tag", "中文字幕", "mdcz:content_type:New type"]);
       if (fields.includes("thumb_source_url")) expect(parser.parse(merged).movie.mdcz.thumb_source_url).toBeUndefined();
+    }
+    const batchEdits: LibraryEdit[] = [
+      { field: "studio", operation: "set", value: "Batch studio" },
+      { field: "studio", operation: "clear" },
+      { field: "genres", operation: "add", value: "HD" },
+      { field: "genres", operation: "remove", value: "Drama" },
+      { field: "genres", operation: "rename", from: "Drama", to: "HD" },
+      { field: "actors", operation: "add", value: "New actor" },
+      { field: "actors", operation: "remove", value: "AI" },
+      { field: "actors", operation: "rename", from: "AI", to: "Renamed" },
+      { field: "actors", operation: "rename", from: "AI", to: "ジューン・ラブジョイ" },
+    ];
+    for (const edit of batchEdits) {
+      const data = applyLibraryEdit(snapshot.crawlerData, edit);
+      if (!data) throw new Error("Expected a changed movie");
+      const merged = generator.mergeEditableXml(
+        existingXml,
+        data,
+        [edit.field],
+        { localState: snapshot.localState },
+        edit,
+      );
+      const movie = parser.parse(merged).movie;
+      expect(parseNfoSnapshot(merged).crawlerData[edit.field]).toEqual(data[edit.field] ?? undefined);
+      const editedElement = { actors: "actor", genres: "genre", studio: "studio" }[
+        edit.field as "actors" | "genres" | "studio"
+      ];
+      const remainder = { ...movie };
+      const baseline = { ...original };
+      for (const field of [editedElement, "mdcz"]) {
+        delete remainder[field];
+        delete baseline[field];
+      }
+      expect(remainder).toEqual(baseline);
+      if (edit.field !== "actors") continue;
+      const actors = Array.isArray(movie.actor) ? movie.actor : [movie.actor];
+      if (edit.operation === "rename" && edit.to === "Renamed")
+        expect(actors[0]).toEqual({ ...original.actor[0], name: "Renamed" });
+      if (edit.operation === "rename" && edit.to === "ジューン・ラブジョイ")
+        expect(actors).toEqual([original.actor[1]]);
+      if (edit.operation === "add") expect(actors.slice(0, 2)).toEqual(original.actor);
+      if (edit.operation === "remove") expect(actors).toEqual([original.actor[1]]);
     }
     expect(generator.mergeEditableXml(existingXml, snapshot.crawlerData, [])).toBe(existingXml);
     expect(() => generator.mergeEditableXml("<movie><title>Broken</movie>", snapshot.crawlerData, ["studio"])).toThrow(

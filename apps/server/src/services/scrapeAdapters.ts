@@ -89,7 +89,7 @@ export class ServerNfoAdapter {
   async write(input: NfoWriteInput): Promise<NfoWriteResponse> {
     const [root, configuration] = await Promise.all([this.mediaRoots.get(input.rootId), this.config.get()]);
     const state = await this.persistence.getState();
-    const canonicalPath = await writeNfoPublication({
+    const publication = await writeNfoPublication({
       nfoPath: resolveRootRelativePath(root, input.relativePath),
       videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : undefined,
       data: input.data,
@@ -106,7 +106,7 @@ export class ServerNfoAdapter {
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,
-      effectiveRelativePath: toRootRelativePath(root, canonicalPath),
+      effectiveRelativePath: toRootRelativePath(root, publication.path),
       data: input.data,
     };
   }

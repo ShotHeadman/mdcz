@@ -1,6 +1,33 @@
 import type { Messages } from "../en";
 
 export const library: Messages["library"] = {
+  edit: {
+    action: "编辑",
+    all: (count: number) => `编辑全部 ${count} 部`,
+    title: (count: number) => `编辑 ${count} 部影片`,
+    description: "请核对下方基于媒体库记录的预估。操作会应用到每份 NFO 的当前值，且无法撤销。",
+    field: "字段",
+    operation: "操作",
+    operations: { set: "设置", clear: "清空", add: "添加", remove: "移除", rename: "重命名" },
+    genres: "类型",
+    from: "原值",
+    to: "新值",
+    value: "值",
+    excluded: "已被 download.nfoIgnoreFields 设置排除",
+    estimate: (changed: number, unchanged: number) => `媒体库预估：${changed} 部将更改 · ${unchanged} 部无变化`,
+    noChange: "无变化",
+    oldValue: "原值",
+    newValue: "新值",
+    confirm: (count: number) => `更改 ${count} 部影片`,
+    loading: "正在收集影片…",
+    running: (current: number, total: number) => `正在编辑 ${current} / ${total} 部影片…`,
+    completed: "编辑完成",
+    failed: "编辑失败",
+    result: (changed: number, unchanged: number, skipped: number, failed: number) =>
+      `已更改 ${changed} 部 · 无变化 ${unchanged} 部 · 跳过 ${skipped} 部（无 NFO）· 失败 ${failed} 部`,
+    newEdit: "开始新的编辑",
+    close: "关闭",
+  },
   filter: {
     all: "全部",
     available: "可用",

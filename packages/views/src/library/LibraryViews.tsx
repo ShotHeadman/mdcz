@@ -44,6 +44,7 @@ import {
   ListChecks,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   RefreshCw,
   Search,
   Trash2,
@@ -75,6 +76,8 @@ export interface LibraryIndexViewProps {
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   browse?: LibraryBrowseControls;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
+  onEditEntries?: (entries: LibraryEntryDto[]) => void;
+  onEditAll?: () => Promise<void>;
   onDeleteEntries: (entries: LibraryEntryDto[]) => void;
   onOpenFolder?: (file: RootFileRef) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
@@ -109,6 +112,8 @@ export function LibraryIndexView({
   browse,
   onAvailabilityFilterChange,
   onDeleteEntries,
+  onEditEntries,
+  onEditAll,
   onOpenFolder,
   onRemoveFile,
   onRelinkFile,
@@ -321,7 +326,12 @@ export function LibraryIndexView({
           </section>
 
           {browse ? (
-            <LibraryBrowsePanel browse={browse} matchCount={total} summaryText={summaryText} />
+            <LibraryBrowsePanel
+              onEditAll={availabilityFilter === "all" ? onEditAll : undefined}
+              browse={browse}
+              matchCount={total}
+              summaryText={summaryText}
+            />
           ) : (
             <div className="flex items-center justify-end font-numeric text-xs text-muted-foreground">
               {summaryText}
@@ -365,6 +375,18 @@ export function LibraryIndexView({
                 </span>
               </div>
               <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {onEditEntries && (
+                  <Button
+                    disabled={selected.length === 0}
+                    onClick={() => onEditEntries(selected)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    {t.library.edit.action}
+                  </Button>
+                )}
                 <Button
                   disabled={selected.length === 0}
                   onClick={() => onDeleteEntries(selected)}

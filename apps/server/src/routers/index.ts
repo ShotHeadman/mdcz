@@ -1,6 +1,7 @@
 import { MediaDirectoryUnavailableError, MediaLibrarySettingsError, toMediaLibraryDto } from "@mdcz/runtime/library";
 import { containsStrmFiles } from "@mdcz/runtime/scrape/utils/strm";
 import { notificationsSchema } from "@mdcz/shared/config";
+import { libraryEditStartInputSchema } from "@mdcz/shared/libraryEdit";
 import {
   mediaLibraryIdInputSchema,
   mediaLibrarySettingsSchema,
@@ -208,6 +209,12 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => await ctx.services.activity.list(input?.limit)),
   }),
   library: t.router({
+    edit: t.router({
+      start: protectedProcedure
+        .input(libraryEditStartInputSchema)
+        .mutation(({ ctx, input }) => ctx.services.libraryEdit.start(input)),
+      status: protectedProcedure.query(({ ctx }) => ctx.services.libraryEdit.status()),
+    }),
     removeFile: protectedProcedure
       .input(libraryFileRemoveInputSchema)
       .mutation(async ({ ctx, input }) => ctx.services.library.removeFile(input)),

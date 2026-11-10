@@ -1,3 +1,4 @@
+import type { LibraryEditJobDto } from "@mdcz/shared/libraryEdit";
 import type {
   ActorSyncJobDto,
   LogEntryDto,
@@ -45,6 +46,10 @@ export class TaskEventBus {
 
   log(log: LogEntryDto): void {
     this.emit({ kind: "log", log });
+  }
+
+  libraryEdit(job: LibraryEditJobDto): void {
+    this.emit({ kind: "library-edit", job });
   }
 
   personSync(job: PersonSyncJobDto): void {

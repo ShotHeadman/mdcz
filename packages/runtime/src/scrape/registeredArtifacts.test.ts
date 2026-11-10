@@ -107,7 +107,7 @@ describe("registered artifacts", () => {
       });
       const saved = failure
         ? expect(save).rejects.toThrow(failure === "invalid NFO" ? "Invalid NFO XML" : "library commit failed")
-        : expect(save).resolves.toBe(targets[0]);
+        : expect(save).resolves.toMatchObject({ path: targets[0], changed: true });
       await vi.waitFor(() => expect(library.publicationSnapshot).toHaveBeenCalled());
       const lockedXml = originalXml.replace("Original genre", "Changed under lock");
       await writeFile(targets[0], lockedXml);

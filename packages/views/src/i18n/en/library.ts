@@ -1,4 +1,33 @@
 export const library = {
+  edit: {
+    action: "Edit",
+    all: (count: number) => `Edit all ${count}`,
+    title: (count: number) => `Edit ${count} movies`,
+    description:
+      "Review the library estimate below. The operation will be applied to each NFO's current values. There is no undo.",
+    field: "Field",
+    operation: "Change",
+    operations: { set: "Set", clear: "Clear", add: "Add", remove: "Remove", rename: "Rename" },
+    genres: "Genres",
+    from: "From",
+    to: "To",
+    value: "Value",
+    excluded: "Excluded by download.nfoIgnoreFields",
+    estimate: (changed: number, unchanged: number) =>
+      `From the library: ${changed} will change · ${unchanged} unchanged`,
+    noChange: "No change",
+    oldValue: "Old value",
+    newValue: "New value",
+    confirm: (count: number) => `Change ${count} movies`,
+    loading: "Collecting movies…",
+    running: (current: number, total: number) => `Editing ${current} / ${total} movies…`,
+    completed: "Edit completed",
+    failed: "Edit failed",
+    result: (changed: number, unchanged: number, skipped: number, failed: number) =>
+      `${changed} changed · ${unchanged} unchanged · ${skipped} skipped (no NFO) · ${failed} failed`,
+    newEdit: "New edit",
+    close: "Close",
+  },
   filter: {
     all: "All",
     available: "Available",
