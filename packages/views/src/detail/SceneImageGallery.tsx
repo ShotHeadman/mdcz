@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
-import { ChevronLeft, ChevronRight, ImageIcon, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, Play, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "../i18n";
 
@@ -7,12 +7,19 @@ export type ResolveImageCandidates = (candidates: string[], baseDir?: string) =>
 
 interface SceneImageGalleryProps {
   images: string[];
-  maxThumbnails?: number;
+  trailerSrc?: string;
   baseDir?: string;
-  label?: string;
-  variant?: "compact" | "filmstrip";
   resolveImageCandidates: ResolveImageCandidates;
+  onTrailerError?: () => void;
 }
+
+const MAX_THUMBNAILS = 10;
+const TILE_CLASS =
+  "relative h-[136px] w-[240px] shrink-0 overflow-hidden rounded-quiet transition-transform hover:-translate-y-0.5";
+
+// Only an explicit play creates the trailer's <video>. Clicking through results used to build and tear down a
+// hardware decoder for every movie, the prime suspect for unkillable freezes on macOS.
+type Slide = { kind: "trailer"; playing: boolean } | { kind: "image"; index: number };
 
 const useResolvedImageSrc = (
   resolveImageCandidates: ResolveImageCandidates,
@@ -45,31 +52,30 @@ const useResolvedImageSrc = (
 
 export function SceneImageGallery({
   images,
-  maxThumbnails = 10,
+  trailerSrc,
   baseDir,
-  label,
-  variant = "compact",
   resolveImageCandidates,
+  onTrailerError,
 }: SceneImageGalleryProps) {
   const t = useT();
-  const effectiveLabel = label ?? t.detail.preview;
-  const [lightboxIndex, setLightboxIndex] = useState(-1);
-  const isOpen = lightboxIndex >= 0;
+  const [slide, setSlide] = useState<Slide | null>(null);
+  const trailerSlots = trailerSrc ? 1 : 0;
+  const total = images.length + trailerSlots;
+  const isOpen = slide !== null && (slide.kind === "image" || Boolean(trailerSrc));
+  const remainingCount = images.length - MAX_THUMBNAILS;
 
-  const visibleThumbnails = images.slice(0, maxThumbnails);
-  const remainingCount = images.length - maxThumbnails;
-  const isFilmstrip = variant === "filmstrip";
-
-  const openLightbox = (index: number) => setLightboxIndex(index);
-  const closeLightbox = useCallback(() => setLightboxIndex(-1), []);
-
-  const goPrev = useCallback(() => {
-    setLightboxIndex((index) => (index > 0 ? index - 1 : images.length - 1));
-  }, [images.length]);
-
-  const goNext = useCallback(() => {
-    setLightboxIndex((index) => (index < images.length - 1 ? index + 1 : 0));
-  }, [images.length]);
+  const step = useCallback(
+    (direction: 1 | -1) =>
+      setSlide((current) => {
+        if (!current) return current;
+        const position = current.kind === "trailer" ? 0 : current.index + trailerSlots;
+        const next = (position + direction + total) % total;
+        return next < trailerSlots
+          ? { kind: "trailer", playing: false }
+          : { kind: "image", index: next - trailerSlots };
+      }),
+    [total, trailerSlots],
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -77,91 +83,66 @@ export function SceneImageGallery({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        goPrev();
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        goNext();
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        closeLightbox();
+        step(event.key === "ArrowLeft" ? -1 : 1);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, goPrev, goNext, closeLightbox]);
+  }, [isOpen, step]);
 
-  if (images.length === 0) {
+  if (total === 0) {
     return null;
   }
 
+  const playTrailer = () => setSlide({ kind: "trailer", playing: true });
+
   return (
     <div>
-      <div
-        className={
-          isFilmstrip
-            ? "mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80"
-            : "mb-2 text-xs text-muted-foreground"
-        }
-      >
-        {effectiveLabel}
-        {!isFilmstrip ? ` (${images.length})` : ""}
+      <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
+        {trailerSrc ? t.detail.sections.trailerAndStills : t.detail.sections.stills}
       </div>
 
-      <div
-        className={isFilmstrip ? "flex gap-4 overflow-x-auto pb-4" : "flex gap-1.5 overflow-x-auto p-1 scrollbar-thin"}
-      >
-        {visibleThumbnails.map((imagePath, index) => (
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        {trailerSrc ? (
+          <button
+            type="button"
+            aria-label={t.detail.playTrailer}
+            onClick={playTrailer}
+            className={`${TILE_CLASS} group flex items-end bg-gradient-to-br from-neutral-800 via-neutral-900 to-black p-3 text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]`}
+          >
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25 transition-colors group-hover:bg-white/25">
+                <Play className="ml-0.5 h-5 w-5 fill-white" />
+              </span>
+            </span>
+            <span className="relative text-sm font-semibold">{t.detail.sections.trailer}</span>
+          </button>
+        ) : null}
+        {images.slice(0, MAX_THUMBNAILS).map((imagePath, index) => (
           <button
             key={imagePath}
             type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              openLightbox(index);
-            }}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-            }}
-            className={
-              isFilmstrip
-                ? "relative h-[136px] w-[240px] shrink-0 overflow-hidden rounded-quiet border border-black/5 bg-surface-low/55 shadow-[0_10px_24px_rgba(0,0,0,0.06)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(0,0,0,0.08)]"
-                : "h-14 w-20 shrink-0 cursor-pointer rounded-md border bg-muted/20 transition-all hover:ring-2 hover:ring-primary/50"
-            }
+            onClick={() => setSlide({ kind: "image", index })}
+            className={`${TILE_CLASS} border border-black/5 bg-surface-low/55 shadow-[0_10px_24px_rgba(0,0,0,0.06)] hover:shadow-[0_16px_32px_rgba(0,0,0,0.08)]`}
           >
             <LazyImage
               alt={`Scene ${index + 1}`}
               baseDir={baseDir}
               resolveImageCandidates={resolveImageCandidates}
               src={imagePath}
-              variant={variant}
             />
           </button>
         ))}
         {remainingCount > 0 ? (
           <button
             type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              openLightbox(maxThumbnails);
-            }}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-            }}
-            className={
-              isFilmstrip
-                ? "flex h-[136px] w-[240px] shrink-0 items-center justify-center overflow-hidden rounded-quiet border border-dashed border-black/10 bg-surface-low/45 text-muted-foreground transition-colors hover:bg-surface-low/60"
-                : "flex h-14 w-20 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border bg-muted/30 transition-colors hover:bg-muted/50"
-            }
+            onClick={() => setSlide({ kind: "image", index: MAX_THUMBNAILS })}
+            className={`${TILE_CLASS} flex items-center justify-center border border-dashed border-black/10 bg-surface-low/45 text-muted-foreground hover:bg-surface-low/60`}
           >
-            <span
-              className={
-                isFilmstrip ? "text-sm font-semibold text-foreground/70" : "text-xs font-medium text-muted-foreground"
-              }
-            >
-              +{remainingCount}
-            </span>
+            <span className="text-sm font-semibold text-foreground/70">+{remainingCount}</span>
           </button>
         ) : null}
       </div>
@@ -170,7 +151,7 @@ export function SceneImageGallery({
         open={isOpen}
         onOpenChange={(open) => {
           if (!open) {
-            closeLightbox();
+            setSlide(null);
           }
         }}
       >
@@ -180,12 +161,14 @@ export function SceneImageGallery({
         >
           <DialogTitle className="sr-only">{t.detail.galleryTitle}</DialogTitle>
           <DialogDescription className="sr-only">
-            {t.detail.galleryDescription(lightboxIndex + 1, images.length)}
+            {slide?.kind === "image"
+              ? t.detail.galleryDescription(slide.index + 1, images.length)
+              : t.detail.trailerSlideDescription}
           </DialogDescription>
 
           <button
             type="button"
-            onClick={closeLightbox}
+            onClick={() => setSlide(null)}
             aria-label={t.detail.closePreview}
             className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
           >
@@ -193,14 +176,14 @@ export function SceneImageGallery({
           </button>
 
           <div className="absolute top-3 left-3 z-10 rounded bg-black/60 px-2 py-0.5 font-mono text-sm text-white/80">
-            {lightboxIndex + 1} / {images.length}
+            {slide?.kind === "image" ? `${slide.index + 1} / ${images.length}` : t.detail.sections.trailer}
           </div>
 
-          {images.length > 1 ? (
+          {total > 1 ? (
             <>
               <button
                 type="button"
-                onClick={goPrev}
+                onClick={() => step(-1)}
                 aria-label={t.detail.previousPhoto}
                 className="absolute top-1/2 left-2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
               >
@@ -208,7 +191,7 @@ export function SceneImageGallery({
               </button>
               <button
                 type="button"
-                onClick={goNext}
+                onClick={() => step(1)}
                 aria-label={t.detail.nextPhoto}
                 className="absolute top-1/2 right-2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
               >
@@ -218,14 +201,32 @@ export function SceneImageGallery({
           ) : null}
 
           <div className="flex max-h-[82vh] max-w-[90vw] items-center justify-center">
-            {lightboxIndex >= 0 && lightboxIndex < images.length ? (
+            {slide?.kind === "image" ? (
               <LightboxImage
                 baseDir={baseDir}
-                index={lightboxIndex}
+                index={slide.index}
                 resolveImageCandidates={resolveImageCandidates}
-                src={images[lightboxIndex]}
+                src={images[slide.index]}
               />
-            ) : null}
+            ) : (
+              <div className="aspect-video w-[min(90vw,1280px,calc(82vh*16/9))] bg-black">
+                {slide?.playing ? (
+                  // biome-ignore lint/a11y/useMediaCaption: Remote trailers do not provide a caption track.
+                  <video autoPlay controls src={trailerSrc} onError={onTrailerError} className="h-full w-full" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={playTrailer}
+                    className="flex h-full w-full flex-col items-center justify-center gap-3 text-white"
+                  >
+                    <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25">
+                      <Play className="ml-1 h-7 w-7 fill-white" />
+                    </span>
+                    <span className="text-sm font-medium">{t.detail.playTrailer}</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -263,13 +264,11 @@ function LazyImage({
   src,
   alt,
   baseDir,
-  variant,
   resolveImageCandidates,
 }: {
   src: string;
   alt: string;
   baseDir?: string;
-  variant: "compact" | "filmstrip";
   resolveImageCandidates: ResolveImageCandidates;
 }) {
   const [loaded, setLoaded] = useState(false);
@@ -322,13 +321,7 @@ function LazyImage({
   }
 
   return (
-    <div
-      className={
-        variant === "filmstrip"
-          ? "h-full w-full overflow-hidden rounded-quiet"
-          : "h-full w-full overflow-hidden rounded-md"
-      }
-    >
+    <div className="h-full w-full overflow-hidden rounded-quiet">
       {!loaded ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
       <img
         key={resolvedSrc}

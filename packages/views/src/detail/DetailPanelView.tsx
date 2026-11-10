@@ -457,28 +457,14 @@ export function DetailPanelView({
                   </section>
                 ) : null}
 
-                {item.sceneImages && item.sceneImages.length > 0 ? (
+                {item.sceneImages?.length || trailerSrc ? (
                   <section className="space-y-3">
                     <SceneImageGallery
-                      images={item.sceneImages}
+                      images={item.sceneImages ?? []}
+                      trailerSrc={trailerSrc}
                       baseDir={item.outputPath ?? (item.path ? getDirFromPath(item.path) : undefined)}
-                      label={t.detail.sections.stills}
                       resolveImageCandidates={resolveImageCandidates}
-                      variant="filmstrip"
-                    />
-                  </section>
-                ) : null}
-
-                {trailerSrc ? (
-                  <section className="space-y-3">
-                    <DetailSectionTitle>{t.detail.sections.trailer}</DetailSectionTitle>
-                    {/* biome-ignore lint/a11y/useMediaCaption: Remote trailers do not provide a caption track. */}
-                    <video
-                      className="w-full max-w-4xl rounded-quiet-lg bg-black"
-                      controls
-                      preload="metadata"
-                      src={trailerSrc}
-                      onError={onTrailerError}
+                      onTrailerError={onTrailerError}
                     />
                   </section>
                 ) : null}

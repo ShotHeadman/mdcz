@@ -15,6 +15,8 @@ export const detail = {
   closePreview: "Close still preview",
   previousPhoto: "Previous still",
   nextPhoto: "Next still",
+  playTrailer: "Play trailer",
+  trailerSlideDescription: "Trailer. Use left and right arrow keys to switch to the stills.",
 
   // Poster crop dialog
   editCover: "Edit Cover",
@@ -56,6 +58,7 @@ export const detail = {
     poster: "Thumbnail",
     stills: "Stills",
     trailer: "Trailer",
+    trailerAndStills: "Trailer & stills",
   },
   posterThumbAlt: (alt: string) => `${alt} thumbnail`,
   posterPreviewTitle: "Thumbnail Preview",
