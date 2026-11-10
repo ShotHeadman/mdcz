@@ -8,7 +8,8 @@ import {
 } from "@mdcz/media-store";
 import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
-import type { CrawlerData } from "@mdcz/shared/types";
+import { applyNfoEditorChanges } from "@mdcz/shared/nfoEditor";
+import type { CrawlerData, NfoEditorField } from "@mdcz/shared/types";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import { buildMovieTags } from "../maintenance/movieTags";
 import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";
@@ -29,6 +30,7 @@ export async function writeNfoPublication(input: {
   nfoPath: string;
   videoPath?: string;
   data: CrawlerData;
+  changedFields: readonly NfoEditorField[];
   configuration: Configuration;
   /** The names an unregistered movie is written under; a library movie keeps its registered NFOs. */
   nfoNaming: NfoNamingMode;
@@ -39,29 +41,7 @@ export async function writeNfoPublication(input: {
     library?: MovieLibrary;
   };
 }): Promise<string> {
-  const { nfoPath, videoPath, data, configuration, nfoNaming, nfoGenerator, publication } = input;
-  let existingXml: string | undefined;
-  for (const candidate of getNfoReadCandidates(nfoPath, nfoNaming, videoPath)) {
-    const { root, relativePath } = resolveRootFile(publication.roots, candidate);
-    const content = await readRootFile(root, relativePath).catch((error: unknown) => {
-      if (error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
-      throw error;
-    });
-    if (content) {
-      existingXml = content.toString("utf-8");
-      break;
-    }
-  }
-  const options = {
-    buildTags: buildMovieTags,
-    localState: existingXml ? parseNfoSnapshot(existingXml).localState : undefined,
-    enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
-    nfoNaming,
-    titleNaming: configuration.naming,
-  };
-  const xml = existingXml
-    ? nfoGenerator.mergeEditableXml(existingXml, data, options)
-    : nfoGenerator.buildXml(data, options);
+  const { nfoPath, videoPath, data, changedFields, configuration, nfoNaming, nfoGenerator, publication } = input;
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
   const paths = getNfoWritePaths(plannedPath, nfoNaming);
   const owned = publication.outputs
@@ -71,20 +51,57 @@ export async function writeNfoPublication(input: {
         return root;
       })
     : undefined;
-  const artifacts = (owned?.paths ?? paths.requiredPaths).map((targetPath) => ({ targetPath, data: xml }));
+  const library = publication.library;
+  if (owned && !library) throw new Error("Registered NFO write requires library updates");
+  const targets = owned?.paths ?? paths.requiredPaths;
+  const candidates = owned?.paths ?? getNfoReadCandidates(nfoPath, nfoNaming, videoPath);
   const inventory = new DirectoryInventory();
-  const release = await acquireOutputDirectories(
-    artifacts.map((artifact) => artifact.targetPath),
-    (directory) => inventory.canonicalDirectory(directory),
+  const release = await acquireOutputDirectories([...targets, ...candidates], (directory) =>
+    inventory.canonicalDirectory(directory),
   );
   try {
+    const existing = new Map<string, string>();
+    for (const candidate of new Set([...targets, ...candidates])) {
+      const { root, relativePath } = resolveRootFile(publication.roots, candidate);
+      const content = await readRootFile(root, relativePath).catch((error: unknown) => {
+        if (!owned && error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
+        throw error;
+      });
+      if (content !== null) existing.set(candidate, content.toString("utf-8"));
+    }
+    const fallback = candidates.map((candidate) => existing.get(candidate)).find((xml) => xml !== undefined);
+    const sourceData = fallback === undefined ? data : parseNfoSnapshot(fallback).crawlerData;
+    const artifacts = targets.map((targetPath) => {
+      const xml = existing.get(targetPath) ?? fallback;
+      const snapshot = xml === undefined ? undefined : parseNfoSnapshot(xml);
+      const options = {
+        buildTags: buildMovieTags,
+        localState: snapshot?.localState,
+        enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
+        nfoNaming,
+        titleNaming: configuration.naming,
+      };
+      return {
+        targetPath,
+        data:
+          xml === undefined || !snapshot
+            ? nfoGenerator.buildXml(data, options)
+            : nfoGenerator.mergeEditableXml(
+                xml,
+                applyNfoEditorChanges(snapshot.crawlerData, data, changedFields),
+                changedFields,
+                options,
+              ),
+      };
+    });
     await new WriteOutput().install(artifacts, {
       protectedMediaFiles: owned?.mediaPaths ?? (videoPath ? [videoPath] : []),
       commit: async () => {
-        if (!owned) return;
-        if (!publication.library) throw new Error("Registered NFO write requires library updates");
+        if (!owned || !library) return;
+        const entry = await library.getEntryById(owned.movieId);
+        const currentData: CrawlerData = entry.crawlerDataJson ? JSON.parse(entry.crawlerDataJson) : sourceData;
         await writePublishedMovie(
-          publication.library,
+          library,
           owned.movieId,
           artifacts.map((artifact) => {
             const ref = toRootFileRef(artifact.targetPath, publication.roots);
@@ -96,7 +113,7 @@ export async function writeNfoPublication(input: {
               published: true,
             };
           }),
-          data,
+          applyNfoEditorChanges(currentData, data, changedFields),
         );
       },
     });

@@ -1087,6 +1087,7 @@ describe("buildServer composition integration", () => {
         ...readInput,
         relativePath: readResult.effectiveRelativePath,
         data: { ...readResult.data, title: "New", title_zh: "New", director: "Omitted Director" },
+        changedFields: ["title", "title_zh", "director"],
       },
     });
     const savedXml = await readFile(join(root, "ABC-123.nfo"), "utf8");

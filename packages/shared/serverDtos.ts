@@ -331,6 +331,7 @@ export type NfoReadInput = z.infer<typeof nfoReadInputSchema>;
 
 export const nfoWriteInputSchema = nfoReadInputSchema.extend({
   data: crawlerDataSchema,
+  changedFields: z.array(crawlerDataSchema.omit({ original_title: true }).keyof()),
 });
 
 export type NfoWriteInput = z.infer<typeof nfoWriteInputSchema>;

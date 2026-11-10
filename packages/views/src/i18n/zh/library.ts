@@ -59,8 +59,9 @@ export const library: Messages["library"] = {
   openFolder: "打开所在目录",
   removeFromLibrary: "从媒体库移除",
   multiSelect: "多选",
+  exitMultiSelect: "退出多选",
   selectEntry: (id: string) => `选择 ${id}`,
-  selectAllLoaded: "全选已加载",
+  selectAll: (count: number) => `全选（${count} 部）`,
   selectedCount: (count: number) => `已选 ${count} 部影片`,
   availabilityNotChecked: "可用性尚未检查",
 

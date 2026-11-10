@@ -74,6 +74,7 @@ export const registeredMediaLocations = async (
 export type MovieLibrary = {
   getEntryById(id: string): Promise<{
     assets: Array<PublicationLibraryAsset & { fileId: string | null }>;
+    crawlerDataJson?: string | null;
   }>;
   writeEntry(
     movie: {

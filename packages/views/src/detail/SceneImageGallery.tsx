@@ -99,6 +99,8 @@ export function SceneImageGallery({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLVideoElement) return;
+
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         step(event.key === "ArrowLeft" ? -1 : 1);

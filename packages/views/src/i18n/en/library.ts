@@ -57,8 +57,9 @@ export const library = {
   openFolder: "Open folder",
   removeFromLibrary: "Remove from library",
   multiSelect: "Multi-select",
+  exitMultiSelect: "Exit multi-select",
   selectEntry: (id: string) => `Select ${id}`,
-  selectAllLoaded: "Select all loaded",
+  selectAll: (count: number) => `Select all (${count})`,
   selectedCount: (count: number) => `${count} movie(s) selected`,
   availabilityNotChecked: "Availability not yet checked",
 

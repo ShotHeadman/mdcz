@@ -55,23 +55,28 @@ test("load more remains an explicit bounded action", async () => {
 
 test("batch removal acts on the selected movies the list still shows", async () => {
   const onDeleteEntries = vi.fn();
-  const props = { ...baseProps, onDeleteEntries };
+  const props = { ...baseProps, hasMore: true, onDeleteEntries, total: 100 };
   const screen = await render(<LibraryIndexView {...props} availabilityFilter="all" />);
   const multiSelect = screen.getByRole("button", { name: "多选" });
-  const selectAll = screen.getByRole("checkbox", { name: "全选已加载" });
+  const selectAll = screen.getByRole("checkbox", { name: /^全选（\d+ 部）$/u });
   const selectAvailable = screen.getByRole("checkbox", { name: "选择 AVAILABLE" });
-  const removeSelected = screen.getByRole("button", { name: "从媒体库移除", exact: true }).last();
+  const batchActions = screen.getByRole("region", { name: "多选", exact: true });
+  const removeSelected = batchActions.getByRole("button", { name: "从媒体库移除", exact: true });
 
   await expect.element(selectAvailable).not.toBeInTheDocument();
   await expect.element(selectAll).not.toBeInTheDocument();
   await multiSelect.click();
-  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+  await expect.element(selectAll).toHaveAccessibleName("全选（3 部）");
+  await expect.element(screen.getByText("已选 0 部影片")).toBeVisible();
+  await expect.element(removeSelected).toBeDisabled();
   await selectAvailable.click();
   await screen.getByRole("checkbox", { name: "选择 UNKNOWN" }).click();
   await expect.element(selectAll).toHaveAttribute("data-state", "indeterminate");
   await expect.element(screen.getByText("已选 2 部影片")).toBeVisible();
+  await expect.element(removeSelected).toBeEnabled();
 
   await screen.rerender(<LibraryIndexView {...props} availabilityFilter="available" />);
+  await expect.element(selectAll).toHaveAccessibleName("全选（1 部）");
   await expect.element(screen.getByText("已选 1 部影片")).toBeVisible();
   await removeSelected.click();
   expect(onDeleteEntries).toHaveBeenLastCalledWith([expect.objectContaining({ id: "AVAILABLE" })]);
@@ -82,12 +87,13 @@ test("batch removal acts on the selected movies the list still shows", async () 
   await removeSelected.click();
   expect(onDeleteEntries.mock.lastCall?.[0]).toHaveLength(3);
 
-  await multiSelect.click();
+  await batchActions.getByRole("button", { name: "退出多选" }).click();
   await expect.element(selectAvailable).not.toBeInTheDocument();
   await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
   await multiSelect.click();
   await expect.element(selectAvailable).not.toBeChecked();
-  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+  await expect.element(screen.getByText("已选 0 部影片")).toBeVisible();
+  await expect.element(removeSelected).toBeDisabled();
 });
 
 test("a health filter offers to ignore its movies, and the ignored view only restores them", async () => {

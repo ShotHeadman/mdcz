@@ -1,3 +1,4 @@
+import { Website } from "@mdcz/shared/enums";
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
@@ -154,7 +155,7 @@ describe("web detail action port", () => {
     );
   });
 
-  it("prepares and saves poster crops for the item's video file", async () => {
+  it("targets the item's video and metadata root when reading and saving detail edits", async () => {
     setAdminToken("token-1");
     const initialCrop = { x: 0.4, y: 0, width: 0.3, height: 0.9 };
     vi.spyOn(api.scrape, "posterCropSession").mockResolvedValue({
@@ -191,6 +192,37 @@ describe("web detail action port", () => {
     expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
     expect(result.posterUrl).toContain("revision=42");
+
+    const data = { title: "Title", number: "ABC-001", actors: [], genres: [], scene_images: [], website: Website.DMM };
+    const read = vi.spyOn(api.scrape, "nfoRead").mockResolvedValue({
+      rootId: "metadata-root",
+      relativePath: "movie.nfo",
+      effectiveRelativePath: "ABC-001.nfo",
+      exists: true,
+      data,
+    });
+    const write = vi.spyOn(api.scrape, "nfoWrite").mockResolvedValue({
+      rootId: "metadata-root",
+      relativePath: "ABC-001.nfo",
+      effectiveRelativePath: "ABC-001.nfo",
+      data,
+    });
+    const metadataItem = { ...item, nfoRef: { rootId: "metadata-root", relativePath: "movie.nfo" } };
+    const nfo = await port.readNfo(metadataItem, "movie.nfo");
+    expect(nfo).toEqual({ path: "ABC-001.nfo", crawlerData: data });
+    expect(read).toHaveBeenCalledWith({
+      rootId: "metadata-root",
+      relativePath: "movie.nfo",
+      videoRelativePath: undefined,
+    });
+    await port.writeNfo(metadataItem, nfo.path, { ...data, studio: "New Studio" }, ["studio"]);
+    expect(write).toHaveBeenCalledWith({
+      rootId: "metadata-root",
+      relativePath: "ABC-001.nfo",
+      videoRelativePath: undefined,
+      data: { ...data, studio: "New Studio" },
+      changedFields: ["studio"],
+    });
   });
 });
 

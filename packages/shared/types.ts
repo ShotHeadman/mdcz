@@ -65,6 +65,8 @@ export interface CrawlerData {
   website?: Website;
 }
 
+export type NfoEditorField = Exclude<keyof CrawlerData, "original_title">;
+
 export interface FileInfo {
   filePath: string;
   fileName: string;

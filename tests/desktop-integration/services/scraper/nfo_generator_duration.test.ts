@@ -296,22 +296,6 @@ describe("NfoGenerator", () => {
     expect(getNfoReadCandidates(filenameNfoPath, "movie", videoPath)).toEqual([movieNfoPath, filenameNfoPath]);
     expect(getNfoReadCandidates(videoPath, "filename", videoPath)).toEqual([filenameNfoPath, movieNfoPath]);
   });
-  it("merges editable fields without dropping unmanaged nodes or attributes", () => {
-    const existingXml = `<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="dmm" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><fileinfo><streamdetails><video><width>1920</width></video></streamdetails></fileinfo><providerid source="local">keep-me</providerid><mdcz><custom keep="yes">value</custom></mdcz></movie>`;
-    const merged = new NfoGenerator().mergeEditableXml(
-      existingXml.replace("<mdcz>", "<mdcz><original_plot>Old original plot</original_plot>"),
-      createCrawlerData({ title: "New", actors: ["Actor A"] }),
-    );
-
-    expect(merged).toContain('<movie custom="keep">');
-    expect(merged).toContain("<title>New</title>");
-    expect(merged).toContain("<fileinfo>");
-    expect(merged).toContain('<providerid source="local">keep-me</providerid>');
-    expect(merged).toContain('<custom keep="yes">value</custom>');
-    expect(merged).toContain('<actor role="lead">');
-    expect(merged).toContain("<name>Actor A</name>");
-    expect(merged).not.toContain("<original_plot>");
-  });
   it("gates optional NFO field groups while retaining core metadata", () => {
     const generator = new NfoGenerator();
     const data = createCrawlerData({

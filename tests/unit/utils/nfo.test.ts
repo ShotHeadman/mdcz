@@ -267,7 +267,7 @@ describe("parseNfo", () => {
       "title",
     ]);
 
-    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, options);
+    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, ["genres"], options);
     expect(editsOf(editorSaved)).toEqual(["genre"]);
     expect(editorSaved.match(/<\?xml/gu)).toHaveLength(1);
   });
