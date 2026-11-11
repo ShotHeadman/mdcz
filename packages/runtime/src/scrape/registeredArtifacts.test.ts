@@ -38,7 +38,7 @@ describe("registered artifacts", () => {
   });
 
   it("saves each locked NFO and the richer library record together, or restores every copy", async () => {
-    for (const failure of [undefined, "invalid NFO", "library commit"] as const) {
+    for (const failure of [undefined, "invalid NFO", "library commit", "excluded field"] as const) {
       const directory = await mkdtemp(join(tmpdir(), "mdcz-registered-nfo-"));
       onTestFinished(() => rm(directory, { recursive: true, force: true }));
       const root = createMediaRoot({ id: "root", displayName: "Root", hostPath: directory });
@@ -96,7 +96,7 @@ describe("registered artifacts", () => {
           number: "NEW-1",
           actor_profiles: [{ name: "Actor A", photo_url: "https://example.com/new-actor.jpg" }],
         },
-        changedFields: ["title", "number", "actor_profiles"],
+        changedFields: failure === "excluded field" ? ["title", "genres"] : ["title", "number", "actor_profiles"],
         configuration: {
           ...defaultConfiguration,
           download: { ...defaultConfiguration.download, nfoIgnoreFields: ["genres"] },
@@ -106,8 +106,21 @@ describe("registered artifacts", () => {
         publication: { roots: [root], outputs: library, library },
       });
       const saved = failure
-        ? expect(save).rejects.toThrow(failure === "invalid NFO" ? "Invalid NFO XML" : "library commit failed")
+        ? expect(save).rejects.toThrow(
+            failure === "excluded field"
+              ? "excluded by download.nfoIgnoreFields"
+              : failure === "invalid NFO"
+                ? "Invalid NFO XML"
+                : "library commit failed",
+          )
         : expect(save).resolves.toMatchObject({ path: targets[0], changed: true });
+      if (failure === "excluded field") {
+        await saved;
+        expect(await Promise.all(targets.map((target) => readFile(target, "utf8")))).toEqual([originalXml, secondXml]);
+        expect(writeEntry).not.toHaveBeenCalled();
+        release();
+        continue;
+      }
       await vi.waitFor(() => expect(library.publicationSnapshot).toHaveBeenCalled());
       const lockedXml = originalXml.replace("Original genre", "Changed under lock");
       await writeFile(targets[0], lockedXml);

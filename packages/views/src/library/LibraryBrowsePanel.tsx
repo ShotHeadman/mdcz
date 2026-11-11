@@ -253,7 +253,11 @@ export function LibraryBrowsePanel({
               {fixable ? <span>{t.library.health.fixHint}</span> : null}
               <span>{t.library.health.ignoreHint}</span>
             </span>
-          ) : null}
+          ) : (
+            <span className="flex flex-col text-xs text-muted-foreground">
+              <span>{t.library.health.restoreHint}</span>
+            </span>
+          )}
         </div>
       ) : null}
     </section>

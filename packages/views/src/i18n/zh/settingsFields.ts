@@ -301,7 +301,7 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "naming.nfoTitleTemplate": {
       label: "NFO 标题模板",
-      description: "NFO 中 title 字段的格式，可使用文件名模板的元数据占位符",
+      description: "NFO 文件中标题（title）的命名格式，点击帮助图标可查看可用占位符",
     },
     "naming.actorNameMax": { label: "演员名最大数量" },
     "naming.actorNameMore": { label: "演员名超出后缀" },

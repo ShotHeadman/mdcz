@@ -178,7 +178,9 @@ export function SceneImageGallery({
           <DialogDescription className="sr-only">
             {slide?.kind === "image"
               ? t.detail.galleryDescription(slide.index + 1, images.length)
-              : t.detail.trailerSlideDescription}
+              : images.length > 0
+                ? t.detail.trailerSlideDescription
+                : t.detail.sections.trailer}
           </DialogDescription>
 
           <button

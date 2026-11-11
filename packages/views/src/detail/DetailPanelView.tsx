@@ -461,7 +461,11 @@ export function DetailPanelView({
                 {item.sceneImages?.length || trailerSrc ? (
                   <section className="space-y-3">
                     <DetailSectionTitle>
-                      {trailerSrc ? t.detail.sections.trailerAndStills : t.detail.sections.stills}
+                      {trailerSrc && item.sceneImages?.length
+                        ? t.detail.sections.trailerAndStills
+                        : trailerSrc
+                          ? t.detail.sections.trailer
+                          : t.detail.sections.stills}
                     </DetailSectionTitle>
                     <SceneImageGallery
                       images={item.sceneImages ?? []}

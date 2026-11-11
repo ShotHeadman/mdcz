@@ -1079,7 +1079,7 @@ describe("buildServer composition integration", () => {
     expect(readResult.effectiveRelativePath).toBe("ABC-123.nfo");
     expect(readResult.data.actors).toEqual(["Actor A"]);
 
-    const writeResponse = await fastify.inject({
+    const excludedResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.nfoWrite",
       headers: { authorization: `Bearer ${token}` },
@@ -1088,6 +1088,20 @@ describe("buildServer composition integration", () => {
         relativePath: readResult.effectiveRelativePath,
         data: { ...readResult.data, title: "New", title_zh: "New", director: "Omitted Director" },
         changedFields: ["title", "title_zh", "director"],
+      },
+    });
+    expect(excludedResponse.statusCode).not.toBe(200);
+    expect(excludedResponse.body).toContain("download.nfoIgnoreFields");
+    expect(await readFile(join(root, "ABC-123.nfo"), "utf8")).toContain("<title>Old</title>");
+    const writeResponse = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.nfoWrite",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...readInput,
+        relativePath: readResult.effectiveRelativePath,
+        data: { ...readResult.data, title: "New", title_zh: "New" },
+        changedFields: ["title", "title_zh"],
       },
     });
     const savedXml = await readFile(join(root, "ABC-123.nfo"), "utf8");

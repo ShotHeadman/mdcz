@@ -129,6 +129,13 @@ describe("NFO editor merge", () => {
         expect(movie.tag).toEqual(["Custom tag", "中文字幕", "mdcz:content_type:New type"]);
       if (fields.includes("thumb_source_url")) expect(parser.parse(merged).movie.mdcz.thumb_source_url).toBeUndefined();
     }
+    const durationOnly = parser.parse(
+      generator.mergeEditableXml(existingXml, { ...snapshot.crawlerData, durationSeconds: 240 }, ["durationSeconds"], {
+        enabledFields: NFO_FIELD_OPTIONS.filter((field) => field !== "fileinfo"),
+      }),
+    ).movie;
+    expect(durationOnly.runtime).toBe("4");
+    expect(durationOnly.fileinfo).toEqual(original.fileinfo);
     const batchEdits: LibraryEdit[] = [
       { field: "studio", operation: "set", value: "Batch studio" },
       { field: "studio", operation: "clear" },

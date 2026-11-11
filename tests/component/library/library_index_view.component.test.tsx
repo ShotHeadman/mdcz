@@ -122,8 +122,8 @@ test("a health filter offers to ignore its movies, and the ignored view only res
   );
   const screen = await render(view({ health: "missingSynopsis" }));
   const refresh = screen.getByRole("button", { name: "从站点刷新 3 部" });
-  const ignore = screen.getByRole("button", { name: "忽略这 3 部" });
-  const restore = screen.getByRole("button", { name: "取消忽略 3 部" });
+  const ignore = screen.getByRole("button", { name: "忽略 3 部", exact: true });
+  const restore = screen.getByRole("button", { name: "取消忽略 3 部", exact: true });
 
   await expect.element(refresh).toBeVisible();
   await ignore.click();

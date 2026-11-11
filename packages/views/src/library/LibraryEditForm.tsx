@@ -135,7 +135,7 @@ export function LibraryEditForm({
         </div>
         {(operation === "remove" || operation === "rename") && (
           <div className="grid gap-1 text-sm">
-            <label htmlFor={`${inputId}-from`}>{labels.from}</label>
+            <label htmlFor={`${inputId}-from`}>{operation === "remove" ? labels.removeTarget : labels.from}</label>
             <select
               id={`${inputId}-from`}
               className={selectClass}

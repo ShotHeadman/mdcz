@@ -24,6 +24,7 @@ import { DirectoryInventory } from "./DirectoryInventory";
 import {
   getNfoReadCandidates,
   getNfoWritePaths,
+  isNfoEditorFieldEnabled,
   type NfoGenerator,
   nfoIgnoreFieldsToEnabledFields,
   resolveFilenameNfoPath,
@@ -53,6 +54,11 @@ export async function writeNfoPublication(
 ): Promise<{ path: string; changed: boolean; directories: string[] }> {
   const { nfoPath, videoPath, configuration, nfoNaming, nfoGenerator, publication } = input;
   const changedFields = input.edit ? [input.edit.field] : input.changedFields;
+  const enabledFields = nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields);
+  const excludedFields = changedFields.filter((field) => !isNfoEditorFieldEnabled(field, enabledFields));
+  if (excludedFields.length) {
+    throw new Error(`Fields ${excludedFields.join(", ")} are excluded by download.nfoIgnoreFields`);
+  }
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
   const paths = getNfoWritePaths(plannedPath, nfoNaming);
   const owned = publication.outputs
@@ -96,7 +102,7 @@ export async function writeNfoPublication(
       const options = {
         buildTags: buildMovieTags,
         localState: snapshot?.localState,
-        enabledFields: nfoIgnoreFieldsToEnabledFields(configuration.download.nfoIgnoreFields),
+        enabledFields,
         nfoNaming,
         titleNaming: configuration.naming,
       };

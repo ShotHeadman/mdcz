@@ -335,16 +335,14 @@ export class NfoGenerator {
     if (!changedFields.length) return existingXml;
     const validation = XMLValidator.validate(existingXml);
     if (validation !== true) throw new Error(`Invalid NFO XML: ${validation.err.msg}`);
-    const fields = changedFields.filter((field) => {
-      const enabled = EDITOR_FIELDS[field].enabled;
-      return !enabled || isNfoFieldEnabled(options?.enabledFields, enabled);
-    });
+    const fields = changedFields.filter((field) => isNfoEditorFieldEnabled(field, options?.enabledFields));
     if (!fields.length) return existingXml;
     return mergeNfoDocuments(existingXml, this.#buildXml(data, options), {
       movieFields: [...new Set(fields.flatMap((field) => EDITOR_FIELDS[field].movie ?? []))].filter(
         (field) =>
           (field !== "num" || isNfoFieldEnabled(options?.enabledFields, "num")) &&
-          (field !== "outline" || isNfoFieldEnabled(options?.enabledFields, "outline")),
+          (field !== "outline" || isNfoFieldEnabled(options?.enabledFields, "outline")) &&
+          (field !== "fileinfo" || isNfoFieldEnabled(options?.enabledFields, "fileinfo")),
       ),
       mdczFields: [...new Set([...fields.flatMap((field) => EDITOR_FIELDS[field].mdcz ?? []), "published"])],
       // Editing is not publishing: the changed values must still differ from MDCz's fingerprints.
@@ -426,6 +424,11 @@ const EDITOR_FIELDS: Record<NfoEditorField, { movie?: string[]; mdcz?: string[];
   fanart_source_url: { mdcz: ["fanart_source_url"], enabled: "fanart" },
   trailer_source_url: { mdcz: ["trailer_source_url"], enabled: "trailer" },
   scene_images: { mdcz: ["scene_images"], enabled: "sceneImages" },
+};
+
+export const isNfoEditorFieldEnabled = (field: NfoEditorField, enabledFields?: readonly NfoField[]): boolean => {
+  const enabled = EDITOR_FIELDS[field].enabled;
+  return !enabled || isNfoFieldEnabled(enabledFields, enabled);
 };
 
 // A translation replaces only the text it translated; whatever else the NFO holds stays as written.
