@@ -1,9 +1,6 @@
-import {
-  buildCommittedCrawlerData,
-  buildMaintenanceApplyData,
-  getDefaultMaintenanceFieldSelection,
-} from "@mdcz/runtime/maintenance";
+import { buildCommittedCrawlerData, buildMaintenanceApplyData } from "@mdcz/runtime/maintenance";
 import { Website } from "@mdcz/shared/enums";
+import { getDefaultMaintenanceFieldSelection } from "@mdcz/shared/maintenanceTasks";
 import type { LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { resolveMaintenanceDiffImageCollection, resolveMaintenanceDiffImageOption } from "@mdcz/views/maintenance";
 import { describe, expect, it } from "vitest";

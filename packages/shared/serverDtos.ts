@@ -8,12 +8,17 @@ import {
 } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
+import { libraryEditJobSchema } from "./libraryEdit";
 import {
   LLM_API_FORMAT_OPTIONS,
   LLM_OUTPUT_FORMAT_OPTIONS,
   LLM_REASONING_OPTIONS,
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
+
+export type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
+export { libraryEditStartInputSchema } from "./libraryEdit";
+
 import { assetRefSchema, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
 import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
@@ -331,6 +336,7 @@ export type NfoReadInput = z.infer<typeof nfoReadInputSchema>;
 
 export const nfoWriteInputSchema = nfoReadInputSchema.extend({
   data: crawlerDataSchema,
+  changedFields: z.array(crawlerDataSchema.omit({ original_title: true }).keyof()),
 });
 
 export type NfoWriteInput = z.infer<typeof nfoWriteInputSchema>;
@@ -645,9 +651,10 @@ export type ActorSyncCancelInput = z.infer<typeof actorSyncCancelInputSchema>;
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
-    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending"])),
+    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending", "library"])),
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),
+  z.object({ kind: z.literal("library-edit"), job: libraryEditJobSchema }),
   z.object({ kind: z.literal("person-sync"), job: personSyncJobSchema }),
   z.object({ kind: z.literal("actor-sync"), job: actorSyncJobSchema }),
 ]);
@@ -715,6 +722,8 @@ export type LibraryHealthIssue = z.infer<typeof libraryHealthIssueSchema>;
 const libraryScopeFields = {
   libraryId: z.string().trim().min(1).optional(),
   health: libraryHealthIssueSchema.optional(),
+  /** The movies whose ignored issues still apply, in place of one issue. */
+  ignored: z.boolean().optional(),
   actor: z.string().trim().min(1).optional(),
   studio: z.string().trim().min(1).optional(),
   tag: z.string().trim().min(1).optional(),
@@ -740,15 +749,31 @@ const libraryFacetSchema = z.array(z.object({ name: z.string(), count: z.number(
 export const librarySummaryResponseSchema = z.object({
   total: z.number().int(),
   issues: z.record(libraryHealthIssueSchema, z.number().int()),
+  ignored: z.number().int(),
   facets: z.object({ actors: libraryFacetSchema, studios: libraryFacetSchema, tags: libraryFacetSchema }),
 });
 export type LibrarySummaryResponse = z.infer<typeof librarySummaryResponseSchema>;
+
+/** Restoring and ignoring act on what the list shows, so they take the list's scope and search. */
+export const libraryRestoreIgnoredInputSchema = z
+  .object({ ...libraryScopeFields, query: z.string().optional() })
+  .omit({ health: true, ignored: true });
+export type LibraryRestoreIgnoredInput = z.infer<typeof libraryRestoreIgnoredInputSchema>;
+
+export const libraryIgnoreHealthInputSchema = libraryRestoreIgnoredInputSchema.extend({
+  health: libraryHealthIssueSchema,
+});
+export type LibraryIgnoreHealthInput = z.infer<typeof libraryIgnoreHealthInputSchema>;
 
 export const libraryDetailInputSchema = z.object({
   id: z.string().trim().min(1),
 });
 
 export type LibraryDetailInput = z.infer<typeof libraryDetailInputSchema>;
+
+export const libraryDeleteInputSchema = z.object({ ids: z.array(z.string().trim().min(1)).min(1) });
+
+export type LibraryDeleteInput = z.infer<typeof libraryDeleteInputSchema>;
 
 export const libraryRelinkInputSchema = z.object({
   fileId: z.string().trim().min(1),

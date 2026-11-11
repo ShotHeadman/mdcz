@@ -521,7 +521,6 @@ export class FileScraper {
         actorSourceProvider: this.deps.actorSourceProvider,
         config: configuration,
         crawlerData,
-        enabled: true,
         movieDir: stagingDir,
         sourceVideoPath: first.fileInfo.filePath,
         signal,

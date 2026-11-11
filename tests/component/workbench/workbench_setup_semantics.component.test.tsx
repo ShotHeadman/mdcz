@@ -265,6 +265,51 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
   expect(screen.container.querySelectorAll('input[aria-autocomplete="list"]').length).toBe(1);
 });
 
+test.each([
+  { mode: "scrape", listed: ["NEW-002.mp4", "NEW-003.mp4", "OLD-001.mp4"] },
+  { mode: "maintenance", listed: ["OLD-001.mp4", "NEW-002.mp4", "NEW-003.mp4"] },
+] as const)("lists files still to scrape first only in a scrape: $mode", async ({ mode, listed }) => {
+  const candidate = (name: string, inLibrary: boolean): MediaCandidate => ({
+    path: `/media/${name}`,
+    name,
+    size: 1,
+    extension: "mp4",
+    lastModified: null,
+    ref: { rootId: "root", relativePath: name },
+    inLibrary,
+  });
+  const screen = await render(
+    <WorkbenchSetupView
+      mode={mode}
+      previewMode
+      scanDir="/media"
+      candidates={[candidate("OLD-001.mp4", true), candidate("NEW-002.mp4", false), candidate("NEW-003.mp4", false)]}
+      selectedPaths={[]}
+      selectedSize={0}
+      totalSize={3}
+      scanStatus="success"
+      startPending={false}
+      supportedExtensions={[".mp4"]}
+      presetId="import_local"
+      primaryDisabled
+      formatBytes={() => "1 B"}
+      onRefreshScan={() => undefined}
+      onPresetChange={() => undefined}
+      onStart={() => undefined}
+      onToggleCandidate={() => undefined}
+      onSelectCandidates={() => undefined}
+    />,
+  );
+
+  await expect.element(screen.getByRole("checkbox", { name: "OLD-001.mp4" })).toBeVisible();
+  expect(
+    screen
+      .getByRole("checkbox", { name: /\.mp4$/u })
+      .elements()
+      .map((element) => element.getAttribute("aria-label")),
+  ).toEqual(listed);
+});
+
 test("media browser list distinguishes processing and paused queue states", async () => {
   const processing = await render(
     <MediaBrowserList

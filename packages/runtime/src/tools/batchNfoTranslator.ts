@@ -1,16 +1,14 @@
-import { stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
-import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
-import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
 import type {
   BatchTranslateApplyResultItem,
   BatchTranslateField,
   BatchTranslateMode,
   BatchTranslateScanItem,
 } from "@mdcz/shared/toolTypes";
-import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
+import type { LocalScanEntry } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import { acquireOutputDirectories } from "../publication/outputMutex";
@@ -37,29 +35,6 @@ type BatchTranslateLocalScanService = {
   scan(dirPath: string, sceneImagesFolder: string): Promise<LocalScanEntry[]>;
   scanVideo(root: MediaRoot, videoPath: string, sceneImagesFolder: string): Promise<LocalScanEntry>;
 };
-
-type BatchTranslateWriteNfoInput = {
-  assets: {
-    downloaded: string[];
-    sceneImages: string[];
-  };
-  config: {
-    download: Configuration["download"];
-    naming: Configuration["naming"];
-  };
-  naming: Pick<MovieNaming, "nfoNaming" | "sceneImages">;
-  crawlerData: CrawlerData;
-  enabled: boolean;
-  fileInfo: FileInfo;
-  localState?: NfoLocalState;
-  logger: RuntimeLogger;
-  nfoGenerator: NfoGenerator;
-  nfoPath: string;
-  sourceVideoPath: string;
-  writeFile?: (path: string, content: string) => Promise<void>;
-};
-
-export type BatchTranslateWriteNfo = (input: BatchTranslateWriteNfoInput) => Promise<string | undefined>;
 
 type BatchTranslationAction =
   | { field: BatchTranslateField; kind: "translate"; text: string; key: string }
@@ -91,13 +66,11 @@ export interface BatchNfoTranslatorDependencies {
   localScanService?: BatchTranslateLocalScanService;
   llmApiClient?: Pick<LlmApiClient, "generateText">;
   nfoGenerator?: NfoGenerator;
-  writeNfo?: BatchTranslateWriteNfo;
   logger?: RuntimeLogger;
 }
 
 const MAX_BATCH_ITEMS = 20;
 const MAX_BATCH_CHARS = 12_000;
-const MOVIE_NFO_NAME = "movie.nfo";
 
 export interface BatchNfoTranslatorApplyOptions {
   mode: BatchTranslateMode;
@@ -145,39 +118,6 @@ const buildBatchChunks = (items: PendingTranslation[], maxBatchItems = MAX_BATCH
 
   if (currentChunk.length > 0) chunks.push(currentChunk);
   return chunks;
-};
-
-const pathExists = async (targetPath: string): Promise<boolean> => {
-  try {
-    return (await stat(targetPath)).isFile();
-  } catch {
-    return false;
-  }
-};
-
-/** A translated NFO is written back under the names it already has. */
-const resolveExistingNfoNaming = async (nfoPath: string): Promise<NfoNamingMode> => {
-  const normalizedNfoPath = resolve(nfoPath);
-  if (basename(normalizedNfoPath).toLowerCase() === MOVIE_NFO_NAME) return "movie";
-
-  const moviePath = join(dirname(normalizedNfoPath), MOVIE_NFO_NAME);
-  return (await pathExists(moviePath)) ? "both" : "filename";
-};
-
-const defaultWriteNfo: BatchTranslateWriteNfo = async ({
-  config,
-  naming,
-  crawlerData,
-  nfoGenerator,
-  nfoPath,
-  writeFile,
-}) => {
-  return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
-    nfoNaming: naming.nfoNaming,
-    enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
-    nfoTitleTemplate: config.naming.nfoTitleTemplate,
-    writeFile,
-  });
 };
 
 const buildFieldAction = (
@@ -347,7 +287,6 @@ export const applyBatchNfoTranslations = async (
 
   const logger = dependencies.logger ?? noopLogger;
   const nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
-  const writeNfo = dependencies.writeNfo ?? defaultWriteNfo;
   const target = toTarget(config.translate.targetLanguage);
   const plans: BatchTranslationPlanItem[] = [];
   const nfoPaths = new Set<string>();
@@ -451,27 +390,6 @@ export const applyBatchNfoTranslations = async (
     }
 
     try {
-      const detectedNfoNaming = await resolveExistingNfoNaming(entry.nfoPath);
-      const artifactsByPath = new Map<string, string>();
-      const savedNfoPath = await writeNfo({
-        assets: {
-          downloaded: [],
-          sceneImages: [],
-        },
-        config,
-        naming: { nfoNaming: detectedNfoNaming, sceneImages: config.download.downloadSceneImages },
-        crawlerData: nextCrawlerData,
-        enabled: true,
-        fileInfo: entry.fileInfo,
-        localState: entry.nfoLocalState,
-        logger,
-        nfoGenerator,
-        nfoPath: entry.nfoPath,
-        sourceVideoPath: entry.fileInfo.filePath,
-        writeFile: async (path, content) => {
-          artifactsByPath.set(path, content);
-        },
-      });
       const registered = publication.outputs
         ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, async (id) => {
             const root = publication.roots.find((root) => root.id === id);
@@ -479,15 +397,24 @@ export const applyBatchNfoTranslations = async (
             return root;
           })
         : undefined;
-      const artifacts = [...artifactsByPath]
-        .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
-        .map(([targetPath, data]) => ({ targetPath, data }));
+      // Metadata is read from one NFO, but every copy a media server may read must carry the translation.
+      const targetPaths = registered?.paths ?? entry.nfoPaths;
       const inventory = new DirectoryInventory();
-      const release = await acquireOutputDirectories(
-        artifacts.map((artifact) => artifact.targetPath),
-        (directory) => inventory.canonicalDirectory(directory),
+      const release = await acquireOutputDirectories(targetPaths, (directory) =>
+        inventory.canonicalDirectory(directory),
       );
       try {
+        const nfoOptions = {
+          enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
+          localState: entry.nfoLocalState,
+          titleNaming: config.naming,
+        };
+        const artifacts = await Promise.all(
+          targetPaths.map(async (targetPath) => ({
+            targetPath,
+            data: nfoGenerator.mergeTranslatedXml(await readFile(targetPath, "utf8"), nextCrawlerData, nfoOptions),
+          })),
+        );
         await new WriteOutput().install(artifacts, {
           protectedMediaFiles: registered?.mediaPaths,
           commit: async () => {
@@ -517,7 +444,6 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: errors.length === 0,
         translatedFields,
-        savedNfoPath,
         error: errors.length > 0 ? errors.join("；") : undefined,
       });
     } catch (error) {

@@ -1,8 +1,9 @@
-export type LibraryTaskKind = "scrape" | "maintenance";
+export type LibraryTaskKind = "scrape" | "maintenance" | "edit";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
-  maintenance: "A maintenance task is running; stop it before starting a scrape",
-  scrape: "A scrape task is running; stop it before starting maintenance",
+  edit: "A library edit is running; wait for it to finish before starting another library task",
+  maintenance: "A maintenance task is running; finish or stop it before starting another library task",
+  scrape: "A scrape task is running; finish or stop it before starting another library task",
 };
 
 export class LibraryTaskConflictError extends Error {
@@ -13,8 +14,7 @@ export class LibraryTaskConflictError extends Error {
 }
 
 /**
- * Scrapes and maintenance both move source files and rewrite library records, and the output directory mutex only
- * serializes writes into the same folder, so one kind of task never starts while the other is live.
+ * Library writers share records across folders, so directory locks alone cannot serialize different task kinds.
  */
 export class LibraryTaskGate {
   readonly #busy = new Map<LibraryTaskKind, () => boolean>();

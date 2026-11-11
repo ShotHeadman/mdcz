@@ -8,6 +8,7 @@ import {
   toDetailViewItemFromMaintenanceEntry,
   toDetailViewItemFromScrapeResult,
 } from "@mdcz/views/detail";
+import { getNfoChangedFields, normalizeEditableNfoData, validateEditableNfoData } from "@mdcz/views/nfo";
 import { describe, expect, it, vi } from "vitest";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
@@ -56,6 +57,20 @@ describe("detail panel adapter contract", () => {
     expect(formatDuration(0)).toBeUndefined();
     expect(formatBitrate(12_500_000)).toBe("12.5 Mbps");
     expect(formatBitrate(Number.POSITIVE_INFINITY)).toBeUndefined();
+
+    const initial = normalizeEditableNfoData(
+      createCrawlerData({
+        actors: ["ＡＩ", "ジューン・ラブジョイ"],
+        actor_profiles: [{ name: "AI" }, { name: "ジューンラブジョイ" }],
+      }),
+    );
+    const edited = { ...initial, studio: "Edited Studio", rating: "8.5", scene_images: [] };
+    expect(getNfoChangedFields(initial, edited)).toEqual(["studio", "rating", "scene_images"]);
+    expect(getNfoChangedFields(initial, initial)).toEqual([]);
+    expect(getNfoChangedFields(initial, { ...edited, studio: initial.studio })).not.toContain("studio");
+    const validated = validateEditableNfoData(initial);
+    expect(validated.valid).toBe(true);
+    expect(validated.data?.actors).toEqual(["ＡＩ", "ジューン・ラブジョイ", "ジューンラブジョイ"]);
   });
 
   it("maps scrape results into the shared detail item shape with local asset priority", () => {

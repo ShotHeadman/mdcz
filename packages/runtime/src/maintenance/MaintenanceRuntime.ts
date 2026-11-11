@@ -461,7 +461,18 @@ export class MaintenanceRuntime {
     const config = await this.getPresetConfig(input.presetId);
     throwIfAborted(signal);
 
-    const crawlerData = committed?.crawlerData ?? entry.crawlerData;
+    const crawlerData =
+      committed?.crawlerData ??
+      entry.crawlerData ??
+      (preset.output === "none"
+        ? {
+            title: entry.fileInfo.fileName,
+            number: entry.fileInfo.number,
+            actors: [],
+            genres: [],
+            scene_images: [],
+          }
+        : undefined);
     if (!crawlerData) throw new Error("Maintenance output requires movie metadata");
 
     const plans = await this.buildPlans(files, config, preset, crawlerData, signal);
@@ -473,12 +484,20 @@ export class MaintenanceRuntime {
     const selectedLayout = layouts[this.memberIndex(files, entry)];
     const movieBaseName = basename(selectedLayout.nfoPath, ".nfo");
     // Writes stay in place, yet the movie's library still decides whether its folder is shared by template.
-    const naming = await resolvePublicationNaming({
-      layouts,
-      policy: this.target ?? (await this.deps.findNamingPolicy(entry.fileInfo.filePath)),
-      config,
-      inventory: this.inventory,
-    });
+    const naming =
+      preset.output === "none"
+        ? ({
+            sharedFolder: false,
+            assetNaming: "fixed",
+            nfoNaming: "both",
+            sceneImages: true,
+          } as const)
+        : await resolvePublicationNaming({
+            layouts,
+            policy: this.target ?? (await this.deps.findNamingPolicy(entry.fileInfo.filePath)),
+            config,
+            inventory: this.inventory,
+          });
     const members = await Promise.all(
       files.map(async (file, index) => {
         const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layouts[index];
@@ -517,7 +536,6 @@ export class MaintenanceRuntime {
             actorSourceProvider: this.deps.actorSourceProvider,
             config,
             crawlerData,
-            enabled: true,
             movieDir: stagingDir,
             sourceVideoPath: entry.fileInfo.filePath,
             signal,
@@ -603,7 +621,7 @@ export class MaintenanceRuntime {
         naming,
         writeNfo: async (assets, writeFile) =>
           preset.output === "none"
-            ? entry.nfoPath
+            ? (entry.nfoPath ?? files.find((file) => file.nfoPath)?.nfoPath)
             : await writePreparedNfo({
                 assets,
                 config,
@@ -738,6 +756,9 @@ export class MaintenanceRuntime {
       };
     } catch (error) {
       if (isAbortError(error) || error instanceof PublicationConflictError || publication === undefined) throw error;
+      (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+        `Failed to apply maintenance entry ${entry.fileInfo.filePath}: ${toErrorMessage(error)}`,
+      );
       return { status: "failed", error: toErrorMessage(error) };
     } finally {
       if (stagingDir) {

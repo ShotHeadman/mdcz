@@ -102,6 +102,5 @@ export type BatchTranslateApplyResultItem = {
   number: string;
   success: boolean;
   translatedFields: BatchTranslateField[];
-  savedNfoPath?: string;
   error?: string;
 };

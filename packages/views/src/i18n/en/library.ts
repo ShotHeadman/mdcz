@@ -1,4 +1,34 @@
 export const library = {
+  edit: {
+    action: "Edit",
+    all: (count: number) => `Edit all ${count}`,
+    title: (count: number) => `Edit ${count} movies`,
+    description:
+      "Changes will be written directly to each movie's NFO file and the library. This operation cannot be undone. Please review the estimated changes below.",
+    field: "Field",
+    operation: "Change",
+    operations: { set: "Set", clear: "Clear", add: "Add", remove: "Remove", rename: "Rename" },
+    genres: "Genres",
+    from: "From",
+    removeTarget: "Item to remove",
+    to: "To",
+    value: "Value",
+    excluded: 'Excluded by "Excluded NFO fields" setting',
+    estimate: (changed: number, unchanged: number) =>
+      `Estimated changes: ${changed} will change · ${unchanged} unchanged`,
+    noChange: "No change",
+    oldValue: "Old value",
+    newValue: "New value",
+    confirm: (count: number) => `Change ${count} movies`,
+    loading: "Collecting movies…",
+    running: (current: number, total: number) => `Editing ${current} / ${total} movies…`,
+    completed: "Edit completed",
+    failed: "Edit failed",
+    result: (changed: number, unchanged: number, skipped: number, failed: number) =>
+      `${changed} changed · ${unchanged} unchanged · ${skipped} skipped (no NFO) · ${failed} failed`,
+    newEdit: "New edit",
+    close: "Close",
+  },
   filter: {
     all: "All",
     available: "Available",
@@ -24,6 +54,11 @@ export const library = {
     },
     fix: (count: number) => `Refresh ${count} from sites`,
     fixHint: "Opens a preview of the refreshed metadata. Nothing is written until you apply it.",
+    ignored: "Ignored",
+    ignore: (count: number) => `Ignore ${count}`,
+    ignoreHint: "Ignored movies no longer count toward health. Restore them from “Ignored”.",
+    restore: (count: number) => `Stop ignoring ${count}`,
+    restoreHint: "Restoring these movies will include them in health checks again.",
     fixStarted: (count: number) => `Previewing a refresh of ${count} movies`,
     mixedRoots: "Selected movies span multiple directories. Please filter to a single directory and try again.",
     clear: "Clear filters",
@@ -52,6 +87,12 @@ export const library = {
   scrapeInfo: "Scrape Info",
   openFolder: "Open folder",
   removeFromLibrary: "Remove from library",
+  removeUnavailable: (count: number) => `Remove unavailable (${count})`,
+  multiSelect: "Multi-select",
+  exitMultiSelect: "Exit multi-select",
+  selectEntry: (id: string) => `Select ${id}`,
+  selectAll: (count: number) => `Select all (${count})`,
+  selectedCount: (count: number) => `${count} movie(s) selected`,
   availabilityNotChecked: "Availability not yet checked",
 
   // Availability labels
@@ -62,8 +103,8 @@ export const library = {
 
   // Delete dialog
   removeDialogTitle: "Remove from Library",
-  removeDialogDescription: (fileCount: number, assetCount: number) =>
-    `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s).`,
+  removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
+    `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s) for ${movieCount} movie(s). Files on disk are not deleted.`,
   removing: "Removing…",
   confirmRemove: "Confirm Remove",
 

@@ -70,6 +70,10 @@ export const prepareCrawlerDataForNfo = async (
 ): Promise<{ data: CrawlerData; actorPhotoPaths: string[] }> => {
   throwIfAborted(options.signal);
 
+  if (!configuration.personSync.downloadActorPhotos) {
+    return { data: withPersistedAssetSourceUrls(crawlerData), actorPhotoPaths: [] };
+  }
+
   // Actor profiles are derived here from actor names and local/source lookups, not crawler aggregation.
   const actorProfiles = await actorImageService.prepareActorProfilesForMovie(configuration, {
     movieDir: options.movieDir,

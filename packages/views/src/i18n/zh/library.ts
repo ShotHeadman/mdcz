@@ -1,6 +1,34 @@
 import type { Messages } from "../en";
 
 export const library: Messages["library"] = {
+  edit: {
+    action: "编辑",
+    all: (count: number) => `编辑全部 ${count} 部`,
+    title: (count: number) => `编辑 ${count} 部影片`,
+    description: "修改将直接写入对应影片的 NFO 文件与媒体库，操作不可撤回。请核对下方的变更预估。",
+    field: "字段",
+    operation: "操作",
+    operations: { set: "设置", clear: "清空", add: "添加", remove: "移除", rename: "重命名" },
+    genres: "标签",
+    from: "原值",
+    removeTarget: "移除项",
+    to: "新值",
+    value: "值",
+    excluded: "已在设置中设为“NFO 忽略字段”",
+    estimate: (changed: number, unchanged: number) => `变更预估：${changed} 部将修改 · ${unchanged} 部无变动`,
+    noChange: "无变化",
+    oldValue: "原值",
+    newValue: "新值",
+    confirm: (count: number) => `更改 ${count} 部影片`,
+    loading: "正在收集影片…",
+    running: (current: number, total: number) => `正在编辑 ${current} / ${total} 部影片…`,
+    completed: "编辑完成",
+    failed: "编辑失败",
+    result: (changed: number, unchanged: number, skipped: number, failed: number) =>
+      `已更改 ${changed} 部 · 无变化 ${unchanged} 部 · 跳过 ${skipped} 部（无 NFO）· 失败 ${failed} 部`,
+    newEdit: "开始新的编辑",
+    close: "关闭",
+  },
   filter: {
     all: "全部",
     available: "可用",
@@ -26,6 +54,11 @@ export const library: Messages["library"] = {
     },
     fix: (count: number) => `从站点刷新 ${count} 部`,
     fixHint: "打开刷新结果的预览，应用之前不会写入任何内容。",
+    ignored: "已忽略",
+    ignore: (count: number) => `忽略 ${count} 部`,
+    ignoreHint: "忽略后不再计入健康状况，可在“已忽略”中恢复。",
+    restore: (count: number) => `取消忽略 ${count} 部`,
+    restoreHint: "取消忽略后，这些影片将重新进行健康检查。",
     fixStarted: (count: number) => `正在预览 ${count} 部影片的刷新`,
     mixedRoots: "所选影片位于不同媒体目录，批量刷新仅支持同一目录。请筛选后重试。",
     clear: "清除筛选",
@@ -54,6 +87,12 @@ export const library: Messages["library"] = {
   scrapeInfo: "刮削信息",
   openFolder: "打开所在目录",
   removeFromLibrary: "从媒体库移除",
+  removeUnavailable: (count: number) => `清理不可用 (${count})`,
+  multiSelect: "多选",
+  exitMultiSelect: "退出多选",
+  selectEntry: (id: string) => `选择 ${id}`,
+  selectAll: (count: number) => `全选（${count} 部）`,
+  selectedCount: (count: number) => `已选 ${count} 部影片`,
   availabilityNotChecked: "可用性尚未检查",
 
   // Availability labels
@@ -64,8 +103,8 @@ export const library: Messages["library"] = {
 
   // Delete dialog
   removeDialogTitle: "从媒体库移除",
-  removeDialogDescription: (fileCount: number, assetCount: number) =>
-    `将移除 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录。`,
+  removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
+    `将移除 ${movieCount} 部影片的 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录，磁盘上的文件不会被删除。`,
   removing: "正在移除...",
   confirmRemove: "确认移除",
 

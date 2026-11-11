@@ -1,3 +1,4 @@
+import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { FieldDiff, LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@mdcz/shared/types";
 import {
@@ -28,7 +29,7 @@ import { type Dispatch, type SetStateAction, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
 import { NaturalAspectImageFrame } from "../common";
 import { useT } from "../i18n";
-import { ChangeDiffView, type MaintenanceFieldSelectionSide, PathPlanView } from "../maintenance";
+import { ChangeDiffView, PathPlanView } from "../maintenance";
 import { type EditableNfoData, NfoEditorDialog, type NfoValidationErrors } from "../nfo";
 import { formatBitrate, formatDuration } from "./detailViewAdapters";
 import { PosterCropDialog } from "./PosterCropDialog";
@@ -457,28 +458,21 @@ export function DetailPanelView({
                   </section>
                 ) : null}
 
-                {item.sceneImages && item.sceneImages.length > 0 ? (
+                {item.sceneImages?.length || trailerSrc ? (
                   <section className="space-y-3">
+                    <DetailSectionTitle>
+                      {trailerSrc && item.sceneImages?.length
+                        ? t.detail.sections.trailerAndStills
+                        : trailerSrc
+                          ? t.detail.sections.trailer
+                          : t.detail.sections.stills}
+                    </DetailSectionTitle>
                     <SceneImageGallery
-                      images={item.sceneImages}
+                      images={item.sceneImages ?? []}
+                      trailerSrc={trailerSrc}
                       baseDir={item.outputPath ?? (item.path ? getDirFromPath(item.path) : undefined)}
-                      label={t.detail.sections.stills}
                       resolveImageCandidates={resolveImageCandidates}
-                      variant="filmstrip"
-                    />
-                  </section>
-                ) : null}
-
-                {trailerSrc ? (
-                  <section className="space-y-3">
-                    <DetailSectionTitle>{t.detail.sections.trailer}</DetailSectionTitle>
-                    {/* biome-ignore lint/a11y/useMediaCaption: Remote trailers do not provide a caption track. */}
-                    <video
-                      className="w-full max-w-4xl rounded-quiet-lg bg-black"
-                      controls
-                      preload="metadata"
-                      src={trailerSrc}
-                      onError={onTrailerError}
+                      onTrailerError={onTrailerError}
                     />
                   </section>
                 ) : null}

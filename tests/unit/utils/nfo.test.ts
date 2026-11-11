@@ -1,5 +1,6 @@
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { NfoGenerator } from "@mdcz/runtime/scrape";
+import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "@mdcz/runtime/scrape";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -181,35 +182,45 @@ describe("parseNfo", () => {
     expect(result.scene_images).toEqual([]);
   });
 
-  it("round-trips local uncensored choice, custom tags and field locks through localState", () => {
-    const xml = new NfoGenerator().buildXml(
-      {
-        title: "Local Tags",
-        number: "ABC-321",
-        actors: [],
-        genres: [],
-        scene_images: [],
-        website: Website.DMM,
-      },
-      {
-        localState: {
-          uncensoredChoice: "leak",
-          tags: ["中文字幕", "自定义标签"],
-          lockedFields: ["Name", "OfficialRating"],
-        },
-        buildTags: buildMovieTags,
-      },
-    );
+  it("keeps local choices, the date added and the elements it doesn't write when it rebuilds an NFO", () => {
+    const nfo = parseNfoSnapshot(`
+      <movie>
+        <title>Local Tags</title>
+        <uniqueid type="${Website.DMM}">ABC-321</uniqueid>
+        <director>Site Director</director>
+        <dateadded>2025-01-01 00:00:00</dateadded>
+        <lockedfields>Name|OfficialRating</lockedfields>
+        <tag>流出</tag>
+        <tag>中文字幕</tag>
+        <tag>自定义标签</tag>
+        <lockdata>true</lockdata>
+        <ratings>
+          <rating name="imdb" max="10" default="true"><value>7.100000</value><votes>1024</votes></rating>
+        </ratings>
+      </movie>
+    `);
+    const rebuilt = new NfoGenerator().buildXml(nfo.crawlerData, {
+      localState: nfo.localState,
+      enabledFields: nfoIgnoreFieldsToEnabledFields(["director"]),
+      buildTags: buildMovieTags,
+    });
+    const reparsed = parseNfoSnapshot(rebuilt).localState;
 
-    const parsed = parseNfoSnapshot(xml);
-
-    expect(xml).toContain("<lockedfields>Name|OfficialRating</lockedfields>");
-    expect(parsed.localState).toMatchObject({
+    expect(rebuilt).toContain("<dateadded>2025-01-01 00:00:00</dateadded>");
+    expect(rebuilt).toContain("<lockedfields>Name|OfficialRating</lockedfields>");
+    expect(rebuilt).toContain("<lockdata>true</lockdata>");
+    expect(rebuilt).toContain('<rating name="imdb" max="10" default="true">');
+    expect(rebuilt).toContain("<value>7.100000</value>");
+    // A field the settings turn off is MDCz's to drop, not someone else's to keep.
+    expect(rebuilt).not.toContain("<director>");
+    expect(reparsed).toMatchObject({
       uncensoredChoice: "leak",
       tags: ["中文字幕", "自定义标签"],
       lockedFields: ["Name", "OfficialRating"],
+      dateAdded: "2025-01-01 00:00:00",
       edits: undefined,
     });
+    expect(reparsed?.foreignElements).toEqual(nfo.localState?.foreignElements);
   });
 
   it("recognizes values edited after publishing, across media-server rewrites and later publishes", () => {
@@ -226,7 +237,7 @@ describe("parseNfo", () => {
       scene_images: [],
       website: Website.DMM,
     };
-    const options = { nfoTitleTemplate: "{number} {title}" };
+    const options = { titleNaming: { ...defaultConfiguration.naming, nfoTitleTemplate: "{number} {title}" } };
     const editsOf = (xml: string) => Object.keys(parseNfoSnapshot(xml).localState?.edits ?? {});
 
     // Emby's rewrite: actor thumbs dropped, <set><name>, CDATA, and "A/B" genres split and moved.
@@ -256,8 +267,9 @@ describe("parseNfo", () => {
       "title",
     ]);
 
-    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, options);
+    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, ["genres"], options);
     expect(editsOf(editorSaved)).toEqual(["genre"]);
+    expect(editorSaved.match(/<\?xml/gu)).toHaveLength(1);
   });
 
   it("does not restore mirrored genre tags as localState tags", () => {

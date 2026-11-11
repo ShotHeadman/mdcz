@@ -60,7 +60,7 @@ export type ConfigValidationDomainError = DomainErrorShape<ConfigValidationDomai
 /** Names the task kind already running, so the client can say what to stop. */
 export interface LibraryTaskConflictDomainError extends DomainErrorShape {
   code: typeof DomainErrorCode.LIBRARY_TASK_CONFLICT;
-  details: { running: "scrape" | "maintenance" };
+  details: { running: "scrape" | "maintenance" | "edit" };
 }
 
 export const toConfigValidationDomainError = (input: {

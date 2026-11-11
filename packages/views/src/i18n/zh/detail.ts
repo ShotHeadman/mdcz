@@ -17,6 +17,8 @@ export const detail: Messages["detail"] = {
   closePreview: "关闭剧照预览",
   previousPhoto: "上一张剧照",
   nextPhoto: "下一张剧照",
+  playTrailer: "播放预告片",
+  trailerSlideDescription: "预告片，可使用左右方向键切换到剧照。",
 
   // Poster crop dialog
   editCover: "编辑封面",
@@ -58,6 +60,7 @@ export const detail: Messages["detail"] = {
     poster: "缩略图",
     stills: "剧照",
     trailer: "预告片",
+    trailerAndStills: "预告片与剧照",
   },
   posterThumbAlt: (alt: string) => `${alt} 缩略图`,
   posterPreviewTitle: "缩略图预览",

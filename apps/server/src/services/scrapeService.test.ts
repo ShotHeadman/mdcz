@@ -100,8 +100,13 @@ describe("ScrapeService queue admission", () => {
     expect(first).toBe(second);
     expect(initialize).toHaveBeenCalledOnce();
 
-    taskGate.track("maintenance", () => true);
-    await expect(service.start(input)).rejects.toThrow("A maintenance task is running");
+    for (const kind of ["maintenance", "edit"] as const) {
+      taskGate.track(kind, () => true);
+      await expect(service.start(input)).rejects.toThrow(
+        kind === "edit" ? "A library edit is running" : "A maintenance task is running",
+      );
+      taskGate.track(kind, () => false);
+    }
 
     await service.close();
     await expect(service.start(input)).rejects.toThrow("Scrape queue is closing");

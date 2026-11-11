@@ -164,12 +164,18 @@ export const createWebDetailPort = (): DetailActionPort => ({
       crawlerData: response.data as CrawlerData | null,
     };
   },
-  writeNfo: async (item, path, data) => {
+  writeNfo: async (item, path, data, changedFields) => {
     const rootId = getMetadataRootId(item);
     const videoPath = item.outputPath ?? item.path;
     const videoRelativePath =
       videoPath && item.fileRef?.rootId === rootId ? toRelativePath(item, videoPath) : undefined;
-    await api.scrape.nfoWrite({ rootId, relativePath: toRelativePath(item, path), videoRelativePath, data });
+    await api.scrape.nfoWrite({
+      rootId,
+      relativePath: toRelativePath(item, path),
+      videoRelativePath,
+      data,
+      changedFields,
+    });
   },
   preparePosterCrop: async (item) => {
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);

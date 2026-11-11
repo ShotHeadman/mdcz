@@ -14,6 +14,14 @@ const assetKey = (asset: {
   uri: string;
 }): string => `${asset.fileId ?? "public"}:${asset.kind}:${asset.rootId ?? ""}:${asset.relativePath ?? asset.uri}`;
 
+/** Removes a file row, and its movie once no file is left. */
+export const removeLibraryFile = (database: PersistenceDatabase, file: { id: string; itemId: string }): void => {
+  database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.fileId, file.id)).run();
+  database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.id, file.id)).run();
+  if (database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.itemId, file.itemId)).get()) return;
+  database.db.delete(libraryItems).where(eq(libraryItems.id, file.itemId)).run();
+};
+
 export const writeLibraryRows = (
   database: PersistenceDatabase,
   movie: LibraryMovieInput,
@@ -70,8 +78,8 @@ export const writeLibraryRows = (
   if (id !== movie.id && database.db.select().from(libraryItems).where(eq(libraryItems.id, movie.id)).get())
     throw new Error("Library write cannot merge independent movies");
   const movingFileIds = new Set(occupants.flatMap(({ occupant }) => (occupant ? [occupant.id] : [])));
-  for (const { target } of occupants)
-    if (target && !movingFileIds.has(target.id)) throw new Error("Library target belongs to another file");
+  // A file only moves onto a path publication found empty, so another row still registered there is out of date.
+  for (const { target } of occupants) if (target && !movingFileIds.has(target.id)) removeLibraryFile(database, target);
 
   const resolved = occupants.map(({ input, occupant }) => {
     const declaredFileId = input.fileId;

@@ -36,6 +36,7 @@ import { AuthenticationError, AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
 import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
+import { LibraryEditService } from "./services/libraryEditService";
 import { LibraryService } from "./services/libraryService";
 import { LibraryWatchService } from "./services/libraryWatchService";
 import { MaintenanceService } from "./services/maintenanceService";
@@ -245,6 +246,9 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     libraries,
     libraryWatch,
     library,
+    libraryEdit:
+      options.services?.libraryEdit ??
+      new LibraryEditService(config, persistence, mediaRoots, taskEvents, taskGate, networkClient),
     maintenance,
     mediaRoots,
     persistence,

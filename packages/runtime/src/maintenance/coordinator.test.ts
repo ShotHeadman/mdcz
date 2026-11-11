@@ -265,6 +265,9 @@ describe("MaintenanceSessionCoordinator", () => {
 
     await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("A scrape task is running");
     scraping = false;
+    taskGate.track("edit", () => true);
+    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("A library edit is running");
+    taskGate.track("edit", () => false);
     vi.mocked(fixture.runtime.scanRefs).mockImplementationOnce(async () => await scanned.promise);
     const preview = await fixture.coordinator.startPreview(input);
     expect(() => taskGate.assertAvailable("scrape")).toThrow("A maintenance task is running");
@@ -647,7 +650,18 @@ describe("MaintenanceSessionCoordinator", () => {
     await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
 
-    expect(snapshot?.previews.map((item) => item.id)).toEqual([second?.id]);
+    expect(snapshot?.previews.map((item) => ({ id: item.id, status: item.status }))).toEqual([
+      { id: first?.id, status: "failed" },
+      { id: second?.id, status: "ready" },
+    ]);
+    expect(fixture.events).toContainEqual({
+      kind: "log",
+      sessionId: previewHandle.session.id,
+      event: expect.objectContaining({
+        type: "failed",
+        message: `one.mp4: ${first?.movieGroup?.files[0]?.fileId}`,
+      }),
+    });
     expect(snapshot?.draft.fieldSelections).toEqual({ [second?.id ?? ""]: { title: "old" } });
     expect(snapshot?.currentBatch?.items).toHaveLength(1);
     expect(snapshot?.currentBatch?.items[0]?.result).toMatchObject({

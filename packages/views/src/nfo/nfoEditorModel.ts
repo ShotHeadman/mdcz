@@ -1,5 +1,6 @@
+import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import { Website } from "@mdcz/shared/enums";
-import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
+import type { ActorProfile, CrawlerData, NfoEditorField } from "@mdcz/shared/types";
 import { getT } from "../i18n";
 
 export interface EditableActorProfile {
@@ -84,12 +85,6 @@ const parseOptionalFiniteNumber = (value: string): number | undefined => {
 
 const isWebsite = (value: string): value is Website => WEBSITE_VALUES.has(value);
 
-const normalizeActorProfileKey = (value: string): string =>
-  value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .trim();
-
 export const normalizeEditableNfoData = (data: Partial<CrawlerData> | Partial<EditableNfoData>): EditableNfoData => ({
   title: toStringValue(data.title),
   title_zh: toStringValue(data.title_zh),
@@ -132,6 +127,11 @@ export const createEmptyEditableNfoData = (): EditableNfoData =>
 export const serializeEditableNfoData = (data: EditableNfoData): string =>
   JSON.stringify(normalizeEditableNfoData(data));
 
+export const getNfoChangedFields = (initial: EditableNfoData, edited: EditableNfoData): NfoEditorField[] =>
+  (Object.keys(edited) as NfoEditorField[]).filter(
+    (field) => JSON.stringify(initial[field]) !== JSON.stringify(edited[field]),
+  );
+
 export const validateEditableNfoData = (data: EditableNfoData): NfoValidationResult => {
   const normalized = normalizeEditableNfoData(data);
   const errors: NfoValidationErrors = {};
@@ -145,7 +145,7 @@ export const validateEditableNfoData = (data: EditableNfoData): NfoValidationRes
     (profile) => profile.name.trim().length > 0 || profile.photo_url.trim().length > 0,
   );
   const actors = [...normalized.actors];
-  const actorKeys = new Set(actors.map(normalizeActorProfileKey).filter(Boolean));
+  const actorKeys = new Set(actors.map(normalizeActorName).filter(Boolean));
 
   if (!title) {
     errors.title = getT().nfo.errors.titleRequired;
@@ -180,7 +180,7 @@ export const validateEditableNfoData = (data: EditableNfoData): NfoValidationRes
 
   for (const profile of actorProfiles) {
     const profileName = profile.name.trim();
-    const profileKey = normalizeActorProfileKey(profileName);
+    const profileKey = normalizeActorName(profileName);
     if (profileKey && !actorKeys.has(profileKey)) {
       actors.push(profileName);
       actorKeys.add(profileKey);

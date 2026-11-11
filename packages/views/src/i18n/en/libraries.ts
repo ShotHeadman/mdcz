@@ -46,7 +46,7 @@ export const libraries = {
     sharedFolderNaming:
       "Multiple movies share this folder: files follow video name, only <filename>.nfo is written, no scene images (prevents overwrite).",
     inPlaceNaming:
-      "When a source folder holds multiple movies, files follow video name and scene images are skipped (prevents overwrite).",
+      "When a source folder holds multiple movies, files follow video name and scene images are skipped (prevents overwrite). For a folder and scene images per movie, choose Move and set the output directory to the source directory.",
     automation: "Automation",
     discovery: "Discovery",
     cloudPath: "CloudDrive2 path",

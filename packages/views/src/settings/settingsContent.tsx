@@ -472,12 +472,19 @@ function TitleRepairSection() {
   );
 }
 
-type NamingTemplateHelpKind = "folder" | "file";
+type NamingTemplateHelpKind = "folder" | "file" | "nfoTitle";
 
 export function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
   const t = useT();
   const help = t.settings.namingTemplateHelp;
   const label = help[kind];
+  // The NFO title has no file placeholders and its {number} is already raw.
+  const placeholders =
+    kind === "nfoTitle"
+      ? Object.entries({ ...help.placeholders, "{number}": help.nfoTitleNumber }).filter(
+          ([placeholder]) => placeholder !== "{rawNumber}",
+        )
+      : Object.entries({ ...help.placeholders, ...help.filePlaceholders });
 
   return (
     <Dialog>
@@ -506,7 +513,7 @@ export function NamingTemplateHelp({ kind }: { kind: NamingTemplateHelpKind }) {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(help.placeholders).map(([placeholder, description]) => (
+                {placeholders.map(([placeholder, description]) => (
                   <tr key={placeholder} className="border-t border-border/40">
                     <td className="px-3 py-2 align-top font-mono text-[11px] text-foreground">{placeholder}</td>
                     <td className="px-3 py-2 align-top leading-5 text-muted-foreground">{description}</td>
@@ -550,7 +557,7 @@ export function NamingSection() {
           {t.settings.templatesMovedNotice}
         </div>
       )}
-      <TextField name="naming.nfoTitleTemplate" />
+      <TextField name="naming.nfoTitleTemplate" labelAddon={<NamingTemplateHelp kind="nfoTitle" />} />
       <TitleRepairSection />
       <NumberField name="naming.actorNameMax" min={1} max={20} />
       <TextField name="naming.actorNameMore" />

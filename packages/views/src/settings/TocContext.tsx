@@ -33,15 +33,22 @@ export function TocProvider({ children, scrollContainerRef }: TocProviderProps) 
   const [sections, setSections] = useState<TocSection[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  const register = useCallback((section: TocSection) => {
-    setSections((prev) => {
-      if (prev.some((s) => s.id === section.id)) return prev;
-      return [...prev, section];
-    });
-    return () => {
-      setSections((prev) => prev.filter((s) => s.id !== section.id));
-    };
-  }, []);
+  const register = useCallback(
+    (section: TocSection) => {
+      const sectionIds = Array.from(
+        scrollContainerRef.current?.querySelectorAll<HTMLElement>("[data-toc-id]") ?? [],
+        (element) => element.dataset.tocId,
+      );
+      setSections((prev) => {
+        if (prev.some((s) => s.id === section.id)) return prev;
+        return [...prev, section].sort((a, b) => sectionIds.indexOf(a.id) - sectionIds.indexOf(b.id));
+      });
+      return () => {
+        setSections((prev) => prev.filter((s) => s.id !== section.id));
+      };
+    },
+    [scrollContainerRef],
+  );
 
   const scrollToSection = useCallback(
     (id: string, behavior: ScrollBehavior) => {

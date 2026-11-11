@@ -46,7 +46,9 @@ export const assertFoldersHoldNoOtherMovie = async (input: {
       throw new PublicationConflictError(
         input.sourcePaths[0] ?? folder,
         folder,
-        "Another movie already has this folder; add {number} to the library's folder template so each movie gets its own",
+        /\{\s*(?:raw)?number\s*\}/iu.test(input.target.folderTemplate)
+          ? "Another movie already has this folder; remove one of the two from the library"
+          : "Another movie already has this folder; add {number} to the library's folder template so each movie gets its own",
       );
   }
 };

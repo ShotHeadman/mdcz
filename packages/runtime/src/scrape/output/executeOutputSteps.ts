@@ -32,7 +32,6 @@ export const prepareOutputCrawlerData = async (input: {
   actorSourceProvider?: RuntimeActorSourceProvider;
   config: Configuration;
   crawlerData?: CrawlerData;
-  enabled: boolean;
   movieDir?: string;
   sourceVideoPath: string;
   signal?: AbortSignal;
@@ -43,7 +42,6 @@ export const prepareOutputCrawlerData = async (input: {
 
   return await prepareCrawlerDataForMovieOutput(input.actorImageService, input.config, input.crawlerData, {
     actorSourceProvider: input.actorSourceProvider,
-    enabled: input.enabled,
     movieDir: input.movieDir,
     signal: input.signal,
     sourceVideoPath: input.sourceVideoPath,
@@ -150,7 +148,7 @@ export const writePreparedNfo = async (input: {
     fileInfo: input.fileInfo,
     localState: input.localState,
     nfoNaming: input.naming.nfoNaming,
-    nfoTitleTemplate: input.config.naming.nfoTitleTemplate,
+    titleNaming: input.config.naming,
     sources: input.sources,
     videoMeta,
     writeFile: input.writeFile,

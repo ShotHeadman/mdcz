@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { getNfoReadCandidates, NfoGenerator, type NfoOptions, resolveFilenameNfoPath } from "@mdcz/runtime/scrape";
-import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
+import { type Configuration, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -204,19 +204,44 @@ describe("NfoGenerator", () => {
     }
   });
 
-  it("supports originaltitle in the NFO title template", () => {
-    const xml = buildXml(
-      createCrawlerData({
-        title: "Original Title",
-        title_zh: "中文标题",
-      }),
+  it("renders the NFO title template from metadata, keeping title characters and falling back to the title", () => {
+    const cases: Array<{
+      template: string;
+      data?: Partial<CrawlerData>;
+      naming?: Partial<Configuration["naming"]>;
+      title: string;
+    }> = [
+      { template: "{number} {originaltitle}", title: "ABC-123 Original Title" },
+      { template: "[{actor}] {number} {title}", data: { actors: ["Actor A"] }, title: "[Actor A] ABC-123 中文标题" },
+      { template: "[{actor}] {number} {title}", title: "ABC-123 中文标题" },
+      { template: "{actor} {number}", title: "ABC-123" },
       {
-        nfoTitleTemplate: "{number} {originaltitle}",
+        template: "{actorFallbackPrefix}{actor} {number}",
+        data: { studio: "Studio S" },
+        naming: { actorFallbackToStudio: true },
+        title: "片商：Studio S ABC-123",
       },
-    );
+      {
+        template: "{actor} / {allActors}",
+        data: { actors: ["A", "B", "C"] },
+        naming: { actorNameMax: 2, actorNameMore: "等" },
+        title: "A B 等 / A B C",
+      },
+      {
+        template: "{year} {series}: {title}",
+        data: { release_date: "2024-01-15", series: "S/X" },
+        title: "2024 S/X: 中文标题",
+      },
+      { template: "{director}", title: "中文标题" },
+    ];
 
-    expect(xml).toContain("<title>ABC-123 Original Title</title>");
-    expect(xml).toContain("<originaltitle>Original Title</originaltitle>");
+    for (const { template, data, naming, title } of cases) {
+      const xml = buildXml(createCrawlerData({ title: "Original Title", title_zh: "中文标题", ...data }), {
+        titleNaming: { ...defaultConfiguration.naming, ...naming, nfoTitleTemplate: template },
+      });
+      expect(xml, template).toContain(`<title>${title}</title>`);
+      expect(xml, template).toContain("<originaltitle>Original Title</originaltitle>");
+    }
   });
 
   it("uses thumb artwork as fallback fanart and persists sample image urls under mdcz", () => {
@@ -270,22 +295,6 @@ describe("NfoGenerator", () => {
     expect(getNfoReadCandidates(movieNfoPath, "filename", videoPath)).toEqual([filenameNfoPath, movieNfoPath]);
     expect(getNfoReadCandidates(filenameNfoPath, "movie", videoPath)).toEqual([movieNfoPath, filenameNfoPath]);
     expect(getNfoReadCandidates(videoPath, "filename", videoPath)).toEqual([filenameNfoPath, movieNfoPath]);
-  });
-  it("merges editable fields without dropping unmanaged nodes or attributes", () => {
-    const existingXml = `<?xml version="1.0"?><movie custom="keep"><title>Old</title><originaltitle>Old</originaltitle><uniqueid type="dmm" default="true">ABC-123</uniqueid><actor role="lead"><name>Actor A</name><thumb>actor.jpg</thumb></actor><fileinfo><streamdetails><video><width>1920</width></video></streamdetails></fileinfo><providerid source="local">keep-me</providerid><mdcz><custom keep="yes">value</custom></mdcz></movie>`;
-    const merged = new NfoGenerator().mergeEditableXml(
-      existingXml.replace("<mdcz>", "<mdcz><original_plot>Old original plot</original_plot>"),
-      createCrawlerData({ title: "New", actors: ["Actor A"] }),
-    );
-
-    expect(merged).toContain('<movie custom="keep">');
-    expect(merged).toContain("<title>New</title>");
-    expect(merged).toContain("<fileinfo>");
-    expect(merged).toContain('<providerid source="local">keep-me</providerid>');
-    expect(merged).toContain('<custom keep="yes">value</custom>');
-    expect(merged).toContain('<actor role="lead">');
-    expect(merged).toContain("<name>Actor A</name>");
-    expect(merged).not.toContain("<original_plot>");
   });
   it("gates optional NFO field groups while retaining core metadata", () => {
     const generator = new NfoGenerator();
@@ -415,7 +424,7 @@ describe("NfoGenerator", () => {
     }
 
     const customTitleWithEmptyPolicy = generator.buildXml(data, {
-      nfoTitleTemplate: "{number} {title}",
+      titleNaming: { ...defaultConfiguration.naming, nfoTitleTemplate: "{number} {title}" },
       enabledFields: [],
     });
     expect(customTitleWithEmptyPolicy).toContain("<raw_title>中文标题</raw_title>");

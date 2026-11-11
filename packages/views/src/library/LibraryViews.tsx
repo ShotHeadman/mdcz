@@ -6,6 +6,7 @@ import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/se
 import {
   Badge,
   Button,
+  Checkbox,
   cn,
   copyText,
   Dialog,
@@ -18,6 +19,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  quietPanelSurfaceClass,
   Select,
   SelectContent,
   SelectItem,
@@ -39,8 +41,10 @@ import {
   LayoutGrid,
   Link2,
   List,
+  ListChecks,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   RefreshCw,
   Search,
   Trash2,
@@ -72,7 +76,9 @@ export interface LibraryIndexViewProps {
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   browse?: LibraryBrowseControls;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
-  onDeleteEntry?: (entry: LibraryEntryDto) => void;
+  onEditEntries?: (entries: LibraryEntryDto[]) => void;
+  onEditAll?: () => Promise<void>;
+  onDeleteEntries: (entries: LibraryEntryDto[]) => void;
   onOpenFolder?: (file: RootFileRef) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
   onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
@@ -82,8 +88,7 @@ export interface LibraryIndexViewProps {
 }
 
 export interface LibraryDeleteDialogProps {
-  entry?: LibraryEntryDto | null;
-  open: boolean;
+  entries: LibraryEntryDto[];
   submitting?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -106,7 +111,9 @@ export function LibraryIndexView({
   linkComponent: LinkComponent,
   browse,
   onAvailabilityFilterChange,
-  onDeleteEntry,
+  onDeleteEntries,
+  onEditEntries,
+  onEditAll,
   onOpenFolder,
   onRemoveFile,
   onRelinkFile,
@@ -116,8 +123,11 @@ export function LibraryIndexView({
 }: LibraryIndexViewProps) {
   const t = useT();
   const mainRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLElement>(null);
   const [listOffset, setListOffset] = useState(0);
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
 
   const { availableCount, filteredEntries, partialCount, totalSize, unknownCount, unavailableCount } = useMemo(() => {
     let availableCount = 0;
@@ -170,12 +180,23 @@ export function LibraryIndexView({
 
   const resolvedFileCount = fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0);
   const summaryText = `${t.library.metrics.movies} ${total} · ${t.library.metrics.files} ${resolvedFileCount} · ${formatBytes(totalBytes ?? totalSize)}`;
+  const listView = browse?.view !== "wall";
+  const selectionMode = selecting;
+  // Entries that left the list or the filter drop out of the selection on their own.
+  const selected = filteredEntries.filter((entry) => selectedIds.has(entry.id));
+  const toggleSelected = (id: string) =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   useLayoutEffect(() => {
     const updateOffset = () => setListOffset(listRef.current?.offsetTop ?? 0);
     updateOffset();
     const observer = new ResizeObserver(updateOffset);
     if (mainRef.current) observer.observe(mainRef.current);
+    if (contentRef.current) observer.observe(contentRef.current);
     return () => observer.disconnect();
   }, []);
   const rowVirtualizer = useVirtualizer({
@@ -189,8 +210,11 @@ export function LibraryIndexView({
 
   return (
     <TooltipProvider>
-      <main className={cn("h-full overflow-y-auto bg-surface-canvas text-foreground", className)} ref={mainRef}>
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-6 py-6 lg:px-12 lg:py-8">
+      <main
+        className={cn("relative h-full overflow-y-auto bg-surface-canvas text-foreground", className)}
+        ref={mainRef}
+      >
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-6 py-6 lg:px-12 lg:py-8" ref={contentRef}>
           {errorMessage && (
             <div className="flex items-center gap-3 rounded-quiet border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -238,6 +262,38 @@ export function LibraryIndexView({
                   </Button>
                 ))}
               </div>
+
+              <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
+                <Button
+                  aria-pressed={selecting}
+                  className={cn(
+                    "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
+                    selecting && "bg-surface text-foreground shadow-sm",
+                  )}
+                  onClick={() => {
+                    setSelecting(!selecting);
+                    setSelectedIds(new Set());
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  {t.library.multiSelect}
+                </Button>
+                {unavailableCount > 0 ? (
+                  <Button
+                    className="h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => onDeleteEntries(entries.filter((entry) => entry.available === "unavailable"))}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {t.library.removeUnavailable(unavailableCount)}
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex flex-1 flex-wrap items-center gap-2.5 sm:justify-end">
@@ -280,18 +336,104 @@ export function LibraryIndexView({
           </section>
 
           {browse ? (
-            <LibraryBrowsePanel browse={browse} matchCount={total} summaryText={summaryText} />
+            <LibraryBrowsePanel
+              onEditAll={availabilityFilter === "all" ? onEditAll : undefined}
+              browse={browse}
+              matchCount={total}
+              summaryText={summaryText}
+            />
           ) : (
             <div className="flex items-center justify-end font-numeric text-xs text-muted-foreground">
               {summaryText}
             </div>
           )}
 
+          {selectionMode ? (
+            <section
+              aria-label={t.library.multiSelect}
+              className={cn(
+                quietPanelSurfaceClass,
+                "sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-quiet-lg px-4 py-2.5",
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    id="library-select-all"
+                    checked={
+                      selected.length > 0 && selected.length === filteredEntries.length
+                        ? true
+                        : selected.length > 0
+                          ? "indeterminate"
+                          : false
+                    }
+                    disabled={filteredEntries.length === 0}
+                    onCheckedChange={() =>
+                      setSelectedIds(
+                        new Set(
+                          selected.length === filteredEntries.length ? [] : filteredEntries.map((entry) => entry.id),
+                        ),
+                      )
+                    }
+                  />
+                  <label htmlFor="library-select-all" className="cursor-pointer select-none">
+                    {t.library.selectAll(filteredEntries.length)}
+                  </label>
+                </div>
+                <span aria-live="polite" aria-atomic="true" className="text-sm font-semibold">
+                  {t.library.selectedCount(selected.length)}
+                </span>
+              </div>
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                {onEditEntries && (
+                  <Button
+                    disabled={selected.length === 0}
+                    onClick={() => onEditEntries(selected)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    {t.library.edit.action}
+                  </Button>
+                )}
+                <Button
+                  disabled={selected.length === 0}
+                  onClick={() => onDeleteEntries(selected)}
+                  size="sm"
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t.library.removeFromLibrary}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSelecting(false);
+                    setSelectedIds(new Set());
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {t.library.exitMultiSelect}
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
           <section aria-label={t.library.listAriaLabel} className="flex flex-col gap-3" ref={listRef}>
             {filteredEntries.length > 0 && browse?.view === "wall" && (
-              <LibraryPosterWall entries={filteredEntries} getImageSrc={getImageSrc} linkComponent={LinkComponent} />
+              <LibraryPosterWall
+                entries={filteredEntries}
+                getImageSrc={getImageSrc}
+                linkComponent={LinkComponent}
+                onToggleSelected={toggleSelected}
+                selectable={selectionMode}
+                selectedIds={selectedIds}
+              />
             )}
-            {filteredEntries.length > 0 && browse?.view !== "wall" && (
+            {filteredEntries.length > 0 && listView && (
               <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
                 {rowVirtualizer.getVirtualItems().map((virtualRow) => {
                   const entry = filteredEntries[virtualRow.index];
@@ -307,10 +449,13 @@ export function LibraryIndexView({
                         entry={entry}
                         getImageSrc={getImageSrc}
                         linkComponent={LinkComponent}
-                        onDeleteEntry={onDeleteEntry}
+                        selectable={selectionMode}
+                        selected={selectedIds.has(entry.id)}
+                        onDeleteEntries={onDeleteEntries}
                         onOpenFolder={onOpenFolder}
                         onRemoveFile={onRemoveFile}
                         onRelinkFile={onRelinkFile}
+                        onToggleSelected={() => toggleSelected(entry.id)}
                       />
                     </div>
                   );
@@ -351,17 +496,11 @@ export function LibraryIndexView({
   );
 }
 
-export function LibraryDeleteDialog({
-  entry,
-  open,
-  submitting = false,
-  onCancel,
-  onConfirm,
-}: LibraryDeleteDialogProps) {
+export function LibraryDeleteDialog({ entries, submitting = false, onCancel, onConfirm }: LibraryDeleteDialogProps) {
   const t = useT();
   return (
     <Dialog
-      open={open}
+      open={entries.length > 0}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
           onCancel();
@@ -373,7 +512,13 @@ export function LibraryDeleteDialog({
           <DialogTitle>{t.library.removeDialogTitle}</DialogTitle>
         </DialogHeader>
         <DialogDescription>
-          {entry ? t.library.removeDialogDescription(entry.fileRefs.length, entry.assets.length) : null}
+          {entries.length > 0
+            ? t.library.removeDialogDescription(
+                entries.length,
+                entries.reduce((count, entry) => count + entry.fileRefs.length, 0),
+                entries.reduce((count, entry) => count + entry.assets.length, 0),
+              )
+            : null}
         </DialogDescription>
         <DialogFooter>
           <Button disabled={submitting} variant="outline" onClick={onCancel}>
@@ -392,18 +537,24 @@ function LibraryEntryRow({
   entry,
   getImageSrc,
   linkComponent: LinkComponent,
-  onDeleteEntry,
+  selectable,
+  selected,
+  onDeleteEntries,
   onOpenFolder,
   onRemoveFile,
   onRelinkFile,
+  onToggleSelected,
 }: {
   entry: LibraryEntryDto;
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
-  onDeleteEntry?: (entry: LibraryEntryDto) => void;
+  selectable: boolean;
+  selected: boolean;
+  onDeleteEntries: LibraryIndexViewProps["onDeleteEntries"];
   onOpenFolder?: LibraryIndexViewProps["onOpenFolder"];
   onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
   onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
+  onToggleSelected: () => void;
 }) {
   const displayFile = entry.fileRefs.find((file) => file.id === entry.displayFileId);
   const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || displayFile?.fileName || entry.id;
@@ -422,6 +573,9 @@ function LibraryEntryRow({
   return (
     <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
       <div className="relative flex flex-wrap items-center gap-x-5 gap-y-3 lg:flex-nowrap lg:gap-6">
+        {selectable ? (
+          <Checkbox aria-label={t.library.selectEntry(id)} checked={selected} onCheckedChange={onToggleSelected} />
+        ) : null}
         <div className="relative h-[68px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
           {imageSrc ? (
             <img
@@ -479,7 +633,7 @@ function LibraryEntryRow({
           <span className="min-w-24 text-right text-muted-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
         </div>
         <div className="ml-auto flex items-center gap-1.5 lg:pl-2">
-          <StatusActionSlot available={entry.available} entry={entry} onDeleteEntry={onDeleteEntry} />
+          <StatusActionSlot available={entry.available} entry={entry} onDeleteEntries={onDeleteEntries} />
           <div className="flex items-center gap-1">
             {LinkComponent ? (
               <LinkComponent className={detailClass} entry={entry}>
@@ -516,7 +670,12 @@ function LibraryEntryRow({
         </div>
       </div>
       {isMultiFile && filesOpen && (
-        <div className="mt-3 ml-[68px] flex flex-col border-t border-border/40 pt-2 lg:ml-[72px]">
+        <div
+          className={cn(
+            "mt-3 flex flex-col border-t border-border/40 pt-2",
+            selectable ? "ml-[106px] lg:ml-[114px]" : "ml-[68px] lg:ml-[72px]",
+          )}
+        >
           {entry.fileRefs.map((file) => (
             <LibraryFileRow file={file} key={file.id} {...fileActionProps} />
           ))}
@@ -529,16 +688,13 @@ function LibraryEntryRow({
 function StatusActionSlot({
   available,
   entry,
-  onDeleteEntry,
+  onDeleteEntries,
 }: {
   available: LibraryEntryDto["available"];
   entry: LibraryEntryDto;
-  onDeleteEntry?: (entry: LibraryEntryDto) => void;
+  onDeleteEntries: LibraryIndexViewProps["onDeleteEntries"];
 }) {
   const t = useT();
-  if (!onDeleteEntry) {
-    return <StatusDot available={available} />;
-  }
 
   return (
     <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
@@ -550,7 +706,7 @@ function StatusActionSlot({
           <Button
             aria-label={t.library.removeFromLibrary}
             className="absolute inset-0 h-8 w-8 text-muted-foreground opacity-0 transition-all hover:bg-surface-raised hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
-            onClick={() => onDeleteEntry(entry)}
+            onClick={() => onDeleteEntries([entry])}
             size="icon"
             type="button"
             variant="ghost"

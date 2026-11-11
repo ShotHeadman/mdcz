@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api, subscribeTaskNotifications } from "../client";
 import { refreshPendingQueries } from "../lib/pendingQueries";
+import { queryKeys } from "../lib/queryKeys";
 import { applyScrapeLiveRunsSnapshot, readScrapeRunsSnapshot } from "../taskHydration";
 
 const FAST_POLL_INTERVAL_MS = 2_000;
@@ -136,7 +137,16 @@ export const useWebTaskSync = (): void => {
           lastActorSyncPush.set(payload.job.runId, actorSyncPushes);
           applyActorSyncJob(payload.job);
         }
+        if (payload.kind === "library-edit") {
+          queryClient.setQueryData(queryKeys.libraryEdit, payload.job);
+        }
         if (payload.kind !== "invalidate") return;
+        if (payload.resources.includes("ready"))
+          void queryClient.invalidateQueries({ queryKey: queryKeys.libraryEdit });
+        if (payload.resources.includes("library") || payload.resources.includes("ready")) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all });
+        }
         if (payload.resources.includes("ready")) {
           refreshLiveRuns();
           refreshMaintenanceSession();

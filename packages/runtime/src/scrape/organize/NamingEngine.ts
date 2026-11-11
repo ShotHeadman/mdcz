@@ -6,45 +6,13 @@ import type { CrawlerData, FileInfo, NamingPreviewSampleId, NfoLocalState } from
 import { classifyMovie, type MovieClassification } from "../utils/movieClassification";
 import { buildSafeFileName, buildSafePath } from "../utils/path";
 import { resolveFileInfoSubtitleTag } from "../utils/subtitles";
+import { buildMetadataTemplateData } from "../utils/templateData";
 
 export interface NamingLayout {
   folderRelativePath: string;
   targetVideoFileName: string;
   nfoFileName: string;
 }
-
-interface ActorTemplateValue {
-  actor: string;
-  actorFallbackPrefix?: string;
-}
-
-const FC2_NUMBER_PATTERN = /^FC2(?:-?PPV)?-?\d+$/iu;
-
-const isSellerFallback = (data: CrawlerData): boolean => {
-  return FC2_NUMBER_PATTERN.test(data.number.trim());
-};
-
-const pickActorTemplateValue = (config: Configuration, actors: string[], data: CrawlerData): ActorTemplateValue => {
-  const cleaned = actors.map((actor) => actor.trim()).filter((actor) => actor.length > 0);
-  if (cleaned.length === 0) {
-    const fallbackValue = data.studio?.trim();
-    if (config.naming.actorFallbackToStudio && fallbackValue) {
-      return {
-        actor: fallbackValue,
-        actorFallbackPrefix: isSellerFallback(data) ? "卖家：" : "片商：",
-      };
-    }
-    return { actor: "Unknown" };
-  }
-
-  const max = Math.max(1, config.naming.actorNameMax);
-  const selected = cleaned.slice(0, max);
-  if (cleaned.length > max) {
-    selected.push(config.naming.actorNameMore);
-  }
-
-  return { actor: selected.join(" ") };
-};
 
 const normalizeMarker = (value: string): string => value.trim();
 
@@ -104,73 +72,6 @@ const buildNumberWithNamingMarkers = (number: string, markers: string[]): string
   return `${baseNumber}${markers.join("")}`;
 };
 
-const formatReleaseDateByRule = (releaseDate: string | undefined, rule: string): string | undefined => {
-  if (!releaseDate) {
-    return undefined;
-  }
-
-  const normalized = releaseDate.trim();
-  if (!normalized) {
-    return undefined;
-  }
-
-  const match = normalized.match(/^(\d{4})[-/.]?(\d{1,2})[-/.]?(\d{1,2})/u);
-  if (!match) {
-    return normalized;
-  }
-
-  const year = match[1];
-  const month = match[2].padStart(2, "0");
-  const day = match[3].padStart(2, "0");
-  const template = rule.trim() || "YYYY-MM-DD";
-
-  return template.replaceAll("YYYY", year).replaceAll("MM", month).replaceAll("DD", day);
-};
-
-const extractReleaseYear = (releaseDate: string | undefined): string | undefined => {
-  const match = releaseDate?.trim().match(/^(\d{4})/u);
-  return match?.[1];
-};
-
-const formatRuntimeMinutes = (durationSeconds: number | undefined): string | undefined => {
-  if (durationSeconds === undefined || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return undefined;
-  }
-
-  return String(Math.max(1, Math.round(durationSeconds / 60)));
-};
-
-const getNumberLetters = (number: string): string | undefined => {
-  const normalized = number.trim();
-  if (!normalized) {
-    return undefined;
-  }
-
-  const upper = normalized.toUpperCase();
-  for (const prefix of ["FC2", "MYWIFE", "KIN8", "S2M", "T28", "TH101", "XXX-AV"]) {
-    if (upper.startsWith(prefix)) {
-      return prefix;
-    }
-  }
-
-  const match = normalized.match(/(\d*[A-Za-z]+)\d*/u);
-  return match?.[1]?.toUpperCase();
-};
-
-const getNumberFirstLetter = (number: string): string | undefined => {
-  const first = number.trim().charAt(0).toUpperCase();
-  if (!first) {
-    return undefined;
-  }
-
-  return /[0-9A-Z]/u.test(first) ? first : "#";
-};
-
-const formatDefinition = (fileInfo: FileInfo): string | undefined => {
-  const resolution = fileInfo.resolution?.trim();
-  return resolution || undefined;
-};
-
 const formatFourKLabel = (definition: string | undefined): string | undefined => {
   if (!definition) {
     return undefined;
@@ -198,15 +99,6 @@ const formatCensorshipType = (classification: MovieClassification): string => {
   }
 
   return classification.uncensored ? "无码" : "有码";
-};
-
-const toTemplateValue = (value: string | number | undefined): string | number | undefined => {
-  if (typeof value !== "string") {
-    return value;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 };
 
 const truncateSegment = (value: string, maxLength: number): string => {
@@ -301,54 +193,24 @@ export class NamingEngine {
     target: Pick<PublicationTarget, "placement" | "folderTemplate" | "fileTemplate">,
     localState?: NfoLocalState,
   ): NamingLayout {
-    const title = data.title_zh?.trim() || data.title;
-    const originaltitle = data.original_title?.trim() || data.title.trim();
-    const actorTemplateValue = pickActorTemplateValue(config, data.actors ?? [], data);
     const classification = classifyMovie(fileInfo, data, localState);
-    const markers = buildNamingMarkers(fileInfo, config, classification);
-    const styledNumber = buildNumberWithNamingMarkers(data.number, markers);
+    const styledNumber = buildNumberWithNamingMarkers(
+      data.number,
+      buildNamingMarkers(fileInfo, config, classification),
+    );
     const partSuffix = formatPartSuffix(fileInfo, config);
-    const formattedReleaseDate = formatReleaseDateByRule(data.release_date, config.naming.releaseRule);
-    const rawActors = (data.actors ?? []).map((actor) => actor.trim()).filter((actor) => actor.length > 0);
-    const firstActor = rawActors[0] ?? actorTemplateValue.actor;
-    const allActors = rawActors.length > 0 ? rawActors.join(" ") : actorTemplateValue.actor;
-    const outline = data.plot_zh?.trim() || data.plot?.trim();
-    const definition = formatDefinition(fileInfo);
-    const fourK = formatFourKLabel(definition);
-    const cnword = resolveFileInfoSubtitleTag(fileInfo) === "中文字幕" ? config.naming.cnwordStyle : undefined;
-    const sourceFileName = fileInfo.fileName.trim() || parse(fileInfo.filePath).name;
-    const censorshipType = formatCensorshipType(classification);
+    const definition = fileInfo.resolution?.trim() || undefined;
+    const subtitle = resolveFileInfoSubtitleTag(fileInfo);
     const templateData = {
-      title,
-      originaltitle,
+      ...buildMetadataTemplateData(data, config.naming, { missingActor: "Unknown" }),
       number: styledNumber,
-      rawNumber: data.number,
-      actor: actorTemplateValue.actor,
-      actorFallbackPrefix: actorTemplateValue.actorFallbackPrefix,
-      date: formattedReleaseDate,
-      release: formattedReleaseDate,
-      year: extractReleaseYear(data.release_date),
-      runtime: formatRuntimeMinutes(data.durationSeconds),
-      director: data.director,
-      series: data.series,
-      studio: data.studio,
-      publisher: data.publisher,
-      outline,
-      plot: outline,
-      firstActor,
-      allActors,
-      letters: getNumberLetters(data.number),
-      firstLetter: getNumberFirstLetter(data.number),
-      filename: sourceFileName,
+      filename: fileInfo.fileName.trim() || parse(fileInfo.filePath).name,
       definition,
       resolution: definition,
-      "4K": fourK,
-      cnword,
-      subtitle: resolveFileInfoSubtitleTag(fileInfo),
-      censorshipType,
-      score: toTemplateValue(data.rating),
-      rating: toTemplateValue(data.rating),
-      website: data.website,
+      "4K": formatFourKLabel(definition),
+      cnword: subtitle === "中文字幕" ? config.naming.cnwordStyle : undefined,
+      subtitle,
+      censorshipType: formatCensorshipType(classification),
     };
 
     const sourceVideo = parse(fileInfo.filePath);

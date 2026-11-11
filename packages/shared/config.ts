@@ -245,6 +245,7 @@ const actorAliasesSchema = z
 const personSyncSchema = z.object({
   personOverviewSources: z.array(z.enum(ACTOR_OVERVIEW_SOURCE_OPTIONS)).default(["official", "avjoho", "avbase"]),
   personImageSources: z.array(z.enum(ACTOR_IMAGE_SOURCE_OPTIONS)).default(["local", "gfriends", "official", "avbase"]),
+  downloadActorPhotos: z.boolean().default(true),
   actorAliases: actorAliasesSchema,
   /**
    * After a scrape run, syncs the actors it published on every server that was asked to scan the published folders

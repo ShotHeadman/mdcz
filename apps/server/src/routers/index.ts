@@ -1,6 +1,7 @@
 import { MediaDirectoryUnavailableError, MediaLibrarySettingsError, toMediaLibraryDto } from "@mdcz/runtime/library";
 import { containsStrmFiles } from "@mdcz/runtime/scrape/utils/strm";
 import { notificationsSchema } from "@mdcz/shared/config";
+import { libraryEditStartInputSchema } from "@mdcz/shared/libraryEdit";
 import {
   mediaLibraryIdInputSchema,
   mediaLibrarySettingsSchema,
@@ -32,10 +33,13 @@ import {
   crawlerProbeSiteConnectivityInputSchema,
   fileActionInputSchema,
   libraryAvailabilityInputSchema,
+  libraryDeleteInputSchema,
   libraryDetailInputSchema,
   libraryFileRemoveInputSchema,
+  libraryIgnoreHealthInputSchema,
   libraryListInputSchema,
   libraryRelinkInputSchema,
+  libraryRestoreIgnoredInputSchema,
   librarySummaryInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
@@ -205,6 +209,12 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => await ctx.services.activity.list(input?.limit)),
   }),
   library: t.router({
+    edit: t.router({
+      start: protectedProcedure
+        .input(libraryEditStartInputSchema)
+        .mutation(({ ctx, input }) => ctx.services.libraryEdit.start(input)),
+      status: protectedProcedure.query(({ ctx }) => ctx.services.libraryEdit.status()),
+    }),
     removeFile: protectedProcedure
       .input(libraryFileRemoveInputSchema)
       .mutation(async ({ ctx, input }) => ctx.services.library.removeFile(input)),
@@ -227,8 +237,14 @@ export const appRouter = t.router({
       .input(libraryRelinkInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.library.relink(input)),
     delete: protectedProcedure
-      .input(libraryDetailInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntry(input.id)),
+      .input(libraryDeleteInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntries(input.ids)),
+    ignoreHealth: protectedProcedure
+      .input(libraryIgnoreHealthInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.ignoreHealth(input)),
+    restoreIgnored: protectedProcedure
+      .input(libraryRestoreIgnoredInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.library.restoreIgnored(input)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);

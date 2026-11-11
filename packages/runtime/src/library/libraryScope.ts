@@ -9,12 +9,13 @@ export const toLibraryEntryFilter = async (
   libraries: Pick<MediaLibraryService, "get">,
   configuration: Pick<Configuration, "download">,
 ): Promise<LibraryEntryFilter> => {
-  const { query, rootId, libraryId, health, actor, studio, tag } = input ?? {};
+  const { query, rootId, libraryId, health, ignored, actor, studio, tag } = input ?? {};
   const library = libraryId ? await libraries.get(libraryId) : undefined;
   return {
     query,
     rootId,
     health,
+    healthIgnored: ignored,
     includeBackdrop: configuration.download.downloadFanart,
     actor,
     studio,

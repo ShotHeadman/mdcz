@@ -182,7 +182,9 @@ describe("Persistence migrations", () => {
       expect(database.sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'scrape_runs'").all()).toEqual([
         { name: "scrape_runs" },
       ]);
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
+        count: 10,
+      });
 
       expect(
         database.sqlite.prepare("SELECT task_id, root_id, relative_path, size, modified_at FROM scan_results").all(),
@@ -250,7 +252,9 @@ describe("Persistence migrations", () => {
       runMigrations(database);
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
+        count: 10,
+      });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
       ]);
@@ -309,7 +313,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 7 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
@@ -658,9 +662,11 @@ describe("LibraryRepository", () => {
       files: [{ rootId: "root-1", rootRelativePath: "none/clip.mp4" }],
     });
 
-    expect(repository.summary({})).toEqual({
+    const summary = repository.summary({});
+    expect(summary).toEqual({
       total: 4,
       issues: { missingPoster: 2, missingBackdrop: 2, missingSynopsis: 1, noNfo: 1, duplicate: 2 },
+      ignored: 0,
       facets: {
         actors: [
           { name: "Alice", count: 2 },
@@ -698,6 +704,23 @@ describe("LibraryRepository", () => {
     await expect(ids({ actor: "Bob" })).resolves.toEqual(["bare", "translated"]);
     await expect(ids({ studio: "S2", tag: "drama" })).resolves.toEqual([]);
     await expect(ids({ tag: "3p" })).resolves.toEqual(["bare"]);
+
+    // An ignored issue stops counting for that movie only; its other issues still list it.
+    repository.ignoreHealth({ health: "missingSynopsis" });
+    repository.ignoreHealth({ health: "missingSynopsis" });
+    expect(repository.summary({})).toEqual({
+      ...summary,
+      issues: { ...summary.issues, missingSynopsis: 0 },
+      ignored: 1,
+    });
+    await expect(ids({ health: "missingSynopsis" })).resolves.toEqual([]);
+    await expect(ids({ health: "noNfo" })).resolves.toEqual(["bare"]);
+    await expect(ids({ healthIgnored: true })).resolves.toEqual(["bare"]);
+    repository.restoreIgnored({});
+    expect(repository.summary({})).toEqual(summary);
+    repository.ignoreHealth({ health: "noNfo" });
+    repository.deleteEntries(["bare"]);
+    expect(database.sqlite.prepare("SELECT count(*) AS count FROM library_health_ignores").get()).toEqual({ count: 0 });
   });
 
   it("includes all registered roots and treats LIKE metacharacters literally", async () => {
@@ -993,9 +1016,21 @@ describe("LibraryRepository", () => {
       ],
     });
 
-    await repository.deleteEntry("entry-1");
+    await repository.upsertEntry({
+      movie: { id: "entry-3" },
+      files: [
+        {
+          rootId: "root-1",
+          rootRelativePath: "GHI-789/GHI-789.mp4",
+          fileId: "root-1:GHI-789/GHI-789.mp4",
+        },
+      ],
+    });
+
+    repository.deleteEntries(["entry-1", "entry-3", "already-gone"]);
 
     await expect(repository.getEntryById("entry-1")).rejects.toThrow("Library entry not found");
+    await expect(repository.getEntryById("entry-3")).rejects.toThrow("Library entry not found");
     await expect(repository.listEntries()).resolves.toEqual([
       expect.objectContaining({
         id: "entry-2",

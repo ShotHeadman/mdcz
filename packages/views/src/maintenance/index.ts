@@ -1,14 +1,6 @@
-export type {
-  ChangeDiffViewProps,
-  MaintenanceFieldSelectionSide,
-  MaintenanceImageOptionProps,
-  MaintenanceSceneImageOptionProps,
-} from "./ChangeDiffView";
+export type { ChangeDiffViewProps } from "./ChangeDiffView";
 export {
   ChangeDiffView,
-  getDefaultMaintenanceFieldSelection,
-  hasMaintenanceDiffSideValue,
-  hasMaintenanceFieldValue,
   resolveMaintenanceDiffImageCollection,
   resolveMaintenanceDiffImageOption,
 } from "./ChangeDiffView";

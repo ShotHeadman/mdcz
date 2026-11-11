@@ -64,6 +64,13 @@
       "when": 1793491200000,
       "tag": "0008_library_naming",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794182400000,
+      "tag": "0009_library_health_ignores",
+      "breakpoints": true
     }
   ]
 }

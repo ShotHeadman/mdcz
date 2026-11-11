@@ -41,7 +41,8 @@ export const libraries: Messages["libraries"] = {
     nfoNaming: "NFO 文件命名",
     namingHint: "适用于海报、缩略图、背景图、预告片及 NFO 命名；在下次写入影片时生效。",
     sharedFolderNaming: "多部影片共用文件夹：按视频名命名，仅生成 <文件名>.nfo，不下载剧照（防止覆盖）。",
-    inPlaceNaming: "多部影片共用来源文件夹时，按视频名命名且不下载剧照（防止覆盖）。",
+    inPlaceNaming:
+      "多部影片共用来源文件夹时，按视频名命名且不下载剧照（防止覆盖）。需要每部影片独立文件夹和剧照时，请选择“移动”并将输出目录设为来源目录。",
     automation: "自动化",
     discovery: "发现方式",
     cloudPath: "CloudDrive2 路径",

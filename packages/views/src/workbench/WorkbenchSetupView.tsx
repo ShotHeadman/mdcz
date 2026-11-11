@@ -357,14 +357,19 @@ export function WorkbenchSetupView({
 
   const filteredCandidates = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return candidates;
-    return candidates.filter(
-      (candidate) =>
-        candidate.name.toLowerCase().includes(query) ||
-        candidate.ref.relativePath.toLowerCase().includes(query) ||
-        candidate.extension.toLowerCase().includes(query),
-    );
-  }, [candidates, searchQuery]);
+    const matches = query
+      ? candidates.filter(
+          (candidate) =>
+            candidate.name.toLowerCase().includes(query) ||
+            candidate.ref.relativePath.toLowerCase().includes(query) ||
+            candidate.extension.toLowerCase().includes(query),
+        )
+      : candidates;
+    // Maintenance acts on library movies, so only a scrape lists the files it still has to do first.
+    return mode === "scrape"
+      ? matches.toSorted((left, right) => Number(left.inLibrary) - Number(right.inLibrary))
+      : matches;
+  }, [candidates, mode, searchQuery]);
   const visibleSelectedCount = filteredCandidates.filter((candidate) => selectedPathSet.has(candidate.path)).length;
   const allSelected = filteredCandidates.length > 0 && visibleSelectedCount === filteredCandidates.length;
   const someSelected = visibleSelectedCount > 0 && !allSelected;

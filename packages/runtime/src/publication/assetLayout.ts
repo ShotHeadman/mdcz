@@ -166,9 +166,8 @@ export const resolvePublicationAssetLayout = async (input: {
     }
   }
 
-  const personImageSources = config.personSync?.personImageSources ?? [];
   const actors = input.crawlerData?.actors ?? [];
-  if (personImageSources.length > 0 && actors.length > 0) {
+  if (config.personSync.downloadActorPhotos && config.personSync.personImageSources.length > 0 && actors.length > 0) {
     for (const actor of actors) {
       for (const ext of imageExtensions) {
         const name = join(".actors", `${sanitizePathSegment(actor) || "actor"}${ext}`);

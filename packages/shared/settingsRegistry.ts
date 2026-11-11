@@ -149,6 +149,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "translate.targetLanguage", anchor: "translate" },
   { key: "personSync.personOverviewSources", anchor: "mediaServer" },
   { key: "personSync.personImageSources", anchor: "mediaServer" },
+  { key: "personSync.downloadActorPhotos", anchor: "mediaServer" },
   { key: "personSync.syncAfterPublish", anchor: "mediaServer" },
   { key: "personSync.bioLabelLanguage", anchor: "mediaServer" },
   { key: "jellyfin.url", anchor: "mediaServer" },
