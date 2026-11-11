@@ -35,6 +35,7 @@ export function MediaServerSection() {
       >
         <ChipArrayFieldWrapper name="personSync.personOverviewSources" options={[...ACTOR_OVERVIEW_SOURCE_OPTIONS]} />
         <ChipArrayFieldWrapper name="personSync.personImageSources" options={[...ACTOR_IMAGE_SOURCE_OPTIONS]} />
+        <BoolField name="personSync.downloadActorPhotos" />
         <BoolField name="personSync.syncAfterPublish" />
         <EnumField
           name="personSync.bioLabelLanguage"

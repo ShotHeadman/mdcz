@@ -17,7 +17,6 @@ export const prepareCrawlerDataForMovieOutput = async (
   configuration: Configuration,
   crawlerData: CrawlerData,
   options: {
-    enabled?: boolean;
     movieDir?: string;
     sourceVideoPath: string;
     actorSourceProvider?: RuntimeActorSourceProvider;
@@ -26,7 +25,7 @@ export const prepareCrawlerDataForMovieOutput = async (
     signal?: AbortSignal;
   },
 ): Promise<PreparedCrawlerDataForMovieOutput> => {
-  if (!options.enabled || !options.movieDir) {
+  if (!options.movieDir) {
     return {
       data: crawlerData,
       actorPhotoPaths: [],

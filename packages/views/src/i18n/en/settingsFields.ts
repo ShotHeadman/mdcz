@@ -479,6 +479,12 @@ const fields: Record<FieldKey, FieldText> = {
   "translate.targetLanguage": { label: "Target language", aliases: ["language", "locale"] },
   "personSync.personOverviewSources": { label: "Person overview source order" },
   "personSync.personImageSources": { label: "Person photo source order" },
+  "personSync.downloadActorPhotos": {
+    label: "Download actor photos",
+    description:
+      "Downloads actor photos into each movie's .actors folder based on the photo source order above, allowing media servers to display or sync local avatars. If you already manage actor photos another way, turn this off to speed up scraping.",
+    aliases: ["actor photo", "avatar", "person photo", ".actors"],
+  },
   "personSync.syncAfterPublish": {
     label: "Sync actors after scraping",
     description:

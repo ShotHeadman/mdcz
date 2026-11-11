@@ -43,30 +43,31 @@ describe("shared output steps", () => {
     expect(setProgress).toHaveBeenNthCalledWith(2, 100, 1, 1);
   });
 
-  it("preserves absent or disabled crawler data without actor output work", async () => {
+  it("skips actor output work for absent crawler data or with actor photo downloads off", async () => {
     const actorImageService = {
       prepareActorProfilesForMovie: vi.fn(),
     } as unknown as RuntimeActorImageService;
-    const crawlerData = createCrawlerData();
+    const crawlerData = createCrawlerData({ actors: ["Actor A"], thumb_url: "https://example.com/thumb.jpg" });
 
     await expect(
       prepareOutputCrawlerData({
         actorImageService,
         config,
-        enabled: true,
         sourceVideoPath: "/library/missing.mp4",
       }),
     ).resolves.toEqual({ data: undefined, actorPhotoPaths: [] });
     await expect(
       prepareOutputCrawlerData({
         actorImageService,
-        config,
+        config: configurationSchema.parse({ ...defaultConfiguration, personSync: { downloadActorPhotos: false } }),
         crawlerData,
-        enabled: false,
         movieDir: "/library/ABC-123",
         sourceVideoPath: "/library/ABC-123.mp4",
       }),
-    ).resolves.toEqual({ data: crawlerData, actorPhotoPaths: [] });
+    ).resolves.toEqual({
+      data: { ...crawlerData, thumb_source_url: crawlerData.thumb_url, fanart_source_url: crawlerData.thumb_url },
+      actorPhotoPaths: [],
+    });
     expect(actorImageService.prepareActorProfilesForMovie).not.toHaveBeenCalled();
   });
 

@@ -394,10 +394,16 @@ export const settingsFields: Messages["settingsFields"] = {
     "translate.targetLanguage": { label: "目标语言", aliases: ["语言"] },
     "personSync.personOverviewSources": { label: "人物简介来源顺序" },
     "personSync.personImageSources": { label: "人物头像来源顺序" },
+    "personSync.downloadActorPhotos": {
+      label: "下载演员头像",
+      description:
+        "按头像来源下载演员头像并保存到影片目录的 .actors 文件夹，供媒体服务器本地读取或同步。若已使用其他方式管理演员头像，可关闭此项以加快刮削速度。",
+      aliases: ["演员头像", "人物头像", "头像", ".actors"],
+    },
     "personSync.syncAfterPublish": {
       label: "刮削后同步人物",
       description:
-        "刮削完成后自动等待媒体服务器入库新影片，随后同步关联的人物简介与头像。本次新增的人物将优先使用 MDCz 的数据并锁定；已有的人物仅补全缺失资料。（需在上方媒体服务器中开启「入库后增量刷新目录」方可生效）",
+        "刮削完成后自动等待媒体服务器入库新影片，随后同步关联的人物简介与头像。本次新增的人物将优先使用 MDCz 的数据并锁定；已有的人物仅补全缺失资料。（需在上方媒体服务器中开启“入库后增量刷新目录”方可生效）",
     },
     "personSync.bioLabelLanguage": {
       label: "人物简介标签语言",

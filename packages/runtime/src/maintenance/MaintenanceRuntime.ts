@@ -536,7 +536,6 @@ export class MaintenanceRuntime {
             actorSourceProvider: this.deps.actorSourceProvider,
             config,
             crawlerData,
-            enabled: true,
             movieDir: stagingDir,
             sourceVideoPath: entry.fileInfo.filePath,
             signal,
