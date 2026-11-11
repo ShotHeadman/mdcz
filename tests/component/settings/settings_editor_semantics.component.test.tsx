@@ -119,7 +119,7 @@ function SettingsSurfaceHarness({
   );
 }
 
-test("settings editor renders every visible registry field", async () => {
+test("settings editor renders registry fields and preserves section order through filtering", async () => {
   const screen = await render(<SettingsSurfaceHarness />);
   await screen.getByRole("button", { name: "显示高级设置" }).click();
 
@@ -130,6 +130,30 @@ test("settings editor renders every visible registry field", async () => {
       (element) => element.dataset.fieldName,
     ).filter((key): key is string => Boolean(key)),
   );
+
+  const readSectionLabels = () =>
+    Array.from(screen.container.querySelectorAll("[data-toc-id] h2"), (element) => element.textContent);
+  const readNavigationLabels = () =>
+    Array.from(
+      screen.container.querySelectorAll('nav[aria-label="Settings sections"] button'),
+      (element) => element.textContent,
+    );
+  const initialSectionLabels = readSectionLabels();
+  expect(initialSectionLabels.length).toBeGreaterThan(1);
+  await expect.poll(readNavigationLabels).toEqual(initialSectionLabels);
+
+  for (const [query, labels] of [
+    ["proxy", ["网络连接"]],
+    ["@group:translate", ["翻译服务"]],
+    ["mdcz-no-matching-setting", []],
+  ] as const) {
+    await screen.getByPlaceholder("搜索设置").fill(query);
+    await expect.poll(readSectionLabels).toEqual(labels);
+    await expect.poll(readNavigationLabels).toEqual(labels);
+    await screen.getByRole("button", { name: "清空搜索" }).click();
+    await expect.poll(readSectionLabels).toEqual(initialSectionLabels);
+    await expect.poll(readNavigationLabels).toEqual(initialSectionLabels);
+  }
 
   for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
     ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
