@@ -30,6 +30,10 @@ export class PersonSyncService {
     },
   ) {}
 
+  get busy(): boolean {
+    return this.#job?.status === "running";
+  }
+
   status(): PersonSyncJobDto | null {
     return this.#job;
   }

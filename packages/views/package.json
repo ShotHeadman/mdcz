@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./brief": "./src/brief/index.ts",
     "./about": "./src/about/index.ts",
     "./config-form": "./src/config-form/index.ts",
     "./overview": "./src/overview/index.ts",

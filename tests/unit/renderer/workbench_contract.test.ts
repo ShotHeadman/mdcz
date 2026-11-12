@@ -89,6 +89,13 @@ describe("workbench setup contract", () => {
     expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([second.path, added.path]);
     state.setPathsSelected([], false);
     expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([second.path, added.path]);
+
+    // A scrape starts with the files a library holds unticked; maintenance starts with exactly those ticked.
+    const held = { ...createCandidate(`${rootDir}/HELD-001.mp4`), inLibrary: true };
+    state.applyScanResult("scrape-held", [held, added], [".mp4"], { mode: "scrape" });
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([added.path]);
+    state.applyScanResult("maintenance-held", [held, added], [".mp4"], { mode: "maintenance" });
+    expect(useWorkbenchSetupStore.getState().selectedPaths).toEqual([held.path, added.path]);
   });
 
   it("still clears the file list immediately when the scan directory changes", () => {

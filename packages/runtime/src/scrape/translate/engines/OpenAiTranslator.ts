@@ -2,17 +2,17 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { Configuration } from "@mdcz/shared/config";
 import PQueue from "p-queue";
 import { z } from "zod";
+import {
+  type LlmApiClient,
+  type LlmJsonSchema,
+  LlmTransportError,
+  missingLlmSetting,
+  toLlmTextRequest,
+} from "../../../llm";
 import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
 import { isAbortError, throwIfAborted } from "../../utils/abort";
 import { getTargetLanguageLabel } from "../shared";
 import type { LanguageTarget } from "../types";
-import {
-  isMissingRequiredLlmApiKey,
-  type LlmApiClient,
-  type LlmJsonSchema,
-  LlmTransportError,
-  toLlmTextRequest,
-} from "./LlmApiClient";
 
 interface TranslationLogger {
   warn(message: string): void;
@@ -115,16 +115,13 @@ export class OpenAiTranslator {
     config: Configuration,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
+    if (missingLlmSetting(config.llm)) {
       return null;
     }
 
     throwIfAborted(signal);
 
-    const structured = config.translate.llmOutputFormat !== "none";
+    const structured = config.llm.outputFormat !== "none";
     const contractedPrompt = buildLlmTranslatePrompt(config.translate.llmPrompt, text, target, structured);
     const content = await this.requestText(
       config,
@@ -146,10 +143,7 @@ export class OpenAiTranslator {
     if (!input.title && !input.plot && input.genres.length === 0) {
       return { title: null, plot: null, genres: [] };
     }
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
+    if (missingLlmSetting(config.llm)) {
       throw new Error("LLM metadata translation requires a model and the endpoint's required API key");
     }
 
@@ -189,10 +183,7 @@ export class OpenAiTranslator {
     config: Configuration,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
+    if (missingLlmSetting(config.llm)) {
       throw new Error("AI number reading requires an LLM model and the endpoint's required API key");
     }
 
@@ -220,13 +211,13 @@ export class OpenAiTranslator {
   private requestText(config: Configuration, prompt: string, signal?: AbortSignal, outputSchema?: LlmJsonSchema) {
     return this.executeRequestWithRetry(
       config,
-      () => this.llmApiClient.generateText(toLlmTextRequest(config.translate, prompt, outputSchema), signal),
+      () => this.llmApiClient.generateText(toLlmTextRequest(config.llm, prompt, outputSchema), signal),
       signal,
     );
   }
 
   private getRequestsPerSecond(config: Configuration): number {
-    return config.translate.llmMaxRequestsPerSecond;
+    return config.llm.maxRequestsPerSecond;
   }
 
   private getQueue(config: Configuration): PQueue {
@@ -250,7 +241,7 @@ export class OpenAiTranslator {
     request: () => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    const maxRetryCount = config.translate.llmMaxRetries;
+    const maxRetryCount = config.llm.maxRetries;
     let attempt = 0;
 
     while (true) {

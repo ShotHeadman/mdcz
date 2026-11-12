@@ -1,11 +1,20 @@
 import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
+import { selectUnseenCount, useBriefJobFollower, useBriefStore } from "@mdcz/views/brief";
 import { useT } from "@mdcz/views/i18n";
-import { AppShell, CrashFallback, ErrorBoundary, type ShellLinkProps, SYSTEM_SHELL_NAV } from "@mdcz/views/shell";
+import {
+  AppShell,
+  CrashFallback,
+  ErrorBoundary,
+  PRIMARY_SHELL_NAV,
+  type ShellLinkProps,
+  SYSTEM_SHELL_NAV,
+} from "@mdcz/views/shell";
 import { ToolsRouteView } from "@mdcz/views/tools";
 import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { useWebBriefPort } from "../adapters/briefPort";
 import { api } from "../client";
 import { LoginPage } from "../components/auth/LoginPage";
 import { DesktopChrome, DesktopTitleBar } from "../components/DesktopChrome";
@@ -13,6 +22,7 @@ import { desktop } from "../desktop";
 import { useWebTaskSync } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ToolDetail } from "./tools/ToolDetail";
+import { parseToolsSearch } from "./toolsController";
 
 const PUBLIC_PATHS = new Set(["/setup", "/login"]);
 
@@ -77,14 +87,20 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
   useWebTaskSync();
   const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list() });
-  // The logs panel is a desktop setting; the browser has none.
-  const configQ = useQuery({
-    queryKey: queryKeys.config.current,
-    queryFn: () => api.config.read(),
-    enabled: Boolean(desktop),
-  });
+  const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read() });
+  // While Brief is off its sidebar item, page and badge do not exist.
+  const briefEnabled = configQ.data?.llm.brief === true;
+  const briefPort = useWebBriefPort();
+  useBriefJobFollower(briefEnabled ? briefPort : null);
+  const unseenBriefJobs = useBriefStore(selectUnseenCount);
   const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
   const isToolsRoute = pathname === "/tools";
+  const toolsSearch = useRouterState({
+    select: (state) => (state.location.pathname === "/tools" ? parseToolsSearch(state.location.search) : {}),
+    structuralSharing: true,
+  });
+  const toolRequest =
+    toolsSearch.tool && toolsSearch.open ? { toolId: toolsSearch.tool, key: toolsSearch.open } : undefined;
 
   useEffect(() => {
     if (isToolsRoute) {
@@ -96,7 +112,11 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
     <AppShell
       currentPath={pathname}
       linkComponent={ShellLink}
-      navBadges={{ pending: pendingQ.data?.items.length }}
+      navBadges={{
+        pending: pendingQ.data?.items.length,
+        brief: pathname === "/brief" ? undefined : unseenBriefJobs,
+      }}
+      primaryNav={briefEnabled ? PRIMARY_SHELL_NAV : PRIMARY_SHELL_NAV.filter((item) => item.id !== "brief")}
       systemNav={
         desktop && configQ.data?.ui.showLogsPanel === false
           ? SYSTEM_SHELL_NAV.filter((item) => item.to !== "/logs")
@@ -107,7 +127,20 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
       {children}
       {hasVisitedTools || isToolsRoute ? (
         <div className="h-full w-full" style={{ display: isToolsRoute ? "block" : "none" }}>
-          <ToolsRouteView tools={TOOL_DEFINITIONS} renderDetail={(toolId: ToolId) => <ToolDetail toolId={toolId} />} />
+          <ToolsRouteView
+            tools={TOOL_DEFINITIONS}
+            request={toolRequest}
+            renderDetail={(toolId: ToolId) => (
+              <ToolDetail
+                toolId={toolId}
+                prefill={
+                  toolRequest?.toolId === toolId
+                    ? { key: toolRequest.key, directory: toolsSearch.directory, mode: toolsSearch.mode }
+                    : undefined
+                }
+              />
+            )}
+          />
         </div>
       ) : null}
     </AppShell>

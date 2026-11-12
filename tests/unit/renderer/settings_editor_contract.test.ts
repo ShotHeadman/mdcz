@@ -115,11 +115,11 @@ describe("settings editor metadata and filtering", () => {
     expect(hiddenDownloadChildSearch.visibleEntries.map((candidate) => candidate.key)).toEqual(["download.keepThumb"]);
 
     const hiddenLlmField = buildSettingsBrowseState({
-      query: "LLM 模型名称",
+      query: "LLM 翻译提示词",
       showAdvanced: false,
       modifiedKeys: new Set<string>(),
     });
-    expect(hiddenLlmField.visibleEntries.map((candidate) => candidate.key)).toEqual(["translate.llmModelName"]);
+    expect(hiddenLlmField.visibleEntries.map((candidate) => candidate.key)).toEqual(["translate.llmPrompt"]);
 
     const hiddenAdvancedField = buildSettingsBrowseState({
       query: "剧照下载并发",
@@ -182,12 +182,12 @@ describe("settings editor metadata and filtering", () => {
 describe("settings editor save and content helpers", () => {
   it("builds autosave payloads for related server-error fields and merges cache updates", () => {
     const payload = buildAutoSaveFlatPayload(
-      "translate.llmApiKey",
+      "translate.deeplApiKey",
       "secret",
       {
         translate: {
           engine: { type: "server", message: "缺少 API Key" },
-          llmApiKey: { type: "server", message: "缺少 API Key" },
+          deeplApiKey: { type: "server", message: "缺少 API Key" },
         },
       },
       (fieldPath) => (fieldPath === "translate.engine" ? "openai" : undefined),
@@ -195,15 +195,15 @@ describe("settings editor save and content helpers", () => {
 
     expect(payload).toEqual({
       "translate.engine": "openai",
-      "translate.llmApiKey": "secret",
+      "translate.deeplApiKey": "secret",
     });
     expect(
       mergeConfigWithFlatPayload(
-        { translate: { engine: "google", llmApiKey: "" } },
-        { "translate.engine": "openai", "translate.llmApiKey": "secret" },
+        { translate: { engine: "google", deeplApiKey: "" } },
+        { "translate.engine": "deepl", "translate.deeplApiKey": "secret" },
       ),
     ).toEqual({
-      translate: { engine: "openai", llmApiKey: "secret" },
+      translate: { engine: "deepl", deeplApiKey: "secret" },
     });
   });
 

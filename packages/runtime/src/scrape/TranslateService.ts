@@ -2,18 +2,13 @@ import { toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateEngine } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
-import {
-  isUnrecoverableNetworkError,
-  type RuntimeNetworkClient,
-  type RuntimeRequestInit,
-  runWithNetworkChannel,
-} from "../network";
+import { createLlmApiClient, type LlmApiClient } from "../llm";
+import { isUnrecoverableNetworkError, type RuntimeNetworkClient, runWithNetworkChannel } from "../network";
 import { detectLanguage, noopRuntimeLogger, type RuntimeLogger, toErrorMessage } from "../shared";
 import { ActorNameNormalizer } from "./translate/ActorNameNormalizer";
 import { BaiduTranslator } from "./translate/engines/BaiduTranslator";
 import { DeeplTranslator } from "./translate/engines/DeeplTranslator";
 import { GoogleTranslator } from "./translate/engines/GoogleTranslator";
-import { LlmApiClient, type RuntimeNetworkJsonResponse } from "./translate/engines/LlmApiClient";
 import { type LlmMetadataTranslationInput, OpenAiTranslator } from "./translate/engines/OpenAiTranslator";
 import { GenreTranslator } from "./translate/GenreTranslator";
 import { ensureTargetChinese, normalizeNewlines } from "./translate/shared";
@@ -28,20 +23,6 @@ export interface TranslateServiceOptions {
   llmApiClient?: LlmApiClient;
   mappingStore?: TranslationMappingStore;
 }
-
-const createLlmApiClient = (networkClient: RuntimeNetworkClient): LlmApiClient => {
-  const postJsonDetailed = networkClient.postJsonDetailed;
-  if (typeof postJsonDetailed === "function") {
-    return new LlmApiClient({
-      postJsonDetailed: async <TResponse>(url: string, payload: unknown, init?: RuntimeRequestInit) => {
-        const response = await postJsonDetailed.call(networkClient, url, payload, init);
-        return response as RuntimeNetworkJsonResponse<TResponse>;
-      },
-    });
-  }
-
-  return new LlmApiClient();
-};
 
 export class TranslateService {
   private readonly logger: RuntimeLogger;
@@ -83,7 +64,7 @@ export class TranslateService {
     const target = toTarget(config.translate.targetLanguage);
     const startedAt = Date.now();
     this.logger.info(
-      `[translation] number=${data.number} engine=${config.translate.engine} target=${target} model=${config.translate.engine === "openai" ? config.translate.llmModelName : "none"} reasoning=${config.translate.engine === "openai" ? config.translate.llmReasoning : "none"} titleChars=${data.title.length} plotChars=${data.plot?.length ?? 0} genres=${data.genres?.length ?? 0}`,
+      `[translation] number=${data.number} engine=${config.translate.engine} target=${target} model=${config.translate.engine === "openai" ? config.llm.modelName : "none"} reasoning=${config.translate.engine === "openai" ? config.llm.reasoning : "none"} titleChars=${data.title.length} plotChars=${data.plot?.length ?? 0} genres=${data.genres?.length ?? 0}`,
     );
 
     const keepActors = kept.has("actors");

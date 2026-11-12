@@ -197,7 +197,7 @@ export class AvbaseActorSource implements BaseActorSource {
     this.baseUrl = deps.baseUrl?.replace(/\/+$/u, "") ?? DEFAULT_AVBASE_BASE_URL;
 
     if (typeof deps.networkClient.setDomainLimit === "function") {
-      deps.networkClient.setDomainLimit(new URL(this.baseUrl).hostname, 1, 1);
+      deps.networkClient.setDomainLimit(new URL(this.baseUrl).host, 1, 1);
     }
   }
 

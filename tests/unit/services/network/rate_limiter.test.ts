@@ -6,19 +6,20 @@ const getQueueCount = (limiter: RateLimiter): number => {
 };
 
 describe("RateLimiter", () => {
-  it("evicts idle per-domain queues after the ttl", async () => {
+  it("keeps one queue per host and port, and evicts idle ones after the ttl", async () => {
     vi.useFakeTimers();
 
     const limiter = new RateLimiter(5, 1_000);
 
-    await expect(limiter.schedule("https://images.example.com/poster.jpg", async () => "ok")).resolves.toBe("ok");
-    expect(getQueueCount(limiter)).toBe(1);
+    void limiter.schedule("http://127.0.0.1:8096/System/Info", () => new Promise(() => {}));
+    await expect(limiter.schedule("http://127.0.0.1:11434/v1/responses", async () => "ok")).resolves.toBe("ok");
+    expect(getQueueCount(limiter)).toBe(2);
 
     vi.advanceTimersByTime(999);
-    expect(getQueueCount(limiter)).toBe(1);
+    expect(getQueueCount(limiter)).toBe(2);
 
     vi.advanceTimersByTime(1);
-    expect(getQueueCount(limiter)).toBe(0);
+    expect(getQueueCount(limiter)).toBe(1);
 
     vi.useRealTimers();
   });

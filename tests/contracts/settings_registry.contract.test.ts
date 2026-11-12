@@ -30,7 +30,7 @@ describe("settings registry and configuration schema", () => {
     expect(SETTINGS_SCHEMA_EXEMPTIONS).toContainEqual(
       expect.objectContaining({ path: "scrape.numberMappings", kind: "dynamic-record" }),
     );
-    expect(schemaLeaves).toContain("translate.llmTemperature");
+    expect(schemaLeaves).toContain("llm.temperature");
   });
   it("reports each drift category by exact key", () => {
     const diff = diffSettingsRegistrySchemaPaths(

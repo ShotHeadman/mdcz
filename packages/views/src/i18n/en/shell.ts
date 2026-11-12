@@ -1,6 +1,7 @@
 export const shell = {
   nav: {
     overview: "Overview",
+    brief: "Brief",
     workbench: "Workbench",
     tools: "Tools",
     library: "Movies",

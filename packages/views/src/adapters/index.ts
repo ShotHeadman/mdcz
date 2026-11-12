@@ -6,5 +6,6 @@ export * from "./MaintenanceWorkbenchAdapter";
 export * from "./ports";
 export * from "./ResultTreeAdapter";
 export * from "./ScrapeWorkbenchAdapter";
+export * from "./useWorkbenchSetup";
 export * from "./WorkbenchSetupAdapter";
 export * from "./workbenchSession";

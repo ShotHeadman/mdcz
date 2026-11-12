@@ -1,6 +1,8 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { OverviewRecentAcquisitionDto } from "@mdcz/shared/serverDtos";
+import { cn } from "@mdcz/ui";
 import { openNewWorkbenchTask } from "@mdcz/views/adapters/workbenchSession";
+import { BriefSetupCard, isBriefSetupDismissed } from "@mdcz/views/brief";
 import { useT } from "@mdcz/views/i18n";
 import {
   ActivityTimelineCard,
@@ -34,6 +36,9 @@ export function OverviewPage() {
     queryFn: () => api.overview.summary(),
   });
   const sitesQ = useQuery({ queryKey: queryKeys.overview.sites, queryFn: () => api.crawler.listSites() });
+  const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read() });
+  const [setupDismissed, setSetupDismissed] = useState(isBriefSetupDismissed);
+  const showBriefSetup = Boolean(configQ.data && !configQ.data.llm.brief && !setupDismissed);
   const activityQ = useQuery({
     queryKey: queryKeys.activity.list,
     queryFn: () => api.activity.list({ limit: 12 }),
@@ -54,7 +59,12 @@ export function OverviewPage() {
   return (
     <main className="h-full overflow-y-auto bg-surface-canvas text-foreground">
       <div className="mx-auto grid w-full max-w-[1600px] grid-cols-12 gap-6 px-6 py-6 md:px-10 lg:px-12 lg:py-8">
-        <section className="col-span-12 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <section
+          className={cn(
+            "col-span-12 grid grid-cols-1 gap-6 lg:grid-cols-3",
+            showBriefSetup && "md:grid-cols-2 xl:grid-cols-4",
+          )}
+        >
           <OverviewHeroStartCard
             className="lg:col-span-2"
             data={overviewQ.data?.output}
@@ -68,6 +78,17 @@ export function OverviewPage() {
             onStart={() => void openWorkbench("scrape")}
           />
           <OverviewMaintenanceCard onOpen={() => void openWorkbench("maintenance")} />
+          {configQ.data && showBriefSetup ? (
+            <BriefSetupCard
+              llm={configQ.data.llm}
+              check={(settings) => api.brief.check(settings)}
+              turnOn={async (settings) => {
+                await api.config.update({ llm: { ...settings, brief: true } });
+              }}
+              onTurnedOn={() => void queryClient.invalidateQueries({ queryKey: queryKeys.config.all })}
+              onDismiss={() => setSetupDismissed(true)}
+            />
+          ) : null}
         </section>
 
         <SiteHealthCard

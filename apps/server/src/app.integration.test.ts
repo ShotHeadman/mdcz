@@ -64,8 +64,10 @@ const createFakeRuntimeActions = (): RuntimeActionService =>
         },
       ],
     }),
-    testTranslation: async (input: { llmModelName?: string }) =>
-      input.llmModelName ? { status: "ok" as const, sample: input.llmModelName } : { status: "missing_model" as const },
+    testTranslation: async (input: { llm?: { modelName: string } }) =>
+      input.llm?.modelName
+        ? { status: "ok" as const, sample: input.llm.modelName }
+        : { status: "missing_model" as const },
   }) satisfies Pick<
     RuntimeActionService,
     "ensureWatermarkDirectory" | "listCrawlerSites" | "probeSiteConnectivity" | "checkCookies" | "testTranslation"
@@ -520,7 +522,7 @@ describe("buildServer composition integration", () => {
       method: "POST",
       url: "/trpc/translate.test",
       headers: { authorization: `Bearer ${token}` },
-      payload: { llmModelName: "gpt-test" },
+      payload: { llm: { modelName: "gpt-test" } },
     });
     const watermarkResponse = await fastify.inject({
       method: "POST",

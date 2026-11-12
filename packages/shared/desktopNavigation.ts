@@ -1,5 +1,6 @@
 export type DesktopRouteId =
   | "overview"
+  | "brief"
   | "workbench"
   | "pending"
   | "tools"
@@ -17,6 +18,7 @@ export interface DesktopRouteDefinition {
 
 export const DESKTOP_ROUTE_DEFINITIONS: DesktopRouteDefinition[] = [
   { id: "overview", path: "/overview", group: "primary" },
+  { id: "brief", path: "/brief", group: "primary" },
   { id: "workbench", path: "/workbench", group: "primary" },
   { id: "pending", path: "/pending", group: "primary" },
   { id: "library", path: "/library", group: "primary" },

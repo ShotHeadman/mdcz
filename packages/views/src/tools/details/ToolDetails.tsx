@@ -290,7 +290,7 @@ export function CrawlerTesterDetail({ result, siteOptions, state, onRun }: Crawl
   );
 }
 
-function CrawlerTesterResult({ result }: { result: NonNullable<CrawlerTesterDetailProps["result"]> }) {
+export function CrawlerTesterResult({ result }: { result: NonNullable<CrawlerTesterDetailProps["result"]> }) {
   const t = useT();
   return (
     <div className={TOOL_SUBSECTION_CLASS}>

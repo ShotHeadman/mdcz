@@ -31,7 +31,6 @@ export * from "./registeredArtifacts";
 export * from "./restGate";
 export * from "./ScrapeRunner";
 export * from "./TranslateService";
-export * from "./translate/engines/LlmApiClient";
 export * from "./translate/shared";
 export * from "./translate/types";
 export * from "./watermarkDirectory";

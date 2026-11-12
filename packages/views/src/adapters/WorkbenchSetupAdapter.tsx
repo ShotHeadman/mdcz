@@ -1,188 +1,23 @@
-import type { Configuration } from "@mdcz/shared/config";
-import type { DirectorySource } from "@mdcz/shared/directoryTasks";
-import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
-import {
-  isAbsoluteHostPath,
-  normalizeComparableHostPath,
-  resolveMediaCandidateScanPlan,
-  type WorkbenchSetupMode,
-} from "@mdcz/shared/mediaCandidate";
-import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
-import type { ServerPathSuggestResponse } from "@mdcz/shared/serverDtos";
-import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
-import { randomId } from "@mdcz/ui";
+import { isAbsoluteHostPath } from "@mdcz/shared/mediaCandidate";
 import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
-import { getT } from "../i18n";
-import type { PathAutocompleteResult } from "../path";
+import { useEffect, useRef } from "react";
 import { WorkbenchSetupView } from "../workbench";
+import { useWorkbenchSetup, type WorkbenchSetupOptions } from "./useWorkbenchSetup";
 
-export interface CandidateScanResult {
-  warnings?: { count: number; paths: string[] };
-  candidates: MediaCandidate[];
-  supportedExtensions: string[];
-}
+export type { CandidateScanResult, WorkbenchSetupPort } from "./useWorkbenchSetup";
 
-export interface WorkbenchSetupPort {
-  /** A native picker; only the desktop app has one. */
-  browseDirectory?: () => Promise<string | null>;
-  scanCandidates(
-    scanDir: string,
-    recursive: boolean,
-    excludeDirPaths?: readonly string[],
-    scanId?: string,
-  ): Promise<CandidateScanResult>;
-  cancelCandidates(scanId: string): Promise<void>;
-  suggestDirectory?: (path: string) => Promise<ServerPathSuggestResponse>;
-}
-
-/** Presets that move files organize them into a library; the others write back where the files are. */
-const MOVING_PRESETS: ReadonlySet<MaintenancePresetId> = new Set(["local_organize", "rebuild_all"]);
-
-export interface WorkbenchSetupAdapterProps {
-  mode: WorkbenchSetupMode;
-  config?: Configuration;
-  configLoading?: boolean;
-  libraries?: MediaLibraryDto[];
-  port: WorkbenchSetupPort;
+export interface WorkbenchSetupAdapterProps extends Omit<WorkbenchSetupOptions, "presetId"> {
   onManageLibraries: () => void;
-  onStartDirectory: (
-    source: DirectorySource,
-    libraryId: string | undefined,
-    presetId: MaintenancePresetId,
-  ) => Promise<void>;
-  onStartScrape: (candidates: MediaCandidate[], libraryId: string) => Promise<void>;
-  onStartMaintenance: (
-    candidates: MediaCandidate[],
-    presetId: MaintenancePresetId,
-    libraryId?: string,
-  ) => Promise<void>;
 }
 
-const toPathAutocompleteResult = (result: ServerPathSuggestResponse): PathAutocompleteResult => ({
-  accessible: result.accessible,
-  error: result.error,
-  entries: result.entries.map((entry) => ({ label: entry.label, path: entry.path })),
-});
-
-export function WorkbenchSetupAdapter({
-  mode,
-  config,
-  configLoading = false,
-  libraries,
-  port,
-  onManageLibraries,
-  onStartDirectory,
-  onStartScrape,
-  onStartMaintenance,
-}: WorkbenchSetupAdapterProps) {
-  const {
-    scanDir,
-    stopPreview,
-    previewMode,
-    setPreviewMode,
-    recursive,
-    warnings,
-    setRecursive,
-    libraryId,
-    candidates,
-    selectedPaths,
-    scanStatus,
-    scanError,
-    committedPlanKey,
-    supportedExtensions,
-    setScanDir,
-    setLibraryId,
-    beginScan,
-    applyScanResult,
-    failScan,
-    toggleSelectedPath,
-    setPathsSelected,
-  } = useWorkbenchSetupStore();
+export function WorkbenchSetupAdapter({ onManageLibraries, ...options }: WorkbenchSetupAdapterProps) {
   const presetId = useMaintenanceStore((state) => state.presetId);
-  const [draftDir, setDraftDir] = useState(scanDir);
-  const [directoryError, setDirectoryError] = useState("");
-  useEffect(() => setDraftDir(scanDir), [scanDir]);
-  const scanPlan = useMemo(
-    () => resolveMediaCandidateScanPlan(mode, scanDir, recursive, config),
-    [mode, scanDir, recursive, config],
-  );
-  const scanReady = Boolean(config && !configLoading && scanDir);
-  const [startPending, setStartPending] = useState(false);
-  const startingRef = useRef(false);
-  const scanRequestRef = useRef(0);
+  const setup = useWorkbenchSetup(useWorkbenchSetupStore, { ...options, presetId });
+  const { libraries, mode } = options;
+  const { libraryId, scanDir, setLibraryId, setScanDir, start } = setup;
   const initializedRef = useRef(false);
-
-  const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
-  const selectedCandidates = useMemo(
-    () => candidates.filter((candidate) => selectedPathSet.has(candidate.path)),
-    [candidates, selectedPathSet],
-  );
-  const totalSize = useMemo(() => candidates.reduce((sum, candidate) => sum + candidate.size, 0), [candidates]);
-  const selectedSize = useMemo(
-    () => selectedCandidates.reduce((sum, candidate) => sum + candidate.size, 0),
-    [selectedCandidates],
-  );
-  const needsLibrary = mode === "scrape" || MOVING_PRESETS.has(presetId);
-  const library = libraries?.find((candidate) => candidate.id === libraryId);
-  const draftDirty =
-    Boolean(draftDir.trim()) !== Boolean(scanDir.trim()) ||
-    normalizeComparableHostPath(draftDir) !== normalizeComparableHostPath(scanDir);
-  const primaryDisabled =
-    startPending ||
-    !scanReady ||
-    draftDirty ||
-    (previewMode &&
-      (committedPlanKey !== scanPlan.scanKey || scanStatus !== "success" || selectedCandidates.length === 0)) ||
-    (needsLibrary && !library);
-  const suggestDirectory = port.suggestDirectory;
-
-  const runScan = useCallback(async () => {
-    if (!scanReady) return;
-    const requestId = ++scanRequestRef.current;
-    await stopPreview();
-    if (requestId !== scanRequestRef.current) return;
-    const id = randomId();
-    setPreviewMode(true);
-    beginScan();
-    const completion = (async () => {
-      const isCurrentScan = () => scanRequestRef.current === requestId;
-      try {
-        const result = await port.scanCandidates(scanDir, recursive, scanPlan.excludeDirPaths, id);
-        if (!isCurrentScan()) return;
-        applyScanResult(scanPlan.scanKey, result.candidates, result.supportedExtensions, result.warnings);
-      } catch (error) {
-        if (isCurrentScan()) failScan(toErrorMessage(error));
-      } finally {
-        if (useWorkbenchSetupStore.getState().activePreview?.id === id)
-          useWorkbenchSetupStore.setState({ activePreview: null });
-      }
-    })();
-    useWorkbenchSetupStore.setState({
-      activePreview: {
-        id,
-        stop: async () => {
-          await port.cancelCandidates(id);
-          await completion;
-        },
-      },
-    });
-    await completion;
-  }, [
-    applyScanResult,
-    beginScan,
-    failScan,
-    port,
-    recursive,
-    scanDir,
-    scanPlan,
-    scanReady,
-    setPreviewMode,
-    stopPreview,
-  ]);
 
   // The first library is the default target, and its directory the default scan: new videos arrive in its source,
   // while maintenance works on what it already holds.
@@ -200,139 +35,52 @@ export function WorkbenchSetupAdapter({
   }, [libraries, libraryId, mode, scanDir, setLibraryId, setScanDir]);
 
   useEffect(() => {
-    return () => {
-      scanRequestRef.current += 1;
-      void stopPreview().catch((error) =>
-        toast.error(getT().workbench.cancelScanFailed(toErrorMessage(error)), { id: "workbench-scan" }),
-      );
-      if (useWorkbenchSetupStore.getState().scanStatus === "scanning")
-        useWorkbenchSetupStore.setState({ scanStatus: "idle" });
-    };
-  }, [scanPlan.scanKey, draftDir, stopPreview]);
-
-  const browseDirectory = port.browseDirectory;
-  const handleChooseScanDir = async (browse: () => Promise<string | null>) => {
-    try {
-      const selectedPath = (await browse())?.trim() ?? "";
-      if (!selectedPath) {
-        return;
-      }
-      setScanDir(selectedPath);
-      setDraftDir(selectedPath);
-      setDirectoryError("");
-    } catch (error) {
-      toast.error(getT().workbench.selectScanDirFailed(toErrorMessage(error)), { id: "workbench-scan" });
-    }
-  };
-
-  const handleStart = useCallback(async () => {
-    if (primaryDisabled || startingRef.current) {
-      return;
-    }
-
-    startingRef.current = true;
-    setStartPending(true);
-    try {
-      if (!previewMode) {
-        if (!isAbsoluteHostPath(scanDir)) {
-          setDirectoryError(getT().workbench.enterFullPath);
-          return;
-        }
-        setDirectoryError("");
-        scanRequestRef.current += 1;
-        await stopPreview();
-        try {
-          await onStartDirectory({ kind: "directory", scanDir, recursive }, library?.id, presetId);
-        } catch (error) {
-          setDirectoryError(toErrorMessage(error));
-        }
-      } else if (mode === "maintenance") {
-        await onStartMaintenance(selectedCandidates, presetId, needsLibrary ? library?.id : undefined);
-      } else if (library) {
-        await onStartScrape(selectedCandidates, library.id);
-      }
-    } finally {
-      startingRef.current = false;
-      setStartPending(false);
-    }
-  }, [
-    primaryDisabled,
-    previewMode,
-    scanDir,
-    recursive,
-    stopPreview,
-    onStartDirectory,
-    library,
-    needsLibrary,
-    presetId,
-    mode,
-    onStartMaintenance,
-    selectedCandidates,
-    onStartScrape,
-  ]);
-
-  useEffect(() => {
-    useWorkbenchSetupStore.setState({ startTask: handleStart });
+    useWorkbenchSetupStore.setState({ startTask: start });
     return () => {
       useWorkbenchSetupStore.setState({ startTask: null });
     };
-  }, [handleStart]);
+  }, [start]);
 
+  const browseDirectory = setup.browseScanDir;
   return (
     <WorkbenchSetupView
       mode={mode}
-      previewMode={previewMode}
-      onExitPreview={() => {
-        scanRequestRef.current += 1;
-        void stopPreview()
-          .then(() => {
-            setPreviewMode(false);
-            useWorkbenchSetupStore.setState({ scanStatus: "idle" });
-          })
-          .catch((error) => toast.error(toErrorMessage(error), { id: "workbench-scan" }));
-      }}
-      configLoading={configLoading}
-      scanDir={draftDir}
-      scanDirError={directoryError}
-      recursive={recursive}
-      onRecursiveChange={setRecursive}
-      onCommitScanDir={() => setScanDir(draftDir.trim())}
-      warnings={warnings}
-      libraries={needsLibrary ? (libraries ?? []) : undefined}
-      libraryId={library?.id}
+      previewMode={setup.previewMode}
+      onExitPreview={setup.exitPreview}
+      configLoading={options.configLoading}
+      scanDir={setup.draftDir}
+      scanDirError={setup.directoryError}
+      recursive={setup.recursive}
+      onRecursiveChange={setup.setRecursive}
+      onCommitScanDir={setup.commitScanDir}
+      warnings={setup.warnings}
+      libraries={setup.needsLibrary ? (libraries ?? []) : undefined}
+      libraryId={setup.library?.id}
       onLibraryChange={setLibraryId}
       onManageLibraries={onManageLibraries}
-      candidates={candidates}
-      selectedPaths={selectedPaths}
-      selectedSize={selectedSize}
-      totalSize={totalSize}
-      scanStatus={scanStatus}
-      scanError={scanError}
-      // Scanning stays explicit, so a list made for another mode, directory or option asks to be refreshed.
-      previewStale={
-        previewMode && scanStatus !== "scanning" && scanStatus !== "error" && committedPlanKey !== scanPlan.scanKey
-      }
-      startPending={startPending}
-      supportedExtensions={supportedExtensions}
+      candidates={setup.candidates}
+      selectedPaths={setup.selectedPaths}
+      selectedSize={setup.selectedSize}
+      totalSize={setup.totalSize}
+      scanStatus={setup.scanStatus}
+      scanError={setup.scanError}
+      previewStale={setup.previewStale}
+      startPending={setup.startPending}
+      supportedExtensions={setup.supportedExtensions}
       presetId={presetId}
-      primaryDisabled={primaryDisabled}
-      onSuggestScanDir={
-        suggestDirectory ? async (path) => toPathAutocompleteResult(await suggestDirectory(path)) : undefined
-      }
+      primaryDisabled={setup.primaryDisabled}
+      onSuggestScanDir={setup.suggestScanDir}
       formatBytes={formatBytes}
-      onBrowseScanDir={browseDirectory ? () => void handleChooseScanDir(browseDirectory) : undefined}
-      onScanDirChange={(value) => {
-        setDraftDir(value);
-        setDirectoryError("");
-      }}
-      refreshDisabled={!scanReady || draftDirty}
+      onBrowseScanDir={browseDirectory ? () => void setup.chooseScanDir(browseDirectory) : undefined}
+      onScanDirChange={setup.changeDraftDir}
+      refreshDisabled={setup.refreshDisabled}
       onRefreshScan={() => {
-        if (!draftDirty) void runScan();
+        if (!setup.draftDirty) void setup.runScan();
       }}
       onPresetChange={changeMaintenancePreset}
-      onStart={handleStart}
-      onToggleCandidate={toggleSelectedPath}
-      onSelectCandidates={setPathsSelected}
+      onStart={start}
+      onToggleCandidate={setup.toggleSelectedPath}
+      onSelectCandidates={setup.setPathsSelected}
     />
   );
 }

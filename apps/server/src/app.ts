@@ -34,6 +34,7 @@ import type { ServerServices } from "./services";
 import { ActivityService } from "./services/activityService";
 import { AuthenticationError, AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
+import { BriefService } from "./services/briefService";
 import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
 import { LibraryEditService } from "./services/libraryEditService";
@@ -82,6 +83,8 @@ export interface BuildServerOptions {
 export interface ServerApp {
   fastify: FastifyInstance;
   services: ServerServices;
+  /** A scrape (running or paused), an analysing or applying maintenance session, a scan, a batch edit or a person sync. */
+  taskRunning: () => boolean;
 }
 
 export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
@@ -239,6 +242,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const services: ServerServices = {
     activity,
     actorSync,
+    brief: options.services?.brief ?? new BriefService(config, libraries, library, networkClient),
     automation,
     auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
@@ -431,5 +435,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   return {
     fastify,
     services,
+    taskRunning: () => taskGate.busy || services.scans.busy || services.personSync.busy,
   };
 };

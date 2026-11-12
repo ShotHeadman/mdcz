@@ -6,7 +6,7 @@ import type { NamingPreviewSampleId } from "@mdcz/shared/types";
 export const settings = {
   translationTest: {
     ok: (sample: string) => `Metadata translation sample verified: ${sample}`,
-    missing_model: "Please configure the LLM model name first",
+    missing_model: "Set the model name under AI model first",
     missing_credentials: "Please enter the credentials required by this translation engine",
     failed: "Connection failed",
   },
@@ -41,6 +41,7 @@ export const settings = {
       max: "max",
     },
     llmApiFormat: { responses: "Responses", "chat-completions": "Chat Completions" },
+    briefSendKey: { enter: "Enter", modEnter: "Ctrl+Enter (⌘+Enter on macOS)" },
     llmServiceType: { "openai-compatible": "OpenAI compatible", google: "Google", deepseek: "DeepSeek" },
     llmOutputFormat: { none: "Prompt JSON", json_object: "JSON Object", json_schema: "JSON Schema" },
     partStyle: {
@@ -105,6 +106,9 @@ export const settings = {
     organized: (path: string) => `Organized: ${path}`,
     files: (names: string[]) => `Writes: ${names.join(", ")}`,
     metadataDir: (path: string) => `Metadata directory: ${path}`,
+    writes: "Writes",
+    showDetails: "Full paths",
+    hideDetails: "Hide",
   },
   namingTemplateHelp: {
     folder: "Folder template",

@@ -1,4 +1,5 @@
-import type { Configuration } from "@mdcz/shared/config";
+import type { BriefCheckResponse } from "@mdcz/shared/briefCatalog";
+import type { Configuration, LlmSettings } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type {
   ApiKeyDto,
@@ -63,6 +64,8 @@ export interface SettingsServices {
   settingsTarget: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
   watermarkDirectoryActionLabel?: string;
+  /** Plans a fixed request with the AI model as edited; the Brief switch saves only when this passes. */
+  checkBrief: (settings: LlmSettings) => Promise<BriefCheckResponse>;
   checkCookies: () => Promise<NetworkCheckCookiesResponse>;
   ensureWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryInfo>;
   getInFlightSaves: () => number;

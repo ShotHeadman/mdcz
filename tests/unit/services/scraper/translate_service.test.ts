@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { type LlmApiClient, LlmTransportError } from "@mdcz/runtime/llm";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { type LlmApiClient, LlmTransportError, TranslateService } from "@mdcz/runtime/scrape";
+import { TranslateService } from "@mdcz/runtime/scrape";
 import type { RuntimeLogger } from "@mdcz/runtime/shared";
 import { configurationSchema } from "@mdcz/shared/config";
 import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
@@ -25,9 +26,11 @@ const createBaseConfig = () => {
   return configurationSchema.parse({
     translate: {
       engine: TranslateEngine.OPENAI,
-      llmApiKey: "test-key",
       enableTranslation: true,
-      llmMaxRetries: 1,
+    },
+    llm: {
+      apiKey: "test-key",
+      maxRetries: 1,
     },
   });
 };
@@ -195,7 +198,7 @@ describe("TranslateService term consistency", () => {
     const logger = createLogger();
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
     const config = createBaseConfig();
-    config.translate.llmMaxRetries = 3;
+    config.llm.maxRetries = 3;
 
     await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(transportError);
 
@@ -218,7 +221,7 @@ describe("TranslateService term consistency", () => {
     const getJson = vi.spyOn(network, "getJson").mockRejectedValue(new Error("unexpected Google fallback"));
     const service = createTranslateService(network, createLlmApiClient(generateText), logger);
     const config = createBaseConfig();
-    config.translate.llmMaxRetries = 0;
+    config.llm.maxRetries = 0;
 
     const result = await service.translateCrawlerData(
       {
@@ -538,10 +541,12 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "test-key",
         enableTranslation: true,
-        llmMaxRetries: 1,
         targetLanguage: "zh-TW",
+      },
+      llm: {
+        apiKey: "test-key",
+        maxRetries: 1,
       },
     });
 
@@ -563,10 +568,12 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "",
-        llmBaseUrl: "http://127.0.0.1:11434/v1",
         enableTranslation: true,
-        llmMaxRetries: 1,
+      },
+      llm: {
+        apiKey: "",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        maxRetries: 1,
       },
     });
 
@@ -591,9 +598,11 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "",
         enableTranslation: true,
-        llmMaxRetries: 1,
+      },
+      llm: {
+        apiKey: "",
+        maxRetries: 1,
       },
     });
 
@@ -609,9 +618,11 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "test-key",
         enableTranslation: true,
-        llmMaxRetries: 1,
+      },
+      llm: {
+        apiKey: "test-key",
+        maxRetries: 1,
       },
     });
 
@@ -643,7 +654,7 @@ describe("TranslateService term consistency", () => {
   it("refuses to read a file number without a usable LLM", async () => {
     const generateText = vi.fn();
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-    const config = configurationSchema.parse({ translate: { llmApiKey: "" } });
+    const config = configurationSchema.parse({ llm: { apiKey: "" } });
 
     await expect(service.readFileNumber("www.98T.la@MEYD-911-U", "WWW-98T", config)).rejects.toThrow(
       /requires an LLM model/,

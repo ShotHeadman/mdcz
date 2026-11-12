@@ -1,5 +1,6 @@
 import { MediaDirectoryUnavailableError, MediaLibrarySettingsError, toMediaLibraryDto } from "@mdcz/runtime/library";
 import { containsStrmFiles } from "@mdcz/runtime/scrape/utils/strm";
+import { briefCheckInputSchema, briefPlanInputSchema } from "@mdcz/shared/briefCatalog";
 import { notificationsSchema } from "@mdcz/shared/config";
 import { libraryEditStartInputSchema } from "@mdcz/shared/libraryEdit";
 import {
@@ -101,6 +102,14 @@ export const appRouter = t.router({
     previewPosterBadges: protectedProcedure
       .input(appPreviewPosterBadgesInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.runtimeActions.previewPosterBadges(input)),
+  }),
+  brief: t.router({
+    plan: protectedProcedure
+      .input(briefPlanInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.brief.plan(input)),
+    check: protectedProcedure
+      .input(briefCheckInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.brief.check(input)),
   }),
   browser: t.router({
     list: protectedProcedure

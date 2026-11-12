@@ -20,6 +20,8 @@ const MIN_WINDOW_HEIGHT = 640;
 
 export interface MainWindowCreationOptions {
   useCustomTitleBar: boolean;
+  /** Answers whether the window may close now; when it may not, it calls `proceed` once closing may go ahead. */
+  holdClose: (proceed: () => void) => boolean;
 }
 
 // Links with target="_blank" and window.open() go to the system browser; the app never opens a second window.
@@ -106,6 +108,13 @@ export class WindowService {
     });
     // The page is web's app, titled for the browser.
     mainWindow.on("page-title-updated", (event) => event.preventDefault());
+
+    // Elsewhere closing the window quits the app; on macOS the app and its server keep running.
+    if (process.platform !== "darwin") {
+      mainWindow.on("close", (event) => {
+        if (!options.holdClose(() => mainWindow.close())) event.preventDefault();
+      });
+    }
 
     mainWindow.on("closed", () => {
       if (this.mainWindow === mainWindow) {

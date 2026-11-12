@@ -1,6 +1,6 @@
-import { normalizeComparableHostPath } from "@mdcz/shared/mediaCandidate";
+import { normalizeComparableHostPath, type WorkbenchSetupMode } from "@mdcz/shared/mediaCandidate";
 import type { MediaCandidate } from "@mdcz/shared/types";
-import { create } from "zustand";
+import { create, type StoreApi, type UseBoundStore } from "zustand";
 
 export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error";
 
@@ -29,99 +29,107 @@ interface WorkbenchSetupState {
     planKey: string,
     candidates: MediaCandidate[],
     supportedExtensions: string[],
-    warnings?: { count: number; paths: string[] },
+    result?: { warnings?: { count: number; paths: string[] }; mode?: WorkbenchSetupMode },
   ) => void;
   failScan: (error: string) => void;
   toggleSelectedPath: (path: string) => void;
   setPathsSelected: (paths: string[], selected: boolean) => void;
 }
 
-export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set, get) => ({
-  startTask: null,
-  activePreview: null,
-  stopPreview: async () => {
-    const current = get().activePreview;
-    if (!current) return;
-    await current.stop();
-    if (get().activePreview?.id === current.id) set({ activePreview: null });
-  },
-  scanDir: "",
-  previewMode: false,
-  setPreviewMode: (previewMode) => set({ previewMode }),
-  recursive: true,
-  committedPlanKey: null,
-  warnings: { count: 0, paths: [] },
-  setRecursive: (recursive) => set({ recursive, scanStatus: "idle" }),
-  libraryId: "",
-  candidates: [],
-  selectedPaths: [],
-  scanStatus: "idle",
-  scanError: "",
-  supportedExtensions: [],
+export type WorkbenchSetupStore = UseBoundStore<StoreApi<WorkbenchSetupState>>;
 
-  setScanDir: (scanDir) =>
-    set((state) =>
-      Boolean(state.scanDir.trim()) === Boolean(scanDir.trim()) &&
-      normalizeComparableHostPath(state.scanDir) === normalizeComparableHostPath(scanDir)
-        ? state
-        : {
-            scanDir,
-            candidates: [],
-            selectedPaths: [],
-            scanStatus: "idle",
-            scanError: "",
-            committedPlanKey: null,
-          },
-    ),
+/** One per form: the workbench page has its own, and each Brief draft creates another. */
+export const createWorkbenchSetupStore = (): WorkbenchSetupStore =>
+  create<WorkbenchSetupState>((set, get) => ({
+    startTask: null,
+    activePreview: null,
+    stopPreview: async () => {
+      const current = get().activePreview;
+      if (!current) return;
+      await current.stop();
+      if (get().activePreview?.id === current.id) set({ activePreview: null });
+    },
+    scanDir: "",
+    previewMode: false,
+    setPreviewMode: (previewMode) => set({ previewMode }),
+    recursive: true,
+    committedPlanKey: null,
+    warnings: { count: 0, paths: [] },
+    setRecursive: (recursive) => set({ recursive, scanStatus: "idle" }),
+    libraryId: "",
+    candidates: [],
+    selectedPaths: [],
+    scanStatus: "idle",
+    scanError: "",
+    supportedExtensions: [],
 
-  setLibraryId: (libraryId) => set({ libraryId }),
+    setScanDir: (scanDir) =>
+      set((state) =>
+        Boolean(state.scanDir.trim()) === Boolean(scanDir.trim()) &&
+        normalizeComparableHostPath(state.scanDir) === normalizeComparableHostPath(scanDir)
+          ? state
+          : {
+              scanDir,
+              candidates: [],
+              selectedPaths: [],
+              scanStatus: "idle",
+              scanError: "",
+              committedPlanKey: null,
+            },
+      ),
 
-  beginScan: () =>
-    set({
-      scanStatus: "scanning",
-      scanError: "",
-    }),
+    setLibraryId: (libraryId) => set({ libraryId }),
 
-  applyScanResult: (planKey, candidates, supportedExtensions, warnings) =>
-    set((state) => {
-      const selected = state.committedPlanKey === planKey ? new Set(state.selectedPaths) : null;
-      return {
-        candidates,
-        selectedPaths: candidates
-          .filter((candidate) => (selected ? selected.has(candidate.path) : !candidate.inLibrary))
-          .map((candidate) => candidate.path),
-        committedPlanKey: planKey,
-        warnings: warnings ?? { count: 0, paths: [] },
-        scanStatus: "success",
+    beginScan: () =>
+      set({
+        scanStatus: "scanning",
         scanError: "",
-        supportedExtensions,
-      };
-    }),
+      }),
 
-  failScan: (error) =>
-    set({
-      scanStatus: "error",
-      scanError: error,
-    }),
+    applyScanResult: (planKey, candidates, supportedExtensions, result) =>
+      set((state) => {
+        const selected = state.committedPlanKey === planKey ? new Set(state.selectedPaths) : null;
+        // A scrape leaves the files a library already holds unticked; maintenance acts on exactly those files.
+        const ticksInLibrary = result?.mode === "maintenance";
+        return {
+          candidates,
+          selectedPaths: candidates
+            .filter((candidate) => (selected ? selected.has(candidate.path) : ticksInLibrary || !candidate.inLibrary))
+            .map((candidate) => candidate.path),
+          committedPlanKey: planKey,
+          warnings: result?.warnings ?? { count: 0, paths: [] },
+          scanStatus: "success",
+          scanError: "",
+          supportedExtensions,
+        };
+      }),
 
-  toggleSelectedPath: (path) =>
-    set((state) => ({
-      selectedPaths: state.selectedPaths.includes(path)
-        ? state.selectedPaths.filter((selectedPath) => selectedPath !== path)
-        : [...state.selectedPaths, path],
-    })),
+    failScan: (error) =>
+      set({
+        scanStatus: "error",
+        scanError: error,
+      }),
 
-  setPathsSelected: (paths, selected) =>
-    set((state) => {
-      const selectedPaths = new Set(state.selectedPaths);
-      for (const path of paths) {
-        if (selected) selectedPaths.add(path);
-        else selectedPaths.delete(path);
-      }
-      return {
-        selectedPaths: state.candidates
-          .filter((candidate) => selectedPaths.has(candidate.path))
-          .map((candidate) => candidate.path),
-      };
-    }),
-}));
+    toggleSelectedPath: (path) =>
+      set((state) => ({
+        selectedPaths: state.selectedPaths.includes(path)
+          ? state.selectedPaths.filter((selectedPath) => selectedPath !== path)
+          : [...state.selectedPaths, path],
+      })),
+
+    setPathsSelected: (paths, selected) =>
+      set((state) => {
+        const selectedPaths = new Set(state.selectedPaths);
+        for (const path of paths) {
+          if (selected) selectedPaths.add(path);
+          else selectedPaths.delete(path);
+        }
+        return {
+          selectedPaths: state.candidates
+            .filter((candidate) => selectedPaths.has(candidate.path))
+            .map((candidate) => candidate.path),
+        };
+      }),
+  }));
+
+export const useWorkbenchSetupStore = createWorkbenchSetupStore();

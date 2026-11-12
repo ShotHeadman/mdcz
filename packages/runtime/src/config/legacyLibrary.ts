@@ -42,15 +42,47 @@ const readLibraryNaming = (document: Record<string, unknown>): LibraryNaming | u
   };
 };
 
+/** The LLM connection sat under translation until 0.23; translation, the number fallback and Brief share it. */
+const MOVED_LLM_KEYS = {
+  llmModelName: "modelName",
+  llmApiKey: "apiKey",
+  llmBaseUrl: "baseUrl",
+  llmApiFormat: "apiFormat",
+  llmServiceType: "serviceType",
+  llmTemperature: "temperature",
+  llmReasoning: "reasoning",
+  llmOutputFormat: "outputFormat",
+  llmTimeout: "timeout",
+  llmMaxRetries: "maxRetries",
+  llmMaxRequestsPerSecond: "maxRequestsPerSecond",
+} as const;
+
+const moveLlmSettings = (document: Record<string, unknown>): boolean => {
+  const translate = record(document.translate);
+  if (!Object.keys(MOVED_LLM_KEYS).some((key) => key in translate)) return false;
+  const llm = { ...record(document.llm) };
+  for (const [from, to] of Object.entries(MOVED_LLM_KEYS)) {
+    if (!(from in translate)) continue;
+    llm[to] ??= translate[from];
+    delete translate[from];
+  }
+  document.llm = llm;
+  return true;
+};
+
 /**
- * Settings that moved into libraries. This is the only code that reads them: it rewrites `raw` in place for the
- * current schema and returns what they described; the caller saves the configuration back once libraries hold it.
- * A configuration converts in one step whichever release wrote it, so the conversion stays for good.
+ * Settings that moved into libraries or into sections of their own. This is the only code that reads them: it rewrites
+ * `raw` in place for the current schema and returns what libraries take over, which is empty when only a section
+ * moved. The caller saves the configuration back once libraries hold it, so a file converts once; undefined means
+ * nothing moved and nothing needs saving.
+ * A configuration converts in one step whichever release wrote it. 1.0 removes this conversion and refuses
+ * configurations older than the last 0.x release.
  */
 export const convertLegacyConfiguration = (raw: unknown): LegacyConfigurationConversion | undefined => {
   const document = record(raw);
+  const movedLlm = moveLlmSettings(document);
   const naming = readLibraryNaming(document);
-  if (!isSingleDirectoryConfiguration(document)) return naming && { naming };
+  if (!isSingleDirectoryConfiguration(document)) return naming ? { naming } : movedLlm ? {} : undefined;
 
   const paths = record(document.paths);
   const behavior = record(document.behavior);

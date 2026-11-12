@@ -11,6 +11,7 @@ import type {
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { type LlmApiClient, missingLlmSetting, toLlmTextRequest } from "../llm";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
@@ -18,12 +19,8 @@ import { WriteOutput } from "../publication/WriteOutput";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,
-  isMissingRequiredLlmApiKey,
   type LanguageTarget,
-  type LlmApiClient,
-  normalizeLlmBaseUrl,
   normalizeNewlines,
-  toLlmTextRequest,
   toTarget,
 } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
@@ -187,12 +184,9 @@ const buildBatchPrompt = (texts: string[], target: LanguageTarget): string => {
 };
 
 const assertLlmConfiguration = (config: Configuration): void => {
-  const model = config.translate.llmModelName.trim();
-  const apiKey = config.translate.llmApiKey.trim();
-  const baseUrl = normalizeLlmBaseUrl(config.translate.llmBaseUrl);
-
-  if (!model) throw new Error("Configure LLM model name first");
-  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("Configure LLM API key first");
+  const missing = missingLlmSetting(config.llm);
+  if (missing === "missing_model") throw new Error("Configure LLM model name first");
+  if (missing === "missing_credentials") throw new Error("Configure LLM API key first");
 };
 
 const translateChunk = async (
@@ -202,7 +196,7 @@ const translateChunk = async (
   config: Configuration,
 ): Promise<string[]> => {
   const content = await llmApiClient.generateText(
-    toLlmTextRequest(config.translate, buildBatchPrompt(texts, target), {
+    toLlmTextRequest(config.llm, buildBatchPrompt(texts, target), {
       name: "batch_translation",
       schema: z.toJSONSchema(batchTranslationSchema),
     }),

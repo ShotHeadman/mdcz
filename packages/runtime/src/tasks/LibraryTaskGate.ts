@@ -23,6 +23,10 @@ export class LibraryTaskGate {
     this.#busy.set(kind, busy);
   }
 
+  get busy(): boolean {
+    return [...this.#busy.values()].some((busy) => busy());
+  }
+
   /** Call in the same synchronous step that registers the task, so a concurrent start of the other kind cannot slip in. */
   assertAvailable(kind: LibraryTaskKind): void {
     for (const [holder, busy] of this.#busy) if (holder !== kind && busy()) throw new LibraryTaskConflictError(holder);

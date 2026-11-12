@@ -105,7 +105,7 @@ const scrapeSchema = z.object({
   restDuration: z.number().int().min(0).default(60),
   /** Filename keyword -> number, for files whose names no parser rule can read; saved from repairs. */
   numberMappings: z.record(z.string(), z.string().trim().min(1)).default({}),
-  /** Asks the translation LLM to read the number again when no site has the parsed one. */
+  /** Asks the AI model to read the number again when no site has the parsed one. */
   aiNumberFallback: z.boolean().default(false),
 });
 
@@ -139,20 +139,32 @@ const translateSchema = z.object({
   baiduAppId: z.string().default(""),
   baiduSecretKey: z.string().default(""),
   baiduApiKey: z.string().default(""),
-  llmModelName: z.string().default("gpt-5.2"),
-  llmApiKey: z.string().default(""),
-  llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
-  llmApiFormat: z.enum(LLM_API_FORMAT_OPTIONS).default("responses"),
-  llmServiceType: z.enum(LLM_SERVICE_TYPE_OPTIONS).default("openai-compatible"),
   llmPrompt: z.string().default("自动识别原文语言，将以下内容翻译为{lang}。只输出最终翻译结果。\\n{content}"),
-  llmTemperature: z.number().min(0).max(2).nullable().default(null),
-  llmReasoning: z.enum(LLM_REASONING_OPTIONS).default("default"),
-  llmOutputFormat: z.enum(LLM_OUTPUT_FORMAT_OPTIONS).default("none"),
-  llmTimeout: z.number().int().min(1).max(300).default(120),
-  llmMaxRetries: z.number().int().min(1).max(20).default(3),
-  llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
   targetLanguage: translationTargetSchema,
 });
+
+/** Which keys send a Brief prompt; the other combination starts a new line. `modEnter` is Ctrl+Enter, or ⌘+Enter on macOS. */
+export const BRIEF_SEND_KEY_OPTIONS = ["enter", "modEnter"] as const;
+
+/** One connection shared by translation, the AI number fallback and Brief. */
+export const llmSchema = z.object({
+  modelName: z.string().default("gpt-5.2"),
+  apiKey: z.string().default(""),
+  baseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
+  apiFormat: z.enum(LLM_API_FORMAT_OPTIONS).default("responses"),
+  serviceType: z.enum(LLM_SERVICE_TYPE_OPTIONS).default("openai-compatible"),
+  temperature: z.number().min(0).max(2).nullable().default(null),
+  reasoning: z.enum(LLM_REASONING_OPTIONS).default("default"),
+  outputFormat: z.enum(LLM_OUTPUT_FORMAT_OPTIONS).default("none"),
+  timeout: z.number().int().min(1).max(300).default(120),
+  maxRetries: z.number().int().min(1).max(20).default(3),
+  maxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
+  /** The Brief page. It is turned on only after a planning check passes against these settings. */
+  brief: z.boolean().default(false),
+  briefSendKey: z.enum(BRIEF_SEND_KEY_OPTIONS).default("enter"),
+});
+export type LlmSettings = z.infer<typeof llmSchema>;
+export type LlmSettingsInput = z.input<typeof llmSchema>;
 
 export const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),
@@ -519,6 +531,7 @@ export const configurationSchema = z
     scrape: scrapeSchema.default(() => scrapeSchema.parse({})),
     naming: namingSchema.default(() => namingSchema.parse({})),
     translate: translateSchema.default(() => translateSchema.parse({})),
+    llm: llmSchema.default(() => llmSchema.parse({})),
     download: downloadSchema.default(() => downloadSchema.parse({})),
     personSync: personSyncSchema.default(() => personSyncSchema.parse({})),
     jellyfin: jellyfinSchema.default(() => jellyfinSchema.parse({})),

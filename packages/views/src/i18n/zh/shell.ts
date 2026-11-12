@@ -3,6 +3,7 @@ import type { Messages } from "../en";
 export const shell: Messages["shell"] = {
   nav: {
     overview: "概览",
+    brief: "指令",
     workbench: "工作台",
     tools: "工具",
     library: "媒体库",

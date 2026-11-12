@@ -140,10 +140,11 @@ export class RateLimiter {
     this.queues.delete(domain);
   }
 
+  // The port is part of the key, so a local model and a media server on one machine don't queue behind each other.
   private extractDomain(urlOrDomain: string): string {
     try {
       const normalized = urlOrDomain.startsWith("http") ? urlOrDomain : `https://${urlOrDomain}`;
-      return new URL(normalized).hostname;
+      return new URL(normalized).host;
     } catch {
       return urlOrDomain;
     }

@@ -1,4 +1,4 @@
-import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/scrape";
+import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/llm";
 import {
   DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,

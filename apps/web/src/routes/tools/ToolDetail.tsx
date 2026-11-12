@@ -7,6 +7,7 @@ import type {
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
   BatchTranslateApplyResultItem,
+  BatchTranslateMode,
   BatchTranslateScanItem,
   MediaServerConnectionCheckResult,
 } from "@mdcz/shared/toolTypes";
@@ -65,7 +66,14 @@ const resolveToolImageCandidates = (candidates: string[], roots: Array<{ hostPat
     .filter((value, index, values) => value.length > 0 && values.indexOf(value) === index);
 };
 
-export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
+export const ToolDetail = ({
+  toolId,
+  prefill,
+}: {
+  toolId: ToolId;
+  /** The form a link opened the tool with; each new key fills it in once. */
+  prefill?: { key: string; directory?: string; mode?: BatchTranslateMode };
+}) => {
   const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -176,6 +184,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
       )}
       {toolId === "batch-nfo-translator" && (
         <BatchNfoTranslatorWorkspaceDetail
+          prefill={prefill}
           onApply={async (items, batchSize, mode) => {
             const response = await api.tools.execute({ toolId, action: "apply", mode, batchSize, items });
             return (response.data as { results: BatchTranslateApplyResultItem[] }).results;
@@ -264,6 +273,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
       )}
       {toolId === "amazon-poster" && (
         <AmazonPosterWorkspaceDetail
+          prefill={prefill}
           onBrowseDirectory={browseDirectory}
           onApply={async (items) => {
             const response = await api.tools.execute({ toolId, action: "apply", items });

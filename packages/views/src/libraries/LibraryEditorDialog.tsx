@@ -47,7 +47,7 @@ export interface LibraryEditorDialogProps {
   probeStubs?: (sourcePath: string) => Promise<boolean>;
 }
 
-const emptySettings = (): MediaLibrarySettingsInput => ({
+export const emptyLibrarySettings = (): MediaLibrarySettingsInput => ({
   name: "",
   sourcePath: "",
   outputPath: "",
@@ -75,60 +75,21 @@ export function LibraryEditorDialog({
   probeStubs,
 }: LibraryEditorDialogProps) {
   const t = useT();
-  const [settings, setSettings] = useState<MediaLibrarySettingsInput>(emptySettings);
+  const [settings, setSettings] = useState<MediaLibrarySettingsInput>(emptyLibrarySettings);
   const [submitError, setSubmitError] = useState("");
   const [saving, setSaving] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
-  const [sourceHasStubs, setSourceHasStubs] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setSettings(library ? { ...library } : { ...emptySettings(), ...(importExisting ? { placement: "inPlace" } : {}) });
+    setSettings(
+      library ? { ...library } : { ...emptyLibrarySettings(), ...(importExisting ? { placement: "inPlace" } : {}) },
+    );
     setSubmitError("");
     setShowErrors(false);
   }, [library, importExisting, open]);
 
-  useEffect(() => {
-    setSourceHasStubs(false);
-    const sourcePath = settings.sourcePath?.trim();
-    if (!open || !probeStubs || !sourcePath) return;
-    let active = true;
-    const timer = window.setTimeout(() => {
-      // A path still being typed may be relative or incomplete; that only means no hint.
-      probeStubs(sourcePath).then(
-        (found) => active && setSourceHasStubs(found),
-        () => undefined,
-      );
-    }, 500);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [open, probeStubs, settings.sourcePath]);
-
   const parsed = useMemo(() => mediaLibrarySettingsSchema.safeParse(settings), [settings]);
-  const fieldErrors = useMemo(() => {
-    const errors: Record<string, string> = {};
-    if (parsed.success) return errors;
-    for (const issue of parsed.error.issues) {
-      const field = String(issue.path[0] ?? "");
-      errors[field] ??= t.libraries.issues[issue.message] ?? issue.message;
-    }
-    return errors;
-  }, [parsed, t]);
-  const set = <K extends keyof MediaLibrarySettingsInput>(key: K, value: MediaLibrarySettingsInput[K]) =>
-    setSettings((current) => ({ ...current, [key]: value }));
-  const placement = settings.placement ?? "move";
-  const needsOutput = placement !== "inPlace";
-  const namingPolicy = {
-    placement,
-    folderTemplate: settings.folderTemplate ?? "",
-    assetNaming: settings.assetNaming ?? "fixed",
-    nfoNaming: settings.nfoNaming ?? "both",
-  };
-  // A shared template overrides the stored naming without changing it, so a per-movie template brings it back.
-  const sharedTemplate = isSharedDirectoryTarget(namingPolicy);
-  const naming = resolveMovieNaming({ policy: namingPolicy, holdsOtherMovies: false, downloadSceneImages: false });
 
   const handleSave = async () => {
     setShowErrors(true);
@@ -168,224 +129,17 @@ export function LibraryEditorDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-5">
-          <Field label={t.libraries.fields.name} error={showErrors ? fieldErrors.name : undefined}>
-            {(id) => <Input id={id} value={settings.name} onChange={(event) => set("name", event.target.value)} />}
-          </Field>
-          <Field
-            label={t.libraries.fields.sourcePath}
-            hint={importExisting ? t.libraries.fields.importSourcePathHint : t.libraries.fields.sourcePathHint}
-            error={showErrors ? fieldErrors.sourcePath : undefined}
-          >
-            {(id) => (
-              <DirectoryInput
-                id={id}
-                value={settings.sourcePath}
-                onChange={(value) => set("sourcePath", value)}
-                loadSuggestions={loadDirectorySuggestions}
-                browse={browseDirectory}
-              />
-            )}
-          </Field>
-          <Field label={t.libraries.fields.placement} hint={t.libraries.placements[placement].description}>
-            {(id) => (
-              <Select value={placement} onValueChange={(value) => set("placement", value as typeof placement)}>
-                <SelectTrigger id={id} className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLACEMENT_MODES.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {t.libraries.placements[mode].label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </Field>
-          {sourceHasStubs && placement !== "inPlace" ? (
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t.libraries.stubSourceHint}</p>
-          ) : null}
-          {needsOutput ? (
-            <Field
-              label={t.libraries.fields.outputPath}
-              hint={t.libraries.fields.outputPathHint}
-              error={showErrors ? fieldErrors.outputPath : undefined}
-            >
-              {(id) => (
-                <DirectoryInput
-                  id={id}
-                  value={settings.outputPath ?? ""}
-                  onChange={(value) => set("outputPath", value)}
-                  loadSuggestions={loadDirectorySuggestions}
-                  browse={browseDirectory}
-                />
-              )}
-            </Field>
-          ) : null}
-          {needsOutput ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                label={t.libraries.fields.folderTemplate}
-                labelAddon={<NamingTemplateHelp kind="folder" />}
-                error={showErrors ? fieldErrors.folderTemplate : undefined}
-              >
-                {(id) => (
-                  <Input
-                    id={id}
-                    className="font-mono"
-                    value={settings.folderTemplate ?? ""}
-                    onChange={(event) => set("folderTemplate", event.target.value)}
-                  />
-                )}
-              </Field>
-              <Field
-                label={t.libraries.fields.fileTemplate}
-                labelAddon={<NamingTemplateHelp kind="file" />}
-                error={showErrors ? fieldErrors.fileTemplate : undefined}
-              >
-                {(id) => (
-                  <Input
-                    id={id}
-                    className="font-mono"
-                    value={settings.fileTemplate ?? ""}
-                    onChange={(event) => set("fileTemplate", event.target.value)}
-                  />
-                )}
-              </Field>
-            </div>
-          ) : null}
-          <div className="space-y-1.5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={t.libraries.fields.assetNaming}>
-                {(id) => (
-                  <Select
-                    value={naming.assetNaming}
-                    disabled={sharedTemplate}
-                    onValueChange={(value) => set("assetNaming", value as typeof naming.assetNaming)}
-                  >
-                    <SelectTrigger id={id} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ASSET_NAMING_MODES.map((mode) => (
-                        <SelectItem key={mode} value={mode}>
-                          {t.libraries.assetNamings[mode]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </Field>
-              <Field label={t.libraries.fields.nfoNaming}>
-                {(id) => (
-                  <Select
-                    value={naming.nfoNaming}
-                    disabled={sharedTemplate}
-                    onValueChange={(value) => set("nfoNaming", value as typeof naming.nfoNaming)}
-                  >
-                    <SelectTrigger id={id} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NFO_NAMING_MODES.map((mode) => (
-                        <SelectItem key={mode} value={mode}>
-                          {t.libraries.nfoNamings[mode]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </Field>
-            </div>
-            <p className="text-xs text-muted-foreground">{t.libraries.fields.namingHint}</p>
-            {sharedTemplate || placement === "inPlace" ? (
-              <p className="text-xs text-muted-foreground">
-                {sharedTemplate ? t.libraries.fields.sharedFolderNaming : t.libraries.fields.inPlaceNaming}
-              </p>
-            ) : null}
-          </div>
-          {parsed.success ? <NamingPreview settings={parsed.data} onPreviewNaming={onPreviewNaming} /> : null}
-          {showAutomation ? (
-            <div className="space-y-5 border-t border-border/60 pt-5">
-              <Field
-                label={t.libraries.fields.automation}
-                hint={t.libraries.automationLevels[settings.automation ?? "off"].description}
-              >
-                {(id) => (
-                  <Select
-                    value={settings.automation ?? "off"}
-                    onValueChange={(value) => set("automation", value as MediaLibrarySettingsInput["automation"])}
-                  >
-                    <SelectTrigger id={id} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AUTOMATION_LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {t.libraries.automationLevels[level].label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </Field>
-              {settings.automation !== "off" ? (
-                <>
-                  <p className="text-xs text-muted-foreground">{t.libraries.baselineNotice}</p>
-                  <Field
-                    label={t.libraries.fields.discovery}
-                    hint={t.libraries.discoveryModes[settings.discovery ?? "events"].description}
-                  >
-                    {(id) => (
-                      <Select
-                        value={settings.discovery ?? "events"}
-                        onValueChange={(value) => set("discovery", value as MediaLibrarySettingsInput["discovery"])}
-                      >
-                        <SelectTrigger id={id} className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DISCOVERY_MODES.map((mode) => (
-                            <SelectItem key={mode} value={mode}>
-                              {t.libraries.discoveryModes[mode].label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </Field>
-                  {settings.discovery === "clouddrive" ? (
-                    <Field
-                      label={t.libraries.fields.cloudPath}
-                      hint={t.libraries.fields.cloudPathHint}
-                      error={showErrors ? fieldErrors.cloudPath : undefined}
-                    >
-                      {(id) => (
-                        <Input
-                          id={id}
-                          className="font-mono"
-                          value={settings.cloudPath ?? ""}
-                          onChange={(event) => set("cloudPath", event.target.value)}
-                        />
-                      )}
-                    </Field>
-                  ) : null}
-                  <Field label={t.libraries.fields.scanIntervalMinutes} hint={t.libraries.fields.scanIntervalHint}>
-                    {(id) => (
-                      <Input
-                        id={id}
-                        type="number"
-                        min={1}
-                        max={1440}
-                        value={settings.scanIntervalMinutes ?? 15}
-                        onChange={(event) => set("scanIntervalMinutes", Number(event.target.value))}
-                      />
-                    )}
-                  </Field>
-                </>
-              ) : null}
-            </div>
-          ) : null}
+          <LibraryEditorFields
+            settings={settings}
+            showErrors={showErrors}
+            importExisting={importExisting}
+            showAutomation={showAutomation}
+            onChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
+            onPreviewNaming={onPreviewNaming}
+            loadDirectorySuggestions={loadDirectorySuggestions}
+            browseDirectory={browseDirectory}
+            probeStubs={probeStubs}
+          />
           {submitError ? (
             <div
               role="alert"
@@ -410,7 +164,298 @@ export function LibraryEditorDialog({
   );
 }
 
-function Field({
+/** The library editor's fields; the dialog and a Brief card each keep the settings they edit. */
+export function LibraryEditorFields({
+  settings,
+  showErrors,
+  importExisting = false,
+  showAutomation,
+  onChange,
+  onPreviewNaming,
+  loadDirectorySuggestions,
+  browseDirectory,
+  probeStubs,
+}: {
+  settings: MediaLibrarySettingsInput;
+  showErrors: boolean;
+  importExisting?: boolean;
+  showAutomation: boolean;
+  onChange: (patch: Partial<MediaLibrarySettingsInput>) => void;
+  onPreviewNaming: (settings: MediaLibrarySettingsInput) => Promise<NamingPreviewItem[]>;
+  loadDirectorySuggestions?: (path: string) => Promise<PathAutocompleteResult>;
+  browseDirectory?: () => Promise<string | null>;
+  probeStubs?: (sourcePath: string) => Promise<boolean>;
+}) {
+  const t = useT();
+  const [sourceHasStubs, setSourceHasStubs] = useState(false);
+
+  useEffect(() => {
+    setSourceHasStubs(false);
+    const sourcePath = settings.sourcePath?.trim();
+    if (!probeStubs || !sourcePath) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      // A path still being typed may be relative or incomplete; that only means no hint.
+      probeStubs(sourcePath).then(
+        (found) => active && setSourceHasStubs(found),
+        () => undefined,
+      );
+    }, 500);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [probeStubs, settings.sourcePath]);
+
+  const parsed = useMemo(() => mediaLibrarySettingsSchema.safeParse(settings), [settings]);
+  const fieldErrors = useMemo(() => {
+    const errors: Record<string, string> = {};
+    if (parsed.success) return errors;
+    for (const issue of parsed.error.issues) {
+      const field = String(issue.path[0] ?? "");
+      errors[field] ??= t.libraries.issues[issue.message] ?? issue.message;
+    }
+    return errors;
+  }, [parsed, t]);
+  const set = <K extends keyof MediaLibrarySettingsInput>(key: K, value: MediaLibrarySettingsInput[K]) =>
+    onChange({ [key]: value });
+  const placement = settings.placement ?? "move";
+  const needsOutput = placement !== "inPlace";
+  const namingPolicy = {
+    placement,
+    folderTemplate: settings.folderTemplate ?? "",
+    assetNaming: settings.assetNaming ?? "fixed",
+    nfoNaming: settings.nfoNaming ?? "both",
+  };
+  // A shared template overrides the stored naming without changing it, so a per-movie template brings it back.
+  const sharedTemplate = isSharedDirectoryTarget(namingPolicy);
+  const naming = resolveMovieNaming({ policy: namingPolicy, holdsOtherMovies: false, downloadSceneImages: false });
+
+  return (
+    <>
+      <Field label={t.libraries.fields.name} error={showErrors ? fieldErrors.name : undefined}>
+        {(id) => <Input id={id} value={settings.name} onChange={(event) => set("name", event.target.value)} />}
+      </Field>
+      <Field
+        label={t.libraries.fields.sourcePath}
+        hint={importExisting ? t.libraries.fields.importSourcePathHint : t.libraries.fields.sourcePathHint}
+        error={showErrors ? fieldErrors.sourcePath : undefined}
+      >
+        {(id) => (
+          <DirectoryInput
+            id={id}
+            value={settings.sourcePath}
+            onChange={(value) => set("sourcePath", value)}
+            loadSuggestions={loadDirectorySuggestions}
+            browse={browseDirectory}
+          />
+        )}
+      </Field>
+      <Field label={t.libraries.fields.placement} hint={t.libraries.placements[placement].description}>
+        {(id) => (
+          <Select value={placement} onValueChange={(value) => set("placement", value as typeof placement)}>
+            <SelectTrigger id={id} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PLACEMENT_MODES.map((mode) => (
+                <SelectItem key={mode} value={mode}>
+                  {t.libraries.placements[mode].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </Field>
+      {sourceHasStubs && placement !== "inPlace" ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">{t.libraries.stubSourceHint}</p>
+      ) : null}
+      {needsOutput ? (
+        <Field
+          label={t.libraries.fields.outputPath}
+          hint={t.libraries.fields.outputPathHint}
+          error={showErrors ? fieldErrors.outputPath : undefined}
+        >
+          {(id) => (
+            <DirectoryInput
+              id={id}
+              value={settings.outputPath ?? ""}
+              onChange={(value) => set("outputPath", value)}
+              loadSuggestions={loadDirectorySuggestions}
+              browse={browseDirectory}
+            />
+          )}
+        </Field>
+      ) : null}
+      {needsOutput ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label={t.libraries.fields.folderTemplate}
+            labelAddon={<NamingTemplateHelp kind="folder" />}
+            error={showErrors ? fieldErrors.folderTemplate : undefined}
+          >
+            {(id) => (
+              <Input
+                id={id}
+                className="font-mono"
+                value={settings.folderTemplate ?? ""}
+                onChange={(event) => set("folderTemplate", event.target.value)}
+              />
+            )}
+          </Field>
+          <Field
+            label={t.libraries.fields.fileTemplate}
+            labelAddon={<NamingTemplateHelp kind="file" />}
+            error={showErrors ? fieldErrors.fileTemplate : undefined}
+          >
+            {(id) => (
+              <Input
+                id={id}
+                className="font-mono"
+                value={settings.fileTemplate ?? ""}
+                onChange={(event) => set("fileTemplate", event.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+      ) : null}
+      <div className="space-y-1.5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label={t.libraries.fields.assetNaming}>
+            {(id) => (
+              <Select
+                value={naming.assetNaming}
+                disabled={sharedTemplate}
+                onValueChange={(value) => set("assetNaming", value as typeof naming.assetNaming)}
+              >
+                <SelectTrigger id={id} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASSET_NAMING_MODES.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {t.libraries.assetNamings[mode]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+          <Field label={t.libraries.fields.nfoNaming}>
+            {(id) => (
+              <Select
+                value={naming.nfoNaming}
+                disabled={sharedTemplate}
+                onValueChange={(value) => set("nfoNaming", value as typeof naming.nfoNaming)}
+              >
+                <SelectTrigger id={id} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {NFO_NAMING_MODES.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {t.libraries.nfoNamings[mode]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+        </div>
+        <p className="text-xs text-muted-foreground">{t.libraries.fields.namingHint}</p>
+        {sharedTemplate || placement === "inPlace" ? (
+          <p className="text-xs text-muted-foreground">
+            {sharedTemplate ? t.libraries.fields.sharedFolderNaming : t.libraries.fields.inPlaceNaming}
+          </p>
+        ) : null}
+      </div>
+      {parsed.success ? <NamingPreview settings={parsed.data} onPreviewNaming={onPreviewNaming} /> : null}
+      {showAutomation ? (
+        <div className="space-y-5 border-t border-border/60 pt-5">
+          <Field
+            label={t.libraries.fields.automation}
+            hint={t.libraries.automationLevels[settings.automation ?? "off"].description}
+          >
+            {(id) => (
+              <Select
+                value={settings.automation ?? "off"}
+                onValueChange={(value) => set("automation", value as MediaLibrarySettingsInput["automation"])}
+              >
+                <SelectTrigger id={id} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUTOMATION_LEVELS.map((level) => (
+                    <SelectItem key={level} value={level}>
+                      {t.libraries.automationLevels[level].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </Field>
+          {settings.automation !== "off" ? (
+            <>
+              <p className="text-xs text-muted-foreground">{t.libraries.baselineNotice}</p>
+              <Field
+                label={t.libraries.fields.discovery}
+                hint={t.libraries.discoveryModes[settings.discovery ?? "events"].description}
+              >
+                {(id) => (
+                  <Select
+                    value={settings.discovery ?? "events"}
+                    onValueChange={(value) => set("discovery", value as MediaLibrarySettingsInput["discovery"])}
+                  >
+                    <SelectTrigger id={id} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DISCOVERY_MODES.map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {t.libraries.discoveryModes[mode].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </Field>
+              {settings.discovery === "clouddrive" ? (
+                <Field
+                  label={t.libraries.fields.cloudPath}
+                  hint={t.libraries.fields.cloudPathHint}
+                  error={showErrors ? fieldErrors.cloudPath : undefined}
+                >
+                  {(id) => (
+                    <Input
+                      id={id}
+                      className="font-mono"
+                      value={settings.cloudPath ?? ""}
+                      onChange={(event) => set("cloudPath", event.target.value)}
+                    />
+                  )}
+                </Field>
+              ) : null}
+              <Field label={t.libraries.fields.scanIntervalMinutes} hint={t.libraries.fields.scanIntervalHint}>
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={settings.scanIntervalMinutes ?? 15}
+                    onChange={(event) => set("scanIntervalMinutes", Number(event.target.value))}
+                  />
+                )}
+              </Field>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function Field({
   label,
   labelAddon,
   hint,
@@ -442,7 +487,7 @@ function Field({
   );
 }
 
-function NamingPreview({
+export function NamingPreview({
   settings,
   onPreviewNaming,
 }: {
@@ -476,14 +521,28 @@ function NamingPreview({
     };
   }, [key, onPreviewNaming]);
 
+  const [details, setDetails] = useState(false);
+  const outputs = items[0]?.outputs ?? [];
+
   return (
     <div className="rounded-md border bg-muted/30 p-3">
-      <div className="mb-2 text-xs font-medium text-muted-foreground">{t.settings.namingPreview.title}</div>
+      <div className="mb-2 flex items-baseline justify-between gap-3 text-xs">
+        <span className="font-medium text-muted-foreground">{t.settings.namingPreview.title}</span>
+        {items.length ? (
+          <button
+            type="button"
+            className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onClick={() => setDetails((shown) => !shown)}
+          >
+            {details ? t.settings.namingPreview.hideDetails : t.settings.namingPreview.showDetails}
+          </button>
+        ) : null}
+      </div>
       {items.length === 0 ? (
         <div role={error ? "alert" : undefined} className="text-xs text-muted-foreground">
           {error || t.settings.namingPreview.generating}
         </div>
-      ) : (
+      ) : details ? (
         <div className="space-y-2">
           {items.map((item) => (
             <div key={item.sample} className="text-xs">
@@ -499,6 +558,26 @@ function NamingPreview({
             </div>
           ))}
         </div>
+      ) : (
+        // The folder and file inside the output directory are what a template decides; the rest is in the details.
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
+          {items.map((item) => (
+            <div key={item.sample} className="contents">
+              <dt className="text-muted-foreground">{t.settings.namingPreviewSamples[item.sample]}</dt>
+              <dd className="truncate font-mono" title={item.mediaPath}>
+                {item.folder ? `${item.folder}/${item.file}` : item.file}
+              </dd>
+            </div>
+          ))}
+          {outputs.length ? (
+            <>
+              <dt className="text-muted-foreground">{t.settings.namingPreview.writes}</dt>
+              <dd className="truncate font-mono" title={outputs.join(", ")}>
+                {outputs.join(", ")}
+              </dd>
+            </>
+          ) : null}
+        </dl>
       )}
     </div>
   );

@@ -16,6 +16,7 @@ import { registerDesktopBridge } from "./desktopBridge";
 import { localAuth } from "./localAuth";
 import { createLogFile } from "./logFile";
 import { openDatabase } from "./openDatabase";
+import { createQuitGuard } from "./quitGuard";
 import { API_SCHEME } from "./rendererTrust";
 import { createElectronCookieResolver } from "./services/CookieResolver";
 import { ShortcutService } from "./services/ShortcutService";
@@ -24,6 +25,10 @@ import { UpdateService } from "./services/UpdateService";
 import { WindowService } from "./services/WindowService";
 
 const QUIT_FORCE_EXIT_TIMEOUT_MS = 15_000;
+const QUIT_DIALOG_TEXT = {
+  zh: { message: "仍有任务在运行。退出并停止它？", buttons: ["退出并停止", "取消"] },
+  en: { message: "A task is still running. Quit and stop it?", buttons: ["Quit and stop", "Cancel"] },
+};
 // Set by the dev config once web's Vite server listens; packaged builds serve web's build from the asar.
 const devServerUrl = process.env.MDCZ_WEB_DEV_URL;
 const userData = applyDesktopAppIdentity();
@@ -42,8 +47,38 @@ let closeLogFile: (() => Promise<void>) | null = null;
 let quitRequested = false;
 let cleanupFinished = false;
 
+const confirmQuitWhileTaskRuns = async (): Promise<boolean> => {
+  const window = windowService.getMainWindow();
+  // The page keeps the language the user picked; a page that cannot answer must not keep the app from quitting.
+  const pageLocale = await window?.webContents.executeJavaScript("document.documentElement.lang").catch(() => "");
+  const text =
+    QUIT_DIALOG_TEXT[
+      String(pageLocale || app.getLocale())
+        .toLowerCase()
+        .startsWith("zh")
+        ? "zh"
+        : "en"
+    ];
+  const options = {
+    type: "warning" as const,
+    title: "MDCz",
+    message: text.message,
+    buttons: text.buttons,
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  const { response } = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+  return response === 0;
+};
+
+const holdQuit = createQuitGuard({
+  taskRunning: () => server?.taskRunning() ?? false,
+  confirm: confirmQuitWhileTaskRuns,
+});
+
 const openMainWindow = async (configuration: Configuration): Promise<void> => {
-  windowService.createMainWindow({ useCustomTitleBar: configuration.ui.useCustomTitleBar });
+  windowService.createMainWindow({ useCustomTitleBar: configuration.ui.useCustomTitleBar, holdClose: holdQuit });
   shortcutService.initialize(windowService, configuration);
   windowService.applyUiConfig(configuration.ui);
   await windowService.loadMainWindow();
@@ -166,7 +201,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", (event) => {
     if (cleanupFinished) return;
     event.preventDefault();
-    if (quitRequested) return;
+    if (quitRequested || !holdQuit(() => app.quit())) return;
     quitRequested = true;
     setTimeout(() => app.exit(Number(process.exitCode) || 1), QUIT_FORCE_EXIT_TIMEOUT_MS).unref();
     void cleanup().finally(() => {

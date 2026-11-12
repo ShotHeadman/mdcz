@@ -29,6 +29,7 @@ const noop = vi.fn();
 
 const baseSettingsServices = {
   browsePath: vi.fn(async () => null),
+  checkBrief: vi.fn(async () => ({ status: "ok" as const })),
   checkCookies: vi.fn(async () => ({ results: [] })),
   decrementInFlightSaves: vi.fn(),
   ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
@@ -96,6 +97,7 @@ function SettingsSurfaceHarness({
         ...defaultConfiguration.titleRepair,
         enabled: true,
       },
+      llm: { ...defaultConfiguration.llm, brief: true },
     }),
     [engine, baiduService],
   );
@@ -356,7 +358,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
     await screen.getByLabelText(labels[key], { exact: true }).fill(value);
   }
   await expect.element(screen.getByRole("switch", { name: "启用内容翻译" })).toBeVisible();
-  expect(screen.container.querySelector('[data-field-name="translate.llmModelName"]')).toBeNull();
+  expect(screen.container.querySelector('[data-field-name="translate.llmPrompt"]')).toBeNull();
   await screen.getByRole("button", { name: "验证元数据翻译" }).click();
   expect(testTranslation).toHaveBeenCalledWith(
     expect.objectContaining({ engine, targetLanguage: "zh-CN", ...credentials }),

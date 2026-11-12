@@ -127,7 +127,6 @@ export function PersonMediaLibraryDetail({
   const anyCheckPending = jellyfin.checkPending || emby.checkPending;
   const t = useT();
   const checkResult = activeState.checkResult;
-  const diagnosticLabel = t.tools.diagnosticResult(activeServer === "jellyfin" ? "Jellyfin" : "Emby");
 
   return (
     <div className="space-y-6">
@@ -166,80 +165,12 @@ export function PersonMediaLibraryDetail({
       </div>
 
       {checkResult ? (
-        <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                {diagnosticLabel}
-              </div>
-              {checkResult.serverInfo?.serverName || checkResult.serverInfo?.version ? (
-                <div className="mt-2 text-sm font-medium text-foreground">
-                  {[checkResult.serverInfo?.serverName, checkResult.serverInfo?.version].filter(Boolean).join(" ")}
-                </div>
-              ) : null}
-            </div>
-
-            <div
-              className={cn(
-                "rounded-quiet-capsule px-3 py-1 text-xs font-semibold",
-                !checkResult.success && "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300",
-                checkResult.success &&
-                  checkResult.personCount === 0 &&
-                  "bg-surface-floating text-muted-foreground dark:bg-surface-floating/80",
-                checkResult.success &&
-                  checkResult.personCount !== 0 &&
-                  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300",
-              )}
-            >
-              {getDiagnosticHeadline(checkResult, t)}
-            </div>
-          </div>
-
-          <div className="grid gap-2.5">
-            {checkResult.steps.map((step) => (
-              <div key={step.key} className="rounded-quiet bg-surface-floating/94 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-foreground">
-                      {t.tools.connectionCheck.stepLabels[step.key]}
-                    </div>
-                    <div className="mt-1 text-xs leading-6 text-muted-foreground">
-                      {describeConnectionStep(t, activeServer, step, checkResult)}
-                    </div>
-                  </div>
-                  <div
-                    className={cn(
-                      "shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em]",
-                      getStepTone(step.status),
-                    )}
-                  >
-                    {step.status === "ok"
-                      ? t.tools.stepPassed
-                      : step.status === "error"
-                        ? t.common.failed
-                        : t.common.skipped}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {checkResult.matchesPeopleByName ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-quiet bg-amber-100/70 px-4 py-3 dark:bg-amber-500/12">
-              <div className="min-w-0 flex-1 basis-64 text-xs leading-6 text-amber-800 dark:text-amber-200">
-                {t.tools.personNameMatchingNotice}
-              </div>
-              <Button
-                variant="secondary"
-                onClick={onStopPersonNameMatching}
-                disabled={activeState.checkPending || anySyncRunning}
-                className="h-9 shrink-0 rounded-quiet-capsule bg-surface-floating px-4 text-xs font-semibold text-foreground hover:bg-surface-raised/75"
-              >
-                {t.tools.stopPersonNameMatching}
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        <ConnectionCheckResult
+          server={activeServer}
+          result={checkResult}
+          disabled={activeState.checkPending || anySyncRunning}
+          onStopPersonNameMatching={onStopPersonNameMatching}
+        />
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -312,6 +243,99 @@ export function PersonMediaLibraryDetail({
             <span>{Math.round(activeState.progress)}%</span>
           </div>
           <Progress value={activeState.progress} className="h-2 bg-surface-floating" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A connection check's step list, as the media server tools draw it. */
+export function ConnectionCheckResult({
+  server,
+  result,
+  disabled = false,
+  onStopPersonNameMatching,
+}: {
+  server: PersonServer;
+  result: PersonConnectionCheckResult;
+  disabled?: boolean;
+  onStopPersonNameMatching?: () => void;
+}) {
+  const t = useT();
+  return (
+    <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {t.tools.diagnosticResult(PERSON_SERVER_NAMES[server])}
+          </div>
+          {result.serverInfo?.serverName || result.serverInfo?.version ? (
+            <div className="mt-2 text-sm font-medium text-foreground">
+              {[result.serverInfo?.serverName, result.serverInfo?.version].filter(Boolean).join(" ")}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={cn(
+            "rounded-quiet-capsule px-3 py-1 text-xs font-semibold",
+            !result.success && "bg-amber-100 text-amber-700 dark:bg-amber-500/12 dark:text-amber-300",
+            result.success &&
+              result.personCount === 0 &&
+              "bg-surface-floating text-muted-foreground dark:bg-surface-floating/80",
+            result.success &&
+              result.personCount !== 0 &&
+              "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/12 dark:text-emerald-300",
+          )}
+        >
+          {getDiagnosticHeadline(result, t)}
+        </div>
+      </div>
+
+      <div className="grid gap-2.5">
+        {result.steps.map((step) => (
+          <div key={step.key} className="rounded-quiet bg-surface-floating/94 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  {t.tools.connectionCheck.stepLabels[step.key]}
+                </div>
+                <div className="mt-1 text-xs leading-6 text-muted-foreground">
+                  {describeConnectionStep(t, server, step, result)}
+                </div>
+              </div>
+              <div
+                className={cn(
+                  "shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em]",
+                  getStepTone(step.status),
+                )}
+              >
+                {step.status === "ok"
+                  ? t.tools.stepPassed
+                  : step.status === "error"
+                    ? t.common.failed
+                    : t.common.skipped}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {result.matchesPeopleByName ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-quiet bg-amber-100/70 px-4 py-3 dark:bg-amber-500/12">
+          <div className="min-w-0 flex-1 basis-64 text-xs leading-6 text-amber-800 dark:text-amber-200">
+            {t.tools.personNameMatchingNotice}
+          </div>
+          {onStopPersonNameMatching ? (
+            <Button
+              variant="secondary"
+              onClick={onStopPersonNameMatching}
+              disabled={disabled}
+              className="h-9 shrink-0 rounded-quiet-capsule bg-surface-floating px-4 text-xs font-semibold text-foreground hover:bg-surface-raised/75"
+            >
+              {t.tools.stopPersonNameMatching}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </div>

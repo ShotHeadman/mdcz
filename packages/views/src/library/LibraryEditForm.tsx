@@ -10,14 +10,29 @@ import {
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { Button, Checkbox, Input } from "@mdcz/ui";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useT } from "../i18n";
+
+/** The form's choices as typed so far, whole or not. */
+export interface LibraryEditDraft {
+  field?: LibraryEdit["field"];
+  operation?: LibraryEdit["operation"];
+  value?: string;
+  from?: string;
+}
+
+const POSTER_STRIP_SIZE = 8;
 
 export interface LibraryEditFormProps {
   entries: LibraryEntryDto[];
   ignoredFields: readonly NfoField[];
   submitting?: boolean;
   blockedReason?: string;
+  /** Where the form starts; it keeps its own state afterwards, so a new start needs a new `key`. */
+  initial?: LibraryEditDraft;
+  onDraftChange?: (draft: LibraryEditDraft) => void;
+  /** The poster of a movie, for the strip above the list; without it the strip is left out. */
+  getPosterSrc?: (entry: LibraryEntryDto) => string;
   onCancel?: () => void;
   onSubmit: (input: LibraryEditStartInput) => void;
 }
@@ -27,6 +42,9 @@ export function LibraryEditForm({
   ignoredFields,
   submitting,
   blockedReason,
+  initial,
+  onDraftChange,
+  getPosterSrc,
   onCancel,
   onSubmit,
 }: LibraryEditFormProps) {
@@ -34,13 +52,19 @@ export function LibraryEditForm({
   const t = useT();
   const labels = t.library.edit;
   const [field, setField] = useState<LibraryEdit["field"]>(
-    () => LIBRARY_EDIT_FIELDS.find((field) => field === "actors" || !ignoredFields.includes(field)) ?? "actors",
+    () =>
+      initial?.field ??
+      LIBRARY_EDIT_FIELDS.find((field) => field === "actors" || !ignoredFields.includes(field)) ??
+      "actors",
   );
   const [operation, setOperation] = useState<LibraryEdit["operation"]>(
-    field === "actors" || field === "genres" ? "add" : "set",
+    () => initial?.operation ?? (field === "actors" || field === "genres" ? "add" : "set"),
   );
-  const [value, setValue] = useState("");
-  const [from, setFrom] = useState("");
+  const [value, setValue] = useState(initial?.value ?? "");
+  const [from, setFrom] = useState(initial?.from ?? "");
+  const draftChange = useRef(onDraftChange);
+  draftChange.current = onDraftChange;
+  useEffect(() => draftChange.current?.({ field, operation, value, from }), [field, operation, value, from]);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const listField = field === "genres" || field === "actors";
@@ -160,6 +184,7 @@ export function LibraryEditForm({
           </label>
         )}
       </fieldset>
+      {getPosterSrc && entries.length > 0 ? <PosterStrip entries={entries} getPosterSrc={getPosterSrc} /> : null}
       <p className="text-sm text-muted-foreground" aria-live="polite">
         {labels.estimate(changed, entries.length - changed)}
       </p>
@@ -222,5 +247,40 @@ export function LibraryEditForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** The first few movies by poster, with the count of the rest, drawn the way the poster wall draws them. */
+export function PosterStrip({
+  entries,
+  total = entries.length,
+  getPosterSrc,
+}: {
+  entries: LibraryEntryDto[];
+  /** How many movies there are in all, when `entries` is only the first page. */
+  total?: number;
+  getPosterSrc: (entry: LibraryEntryDto) => string;
+}) {
+  const shown = entries.slice(0, POSTER_STRIP_SIZE);
+  return (
+    <div className="flex items-end gap-2" aria-hidden="true">
+      {shown.map((entry) => {
+        const src = getPosterSrc(entry);
+        return src ? (
+          <img
+            key={entry.id}
+            src={src}
+            alt=""
+            loading="lazy"
+            className="aspect-[2/3] w-12 shrink-0 rounded-quiet bg-surface-low object-cover"
+          />
+        ) : (
+          <div key={entry.id} className="aspect-[2/3] w-12 shrink-0 rounded-quiet bg-surface-low" />
+        );
+      })}
+      {total > shown.length ? (
+        <span className="pb-1 font-numeric text-xs text-muted-foreground">+{total - shown.length}</span>
+      ) : null}
+    </div>
   );
 }
