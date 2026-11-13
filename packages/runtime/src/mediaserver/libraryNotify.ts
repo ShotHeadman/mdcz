@@ -1,7 +1,7 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { RuntimeNetworkClient } from "../network";
 import { toErrorMessage } from "../shared";
-import { buildMediaServerHeaders, buildMediaServerUrl, type MediaServerKey } from "./client";
+import { buildMediaServerRequestInit, buildMediaServerUrl, type MediaServerKey } from "./client";
 
 /** Servers told of published folders; post-scrape actor syncs run on the same ones, since only they create the people. */
 export const notifiedMediaServers = (configuration: Configuration): MediaServerKey[] =>
@@ -25,9 +25,11 @@ export const notifyMediaServersOfPublish = async (
   await Promise.all(
     notifiedMediaServers(configuration).map(async (key) => {
       try {
-        await networkClient.postText(buildMediaServerUrl(configuration, key, "/Library/Media/Updated"), body, {
-          headers: buildMediaServerHeaders(configuration, key, { "content-type": "application/json" }),
-        });
+        await networkClient.postText(
+          buildMediaServerUrl(configuration, key, "/Library/Media/Updated"),
+          body,
+          buildMediaServerRequestInit(configuration, key, { "content-type": "application/json" }),
+        );
       } catch (error) {
         logger.warn(`Could not ask ${key} to scan ${directories.join(", ")}: ${toErrorMessage(error)}`);
       }
@@ -60,10 +62,10 @@ export const refreshPublishedFolders = async (
   server: MediaServerKey,
   directories: readonly string[],
 ): Promise<number> => {
-  const headers = buildMediaServerHeaders(configuration, server, { accept: "application/json" });
+  const requestInit = buildMediaServerRequestInit(configuration, server, { accept: "application/json" });
   const libraries = await networkClient.getJson<Array<{ ItemId?: string; Locations?: string[] }>>(
     buildMediaServerUrl(configuration, server, "/Library/VirtualFolders"),
-    { headers },
+    requestInit,
   );
   const subfolders = new Map<string, Promise<{ Items?: MediaServerFolder[] }>>();
   const folderIds = new Set<string>();
@@ -81,7 +83,7 @@ export const refreshPublishedFolders = async (
           IsFolder: "true",
           Fields: "Path",
         });
-        subfolders.set(parentId, networkClient.getJson(url, { headers }));
+        subfolders.set(parentId, networkClient.getJson(url, requestInit));
       }
       folderId = (await subfolders.get(parentId))?.Items?.find((item) => item.Path && contains(item.Path))?.Id;
       if (!folderId) folderIds.add(parentId);
@@ -93,7 +95,7 @@ export const refreshPublishedFolders = async (
       MetadataRefreshMode: "Default",
       ImageRefreshMode: "Default",
     });
-    await networkClient.postText(url, "", { headers });
+    await networkClient.postText(url, "", requestInit);
   }
   return folderIds.size;
 };

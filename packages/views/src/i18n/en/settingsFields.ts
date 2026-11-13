@@ -512,6 +512,11 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Jellyfin user ID",
     description: "Must be a UUID. Used to read the person list; leave empty to use the server default.",
   },
+  "jellyfin.useProxy": {
+    label: "Use proxy for Jellyfin",
+    description: "Connects directly by default; turn on only when a remote Jellyfin server requires the global proxy.",
+    aliases: ["proxy", "direct", "jellyfin"],
+  },
   "jellyfin.lockOverviewAfterSync": {
     label: "Lock person overview after sync",
     description:
@@ -522,6 +527,11 @@ const fields: Record<FieldKey, FieldText> = {
   "emby.userId": {
     label: "Emby user ID",
     description: "Used to read the person list; leave empty to use the server default.",
+  },
+  "emby.useProxy": {
+    label: "Use proxy for Emby",
+    description: "Connects directly by default; turn on only when a remote Emby server requires the global proxy.",
+    aliases: ["proxy", "direct", "emby"],
   },
   "emby.notifyAfterPublish": {
     label: "Refresh folder after organizing",

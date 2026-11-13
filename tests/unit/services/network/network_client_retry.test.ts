@@ -18,7 +18,7 @@ vi.mock("node:timers/promises", () => {
 
 import { CrawlerProvider } from "@mdcz/runtime/crawler/CrawlerProvider";
 import { FetchGateway } from "@mdcz/runtime/crawler/FetchGateway";
-import { NetworkClient, runWithCrawlerSource, runWithNetworkSignal } from "@mdcz/runtime/network";
+import { InMemoryCookieJar, NetworkClient, runWithCrawlerSource, runWithNetworkSignal } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
 
 const createProbeResponse = (
@@ -341,7 +341,7 @@ describe("NetworkClient retry policy", () => {
     }
   });
 
-  it("reuses a shared Impit client until proxy settings change, and keeps direct sites off the proxy", async () => {
+  it("reuses a shared Impit client until proxy settings change, and keeps direct sites, local hosts, and bypassing requests off the proxy, including cookie sessions", async () => {
     let proxyUrl = "http://proxy-a";
     fetchMock.mockImplementation(async () => new Response("ok", { status: 200 }));
     const client = new NetworkClient({
@@ -367,6 +367,29 @@ describe("NetworkClient retry policy", () => {
     await runWithCrawlerSource(Website.DMM, () => client.getText("https://example.com/direct"));
     expect(impitConstructorMock).toHaveBeenCalledTimes(3);
     expect(impitConstructorMock.mock.calls[2]?.[0].proxyUrl).toBeUndefined();
+
+    for (const url of [
+      "http://127.0.0.1:8096/System/Info",
+      "http://192.168.1.50:8096/System/Info",
+      "http://100.100.1.2:8096/System/Info",
+      "http://jellyfin:8096/System/Info",
+      "http://nas.local:8096/System/Info",
+    ]) {
+      await expect(client.getText(url)).resolves.toBe("ok");
+    }
+    await expect(client.getText("https://emby.example.com/System/Info", { bypassProxy: true })).resolves.toBe("ok");
+    expect(impitConstructorMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.lastCall?.[1]).not.toHaveProperty("bypassProxy");
+
+    const cookieJar = new InMemoryCookieJar();
+    const session = client.createSession({ cookieJar });
+    await expect(session.getText("http://192.168.1.50/login")).resolves.toBe("ok");
+    await expect(session.getText("https://example.com/login")).resolves.toBe("ok");
+    await expect(session.getText("https://example.com/again")).resolves.toBe("ok");
+    expect(impitConstructorMock.mock.calls.slice(3).map(([options]) => [options.proxyUrl, options.cookieJar])).toEqual([
+      [undefined, cookieJar],
+      ["http://proxy-b", cookieJar],
+    ]);
   });
 
   it("applies crawler-registered site request defaults without overriding explicit headers", async () => {

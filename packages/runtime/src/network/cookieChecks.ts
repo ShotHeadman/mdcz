@@ -2,6 +2,7 @@ import { type Configuration, resolveSiteUrl } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { NetworkCookieCheckStatus } from "@mdcz/shared/serverDtos";
 import { classifyJavbusPage, JAVBUS_PAGE_HEADERS, toErrorMessage } from "../shared";
+import { runWithCrawlerSource } from "./networkExecution";
 
 interface CookieCheckNetworkClient {
   getText(url: string, init?: { headers?: Record<string, string> }): Promise<string>;
@@ -46,9 +47,13 @@ const checkJavdbCookie = async (
   if (!cookie) return cookieCheckResult("JavDB", "not_configured");
 
   try {
-    const html = await networkClient.getText(`${siteUrl}/users/profile`, {
-      headers: { cookie },
-    });
+    const html = await runWithCrawlerSource(
+      Website.JAVDB,
+      async () =>
+        await networkClient.getText(`${siteUrl}/users/profile`, {
+          headers: { cookie },
+        }),
+    );
     const valid = !html.includes('href="/login"') && !html.includes("sign_in");
     return cookieCheckResult("JavDB", valid ? "ready_with_cookie" : "invalid_or_expired");
   } catch (error) {
@@ -62,12 +67,16 @@ const checkJavbusCookie = async (
   networkClient: CookieCheckNetworkClient,
 ): Promise<CookieCheckResult> => {
   try {
-    const html = await networkClient.getText(`${siteUrl}/`, {
-      headers: {
-        ...JAVBUS_PAGE_HEADERS,
-        ...(cookie ? { cookie } : {}),
-      },
-    });
+    const html = await runWithCrawlerSource(
+      Website.JAVBUS,
+      async () =>
+        await networkClient.getText(`${siteUrl}/`, {
+          headers: {
+            ...JAVBUS_PAGE_HEADERS,
+            ...(cookie ? { cookie } : {}),
+          },
+        }),
+    );
     const page = classifyJavbusPage(html);
     if (page === "content") return cookieCheckResult("JavBus", cookie ? "ready_with_cookie" : "ready_without_cookie");
     return cookieCheckResult("JavBus", page === "unknown" ? "unexpected_page" : page);
@@ -83,9 +92,13 @@ const checkFantiaCookie = async (
   if (!cookie) return cookieCheckResult("Fantia", "not_configured");
 
   try {
-    const html = await networkClient.getText("https://fantia.jp/mypage/dashboard", {
-      headers: { cookie },
-    });
+    const html = await runWithCrawlerSource(
+      Website.FANTIA,
+      async () =>
+        await networkClient.getText("https://fantia.jp/mypage/dashboard", {
+          headers: { cookie },
+        }),
+    );
     if (html.includes("外部サービスでログイン") || /type=["']password["']/iu.test(html)) {
       return cookieCheckResult("Fantia", "invalid_or_expired");
     }

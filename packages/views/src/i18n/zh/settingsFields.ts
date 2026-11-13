@@ -427,6 +427,11 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "Jellyfin 用户 ID",
       description: "必须是 UUID。用于人物列表读取，留空则按服务端默认处理。",
     },
+    "jellyfin.useProxy": {
+      label: "使用代理连接 Jellyfin",
+      description: "默认直连；仅在远程 Jellyfin 服务器需要通过全局代理访问时开启。",
+      aliases: ["代理", "直连", "proxy", "jellyfin"],
+    },
     "jellyfin.lockOverviewAfterSync": {
       label: "同步后锁定人物简介",
       description: "写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。",
@@ -434,6 +439,11 @@ export const settingsFields: Messages["settingsFields"] = {
     "emby.url": { label: "Emby 服务器地址" },
     "emby.apiKey": { label: "Emby API Key" },
     "emby.userId": { label: "Emby 用户 ID", description: "用于人物列表读取，留空则按服务端默认处理。" },
+    "emby.useProxy": {
+      label: "使用代理连接 Emby",
+      description: "默认直连；仅在远程 Emby 服务器需要通过全局代理访问时开启。",
+      aliases: ["代理", "直连", "proxy", "emby"],
+    },
     "emby.notifyAfterPublish": {
       label: "入库后增量刷新目录",
       description: "影片整理入库后，请求 Emby 仅刷新该影片所在目录，无需全局扫描媒体库即可即时显示。",

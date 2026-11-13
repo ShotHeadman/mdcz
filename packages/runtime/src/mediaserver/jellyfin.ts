@@ -2,14 +2,13 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { RuntimeNetworkClient } from "../network";
 import {
-  buildMediaServerHeaders,
+  buildMediaServerRequestInit,
   buildMediaServerUrl,
   deleteMediaServerPrimaryImage,
   fetchMediaServerMetadataEditorInfo,
   fetchMediaServerPersons,
   fetchMediaServerResolvedUserId,
   fetchMediaServerUserScopedItemDetail,
-  type MediaServerHeadersInit,
   type MediaServerItemDetail,
   type MediaServerMode,
   updateMediaServerItem,
@@ -54,9 +53,6 @@ export const buildJellyfinUrl = (
   path: string,
   query: Record<string, string | undefined> = {},
 ): string => buildMediaServerUrl(configuration, "jellyfin", path, query);
-
-export const buildJellyfinHeaders = (configuration: Configuration, headers: MediaServerHeadersInit = {}): Headers =>
-  buildMediaServerHeaders(configuration, "jellyfin", headers);
 
 const getConfiguredJellyfinUserId = (configuration: Configuration): string | undefined => {
   const trimmedUserId = configuration.jellyfin.userId.trim();
@@ -403,9 +399,10 @@ const fetchJellyfinServerConfiguration = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
 ): Promise<JellyfinServerConfiguration> =>
-  await networkClient.getJson<JellyfinServerConfiguration>(buildJellyfinUrl(configuration, "/System/Configuration"), {
-    headers: buildJellyfinHeaders(configuration, { accept: "application/json" }),
-  });
+  await networkClient.getJson<JellyfinServerConfiguration>(
+    buildJellyfinUrl(configuration, "/System/Configuration"),
+    buildMediaServerRequestInit(configuration, "jellyfin", { accept: "application/json" }),
+  );
 
 const findPersonMetadataOptions = (serverConfiguration: JellyfinServerConfiguration) =>
   serverConfiguration.MetadataOptions?.find((options) => options.ItemType === "Person");
@@ -432,7 +429,7 @@ export const stopJellyfinPersonNameMatching = async (
   await networkClient.postText(
     buildJellyfinUrl(configuration, "/System/Configuration"),
     JSON.stringify({ ...serverConfiguration, MetadataOptions: [...metadataOptions, person] }),
-    { headers: buildJellyfinHeaders(configuration, { "content-type": "application/json" }) },
+    buildMediaServerRequestInit(configuration, "jellyfin", { "content-type": "application/json" }),
   );
 };
 
@@ -447,9 +444,12 @@ export const checkJellyfinConnection = async (
     fetchPublicServerInfo: async () => {
       const info = await networkClient.getJson<PublicSystemInfo>(
         buildJellyfinUrl(configuration, "/System/Info/Public"),
-        {
-          headers: { accept: "application/json" },
-        },
+        buildMediaServerRequestInit(
+          configuration,
+          "jellyfin",
+          { accept: "application/json" },
+          { authenticated: false },
+        ),
       );
       return {
         serverName: typeof info.ServerName === "string" ? info.ServerName : undefined,
@@ -457,9 +457,10 @@ export const checkJellyfinConnection = async (
       };
     },
     verifyAuth: async () => {
-      await networkClient.getJson<Record<string, unknown>>(buildJellyfinUrl(configuration, "/System/Info"), {
-        headers: buildJellyfinHeaders(configuration, { accept: "application/json" }),
-      });
+      await networkClient.getJson<Record<string, unknown>>(
+        buildJellyfinUrl(configuration, "/System/Info"),
+        buildMediaServerRequestInit(configuration, "jellyfin", { accept: "application/json" }),
+      );
     },
     fetchPersons: async () =>
       await fetchJellyfinPersons(networkClient, configuration, {

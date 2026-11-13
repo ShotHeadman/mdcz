@@ -5,7 +5,7 @@ import {
   type MediaServerSignalService,
   syncEmbyPersons,
 } from "@mdcz/runtime/mediaserver";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient, RuntimeRequestInit } from "@mdcz/runtime/network";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 
@@ -34,7 +34,7 @@ const embyUserId = "user-1";
 const ACTOR_PERSON_TYPES_QUERY = "Actor,GuestStar";
 
 class FakeNetworkClient {
-  readonly getJson = vi.fn(async (_url: string): Promise<unknown> => ({}));
+  readonly getJson = vi.fn(async (_url: string, _init?: RuntimeRequestInit): Promise<unknown> => ({}));
 
   readonly getContent = vi.fn(async (_url: string) => new Uint8Array());
 
@@ -204,6 +204,11 @@ describe("Emby actor services", () => {
       { key: "peopleWrite", status: "ok" },
       { key: "adminKey", status: "skipped" },
     ]);
+    expect(networkClient.getJson.mock.calls.every(([, init]) => init?.bypassProxy === true)).toBe(true);
+
+    networkClient.getJson.mockClear();
+    await checkConnection(networkClient as unknown as NetworkClient, createEmbyConfig({ emby: { useProxy: true } }));
+    expect(networkClient.getJson.mock.calls.every(([, init]) => init?.bypassProxy === false)).toBe(true);
   });
 
   it("reads people for diagnostics exactly as the sync does: resolved user id and actor filter", async () => {
