@@ -59,6 +59,8 @@ export class MoveOutput {
     commit(): TResult | Promise<TResult>;
     protectedMediaFiles?: readonly string[];
     reorganize?: boolean;
+    /** See `WriteOutput.install`; a copied video is likewise written under its final name. */
+    direct?: boolean;
   }): Promise<TResult> {
     const fs = this.fileSystem;
     const temporaryPaths = new TemporaryPaths();
@@ -154,6 +156,7 @@ export class MoveOutput {
       const value = await new WriteOutput(fs, this.logger).install(artifacts, {
         validate,
         directories,
+        direct: input.direct,
         protectedMediaFiles: [...protectedMediaFiles, ...moves.flatMap((move) => [move.sourcePath, move.targetPath])],
         beforeCommit: async () => {
           const parkedSources = new Map<string, string>();
@@ -224,7 +227,7 @@ export class MoveOutput {
               }
             }
             if (copied) {
-              const staging = `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
+              const staging = input.direct ? move.targetPath : `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
               temporaryPaths.add(staging);
               if (move.rewrittenContent !== undefined)
                 await fs.writeFile(staging, move.rewrittenContent, { flush: true });
@@ -235,8 +238,10 @@ export class MoveOutput {
               if ((await fs.stat(staging)).size !== expectedSize)
                 throw new Error(`Staged transfer size mismatch: ${move.targetPath}`);
               await assertSource(move, sourcePath);
-              await assertTarget(move, sourcePath);
-              await fs.rename(staging, move.targetPath);
+              if (!input.direct) {
+                await assertTarget(move, sourcePath);
+                await fs.rename(staging, move.targetPath);
+              }
               temporaryPaths.settle(staging);
               relocations.push({ from: sourcePath, to: move.targetPath, kind: "copied" });
               if (move.transfer === "move") retainedSources.set(sourcePath, move);

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
@@ -511,8 +510,7 @@ export class FileScraper {
         })),
         assets: prepared.assets,
       };
-      await mkdir(plan.metadataDir, { recursive: true });
-      const directory = await createStagingDirectory(plan.metadataDir);
+      const directory = await createStagingDirectory(configuration.paths.stagingFolder || plan.metadataDir);
       stagingDir = directory;
       const metadataOutputDir = plan.metadataDir;
       let crawlerData = prepared.crawlerData;

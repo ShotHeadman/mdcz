@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
@@ -524,11 +523,9 @@ export class MaintenanceRuntime {
 
     let stagingDir: string | undefined;
     try {
-      const stagingParent = members[0].layout.metadataDir;
-      if (preset.dataSource === "online") {
-        await mkdir(stagingParent, { recursive: true });
-        stagingDir = await createStagingDirectory(stagingParent);
-      }
+      const metadataDir = members[0].layout.metadataDir;
+      if (preset.dataSource === "online")
+        stagingDir = await createStagingDirectory(config.paths.stagingFolder || metadataDir);
 
       const preparedOutputData = stagingDir
         ? await prepareOutputCrawlerData({
@@ -568,7 +565,7 @@ export class MaintenanceRuntime {
           imageAlternatives: committed?.imageAlternatives,
           movieBaseName,
           outputDir: stagingDir,
-          existingAssetDir: stagingParent,
+          existingAssetDir: metadataDir,
           existingAssets: entry.assets,
           inventory: this.inventory,
           sources: undefined,
@@ -734,12 +731,14 @@ export class MaintenanceRuntime {
             moves: published.moves,
             artifacts: published.artifacts,
             protectedMediaFiles: published.protectedMediaFiles,
+            direct: Boolean(config.paths.stagingFolder),
             validate,
             commit,
           });
         } else {
           await new WriteOutput(undefined, this.deps.logger).install(published.artifacts, {
             protectedMediaFiles: published.protectedMediaFiles,
+            direct: Boolean(config.paths.stagingFolder),
             validate,
             commit,
           });

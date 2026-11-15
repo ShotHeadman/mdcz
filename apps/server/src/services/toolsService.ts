@@ -164,6 +164,7 @@ export class ToolsService {
             outputs: state.repositories.library,
             library: state.repositories.library,
             roots: await this.mediaRoots.listRoots(),
+            stagingFolder: (await this.config.get()).paths.stagingFolder,
           });
           return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }

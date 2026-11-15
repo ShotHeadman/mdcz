@@ -118,6 +118,8 @@ export interface AmazonPosterDependencies {
 
 export type AmazonPosterApplyDependencies = AmazonPosterDependencies & {
   roots: readonly { id: string; hostPath: string }[];
+  /** `paths.stagingFolder`: where posters download when the library cannot rename the files it has just created. */
+  stagingFolder?: string;
   outputs?: PublicationOutputPort;
   library?: MovieLibrary;
 };
@@ -247,8 +249,9 @@ export const applyAmazonPosters = async (
           (await countNamedNfoFiles(directory)) <= 1,
         )[0] ?? savedPosterPath;
       replacedExisting = await pathExists(savedPosterPath);
-      await mkdir(dirname(savedPosterPath), { recursive: true });
-      const tempPosterPath = join(dirname(savedPosterPath), `.mdcz-staging-${randomUUID()}.jpg`);
+      const stagingDirectory = dependencies.stagingFolder || dirname(savedPosterPath);
+      await mkdir(stagingDirectory, { recursive: true });
+      const tempPosterPath = join(stagingDirectory, `.mdcz-staging-${randomUUID()}.jpg`);
       publicationJournal.record(tempPosterPath);
       try {
         await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
@@ -271,6 +274,7 @@ export const applyAmazonPosters = async (
             [{ targetPath: savedPosterPath, sourcePath: tempPosterPath, size: staged.size, consume: true }],
             {
               protectedMediaFiles: registered?.mediaPaths,
+              direct: Boolean(dependencies.stagingFolder),
               commit: async () => {
                 if (!registered) return;
                 if (!dependencies.library) throw new Error("Registered poster write requires library updates");

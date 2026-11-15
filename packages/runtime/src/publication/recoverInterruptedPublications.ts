@@ -20,7 +20,10 @@ export const recoverInterruptedPublications = async (
 ): Promise<void> => {
   publicationJournal.attach(store);
   const reachableVolumes = new Map<string, boolean>();
-  for (const entry of store.list()) {
+  // Removals go first: an interrupted direct write leaves a truncated file where its original is restored to.
+  for (const entry of store
+    .list()
+    .toSorted((left, right) => Number(left.restoreTo !== null) - Number(right.restoreTo !== null))) {
     try {
       // An offline network share can stall every lookup until it times out, so each volume is probed once per start.
       const volume = path.parse(entry.path).root;

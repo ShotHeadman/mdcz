@@ -324,6 +324,7 @@ export const settings: Messages["settings"] = {
       actorAliasConflict: "该别名已被添加或与已有演员冲突",
       globalTimeoutNotGreater: "全局超时必须大于单爬虫超时",
       actorPhotoFolderNotAbsolute: "本地演员照片目录必须使用绝对路径",
+      stagingFolderNotAbsolute: "暂存目录必须使用绝对路径",
       jellyfinUserIdNotUuid: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
     } satisfies Record<ConfigIssueCode, string>,
   },

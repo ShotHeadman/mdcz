@@ -51,6 +51,12 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["头像", "演员"],
     },
     "paths.sceneImagesFolder": { label: "剧照目录名" },
+    "paths.stagingFolder": {
+      label: "暂存目录",
+      description:
+        "留空时临时文件放在输出目录内，再重命名为最终文件。输出目录位于网盘挂载、新建文件无法立即重命名时，请指定一个本地目录：下载与处理在此完成，成品以最终文件名直接写入输出目录，写入不再是原子替换。",
+      aliases: ["暂存", "临时", "网盘", "云盘", "staging"],
+    },
     "scrape.sites": {
       label: "启用站点与优先级",
       description: "按分组显示 DMM/FANZA 系、厂商官网和常用聚合站点，并保持保存值仍为具体站点顺序。",

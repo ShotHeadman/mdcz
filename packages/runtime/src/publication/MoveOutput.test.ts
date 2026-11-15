@@ -125,6 +125,20 @@ describe("MoveOutput", () => {
     await expect(readFile(test.targetPath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
 
+    // A direct publication copies the video straight to its final name, renaming nothing it has created.
+    const direct = await fixture();
+    const directRename = vi.fn(outputFileSystem.rename);
+    await new MoveOutput({ ...outputFileSystem, rename: directRename }).install({
+      moves: [{ ...direct.move, transfer: "copy" }],
+      artifacts: [{ targetPath: path.join(path.dirname(direct.targetPath), "movie.nfo"), data: "<movie/>" }],
+      direct: true,
+      commit: () => undefined,
+    });
+    expect(directRename).not.toHaveBeenCalled();
+    await expect(readFile(direct.targetPath, "utf8")).resolves.toBe("video");
+    await expect(readFile(direct.sourcePath, "utf8")).resolves.toBe("video");
+    expect(await fs.readdir(path.dirname(direct.targetPath))).toEqual(["movie.nfo", "target.mp4"]);
+
     const failedCleanup = await fixture();
     const logger = { warn: vi.fn() };
     const failedRename = vi.fn(async (source: string, target: string) => {

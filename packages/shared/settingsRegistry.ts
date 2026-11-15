@@ -58,6 +58,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "paths.defaultScanExcludeDirs", anchor: "paths" },
   { key: "paths.actorPhotoFolder", anchor: "paths" },
   { key: "paths.sceneImagesFolder", anchor: "paths" },
+  { key: "paths.stagingFolder", anchor: "paths" },
   { key: "scrape.sites", anchor: "scrape" },
   { key: "scrape.r18MetadataLanguage", anchor: "scrape", visibility: "hidden" },
   { key: "scrape.filenameIgnoreTokens", anchor: "scrape" },

@@ -131,6 +131,7 @@ export async function writeNfoPublication(
     }
     await new WriteOutput().install(artifacts, {
       protectedMediaFiles: owned?.mediaPaths ?? (videoPath ? [videoPath] : []),
+      direct: Boolean(configuration.paths.stagingFolder),
       commit: async () => {
         if (!owned || !library) return;
         const entry = await library.getEntryById(owned.movieId);
