@@ -78,6 +78,12 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["actor", "photo"],
   },
   "paths.sceneImagesFolder": { label: "Scene image folder name" },
+  "paths.stagingFolder": {
+    label: "Staging directory",
+    description:
+      "When empty, temporary files are created inside the output directory and renamed into place. If the output is on a cloud mount where new files cannot be renamed right away, pick a local directory: downloads and processing happen there and finished files are written straight under their final names, no longer as atomic replacements.",
+    aliases: ["staging", "temporary", "cloud", "mount"],
+  },
   "scrape.sites": {
     label: "Enabled sites & priority",
     description:

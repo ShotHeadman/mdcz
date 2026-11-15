@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { CreatedDirectories, outputFileSystem } from "./outputFileSystem";
-import { TemporaryPaths } from "./publicationJournal";
+import { publicationJournal, TemporaryPaths } from "./publicationJournal";
 import type { PublicationFileSystem } from "./types";
 
 export type WriteArtifact = { targetPath: string; removeSourcesAfterCommit?: readonly string[] } & (
@@ -26,10 +26,15 @@ export class WriteOutput {
       protectedMediaFiles?: readonly string[];
       /** The caller's, which then takes back the empty folders itself once it has restored what else it moved. */
       directories?: CreatedDirectories;
+      /**
+       * Writes each target under its final name instead of renaming a temporary file onto it, for cloud mounts
+       * that fail renaming a file they have just created. A target is then replaced without being atomic.
+       */
+      direct?: boolean;
     },
   ): Promise<TResult> {
     const directories = options.directories ?? new CreatedDirectories(this.fileSystem);
-    const staged: Array<{ targetPath: string; temporaryPath: string; size?: number }> = [];
+    const staged: Array<{ artifact: WriteArtifact; temporaryPath?: string; size?: number }> = [];
     const replacements: Array<{ targetPath: string; backupPath?: string; linkedBackup?: boolean; installed: boolean }> =
       [];
     const temporaryPaths = new TemporaryPaths();
@@ -54,83 +59,113 @@ export class WriteOutput {
         throw new Error(`Cannot consume a media file or final artifact: ${artifact.sourcePath}`);
       consumedSources.set(source, artifact);
     }
+    const write = async (artifact: WriteArtifact, destination: string, size: number | undefined): Promise<void> => {
+      if ("symlinkTo" in artifact) return await this.fileSystem.symlink(artifact.symlinkTo, destination);
+      if ("data" in artifact) {
+        await this.fileSystem.writeFile(destination, artifact.data, { flush: true });
+      } else {
+        await this.fileSystem.copyFile(artifact.sourcePath, destination);
+        await this.fileSystem.flush?.(destination);
+      }
+      if ((await this.fileSystem.stat(destination)).size !== size)
+        throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
+    };
     try {
       for (const artifact of artifacts) {
         // Already in place, e.g. carried along when its movie folder was renamed.
         if ("sourcePath" in artifact && pathKey(artifact.sourcePath) === pathKey(artifact.targetPath)) continue;
         await directories.make(path.dirname(artifact.targetPath));
         const consuming = "sourcePath" in artifact && consumedSources.get(pathKey(artifact.sourcePath)) === artifact;
-        const temporaryPath =
-          "sourcePath" in artifact && consuming
-            ? artifact.sourcePath
-            : `${artifact.targetPath}.mdcz-staging-${stagingId}.part`;
-        if (consuming && !(await this.fileSystem.lstat(temporaryPath)).isFile())
-          throw new Error(`Consumed staging must be a regular file: ${temporaryPath}`);
-        temporaryPaths.add(temporaryPath);
-        if ("symlinkTo" in artifact) {
-          await this.fileSystem.symlink(artifact.symlinkTo, temporaryPath);
-          staged.push({ targetPath: artifact.targetPath, temporaryPath });
-          continue;
-        }
-        const expectedSize =
-          "data" in artifact
-            ? typeof artifact.data === "string"
-              ? Buffer.byteLength(artifact.data, "utf8")
-              : artifact.data.length
-            : artifact.size;
-        staged.push({ targetPath: artifact.targetPath, temporaryPath, size: expectedSize });
-        if ("data" in artifact) {
-          await this.fileSystem.writeFile(temporaryPath, artifact.data, { flush: true });
-        } else {
+        if ("sourcePath" in artifact) {
+          if (consuming) {
+            if (!(await this.fileSystem.lstat(artifact.sourcePath)).isFile())
+              throw new Error(`Consumed staging must be a regular file: ${artifact.sourcePath}`);
+            temporaryPaths.add(artifact.sourcePath);
+          }
           const source = await this.fileSystem.stat(artifact.sourcePath);
           if (!source.isFile() || source.size !== artifact.size)
             throw new Error(`Artifact source changed: ${artifact.sourcePath}`);
-          if (!consuming) await this.fileSystem.copyFile(artifact.sourcePath, temporaryPath);
         }
-        if (!("data" in artifact)) await this.fileSystem.flush?.(temporaryPath);
-        if ((await this.fileSystem.stat(temporaryPath)).size !== expectedSize)
-          throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
+        const size =
+          "symlinkTo" in artifact
+            ? undefined
+            : "data" in artifact
+              ? typeof artifact.data === "string"
+                ? Buffer.byteLength(artifact.data, "utf8")
+                : artifact.data.length
+              : artifact.size;
+        if (options.direct) {
+          staged.push({ artifact, size });
+          continue;
+        }
+        if ("sourcePath" in artifact && consuming) {
+          await this.fileSystem.flush?.(artifact.sourcePath);
+          staged.push({ artifact, temporaryPath: artifact.sourcePath, size });
+          continue;
+        }
+        const temporaryPath = `${artifact.targetPath}.mdcz-staging-${stagingId}.part`;
+        temporaryPaths.add(temporaryPath);
+        await write(artifact, temporaryPath, size);
+        staged.push({ artifact, temporaryPath, size });
       }
       await options.validate?.();
       await options.beforeCommit?.();
-      for (const artifact of staged) {
+      for (const { artifact, temporaryPath, size } of staged) {
+        const { targetPath } = artifact;
         let existingTarget: Awaited<ReturnType<PublicationFileSystem["lstat"]>> | undefined;
         try {
-          const existing = await this.fileSystem.lstat(artifact.targetPath);
+          const existing = await this.fileSystem.lstat(targetPath);
           if (!existing.isFile() && !existing.isSymbolicLink())
-            throw new Error(`Artifact target is not a file: ${artifact.targetPath}`);
+            throw new Error(`Artifact target is not a file: ${targetPath}`);
           existingTarget = existing;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
-        const replacement: (typeof replacements)[number] = { targetPath: artifact.targetPath, installed: false };
+        const replacement: (typeof replacements)[number] = { targetPath, installed: false };
+        const direct = temporaryPath === undefined;
         if (existingTarget) {
-          // A hard link keeps the target in place until the atomic replace, so a stop never leaves it missing;
-          // symlinks and filesystems without links fall back to moving the original aside.
-          const backupPath = `${artifact.targetPath}.mdcz-backup-${stagingId}`;
-          try {
-            // link(2) may follow a symlink on some platforms, which would back up the wrong file.
-            if (!existingTarget.isFile()) throw new Error("Only regular files are linked");
-            await this.fileSystem.link(artifact.targetPath, backupPath);
-            replacement.linkedBackup = true;
-          } catch {
-            await this.fileSystem.rename(artifact.targetPath, backupPath);
+          // A hard link keeps the target in place until the atomic replace, so a stop never leaves it missing.
+          // Symlinks, which link(2) may follow to back up the wrong file, filesystems without links, and direct
+          // writes, which would write through the link, move the original aside instead.
+          const backupPath = `${targetPath}.mdcz-backup-${stagingId}`;
+          replacement.linkedBackup =
+            !direct &&
+            existingTarget.isFile() &&
+            (await this.fileSystem.link(targetPath, backupPath).then(
+              () => true,
+              () => false,
+            ));
+          if (!replacement.linkedBackup) {
+            if (direct) publicationJournal.record(backupPath, targetPath);
+            await this.fileSystem.rename(targetPath, backupPath);
           }
           replacement.backupPath = backupPath;
         }
         replacements.push(replacement);
+        if (direct) {
+          // Journaled while it is written, so a crash leaves no truncated file under a final name and the
+          // original it replaces goes back.
+          publicationJournal.record(targetPath);
+          // Set first, so a failed write is taken back like a finished one.
+          replacement.installed = true;
+          await write(artifact, targetPath, size);
+          publicationJournal.forget(targetPath);
+          // The target is whole from here on, so a crash before the commit drops the original instead of restoring it.
+          if (replacement.backupPath) publicationJournal.record(replacement.backupPath);
+          continue;
+        }
         try {
-          await this.fileSystem.rename(artifact.temporaryPath, artifact.targetPath);
-          temporaryPaths.settle(artifact.temporaryPath);
+          await this.fileSystem.rename(temporaryPath, targetPath);
+          temporaryPaths.settle(temporaryPath);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "EXDEV" || artifact.size === undefined) throw error;
-          const localStaging = `${artifact.targetPath}.mdcz-staging-${stagingId}.part`;
+          if ((error as NodeJS.ErrnoException).code !== "EXDEV" || size === undefined) throw error;
+          const localStaging = `${targetPath}.mdcz-staging-${stagingId}.part`;
           temporaryPaths.add(localStaging);
-          await this.fileSystem.copyFile(artifact.temporaryPath, localStaging);
+          await this.fileSystem.copyFile(temporaryPath, localStaging);
           await this.fileSystem.flush?.(localStaging);
-          if ((await this.fileSystem.stat(localStaging)).size !== artifact.size)
-            throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
-          await this.fileSystem.rename(localStaging, artifact.targetPath);
+          if ((await this.fileSystem.stat(localStaging)).size !== size)
+            throw new Error(`Staged artifact size mismatch: ${targetPath}`);
+          await this.fileSystem.rename(localStaging, targetPath);
           temporaryPaths.settle(localStaging);
         }
         replacement.installed = true;
@@ -162,6 +197,11 @@ export class WriteOutput {
               await this.fileSystem.rename(backupPath, targetPath);
             else if (backupPath) temporaryPaths.add(backupPath);
             else if (replacement.installed) await this.fileSystem.rm(targetPath, { force: true });
+            // The records of a direct write that failed would otherwise undo this restore on the next start.
+            if (options.direct) {
+              publicationJournal.forget(targetPath);
+              if (backupPath) publicationJournal.forget(backupPath);
+            }
           } catch (restoreError) {
             this.logger.warn(
               `Failed to restore artifact ${targetPath}${backupPath ? ` from ${backupPath}` : ""}: ${toErrorMessage(restoreError)}`,

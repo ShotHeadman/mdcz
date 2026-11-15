@@ -35,7 +35,7 @@ export const publicationJournal = {
 export const createStagingDirectory = async (parent: string): Promise<string> => {
   const directory = path.join(parent, `.mdcz-staging-${randomUUID()}`);
   publicationJournal.record(directory);
-  await mkdir(directory);
+  await mkdir(directory, { recursive: true });
   return directory;
 };
 
@@ -53,7 +53,7 @@ export class TemporaryPaths {
     this.#paths.add(temporaryPath);
   }
 
-  /** The file was renamed into place, so there is nothing left to remove. */
+  /** The file is in place under its final name, so there is nothing left to remove. */
   settle(temporaryPath: string): void {
     this.#paths.delete(temporaryPath);
     publicationJournal.forget(temporaryPath);

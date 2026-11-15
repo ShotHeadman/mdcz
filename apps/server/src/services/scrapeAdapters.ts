@@ -171,6 +171,7 @@ export class ServerPosterCropAdapter {
         movieId,
         roots: await this.mediaRoots.listRoots(),
       },
+      Boolean((await this.config.get()).paths.stagingFolder),
     );
     return {
       rootId: root.id,

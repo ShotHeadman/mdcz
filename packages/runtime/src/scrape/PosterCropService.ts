@@ -85,6 +85,7 @@ export class PosterCropService {
       movieId: string;
       roots: readonly { id: string; hostPath: string }[];
     },
+    direct = false,
   ): Promise<PosterCropSession & { revision: string }> {
     const session = await this.prepare(videoPath, assetNamingMode, assets);
     const extension = extname(session.targetPath).toLowerCase() || ".jpg";
@@ -99,6 +100,7 @@ export class PosterCropService {
     try {
       await new WriteOutput().install([{ targetPath: session.targetPath, data }], {
         protectedMediaFiles: [videoPath],
+        direct,
         commit: async () => {
           if (!movie) return;
           const ref = toRootFileRef(session.targetPath, movie.roots);

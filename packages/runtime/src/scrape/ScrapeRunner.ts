@@ -1080,11 +1080,13 @@ export class ScrapeRunner {
               moves: output.moves,
               artifacts: output.artifacts,
               protectedMediaFiles: output.protectedMediaFiles,
+              direct: Boolean(configuration.paths.stagingFolder),
               commit,
             });
           } else {
             await new WriteOutput(undefined, this.logger).install(output.artifacts, {
               protectedMediaFiles: output.protectedMediaFiles,
+              direct: Boolean(configuration.paths.stagingFolder),
               commit,
             });
           }
