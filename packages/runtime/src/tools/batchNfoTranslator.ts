@@ -28,6 +28,7 @@ import {
 } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
+import { isTranslationRefusal, isUsableTranslation } from "../scrape/translate/translationValidation";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
 
@@ -130,13 +131,15 @@ const buildFieldAction = (
   const source = normalizeText(sourceValue);
   const translated = normalizeText(currentValue);
   if (mode === "restore") return source && translated && translated !== source ? { field, kind: "restore" } : undefined;
-  const current = translated || source;
-  if (!current) return undefined;
+  const refused = isTranslationRefusal(translated);
+  const current = (refused ? "" : translated) || source;
+  if (!current) return refused ? { field, kind: "restore" } : undefined;
 
   const text = mode === "all" ? source || current : current;
   if (detectLanguage(text) === "zh") {
     const value = ensureTargetChinese(text, target);
-    return value === current ? undefined : { field, kind: "convert", value };
+    if (value !== current) return { field, kind: "convert", value };
+    return refused ? { field, kind: "restore" } : undefined;
   }
 
   return {
@@ -166,7 +169,9 @@ const toScanItem = (
     nfoPath: entry.nfoPath,
     directory: entry.currentDir,
     number: entry.crawlerData.number || entry.fileInfo.number,
-    title: entry.crawlerData.title_zh?.trim() || entry.crawlerData.title,
+    title: isUsableTranslation(entry.crawlerData.title_zh)
+      ? entry.crawlerData.title_zh.trim()
+      : entry.crawlerData.title,
     pendingFields,
   };
 };
@@ -239,8 +244,9 @@ const translatePendingTexts = async (
       );
       chunk.forEach((item, index) => {
         const value = translated[index]?.trim();
-        if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
-        else failedReasonByKey.set(item.key, "LLM returned an empty translation result");
+        if (isUsableTranslation(value) && value !== item.text.trim())
+          translatedByKey.set(item.key, ensureTargetChinese(value, target));
+        else failedReasonByKey.set(item.key, "LLM returned an invalid translation result");
       });
     } catch (error) {
       const message = toErrorMessage(error);
@@ -358,6 +364,12 @@ export const applyBatchNfoTranslations = async (
     const nextCrawlerData = { ...entry.crawlerData };
     const translatedFields: BatchTranslateField[] = [];
     const errors: string[] = [];
+    let clearedRefusal = false;
+    for (const key of ["title_zh", "plot_zh"] as const) {
+      if (!isTranslationRefusal(nextCrawlerData[key])) continue;
+      nextCrawlerData[key] = undefined;
+      clearedRefusal = true;
+    }
 
     for (const action of [plan.titleAction, plan.plotAction]) {
       if (!action) continue;
@@ -379,7 +391,7 @@ export const applyBatchNfoTranslations = async (
       }
     }
 
-    if (translatedFields.length === 0) {
+    if (translatedFields.length === 0 && !clearedRefusal) {
       results.push({
         ...baseResult,
         success: false,
@@ -442,7 +454,7 @@ export const applyBatchNfoTranslations = async (
 
       results.push({
         ...baseResult,
-        success: errors.length === 0,
+        success: errors.length === 0 && translatedFields.length > 0,
         translatedFields,
         error: errors.length > 0 ? errors.join("；") : undefined,
       });

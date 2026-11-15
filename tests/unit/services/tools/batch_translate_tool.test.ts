@@ -79,6 +79,11 @@ const createEntry = (overrides: EntryOverrides = {}): LocalScanEntry => {
   };
 };
 
+const requireCrawlerData = (entry: LocalScanEntry) => {
+  if (!entry.crawlerData) throw new Error("Synthetic entry requires metadata");
+  return entry.crawlerData;
+};
+
 const createService = (
   options: {
     scan?: (dirPath: string, sceneImagesFolder: string) => Promise<LocalScanEntry[]>;
@@ -345,5 +350,134 @@ describe("batch NFO translation tool", () => {
     expect(first).toContain("<plot>剧情一</plot>");
     expect(first).not.toContain("<director>");
     expect(second).toContain("<title>相同标题</title>");
+  });
+  it("publishes only usable results, preserves valid caches and clears rejected cached fields", async () => {
+    const cases = [
+      { output: ["无法提供该内容的翻译"], cached: undefined, cleanup: false },
+      {
+        output: ["该文本包含涉及未成年人的露骨性内容。"],
+        cached: "该文本包含涉及未成年人的露骨性内容。",
+        cleanup: true,
+      },
+      { output: ["可以帮助翻译删去敏感细节后的版本。"], cached: "可以帮助翻译删去敏感细节后的版本。", cleanup: true },
+      { output: ["无法提供该内容的翻译"], cached: "已有合法译名", cleanup: false },
+      { output: ["Travel diary"], cached: undefined, cleanup: false },
+      { output: [""], cached: undefined, cleanup: false },
+      { output: [null], cached: undefined, cleanup: false },
+    ];
+    for (const { output, cached, cleanup } of cases) {
+      const root = await mkdtemp(join(tmpdir(), "mdcz-batch-validation-"));
+      tempDirs.push(root);
+      const nfoPath = join(root, "TEST-001.nfo");
+      const entry = createEntry({
+        fileInfo: { filePath: join(root, "TEST-001.mp4"), fileName: "TEST-001.mp4", number: "TEST-001" },
+        nfoPath,
+        currentDir: root,
+        crawlerData: { title: "Travel diary", title_zh: cached, plot: "", plot_zh: undefined },
+      });
+      const xml = new NfoGenerator().buildXml(requireCrawlerData(entry));
+      await writeFile(nfoPath, xml);
+      const generateText = vi.fn().mockResolvedValue(JSON.stringify({ translations: output }));
+      const { service } = createService({
+        scan: async () => [entry],
+        scanVideo: async () => entry,
+        generateText,
+        rootPath: root,
+      });
+      if (cleanup) {
+        expect(await service.scan(root, "untranslated", createConfig())).toEqual([
+          expect.objectContaining({ pendingFields: ["title"] }),
+        ]);
+      }
+      const [result] = await service.apply(
+        [
+          {
+            filePath: entry.fileInfo.filePath,
+            nfoPath,
+            directory: root,
+            number: "TEST-001",
+            title: "Travel diary",
+            pendingFields: ["title"],
+          },
+        ],
+        createConfig(),
+        { mode: "all" },
+      );
+      expect(result).toMatchObject({ success: false, translatedFields: [] });
+      expect(result.error).toContain("translation failed");
+      expect(generateText).toHaveBeenCalledTimes(1);
+      const written = await readFile(nfoPath, "utf8");
+      if (!cleanup) expect(written).toBe(xml);
+      else {
+        expect(written).toContain("<title>Travel diary</title>");
+        expect(written).not.toContain("无法");
+        expect(written).not.toContain("可以帮助翻译");
+        expect(written).not.toContain("该文本包含");
+        expect(parseNfoSnapshot(written).crawlerData?.title_zh).not.toBe(cached);
+      }
+    }
+  });
+
+  it("publishes valid batch items while keeping the source of a refused item", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-batch-mixed-"));
+    tempDirs.push(root);
+    const nfoPath = join(root, "TEST-001.nfo");
+    const entry = createEntry({
+      fileInfo: { filePath: join(root, "TEST-001.mp4") },
+      nfoPath,
+      currentDir: root,
+      crawlerData: { title: "Travel diary", title_zh: undefined, plot: "A park walk", plot_zh: undefined },
+    });
+    await writeFile(nfoPath, new NfoGenerator().buildXml(requireCrawlerData(entry)));
+    const generateText = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ translations: ["无法提供该内容的翻译", "公园散步"] }));
+    const { service } = createService({ scanVideo: async () => entry, generateText, rootPath: root });
+    const [result] = await service.apply(
+      [
+        {
+          filePath: entry.fileInfo.filePath,
+          nfoPath,
+          directory: root,
+          number: "TEST-001",
+          title: "Travel diary",
+          pendingFields: ["title", "plot"],
+        },
+      ],
+      createConfig(),
+      { mode: "all" },
+    );
+    expect(result).toMatchObject({ success: false, translatedFields: ["plot"] });
+    const written = await readFile(nfoPath, "utf8");
+    expect(written).toContain("<title>Travel diary</title>");
+    expect(written).toContain("<plot>公园散步</plot>");
+    expect(written).not.toContain("无法");
+  });
+  it("clears a refused translation over a Chinese source without asking the model", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-batch-source-"));
+    tempDirs.push(root);
+    const nfoPath = join(root, "TEST-001.nfo");
+    const entry = createEntry({
+      fileInfo: { filePath: join(root, "TEST-001.mp4") },
+      nfoPath,
+      currentDir: root,
+      crawlerData: { title: "旅行日记", title_zh: "无法提供该内容的翻译", plot: "", plot_zh: undefined },
+    });
+    await writeFile(nfoPath, new NfoGenerator().buildXml(requireCrawlerData(entry)));
+    const generateText = vi.fn();
+    const { service } = createService({
+      scan: async () => [entry],
+      scanVideo: async () => entry,
+      generateText,
+      rootPath: root,
+    });
+    const items = await service.scan(root, "untranslated", createConfig());
+    expect(items).toEqual([expect.objectContaining({ title: "旅行日记", pendingFields: ["title"] })]);
+    const [result] = await service.apply(items, createConfig(), { mode: "untranslated" });
+    expect(result.success).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
+    const written = await readFile(nfoPath, "utf8");
+    expect(written).toContain("<title>旅行日记</title>");
+    expect(written).not.toContain("无法");
   });
 });

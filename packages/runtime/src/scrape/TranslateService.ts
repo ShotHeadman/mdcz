@@ -17,6 +17,7 @@ import { LlmApiClient, type RuntimeNetworkJsonResponse } from "./translate/engin
 import { type LlmMetadataTranslationInput, OpenAiTranslator } from "./translate/engines/OpenAiTranslator";
 import { GenreTranslator } from "./translate/GenreTranslator";
 import { ensureTargetChinese, normalizeNewlines } from "./translate/shared";
+import { isTranslationRefusal, isUsableTranslation } from "./translate/translationValidation";
 import { type LanguageTarget, type MachineTranslator, type TranslationMappingStore, toTarget } from "./translate/types";
 import { isAbortError, throwIfAborted } from "./utils/abort";
 
@@ -74,6 +75,9 @@ export class TranslateService {
     settled: SettledTranslations = {},
     kept: ReadonlySet<keyof CrawlerData> = new Set(),
   ): Promise<{ data: CrawlerData; error: string | null }> {
+    settled = Object.fromEntries(
+      Object.entries(settled).map(([field, value]) => [field, isTranslationRefusal(value) ? undefined : value]),
+    );
     if (!config.translate.enableTranslation) {
       return { data: { ...data, title_zh: settled.title, plot_zh: settled.plot }, error: null };
     }
@@ -137,11 +141,11 @@ export class TranslateService {
       const prepared = fields[field];
       if (!prepared.source || !metadataTranslation) continue;
       const returned = normalizeNewlines(metadataTranslation[field] ?? "").trim();
-      if (returned && returned !== prepared.source) {
+      if (isUsableTranslation(returned) && returned !== prepared.source) {
         prepared.translated = ensureTargetChinese(returned, target);
         continue;
       }
-      const message = `Translation engine failed for ${field} (${data.number}), returning original text: ${returned ? "source echoed" : "engine returned no translation"}`;
+      const message = `Translation engine failed for ${field} (${data.number}), returning original text: ${isTranslationRefusal(returned) ? "engine refused translation" : returned ? "source echoed" : "engine returned no translation"}`;
       this.logger.warn(message);
       translationError = translationError ? `${translationError}; ${message}` : message;
     }
@@ -227,7 +231,9 @@ export class TranslateService {
         ? this.openAiTranslator.translateText(text, target, config, signal)
         : this.translators[engine]([text], target, config, signal).then((results) => results[0]),
     );
-    if (translated?.trim() && translated.trim() !== text) return ensureTargetChinese(translated.trim(), target);
+    throwIfAborted(signal);
+    if (isUsableTranslation(translated) && translated.trim() !== text)
+      return ensureTargetChinese(translated.trim(), target);
 
     this.logger.warn(`Translation engine ${engine} returned no translated text; returning original text`);
     return text;

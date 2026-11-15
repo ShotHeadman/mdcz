@@ -7,6 +7,7 @@ import {
   type LlmServiceType,
 } from "@mdcz/shared/llm";
 import { toErrorMessage } from "../../../shared";
+import { isAbortError, throwIfAborted } from "../../utils/abort";
 
 type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
 
@@ -78,11 +79,16 @@ export const toLlmTextRequest = (
 });
 
 interface ResponsesApiResponse {
+  status?: string;
+  incomplete_details?: unknown;
   output_text?: string | null;
   output?: Array<{
     type?: string;
+    status?: string;
+    refusal?: string | null;
     content?: Array<{
       type?: string;
+      refusal?: string | null;
       text?: string;
     }>;
   }>;
@@ -94,8 +100,10 @@ interface ResponsesApiResponse {
 
 interface ChatCompletionsResponse {
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
-      content?: string | Array<{ text?: string }>;
+      refusal?: string | null;
+      content?: string | Array<{ type?: string; refusal?: string | null; text?: string }>;
     };
   }>;
   error?: {
@@ -214,6 +222,7 @@ export class LlmApiClient {
   constructor(private readonly transport: LlmApiTransport = new FetchLlmApiTransport()) {}
 
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
+    throwIfAborted(signal);
     if (request.reasoning === "enabled" && request.serviceType !== "deepseek") {
       throw new Error(
         "Explicitly enabling with default effort is only supported for DeepSeek; please use server default or specify effort",
@@ -244,6 +253,7 @@ export class LlmApiClient {
     );
 
     if (responsesResponse.ok) {
+      this.requireSuccessfulOutput(responsesResponse, "responses");
       return this.requireExtractedText(
         responsesUrl,
         responsesResponse,
@@ -282,6 +292,7 @@ export class LlmApiClient {
       throw this.toLlmApiError(chatUrl, response);
     }
 
+    this.requireSuccessfulOutput(response, "chat-completions");
     return this.requireExtractedText(chatUrl, response, this.extractChatCompletionsText(response.data));
   }
 
@@ -339,7 +350,44 @@ export class LlmApiClient {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
     } catch (error) {
+      if (isAbortError(error)) throw error;
+      throwIfAborted(init?.signal);
       throw new LlmTransportError(`LLM request failed for ${url}: ${toErrorMessage(error)}`, error);
+    }
+  }
+
+  private requireSuccessfulOutput(response: RuntimeNetworkJsonResponse<unknown>, format: LlmApiFormat): void {
+    const data = response.data;
+    if (!this.isRecord(data)) return;
+    const refused = (part: unknown): boolean =>
+      this.isRecord(part) &&
+      (part.type === "refusal" || (typeof part.refusal === "string" && part.refusal.trim().length > 0));
+    const unfinished = (item: Record<string, unknown>): boolean =>
+      item.status !== undefined && item.status !== "completed";
+    const outputs = Array.isArray(data.output) ? data.output : [];
+    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const invalid =
+      Boolean(data.error) ||
+      (format === "responses"
+        ? unfinished(data) ||
+          Boolean(data.incomplete_details) ||
+          outputs.some(
+            (item) =>
+              this.isRecord(item) &&
+              (unfinished(item) || refused(item) || (Array.isArray(item.content) && item.content.some(refused))),
+          )
+        : choices.some((choice) => {
+            if (!this.isRecord(choice)) return false;
+            const message = choice.message;
+            return (
+              (choice.finish_reason !== undefined && choice.finish_reason !== "stop") ||
+              refused(message) ||
+              (this.isRecord(message) && Array.isArray(message.content) && message.content.some(refused))
+            );
+          }));
+    if (invalid) {
+      // A refusal or partial response invalidates even text returned alongside it; never log its content.
+      throw new LlmApiError("LLM response was refused or not completed", response.status, response.headers, data);
     }
   }
 

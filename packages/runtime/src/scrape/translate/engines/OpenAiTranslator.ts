@@ -5,6 +5,7 @@ import { z } from "zod";
 import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
 import { isAbortError, throwIfAborted } from "../../utils/abort";
 import { getTargetLanguageLabel } from "../shared";
+import { isTranslationRefusal, isUsableTranslation } from "../translationValidation";
 import type { LanguageTarget } from "../types";
 import {
   isMissingRequiredLlmApiKey,
@@ -82,7 +83,7 @@ export const cleanTranslationOutput = (
   const normalizedPrompt = prompt.trim();
   const normalizedSource = source.trim();
   if (
-    !translated ||
+    !isUsableTranslation(translated) ||
     translated === normalizedPrompt ||
     translated === normalizedSource ||
     translated === buildTranslationPrompt(prompt)
@@ -132,6 +133,7 @@ export class OpenAiTranslator {
       signal,
       structured ? LLM_TEXT_TRANSLATION_SCHEMA : undefined,
     );
+    throwIfAborted(signal);
     const translation = cleanTranslationOutput(content, config.translate.llmPrompt, text, structured);
     if (!translation) throw new Error("LLM translation returned invalid output");
     return translation;
@@ -165,6 +167,7 @@ export class OpenAiTranslator {
       JSON.stringify(input),
     ].join("\n");
     const content = await this.requestText(config, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
+    throwIfAborted(signal);
     try {
       const parsed = metadataTranslationSchema.parse(JSON.parse(content ?? ""));
       if (
@@ -173,6 +176,9 @@ export class OpenAiTranslator {
         parsed.genres.length !== input.genres.length
       ) {
         throw new Error("title/plot nullability or genre count does not match the input");
+      }
+      if ([parsed.title, parsed.plot, ...parsed.genres].some(isTranslationRefusal)) {
+        throw new Error("translation contains a refusal");
       }
       return parsed;
     } catch (error) {

@@ -1,6 +1,7 @@
 import { detectLanguage } from "../../shared";
 import { throwIfAborted } from "../utils/abort";
 import { ensureTargetChinese, normalizeTermKey } from "./shared";
+import { isTranslationRefusal } from "./translationValidation";
 import type { LanguageTarget, TranslationMappingStore } from "./types";
 
 export class GenreTranslator {
@@ -19,15 +20,16 @@ export class GenreTranslator {
       if (!term) continue;
       const key = `${target}:${normalizeTermKey(term)}`;
       const cached = this.cache.get(key);
-      if (cached !== undefined) {
+      if (cached !== undefined && !isTranslationRefusal(cached)) {
         resolvedByKey.set(key, cached);
         continue;
       }
+      this.cache.delete(key);
       if (unresolvedByKey.has(key)) continue;
 
       const mapped =
         (await this.mappingStore?.findMappedGenreName(term, target)) ?? (detectLanguage(term) === "zh" ? term : null);
-      if (mapped !== null) {
+      if (mapped !== null && !isTranslationRefusal(mapped)) {
         const normalized = ensureTargetChinese(mapped.trim(), target);
         this.cache.set(key, normalized);
         resolvedByKey.set(key, normalized);
@@ -49,7 +51,7 @@ export class GenreTranslator {
       unresolvedEntries.forEach(([key], index) => {
         // An echoed term is the engine's answer too; caching it keeps refreshes from asking again.
         const value = translated[index]?.trim();
-        if (!value) return;
+        if (!value || isTranslationRefusal(value)) return;
         const normalized = ensureTargetChinese(value, target);
         this.cache.set(key, normalized);
         resolvedByKey.set(key, normalized);

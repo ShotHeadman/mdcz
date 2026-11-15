@@ -3,13 +3,14 @@ import type { CrawlerData, NfoLocalState } from "@mdcz/shared/types";
 import { editedKeys, lockedKeys } from "./nfoEdits";
 import type { SettledTranslations, TranslateService } from "./TranslateService";
 import { normalizeNewlines } from "./translate/shared";
+import { isTranslationRefusal } from "./translate/translationValidation";
 
 const sourceText = (value: string | undefined): string => normalizeNewlines(value ?? "").trim();
 
 /**
  * Turns merged source-language metadata into what gets published. Locked fields keep the NFO's values, and so do
  * fields someone edited when `keepEdits` is set; maintenance previews leave it off to offer the site values instead.
- * The NFO doubles as the translation cache: an unchanged source keeps whichever translation it carries.
+ * The NFO doubles as the translation cache: an unchanged source keeps a usable translation it carries.
  */
 export const publishMetadata = async (input: {
   data: CrawlerData;
@@ -37,7 +38,8 @@ export const publishMetadata = async (input: {
   ] as const) {
     const source = sourceText(field === "title" ? (data.original_title ?? data.title) : data.plot);
     const publishedSource = sourceText(published?.[field]);
-    const translation = published?.[translated]?.trim();
+    const cached = published?.[translated]?.trim();
+    const translation = isTranslationRefusal(cached) ? undefined : cached;
     // An edited title or plot is the user's text, not a cached translation of the source.
     if (kept.has(field) || (!edited.has(translated) && translation && source === publishedSource)) {
       settled[field] = translation && translation !== publishedSource ? translation : undefined;

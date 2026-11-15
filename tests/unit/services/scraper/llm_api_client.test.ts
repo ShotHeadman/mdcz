@@ -212,7 +212,103 @@ describe("LlmApiClient", () => {
     expect(postJsonDetailed).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves transport failures with their cause", async () => {
+  it("accepts only completed, non-refused output across both wire formats", async () => {
+    const rejected: Array<[LlmApiFormat, unknown]> = [
+      [
+        "responses",
+        {
+          output_text: "translated",
+          output: [
+            {
+              type: "message",
+              content: [
+                { type: "output_text", text: "translated" },
+                { type: "refusal", refusal: "Cannot translate this text" },
+              ],
+            },
+          ],
+        },
+      ],
+      ["responses", { output_text: "translated", output: [{ type: "message", content: [{ type: "refusal" }] }] }],
+      ...["failed", "cancelled", "incomplete", "in_progress", "queued"].map((status): [LlmApiFormat, unknown] => [
+        "responses",
+        { status, output_text: "translated" },
+      ]),
+      ["responses", { output_text: "translated", error: { message: "provider failed" } }],
+      ["responses", { output_text: "translated", incomplete_details: { reason: "content_filter" } }],
+      [
+        "responses",
+        {
+          output_text: "translated",
+          output: [{ type: "message", status: "incomplete", content: [{ type: "output_text", text: "translated" }] }],
+        },
+      ],
+      [
+        "chat-completions",
+        {
+          choices: [
+            { message: { content: "translated", refusal: "Cannot translate this text" }, finish_reason: "stop" },
+          ],
+        },
+      ],
+      [
+        "chat-completions",
+        { choices: [{ message: { content: [{ type: "text", text: "translated" }, { type: "refusal" }] } }] },
+      ],
+      ...["content_filter", "length", "error", null].map((finish_reason): [LlmApiFormat, unknown] => [
+        "chat-completions",
+        { choices: [{ finish_reason, message: { content: "translated" } }] },
+      ]),
+    ];
+    const accepted: Array<[LlmApiFormat, unknown]> = [
+      [
+        "responses",
+        {
+          status: "completed",
+          output: [{ type: "message", status: "completed", content: [{ type: "output_text", text: "translated" }] }],
+        },
+      ],
+      ["responses", { output_text: "translated", error: null, incomplete_details: null }],
+      ["chat-completions", { choices: [{ finish_reason: "stop", message: { refusal: null, content: "translated" } }] }],
+      [
+        "chat-completions",
+        { choices: [{ message: { refusal: "", content: [{ type: "text", text: "translated" }] } }] },
+      ],
+    ];
+    for (const [apiFormat, data] of rejected) {
+      const postJsonDetailed = vi.fn().mockResolvedValue(response(data));
+      const client = new LlmApiClient({ postJsonDetailed });
+      await expect(
+        client.generateText(
+          textRequest({
+            baseUrl: "https://example.test/v1",
+            apiFormat,
+            reasoning: "default",
+          }),
+        ),
+        JSON.stringify(data),
+      ).rejects.toMatchObject({
+        status: 200,
+        message: "LLM response was refused or not completed",
+      });
+      expect(postJsonDetailed).toHaveBeenCalledTimes(1);
+    }
+    for (const [apiFormat, data] of accepted) {
+      const client = new LlmApiClient({ postJsonDetailed: vi.fn().mockResolvedValue(response(data)) });
+      await expect(
+        client.generateText(
+          textRequest({
+            baseUrl: "https://example.test/v1",
+            apiFormat,
+            reasoning: "default",
+          }),
+        ),
+        JSON.stringify(data),
+      ).resolves.toBe("translated");
+    }
+  });
+
+  it("preserves transport error causes and propagates cancellation", async () => {
     const cause = new Error("body timed out");
     const client = new LlmApiClient({ postJsonDetailed: vi.fn().mockRejectedValue(cause) });
     await expect(
@@ -227,5 +323,17 @@ describe("LlmApiClient", () => {
         }),
       ),
     ).rejects.toMatchObject({ name: "LlmTransportError", cause } satisfies Partial<LlmTransportError>);
+
+    const abort = new DOMException("Cancelled", "AbortError");
+    const transport = { postJsonDetailed: vi.fn().mockRejectedValue(abort) };
+    const cancelledClient = new LlmApiClient(transport);
+    const request = textRequest({ baseUrl: "https://example.test/v1", apiFormat: "responses", reasoning: "default" });
+    await expect(cancelledClient.generateText(request)).rejects.toBe(abort);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(cancelledClient.generateText(request, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(transport.postJsonDetailed).toHaveBeenCalledTimes(1);
   });
 });
