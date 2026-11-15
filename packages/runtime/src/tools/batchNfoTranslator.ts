@@ -11,6 +11,7 @@ import type {
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { type LlmApiClient, missingLlmSetting, toLlmTextRequest } from "../llm";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
@@ -18,17 +19,12 @@ import { WriteOutput } from "../publication/WriteOutput";
 import {
   ensureTargetChinese,
   getTargetLanguageLabel,
-  isMissingRequiredLlmApiKey,
   type LanguageTarget,
-  type LlmApiClient,
-  normalizeLlmBaseUrl,
   normalizeNewlines,
-  toLlmTextRequest,
   toTarget,
 } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
-import { isTranslationRefusal, isUsableTranslation } from "../scrape/translate/translationValidation";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
 
@@ -87,7 +83,7 @@ const noopLogger: RuntimeLogger = {
 
 const normalizeText = (value: string | undefined): string => normalizeNewlines(value ?? "").trim();
 
-const batchTranslationSchema = z.strictObject({ translations: z.array(z.string().trim().min(1)) });
+const batchTranslationSchema = z.strictObject({ translations: z.array(z.string().trim().min(1).nullable()) });
 
 const normalizeMaxBatchItems = (value: unknown): number => {
   const parsed = Number(value);
@@ -131,15 +127,13 @@ const buildFieldAction = (
   const source = normalizeText(sourceValue);
   const translated = normalizeText(currentValue);
   if (mode === "restore") return source && translated && translated !== source ? { field, kind: "restore" } : undefined;
-  const refused = isTranslationRefusal(translated);
-  const current = (refused ? "" : translated) || source;
-  if (!current) return refused ? { field, kind: "restore" } : undefined;
+  const current = translated || source;
+  if (!current) return undefined;
 
   const text = mode === "all" ? source || current : current;
   if (detectLanguage(text) === "zh") {
     const value = ensureTargetChinese(text, target);
-    if (value !== current) return { field, kind: "convert", value };
-    return refused ? { field, kind: "restore" } : undefined;
+    return value === current ? undefined : { field, kind: "convert", value };
   }
 
   return {
@@ -169,9 +163,7 @@ const toScanItem = (
     nfoPath: entry.nfoPath,
     directory: entry.currentDir,
     number: entry.crawlerData.number || entry.fileInfo.number,
-    title: isUsableTranslation(entry.crawlerData.title_zh)
-      ? entry.crawlerData.title_zh.trim()
-      : entry.crawlerData.title,
+    title: entry.crawlerData.title_zh?.trim() || entry.crawlerData.title,
     pendingFields,
   };
 };
@@ -184,7 +176,7 @@ const buildBatchPrompt = (texts: string[], target: LanguageTarget): string => {
     "规则：",
     `1. 只返回 JSON 对象 {"translations":["译文"]}，translations 数组长度必须为 ${texts.length}。`,
     "2. 返回数组的顺序必须与输入数组完全一致。",
-    "3. 每个元素只包含最终翻译文本，不要输出解释、代码块、Markdown、编号或额外字段。",
+    "3. 每个元素只返回最终译文，无法翻译时在原位置返回 null，不要输出解释、代码块、Markdown、编号或额外字段。",
     "4. 自动识别原文语言；如果原文已经是目标中文，直接返回合适的中文结果。",
     "输入 JSON：",
     JSON.stringify(texts),
@@ -192,12 +184,9 @@ const buildBatchPrompt = (texts: string[], target: LanguageTarget): string => {
 };
 
 const assertLlmConfiguration = (config: Configuration): void => {
-  const model = config.translate.llmModelName.trim();
-  const apiKey = config.translate.llmApiKey.trim();
-  const baseUrl = normalizeLlmBaseUrl(config.translate.llmBaseUrl);
-
-  if (!model) throw new Error("Configure LLM model name first");
-  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("Configure LLM API key first");
+  const missing = missingLlmSetting(config.llm);
+  if (missing === "missing_model") throw new Error("Configure LLM model name first");
+  if (missing === "missing_credentials") throw new Error("Configure LLM API key first");
 };
 
 const translateChunk = async (
@@ -205,9 +194,9 @@ const translateChunk = async (
   texts: string[],
   target: LanguageTarget,
   config: Configuration,
-): Promise<string[]> => {
+): Promise<Array<string | null>> => {
   const content = await llmApiClient.generateText(
-    toLlmTextRequest(config.translate, buildBatchPrompt(texts, target), {
+    toLlmTextRequest(config.llm, buildBatchPrompt(texts, target), {
       name: "batch_translation",
       schema: z.toJSONSchema(batchTranslationSchema),
     }),
@@ -244,9 +233,8 @@ const translatePendingTexts = async (
       );
       chunk.forEach((item, index) => {
         const value = translated[index]?.trim();
-        if (isUsableTranslation(value) && value !== item.text.trim())
-          translatedByKey.set(item.key, ensureTargetChinese(value, target));
-        else failedReasonByKey.set(item.key, "LLM returned an invalid translation result");
+        if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
+        else failedReasonByKey.set(item.key, "LLM returned an empty translation result");
       });
     } catch (error) {
       const message = toErrorMessage(error);
@@ -364,12 +352,6 @@ export const applyBatchNfoTranslations = async (
     const nextCrawlerData = { ...entry.crawlerData };
     const translatedFields: BatchTranslateField[] = [];
     const errors: string[] = [];
-    let clearedRefusal = false;
-    for (const key of ["title_zh", "plot_zh"] as const) {
-      if (!isTranslationRefusal(nextCrawlerData[key])) continue;
-      nextCrawlerData[key] = undefined;
-      clearedRefusal = true;
-    }
 
     for (const action of [plan.titleAction, plan.plotAction]) {
       if (!action) continue;
@@ -391,7 +373,7 @@ export const applyBatchNfoTranslations = async (
       }
     }
 
-    if (translatedFields.length === 0 && !clearedRefusal) {
+    if (translatedFields.length === 0) {
       results.push({
         ...baseResult,
         success: false,
@@ -454,7 +436,7 @@ export const applyBatchNfoTranslations = async (
 
       results.push({
         ...baseResult,
-        success: errors.length === 0 && translatedFields.length > 0,
+        success: errors.length === 0,
         translatedFields,
         error: errors.length > 0 ? errors.join("；") : undefined,
       });

@@ -1,6 +1,7 @@
 import type { ActorAliasGroup } from "@mdcz/shared/actorAliases";
 import {
   type Configuration,
+  type LlmSettings,
   NFO_FIELD_OPTIONS,
   NOTIFICATION_CHANNELS,
   notificationsSchema,
@@ -583,9 +584,7 @@ export function TranslateSection() {
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
   const engine = useWatch({ control: form.control, name: "translate.engine" });
-  const serviceType = useWatch({ control: form.control, name: "translate.llmServiceType" });
   const baiduService = useWatch({ control: form.control, name: "translate.baiduService" });
-  const isLLM = engine === "openai";
 
   const handleTestTranslation = async () => {
     const input = {
@@ -596,18 +595,8 @@ export function TranslateSection() {
       baiduAppId: String(form.getValues("translate.baiduAppId") ?? ""),
       baiduSecretKey: String(form.getValues("translate.baiduSecretKey") ?? ""),
       baiduApiKey: String(form.getValues("translate.baiduApiKey") ?? ""),
-      llmModelName: String(form.getValues("translate.llmModelName") ?? ""),
-      llmApiKey: String(form.getValues("translate.llmApiKey") ?? ""),
-      llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
-      llmApiFormat: form.getValues("translate.llmApiFormat") ?? "responses",
-      llmServiceType: form.getValues("translate.llmServiceType") ?? "openai-compatible",
       llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
-      llmTemperature: form.getValues("translate.llmTemperature"),
-      llmReasoning: form.getValues("translate.llmReasoning") ?? "default",
-      llmOutputFormat: form.getValues("translate.llmOutputFormat") ?? "none",
-      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 120),
-      llmMaxRetries: Number(form.getValues("translate.llmMaxRetries") ?? 3),
-      llmMaxRequestsPerSecond: Number(form.getValues("translate.llmMaxRequestsPerSecond") ?? 1),
+      llm: form.getValues("llm") as LlmSettings,
     };
 
     setTesting(true);
@@ -671,43 +660,92 @@ export function TranslateSection() {
           )}
         </>
       )}
-      {shouldMountConditionalSettings(isLLM, search) && (
-        <>
-          <TextField name="translate.llmModelName" />
-          <SecretField name="translate.llmApiKey" />
-          <UrlField name="translate.llmBaseUrl" />
-          {serviceType === "openai-compatible" && (
-            <EnumField name="translate.llmApiFormat" options={toEnumOptions(t.settings.options.llmApiFormat)} />
-          )}
-          <EnumField name="translate.llmServiceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
-          <PromptFieldWrapper name="translate.llmPrompt" />
-          <NumberField name="translate.llmTemperature" min={0} max={2} step={0.1} optional />
-          <EnumField
-            name="translate.llmReasoning"
-            description={
-              t.settingsFields.llmReasoningDescription[
-                serviceType === "google" || serviceType === "deepseek"
-                  ? (serviceType as "google" | "deepseek")
-                  : "default"
-              ]
-            }
-            options={toEnumOptions(
-              serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning,
-            )}
-          />
-          <EnumField
-            name="translate.llmOutputFormat"
-            options={toEnumOptions(t.settings.options.llmOutputFormat).filter(
-              (option) => serviceType !== "deepseek" || option.value !== "json_schema",
-            )}
-          />
-          <NumberField name="translate.llmTimeout" min={1} max={300} />
-          <NumberField name="translate.llmMaxRetries" min={1} max={20} />
-          <NumberField name="translate.llmMaxRequestsPerSecond" min={1} max={100} />
-        </>
-      )}
+      {shouldMountConditionalSettings(engine === "openai", search) && <PromptFieldWrapper name="translate.llmPrompt" />}
       <EnumField name="translate.targetLanguage" options={LANGUAGE_OPTIONS} />
     </>
+  );
+}
+
+/** The connection translation, the AI number fallback and Brief share, whatever the translation engine is. */
+export function LlmSection() {
+  const t = useT();
+  const form = useFormContext<FieldValues>();
+  const serviceType = useWatch({ control: form.control, name: "llm.serviceType" }) as LlmSettings["serviceType"];
+  const brief = useWatch({ control: form.control, name: "llm.brief" }) === true;
+
+  return (
+    <>
+      <BriefSwitchField />
+      {brief ? <EnumField name="llm.briefSendKey" options={toEnumOptions(t.settings.options.briefSendKey)} /> : null}
+      <TextField name="llm.modelName" />
+      <SecretField name="llm.apiKey" />
+      <UrlField name="llm.baseUrl" />
+      {serviceType === "openai-compatible" && (
+        <EnumField name="llm.apiFormat" options={toEnumOptions(t.settings.options.llmApiFormat)} />
+      )}
+      <EnumField name="llm.serviceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
+      <NumberField name="llm.temperature" min={0} max={2} step={0.1} optional />
+      <EnumField
+        name="llm.reasoning"
+        description={
+          t.settingsFields.llmReasoningDescription[
+            serviceType === "google" || serviceType === "deepseek" ? serviceType : "default"
+          ]
+        }
+        options={toEnumOptions(
+          serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning,
+        )}
+      />
+      <EnumField
+        name="llm.outputFormat"
+        options={toEnumOptions(t.settings.options.llmOutputFormat).filter(
+          (option) => serviceType !== "deepseek" || option.value !== "json_schema",
+        )}
+      />
+      <NumberField name="llm.timeout" min={1} max={300} />
+      <NumberField name="llm.maxRetries" min={1} max={20} />
+      <NumberField name="llm.maxRequestsPerSecond" min={1} max={100} />
+    </>
+  );
+}
+
+/** Turning Brief on saves only after a planning check passes with the connection as edited. */
+function BriefSwitchField() {
+  const t = useT();
+  const services = useSettingsServices();
+  const form = useFormContext<FieldValues>();
+  const [checking, setChecking] = useState(false);
+
+  return (
+    <BaseField name="llm.brief">
+      {(field) => (
+        <div className="flex items-center gap-2">
+          {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+          <FormControl>
+            <Switch
+              checked={Boolean(field.value)}
+              disabled={checking}
+              onCheckedChange={async (checked) => {
+                if (!checked) {
+                  field.onChange(false);
+                  return;
+                }
+                setChecking(true);
+                try {
+                  const result = await services.checkBrief(form.getValues("llm") as LlmSettings);
+                  if (result.status === "ok") field.onChange(true);
+                  else toast.error(t.brief.check.failed[result.status](result.error ?? ""), { id: "brief" });
+                } catch (error) {
+                  toast.error(t.brief.check.failed.failed(toErrorMessage(error)), { id: "brief" });
+                } finally {
+                  setChecking(false);
+                }
+              }}
+            />
+          </FormControl>
+        </div>
+      )}
+    </BaseField>
   );
 }
 

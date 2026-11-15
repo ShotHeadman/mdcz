@@ -2,14 +2,13 @@ import type { Configuration } from "@mdcz/shared/config";
 import type { MediaServerConnectionCheckResult, PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { RuntimeNetworkClient } from "../network";
 import {
-  buildMediaServerHeaders,
+  buildMediaServerRequestInit,
   buildMediaServerUrl,
   deleteMediaServerPrimaryImage,
   fetchMediaServerMetadataEditorInfo,
   fetchMediaServerPersons,
   fetchMediaServerResolvedUserId,
   fetchMediaServerUserScopedItemDetail,
-  type MediaServerHeadersInit,
   type MediaServerItemDetail,
   type MediaServerMode,
   normalizeMediaServerPersons,
@@ -44,9 +43,6 @@ export const buildEmbyUrl = (
   path: string,
   query: Record<string, string | undefined> = {},
 ): string => buildMediaServerUrl(configuration, "emby", path, query);
-
-export const buildEmbyHeaders = (configuration: Configuration, headers: MediaServerHeadersInit = {}): Headers =>
-  buildMediaServerHeaders(configuration, "emby", headers);
 
 const ACTOR_PERSON_TYPES = ["Actor", "GuestStar"] as const;
 
@@ -93,9 +89,10 @@ const fetchEmbyPublicSystemInfo = async (
   configuration: Configuration,
 ): Promise<PublicSystemInfo> => {
   try {
-    return await networkClient.getJson<PublicSystemInfo>(buildEmbyUrl(configuration, "/System/Info/Public"), {
-      headers: { accept: "application/json" },
-    });
+    return await networkClient.getJson<PublicSystemInfo>(
+      buildEmbyUrl(configuration, "/System/Info/Public"),
+      buildMediaServerRequestInit(configuration, "emby", { accept: "application/json" }, { authenticated: false }),
+    );
   } catch (error) {
     throw toEmbyServiceError(error, {}, { code: "EMBY_UNREACHABLE", message: "Failed to read Emby server info" });
   }
@@ -366,9 +363,10 @@ export const checkEmbyConnection = async (
       };
     },
     verifyAuth: async () => {
-      await networkClient.getJson<Record<string, unknown>>(buildEmbyUrl(configuration, "/System/Endpoint"), {
-        headers: buildEmbyHeaders(configuration, { accept: "application/json" }),
-      });
+      await networkClient.getJson<Record<string, unknown>>(
+        buildEmbyUrl(configuration, "/System/Endpoint"),
+        buildMediaServerRequestInit(configuration, "emby", { accept: "application/json" }),
+      );
     },
     // Reads people exactly as the sync does, so a server whose actor filter comes back empty fails here, not silently in sync.
     fetchPersons: async () =>

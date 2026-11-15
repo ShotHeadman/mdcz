@@ -1,9 +1,16 @@
 import { z } from "zod";
 import type { RuntimeNetworkClient } from "../../../network";
+import { getScrapeConcurrency } from "../../executionPolicy";
 import { throwIfAborted } from "../../utils/abort";
-import type { LanguageTarget, MachineTranslator } from "../types";
+import type { MachineTranslator } from "../types";
 
 const googleTranslateResponseSchema = z.array(z.unknown());
+
+const splitLines = (text: string): string[] =>
+  text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
 const extractGoogleTranslatedText = (payload: unknown): string | null => {
   const parsed = googleTranslateResponseSchema.safeParse(payload);
@@ -11,20 +18,15 @@ const extractGoogleTranslatedText = (payload: unknown): string | null => {
     return null;
   }
 
-  const root = parsed.data;
-  const first = root[0];
+  const first = parsed.data[0];
   if (!Array.isArray(first)) {
     return null;
   }
 
   const segments: string[] = [];
   for (const segment of first) {
-    if (!Array.isArray(segment)) {
-      continue;
-    }
-    const translated = segment[0];
-    if (typeof translated === "string" && translated.trim().length > 0) {
-      segments.push(translated);
+    if (Array.isArray(segment) && typeof segment[0] === "string") {
+      segments.push(segment[0]);
     }
   }
 
@@ -33,26 +35,37 @@ const extractGoogleTranslatedText = (payload: unknown): string | null => {
 };
 
 export class GoogleTranslator {
-  readonly translate: MachineTranslator = (texts, target, _config, signal) =>
-    Promise.all(texts.map((text) => this.translateText(text, target, signal)));
   constructor(private readonly networkClient: RuntimeNetworkClient) {}
 
-  async translateText(text: string, target: LanguageTarget, signal?: AbortSignal): Promise<string | null> {
-    if (!text.trim()) {
-      return null;
-    }
+  readonly translate: MachineTranslator = async (texts, target, config, signal) => {
+    const lines = texts.map(splitLines);
+    const batch = lines.flat();
+    if (!batch.length) return texts.map(() => null);
 
     throwIfAborted(signal);
+    this.networkClient.setDomainLimit?.("translate.googleapis.com", 5, getScrapeConcurrency(config));
 
-    const tl = target === "zh_tw" ? "zh-TW" : "zh-CN";
     const url = new URL("https://translate.googleapis.com/translate_a/single");
     url.searchParams.set("client", "gtx");
     url.searchParams.set("sl", "auto");
-    url.searchParams.set("tl", tl);
+    url.searchParams.set("tl", target === "zh_tw" ? "zh-TW" : "zh-CN");
     url.searchParams.set("dt", "t");
-    url.searchParams.set("q", text);
+    url.searchParams.set("q", batch.join("\n"));
 
-    const payload = await this.networkClient.getJson<unknown>(url.toString(), { signal });
-    return extractGoogleTranslatedText(payload);
-  }
+    const translated = extractGoogleTranslatedText(
+      await this.networkClient.getJson<unknown>(url.toString(), { signal }),
+    );
+    const results = splitLines(translated ?? "");
+    if (results.length !== batch.length) {
+      throw new Error("Google translation result count mismatch");
+    }
+
+    let offset = 0;
+    return lines.map((textLines) => {
+      if (!textLines.length) return null;
+      const result = results.slice(offset, offset + textLines.length).join("\n");
+      offset += textLines.length;
+      return result || null;
+    });
+  };
 }

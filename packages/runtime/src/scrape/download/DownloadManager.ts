@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import type { MovieNaming } from "@mdcz/shared/mediaLibrary";
@@ -10,6 +10,7 @@ import { DirectoryInventory } from "../DirectoryInventory";
 import { throwIfAborted } from "../utils/abort";
 import { FanartAssetDownloader } from "./assets/FanartAssetDownloader";
 import { buildImageCandidates } from "./assets/helpers";
+import { PosterImageDerivationService } from "./assets/PosterImageDerivationService";
 import { PrimaryImageAssetDownloader } from "./assets/PrimaryImageAssetDownloader";
 import { SceneImageAssetDownloader } from "./assets/SceneImageAssetDownloader";
 import { TrailerAssetDownloader } from "./assets/TrailerAssetDownloader";
@@ -119,6 +120,42 @@ export class DownloadManager {
     }
 
     return assets;
+  }
+
+  /**
+   * The poster without badges, made the way `downloadAll` made it. `poster_source_url` names the cover when the poster
+   * was cropped from it, so that is cropped again from the local cover; a site's own poster is fetched again.
+   */
+  async downloadPlainPoster(input: {
+    data: Pick<CrawlerData, "poster_source_url" | "thumb_source_url">;
+    targetPath: string;
+    thumbPath?: string;
+    signal?: AbortSignal;
+  }): Promise<string | undefined> {
+    const { data, targetPath, signal } = input;
+    const sitePoster =
+      data.poster_source_url && data.poster_source_url !== data.thumb_source_url ? data.poster_source_url : undefined;
+    return await runWithNetworkChannel("media", async () => {
+      const posterPath = sitePoster
+        ? await this.imageDownloader.downloadBestImage([sitePoster], targetPath, signal)
+        : undefined;
+      if (sitePoster && !posterPath) return undefined;
+      const derived = await new PosterImageDerivationService(this.logger).deriveFromThumbIfNeeded({
+        posterPath,
+        targetPath,
+        resolveThumbPath: async () =>
+          input.thumbPath ??
+          (data.thumb_source_url
+            ? await this.imageDownloader.downloadBestImage(
+                [data.thumb_source_url],
+                join(dirname(targetPath), ".mdcz-cover.jpg"),
+                signal,
+              )
+            : undefined),
+      });
+      if (derived.status === "derived") return derived.path;
+      return derived.reason === "large_poster" ? posterPath : undefined;
+    });
   }
 
   private createExecutionPlan(

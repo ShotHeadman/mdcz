@@ -1,4 +1,4 @@
-import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/scrape";
+import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/llm";
 import {
   DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,
@@ -44,7 +44,7 @@ describe("LlmApiClient", () => {
       url: "http://127.0.0.1:11434/v1/responses",
       expected: { model: "model", input: "hello" },
       absent: ["temperature", "reasoning"],
-      data: { output_text: "ok" },
+      data: { status: "completed", output_text: "ok" },
     },
     {
       name: "generic Chat explicit effort",
@@ -56,7 +56,7 @@ describe("LlmApiClient", () => {
       url: "https://example.test/v1/chat/completions",
       expected: { model: "model", reasoning_effort: "high", messages: [{ role: "user", content: "hello" }] },
       absent: ["temperature", "response_format"],
-      data: { choices: [{ message: { content: "ok" } }] },
+      data: { choices: [{ finish_reason: "stop", message: { content: "ok" } }] },
     },
     {
       name: "explicit Google service type on a custom proxy",
@@ -193,7 +193,7 @@ describe("LlmApiClient", () => {
     );
   });
 
-  it("does not downgrade a rejected Responses request", async () => {
+  it("rejects HTTP failures and explicit refusal or incomplete output without downgrading", async () => {
     const postJsonDetailed = vi
       .fn()
       .mockResolvedValue(response({ error: { message: "unsupported parameter" } }, false));
@@ -210,105 +210,28 @@ describe("LlmApiClient", () => {
       ),
     ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("unsupported parameter") });
     expect(postJsonDetailed).toHaveBeenCalledTimes(1);
-  });
 
-  it("accepts only completed, non-refused output across both wire formats", async () => {
-    const rejected: Array<[LlmApiFormat, unknown]> = [
-      [
-        "responses",
-        {
-          output_text: "translated",
-          output: [
-            {
-              type: "message",
-              content: [
-                { type: "output_text", text: "translated" },
-                { type: "refusal", refusal: "Cannot translate this text" },
-              ],
-            },
-          ],
-        },
-      ],
-      ["responses", { output_text: "translated", output: [{ type: "message", content: [{ type: "refusal" }] }] }],
-      ...["failed", "cancelled", "incomplete", "in_progress", "queued"].map((status): [LlmApiFormat, unknown] => [
-        "responses",
-        { status, output_text: "translated" },
-      ]),
-      ["responses", { output_text: "translated", error: { message: "provider failed" } }],
-      ["responses", { output_text: "translated", incomplete_details: { reason: "content_filter" } }],
-      [
-        "responses",
-        {
-          output_text: "translated",
-          output: [{ type: "message", status: "incomplete", content: [{ type: "output_text", text: "translated" }] }],
-        },
-      ],
-      [
-        "chat-completions",
-        {
-          choices: [
-            { message: { content: "translated", refusal: "Cannot translate this text" }, finish_reason: "stop" },
-          ],
-        },
-      ],
-      [
-        "chat-completions",
-        { choices: [{ message: { content: [{ type: "text", text: "translated" }, { type: "refusal" }] } }] },
-      ],
-      ...["content_filter", "length", "error", null].map((finish_reason): [LlmApiFormat, unknown] => [
-        "chat-completions",
-        { choices: [{ finish_reason, message: { content: "translated" } }] },
-      ]),
-    ];
-    const accepted: Array<[LlmApiFormat, unknown]> = [
-      [
-        "responses",
-        {
-          status: "completed",
-          output: [{ type: "message", status: "completed", content: [{ type: "output_text", text: "translated" }] }],
-        },
-      ],
-      ["responses", { output_text: "translated", error: null, incomplete_details: null }],
-      ["chat-completions", { choices: [{ finish_reason: "stop", message: { refusal: null, content: "translated" } }] }],
-      [
-        "chat-completions",
-        { choices: [{ message: { refusal: "", content: [{ type: "text", text: "translated" }] } }] },
-      ],
-    ];
-    for (const [apiFormat, data] of rejected) {
-      const postJsonDetailed = vi.fn().mockResolvedValue(response(data));
-      const client = new LlmApiClient({ postJsonDetailed });
+    for (const [apiFormat, data] of [
+      ["responses", { status: "incomplete", output_text: "partial" }],
+      ["responses", { status: "failed", output_text: "partial" }],
+      ["responses", { status: "in_progress", output_text: "partial" }],
+      ["responses", { incomplete_details: { reason: "max_output_tokens" }, output_text: "partial" }],
+      ["responses", { output_text: "partial", output: [{ content: [{ type: "refusal" }] }] }],
+      ["responses", { output_text: "partial", output: [{ status: "incomplete" }] }],
+      ["chat-completions", { choices: [{ finish_reason: "length", message: { content: "partial" } }] }],
+      ["chat-completions", { choices: [{ finish_reason: "content_filter", message: { content: "partial" } }] }],
+      ["chat-completions", { choices: [{ message: { content: "partial", refusal: "Declined" } }] }],
+      ["chat-completions", { choices: [{ message: { content: [{ type: "refusal", text: "Declined" }] } }] }],
+    ] as const) {
+      postJsonDetailed.mockClear().mockResolvedValue(response(data));
       await expect(
-        client.generateText(
-          textRequest({
-            baseUrl: "https://example.test/v1",
-            apiFormat,
-            reasoning: "default",
-          }),
-        ),
-        JSON.stringify(data),
-      ).rejects.toMatchObject({
-        status: 200,
-        message: "LLM response was refused or not completed",
-      });
+        client.generateText(textRequest({ baseUrl: DEFAULT_LLM_BASE_URL, apiFormat, reasoning: "default" })),
+      ).rejects.toMatchObject({ status: 200, message: "LLM response was refused or incomplete" });
       expect(postJsonDetailed).toHaveBeenCalledTimes(1);
     }
-    for (const [apiFormat, data] of accepted) {
-      const client = new LlmApiClient({ postJsonDetailed: vi.fn().mockResolvedValue(response(data)) });
-      await expect(
-        client.generateText(
-          textRequest({
-            baseUrl: "https://example.test/v1",
-            apiFormat,
-            reasoning: "default",
-          }),
-        ),
-        JSON.stringify(data),
-      ).resolves.toBe("translated");
-    }
   });
 
-  it("preserves transport error causes and propagates cancellation", async () => {
+  it("preserves transport failures with their cause", async () => {
     const cause = new Error("body timed out");
     const client = new LlmApiClient({ postJsonDetailed: vi.fn().mockRejectedValue(cause) });
     await expect(
@@ -323,17 +246,5 @@ describe("LlmApiClient", () => {
         }),
       ),
     ).rejects.toMatchObject({ name: "LlmTransportError", cause } satisfies Partial<LlmTransportError>);
-
-    const abort = new DOMException("Cancelled", "AbortError");
-    const transport = { postJsonDetailed: vi.fn().mockRejectedValue(abort) };
-    const cancelledClient = new LlmApiClient(transport);
-    const request = textRequest({ baseUrl: "https://example.test/v1", apiFormat: "responses", reasoning: "default" });
-    await expect(cancelledClient.generateText(request)).rejects.toBe(abort);
-    const controller = new AbortController();
-    controller.abort();
-    await expect(cancelledClient.generateText(request, controller.signal)).rejects.toMatchObject({
-      name: "AbortError",
-    });
-    expect(transport.postJsonDetailed).toHaveBeenCalledTimes(1);
   });
 });

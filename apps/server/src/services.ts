@@ -3,6 +3,7 @@ import type { ActorSyncFollowUp } from "@mdcz/runtime/mediaserver";
 import type { ActivityService } from "./services/activityService";
 import type { ServerAuth } from "./services/authService";
 import type { AutomationService } from "./services/automationService";
+import type { BriefService } from "./services/briefService";
 import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
 import type { LibraryEditService } from "./services/libraryEditService";
@@ -25,6 +26,7 @@ import type { TaskEventBus } from "./taskEvents";
 export interface ServerServices {
   activity: ActivityService;
   actorSync: ActorSyncFollowUp;
+  brief: BriefService;
   automation: AutomationService;
   auth: ServerAuth;
   browser: BrowserService;

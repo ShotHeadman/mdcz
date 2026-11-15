@@ -1,4 +1,4 @@
-import type { Configuration } from "@mdcz/shared/config";
+import type { LlmSettings } from "@mdcz/shared/config";
 import {
   DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,
@@ -6,8 +6,8 @@ import {
   type LlmReasoning,
   type LlmServiceType,
 } from "@mdcz/shared/llm";
-import { toErrorMessage } from "../../../shared";
-import { isAbortError, throwIfAborted } from "../../utils/abort";
+import type { RuntimeNetworkClient, RuntimeRequestInit } from "../network";
+import { toErrorMessage } from "../shared";
 
 type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
 
@@ -47,48 +47,30 @@ export interface LlmJsonSchema {
   schema: Record<string, unknown>;
 }
 
-export type LlmRequestConfig = Pick<
-  Configuration["translate"],
-  | "llmModelName"
-  | "llmApiKey"
-  | "llmBaseUrl"
-  | "llmApiFormat"
-  | "llmTemperature"
-  | "llmReasoning"
-  | "llmServiceType"
-  | "llmOutputFormat"
-  | "llmTimeout"
->;
-
 export const toLlmTextRequest = (
-  config: LlmRequestConfig,
+  settings: LlmSettings,
   prompt: string,
   outputSchema?: LlmJsonSchema,
 ): LlmTextRequest => ({
-  model: config.llmModelName,
-  apiKey: config.llmApiKey,
-  baseUrl: config.llmBaseUrl,
-  apiFormat: config.llmApiFormat,
-  temperature: config.llmTemperature ?? undefined,
+  model: settings.modelName,
+  apiKey: settings.apiKey,
+  baseUrl: settings.baseUrl,
+  apiFormat: settings.apiFormat,
+  temperature: settings.temperature ?? undefined,
   prompt,
-  reasoning: config.llmReasoning,
-  serviceType: config.llmServiceType,
-  outputFormat: config.llmOutputFormat,
+  reasoning: settings.reasoning,
+  serviceType: settings.serviceType,
+  outputFormat: settings.outputFormat,
   outputSchema,
-  timeout: Math.max(1, Math.trunc(config.llmTimeout)) * 1000,
+  timeout: Math.max(1, Math.trunc(settings.timeout)) * 1000,
 });
 
 interface ResponsesApiResponse {
-  status?: string;
-  incomplete_details?: unknown;
   output_text?: string | null;
   output?: Array<{
     type?: string;
-    status?: string;
-    refusal?: string | null;
     content?: Array<{
       type?: string;
-      refusal?: string | null;
       text?: string;
     }>;
   }>;
@@ -100,10 +82,8 @@ interface ResponsesApiResponse {
 
 interface ChatCompletionsResponse {
   choices?: Array<{
-    finish_reason?: string | null;
     message?: {
-      refusal?: string | null;
-      content?: string | Array<{ type?: string; refusal?: string | null; text?: string }>;
+      content?: string | Array<{ text?: string }>;
     };
   }>;
   error?: {
@@ -144,6 +124,14 @@ export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>
 
 export const isMissingRequiredLlmApiKey = (baseUrl: string, apiKey: string): boolean =>
   isOfficialOpenAiBaseUrl(baseUrl) && apiKey.trim().length === 0;
+
+/** Null when the settings can make a request; otherwise what is missing. */
+export const missingLlmSetting = (settings: LlmSettings): "missing_model" | "missing_credentials" | null =>
+  !settings.modelName.trim()
+    ? "missing_model"
+    : isMissingRequiredLlmApiKey(settings.baseUrl, settings.apiKey)
+      ? "missing_credentials"
+      : null;
 
 class FetchLlmApiTransport implements LlmApiTransport {
   async postJsonDetailed<TResponse>(
@@ -218,11 +206,20 @@ class FetchLlmApiTransport implements LlmApiTransport {
   }
 }
 
+/** Sends requests through the app's network client, so they follow its proxy. */
+export const createLlmApiClient = (networkClient: RuntimeNetworkClient): LlmApiClient => {
+  const postJsonDetailed = networkClient.postJsonDetailed;
+  if (typeof postJsonDetailed !== "function") return new LlmApiClient();
+  return new LlmApiClient({
+    postJsonDetailed: async <TResponse>(url: string, payload: unknown, init?: RuntimeRequestInit) =>
+      (await postJsonDetailed.call(networkClient, url, payload, init)) as RuntimeNetworkJsonResponse<TResponse>,
+  });
+};
+
 export class LlmApiClient {
   constructor(private readonly transport: LlmApiTransport = new FetchLlmApiTransport()) {}
 
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
-    throwIfAborted(signal);
     if (request.reasoning === "enabled" && request.serviceType !== "deepseek") {
       throw new Error(
         "Explicitly enabling with default effort is only supported for DeepSeek; please use server default or specify effort",
@@ -253,7 +250,7 @@ export class LlmApiClient {
     );
 
     if (responsesResponse.ok) {
-      this.requireSuccessfulOutput(responsesResponse, "responses");
+      this.requireCompleteOutput(responsesResponse, "responses");
       return this.requireExtractedText(
         responsesUrl,
         responsesResponse,
@@ -292,7 +289,7 @@ export class LlmApiClient {
       throw this.toLlmApiError(chatUrl, response);
     }
 
-    this.requireSuccessfulOutput(response, "chat-completions");
+    this.requireCompleteOutput(response, "chat-completions");
     return this.requireExtractedText(chatUrl, response, this.extractChatCompletionsText(response.data));
   }
 
@@ -350,44 +347,41 @@ export class LlmApiClient {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
     } catch (error) {
-      if (isAbortError(error)) throw error;
-      throwIfAborted(init?.signal);
       throw new LlmTransportError(`LLM request failed for ${url}: ${toErrorMessage(error)}`, error);
     }
   }
 
-  private requireSuccessfulOutput(response: RuntimeNetworkJsonResponse<unknown>, format: LlmApiFormat): void {
+  private requireCompleteOutput(response: RuntimeNetworkJsonResponse<unknown>, format: LlmApiFormat): void {
     const data = response.data;
     if (!this.isRecord(data)) return;
     const refused = (part: unknown): boolean =>
       this.isRecord(part) &&
       (part.type === "refusal" || (typeof part.refusal === "string" && part.refusal.trim().length > 0));
-    const unfinished = (item: Record<string, unknown>): boolean =>
-      item.status !== undefined && item.status !== "completed";
-    const outputs = Array.isArray(data.output) ? data.output : [];
-    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const unfinished = (part: Record<string, unknown>): boolean =>
+      ["failed", "incomplete", "cancelled", "queued", "in_progress"].includes(String(part.status));
     const invalid =
       Boolean(data.error) ||
       (format === "responses"
         ? unfinished(data) ||
-          Boolean(data.incomplete_details) ||
-          outputs.some(
-            (item) =>
-              this.isRecord(item) &&
-              (unfinished(item) || refused(item) || (Array.isArray(item.content) && item.content.some(refused))),
-          )
-        : choices.some((choice) => {
-            if (!this.isRecord(choice)) return false;
-            const message = choice.message;
-            return (
-              (choice.finish_reason !== undefined && choice.finish_reason !== "stop") ||
-              refused(message) ||
-              (this.isRecord(message) && Array.isArray(message.content) && message.content.some(refused))
-            );
-          }));
+          (this.isRecord(data.incomplete_details) && Boolean(data.incomplete_details.reason)) ||
+          (Array.isArray(data.output) &&
+            data.output.some(
+              (item) =>
+                this.isRecord(item) &&
+                (unfinished(item) || refused(item) || (Array.isArray(item.content) && item.content.some(refused))),
+            ))
+        : Array.isArray(data.choices) &&
+          data.choices.some(
+            (choice) =>
+              this.isRecord(choice) &&
+              (["length", "content_filter"].includes(String(choice.finish_reason)) ||
+                refused(choice.message) ||
+                (this.isRecord(choice.message) &&
+                  Array.isArray(choice.message.content) &&
+                  choice.message.content.some(refused))),
+          ));
     if (invalid) {
-      // A refusal or partial response invalidates even text returned alongside it; never log its content.
-      throw new LlmApiError("LLM response was refused or not completed", response.status, response.headers, data);
+      throw new LlmApiError("LLM response was refused or incomplete", response.status, response.headers, data);
     }
   }
 

@@ -97,6 +97,18 @@ export interface DownloadedAssets {
   trailer?: string;
   /** Flat list of every asset path created during the current scrape. */
   downloaded: string[];
+  /** Set when this run produced `poster`. */
+  posterBadges?: PosterBadgeRecord;
+}
+
+/**
+ * The badges MDCz drew on a poster it produced, and a hash of that file; a poster that no longer matches the hash was
+ * replaced since (the crop dialog, the Amazon tool, by hand) and is not MDCz's to redraw.
+ */
+export interface PosterBadgeRecord {
+  /** Badge ids and look settings, or empty when nothing was drawn. */
+  stamp: string;
+  sha256: string;
 }
 
 export interface ScrapeResult {
@@ -157,6 +169,7 @@ export interface NfoLocalState {
   sourcePin?: { site: Website; url: string };
   /** `<dateadded>` as first written; a rewrite keeps it. */
   dateAdded?: string;
+  posterBadges?: PosterBadgeRecord;
   /** `<movie>` children (and root attributes) MDCz doesn't write, as parsed; a rewrite carries them over. */
   foreignElements?: Record<string, unknown>;
 }
@@ -295,6 +308,8 @@ export interface MaintenancePreviewItem {
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
+  /** The poster's badges no longer match the movie or the badge settings, so applying redraws it. */
+  redrawsPoster?: boolean;
 }
 
 export interface MaintenanceImageAlternatives {

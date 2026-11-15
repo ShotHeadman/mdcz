@@ -1,4 +1,5 @@
-import type { Configuration } from "./config";
+import type { BriefCheckResponse, BriefPlan, BriefPlanInput } from "./briefCatalog";
+import type { Configuration, LlmSettingsInput } from "./config";
 import type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
@@ -129,6 +130,10 @@ export interface ServerApiContract {
   app: {
     ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse>;
     previewPosterBadges(input: AppPreviewPosterBadgesInput): Promise<AppPreviewPosterBadgesResponse>;
+  };
+  brief: {
+    plan(input: BriefPlanInput): Promise<BriefPlan>;
+    check(input: LlmSettingsInput): Promise<BriefCheckResponse>;
   };
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;

@@ -56,6 +56,8 @@ export interface AmazonPosterWorkspaceDetailProps {
   onLookup: (item: AmazonPosterScanItem) => Promise<AmazonPosterLookupResult>;
   onScan: (directory: string) => Promise<AmazonPosterScanItem[]>;
   resolveImageCandidates?: ResolveImageOptionCandidates;
+  /** The directory Brief opened the tool with; each new key fills it in once. */
+  prefill?: { key: string; directory?: string };
 }
 
 function formatElapsed(elapsedMs: number | null | undefined): string {
@@ -140,6 +142,7 @@ export function AmazonPosterWorkspaceDetail({
   onLookup,
   onScan,
   resolveImageCandidates,
+  prefill,
 }: AmazonPosterWorkspaceDetailProps) {
   const [directory, setDirectory] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -153,6 +156,12 @@ export function AmazonPosterWorkspaceDetail({
   const [applying, setApplying] = useState(false);
   // Replacements accumulate across retries of the same scan; failures count only the latest attempt.
   const [applyOutcome, setApplyOutcome] = useState<{ replaced: number; failed: number } | null>(null);
+  // A review already open keeps its directory; the tool stays mounted while the user is elsewhere.
+  const [prefillKey, setPrefillKey] = useState<string>();
+  if (prefill && prefill.key !== prefillKey && !dialogOpen && !applying) {
+    setPrefillKey(prefill.key);
+    if (prefill.directory) setDirectory(prefill.directory);
+  }
 
   useEffect(() => {
     if (!dialogOpen) {

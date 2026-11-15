@@ -1,6 +1,7 @@
 import { dedupeMediaSources } from "@mdcz/shared/imageSource";
 import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import { isRemoteAssetUrl, LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
@@ -9,6 +10,7 @@ import type {
   MaintenanceActionPort,
   ScrapeActionPort,
   SharedWorkbenchPorts,
+  WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import type { DetailViewItem } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
@@ -24,7 +26,7 @@ import {
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc, markLibraryAssetChanged } from "../client";
-import { desktop } from "../desktop";
+import { browseDirectory, desktop } from "../desktop";
 import { showScrapeRun } from "../taskHydration";
 
 const fileActions: Partial<FileActions> = desktop
@@ -291,4 +293,26 @@ export const createWebWorkbenchPorts = (): SharedWorkbenchPorts => ({
   detail: createWebDetailPort(),
   scrape: createWebScrapeActionPort(),
   maintenance: createWebMaintenanceActionPort(),
+});
+
+export const createWebSetupPort = (): WorkbenchSetupPort => ({
+  browseDirectory,
+  suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
+  cancelCandidates: async (scanId) => {
+    await api.scans.cancelCandidates({ scanId });
+  },
+  scanCandidates: async (scanDir, recursive, excludeDirPaths, scanId) => {
+    const result = await api.scans.candidates({
+      scanId,
+      scanDir,
+      recursive,
+      excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
+      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
+    });
+    return {
+      candidates: result.candidates,
+      warnings: result.warnings,
+      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
+    };
+  },
 });

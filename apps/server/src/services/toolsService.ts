@@ -1,6 +1,7 @@
 import { registeredMediaLocations } from "@mdcz/runtime";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { LlmApiClient } from "@mdcz/runtime/llm";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
 import {
   checkEmbyConnection,
@@ -8,7 +9,7 @@ import {
   stopJellyfinPersonNameMatching,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
+import { AggregationService, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyAmazonPosters,

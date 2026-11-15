@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import type { Configuration } from "@mdcz/shared/config";
 import { POSTER_TAG_BADGE_TYPE_OPTIONS, type PosterTagBadgeType } from "@mdcz/shared/posterBadges";
-import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState, PosterBadgeRecord } from "@mdcz/shared/types";
 import { buildMovieTags, normalizeNfoLocalState } from "../maintenance/movieTags";
 import { classifyMovie, type MovieClassification } from "./utils/movieClassification";
 
@@ -119,4 +122,45 @@ export const resolvePosterBadgeDefinitions = (
   return POSTER_BADGE_DEFINITIONS.filter(
     (definition) => enabledTypeSet.has(definition.id) && definition.matches({ tags, fileInfo, classification }),
   ).map(toBadgeDefinition);
+};
+
+/** The badges a poster should carry now, and a stamp of everything that decides how they look. */
+export const resolvePosterBadgeStamp = (
+  data: CrawlerData,
+  fileInfo: FileInfo | undefined,
+  localState: NfoLocalState | undefined,
+  download: Configuration["download"],
+): { badges: PosterBadgeDefinition[]; stamp: string } => {
+  const badges = download.tagBadges
+    ? resolvePosterBadgeDefinitions(data, fileInfo, localState, download.tagBadgeTypes)
+    : [];
+  const stamp = badges.length
+    ? [
+        badges.map((badge) => badge.id).join(","),
+        download.tagBadgePosition,
+        download.tagBadgeSizePercent,
+        download.tagBadgeOpacity,
+        download.tagBadgeInsetPercent,
+        download.tagBadgeImageOverrides ? "images" : "drawn",
+      ].join("|")
+    : "";
+  return { badges, stamp };
+};
+
+export const hashPosterFile = async (posterPath: string): Promise<string> =>
+  createHash("sha256")
+    .update(await readFile(posterPath))
+    .digest("hex");
+
+/**
+ * A poster drawn under another stamp is redrawn, unless the file changed since MDCz drew it. A poster from before MDCz
+ * kept records is redrawn once when it should carry badges; otherwise redrawing every library poster would buy nothing.
+ */
+export const posterNeedsRedraw = async (
+  posterPath: string,
+  record: PosterBadgeRecord | undefined,
+  stamp: string,
+): Promise<boolean> => {
+  if (!record) return stamp !== "";
+  return record.stamp !== stamp && (await hashPosterFile(posterPath)) === record.sha256;
 };

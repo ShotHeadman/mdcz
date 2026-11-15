@@ -104,7 +104,7 @@ describe("RuntimeConfigProfileStore", () => {
 });
 
 describe("runtime config helpers", () => {
-  it("merges patches, reports field errors, and converts single-directory settings into a library once", async () => {
+  it("merges patches, reports field errors, and converts moved settings once", async () => {
     const merged = mergeRuntimeConfig(defaultConfiguration, { network: { timeout: 33 } });
 
     expect(parseRuntimeConfiguration(merged).network.timeout).toBe(33);
@@ -172,6 +172,19 @@ describe("runtime config helpers", () => {
     expect(libraryService.takeLegacyConversion()).toEqual({
       naming: { assetNaming: "followVideo", nfoNaming: "both" },
     });
+
+    // A 0.22 configuration only moves its LLM connection; libraries take nothing, but the file is still saved back.
+    const llmDir = await createTempDir();
+    await writeFile(
+      join(llmDir, "default.toml"),
+      '[translate]\nllmModelName = "local-model"\nllmApiKey = "sk-local"\nllmTemperature = 0.4\n',
+      "utf8",
+    );
+    const llmService = new RuntimeConfigService({ store: new RuntimeConfigProfileStore({ configDir: llmDir }) });
+    const llmLoaded = await llmService.load();
+    expect(llmLoaded.translate).not.toHaveProperty("llmModelName");
+    expect(llmLoaded.llm).toMatchObject({ modelName: "local-model", apiKey: "sk-local", temperature: 0.4 });
+    expect(llmService.takeLegacyConversion()).toEqual({});
   });
 
   it("removes library naming from inactive profiles but keeps a single-directory profile whole", async () => {

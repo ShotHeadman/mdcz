@@ -1,3 +1,4 @@
+import { noopRuntimeLogger } from "@mdcz/runtime/shared";
 import { describe, expect, it } from "vitest";
 import { ActorSourceProvider } from "./ActorSourceProvider";
 import { ActorSourceRegistry } from "./registry";
@@ -25,16 +26,23 @@ describe("ActorSourceProvider media-server ports", () => {
 
   it("stops calling later sources once the required field is satisfied", async () => {
     const calls: string[] = [];
-    const createSource = (name: "local" | "gfriends", photoUrl?: string): BaseActorSource => ({
+    const loggedWarnings: string[] = [];
+    const createSource = (name: "local" | "gfriends", photoUrl?: string, warnings: string[] = []): BaseActorSource => ({
       name,
       lookup: async (): Promise<ActorSourceResult> => {
         calls.push(name);
-        return { source: name, success: true, profile: { name: "Actor A", photo_url: photoUrl }, warnings: [] };
+        return { source: name, success: true, profile: { name: "Actor A", photo_url: photoUrl }, warnings };
       },
     });
     const provider = new ActorSourceProvider({
+      logger: {
+        ...noopRuntimeLogger,
+        warn: (msg) => {
+          loggedWarnings.push(msg);
+        },
+      },
       registry: new ActorSourceRegistry([
-        createSource("local", "/photos/actor-a.jpg"),
+        createSource("local", "/photos/actor-a.jpg", ["local source note"]),
         createSource("gfriends", "https://example.com/actor-a.jpg"),
       ]),
     });
@@ -54,5 +62,6 @@ describe("ActorSourceProvider media-server ports", () => {
     expect(calls).toEqual(["local"]);
     expect(result.profile.photo_url).toBe("/photos/actor-a.jpg");
     expect(result.profileSources.photo_url).toBe("local");
+    expect(loggedWarnings).toEqual(["local source note"]);
   });
 });

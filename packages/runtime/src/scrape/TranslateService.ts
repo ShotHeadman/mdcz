@@ -2,22 +2,16 @@ import { toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateEngine } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
-import {
-  isUnrecoverableNetworkError,
-  type RuntimeNetworkClient,
-  type RuntimeRequestInit,
-  runWithNetworkChannel,
-} from "../network";
+import { createLlmApiClient, type LlmApiClient } from "../llm";
+import { isUnrecoverableNetworkError, type RuntimeNetworkClient, runWithNetworkChannel } from "../network";
 import { detectLanguage, noopRuntimeLogger, type RuntimeLogger, toErrorMessage } from "../shared";
 import { ActorNameNormalizer } from "./translate/ActorNameNormalizer";
 import { BaiduTranslator } from "./translate/engines/BaiduTranslator";
 import { DeeplTranslator } from "./translate/engines/DeeplTranslator";
 import { GoogleTranslator } from "./translate/engines/GoogleTranslator";
-import { LlmApiClient, type RuntimeNetworkJsonResponse } from "./translate/engines/LlmApiClient";
 import { type LlmMetadataTranslationInput, OpenAiTranslator } from "./translate/engines/OpenAiTranslator";
 import { GenreTranslator } from "./translate/GenreTranslator";
 import { ensureTargetChinese, normalizeNewlines } from "./translate/shared";
-import { isTranslationRefusal, isUsableTranslation } from "./translate/translationValidation";
 import { type LanguageTarget, type MachineTranslator, type TranslationMappingStore, toTarget } from "./translate/types";
 import { isAbortError, throwIfAborted } from "./utils/abort";
 
@@ -29,20 +23,6 @@ export interface TranslateServiceOptions {
   llmApiClient?: LlmApiClient;
   mappingStore?: TranslationMappingStore;
 }
-
-const createLlmApiClient = (networkClient: RuntimeNetworkClient): LlmApiClient => {
-  const postJsonDetailed = networkClient.postJsonDetailed;
-  if (typeof postJsonDetailed === "function") {
-    return new LlmApiClient({
-      postJsonDetailed: async <TResponse>(url: string, payload: unknown, init?: RuntimeRequestInit) => {
-        const response = await postJsonDetailed.call(networkClient, url, payload, init);
-        return response as RuntimeNetworkJsonResponse<TResponse>;
-      },
-    });
-  }
-
-  return new LlmApiClient();
-};
 
 export class TranslateService {
   private readonly logger: RuntimeLogger;
@@ -59,7 +39,7 @@ export class TranslateService {
     this.logger = options.logger ?? noopRuntimeLogger;
     this.actorNameNormalizer = new ActorNameNormalizer(options.mappingStore);
     const llmApiClient = options.llmApiClient ?? createLlmApiClient(networkClient);
-    this.openAiTranslator = new OpenAiTranslator(this.logger, llmApiClient);
+    this.openAiTranslator = new OpenAiTranslator(this.logger, llmApiClient, networkClient);
     this.translators = {
       google: new GoogleTranslator(networkClient).translate,
       deepl: new DeeplTranslator(networkClient).translate,
@@ -75,9 +55,6 @@ export class TranslateService {
     settled: SettledTranslations = {},
     kept: ReadonlySet<keyof CrawlerData> = new Set(),
   ): Promise<{ data: CrawlerData; error: string | null }> {
-    settled = Object.fromEntries(
-      Object.entries(settled).map(([field, value]) => [field, isTranslationRefusal(value) ? undefined : value]),
-    );
     if (!config.translate.enableTranslation) {
       return { data: { ...data, title_zh: settled.title, plot_zh: settled.plot }, error: null };
     }
@@ -87,7 +64,7 @@ export class TranslateService {
     const target = toTarget(config.translate.targetLanguage);
     const startedAt = Date.now();
     this.logger.info(
-      `[translation] number=${data.number} engine=${config.translate.engine} target=${target} model=${config.translate.engine === "openai" ? config.translate.llmModelName : "none"} reasoning=${config.translate.engine === "openai" ? config.translate.llmReasoning : "none"} titleChars=${data.title.length} plotChars=${data.plot?.length ?? 0} genres=${data.genres?.length ?? 0}`,
+      `[translation] number=${data.number} engine=${config.translate.engine} target=${target} model=${config.translate.engine === "openai" ? config.llm.modelName : "none"} reasoning=${config.translate.engine === "openai" ? config.llm.reasoning : "none"} titleChars=${data.title.length} plotChars=${data.plot?.length ?? 0} genres=${data.genres?.length ?? 0}`,
     );
 
     const keepActors = kept.has("actors");
@@ -141,11 +118,11 @@ export class TranslateService {
       const prepared = fields[field];
       if (!prepared.source || !metadataTranslation) continue;
       const returned = normalizeNewlines(metadataTranslation[field] ?? "").trim();
-      if (isUsableTranslation(returned) && returned !== prepared.source) {
+      if (returned && returned !== prepared.source) {
         prepared.translated = ensureTargetChinese(returned, target);
         continue;
       }
-      const message = `Translation engine failed for ${field} (${data.number}), returning original text: ${isTranslationRefusal(returned) ? "engine refused translation" : returned ? "source echoed" : "engine returned no translation"}`;
+      const message = `Translation engine failed for ${field} (${data.number}), returning original text: ${returned ? "source echoed" : "engine returned no translation"}`;
       this.logger.warn(message);
       translationError = translationError ? `${translationError}; ${message}` : message;
     }
@@ -231,9 +208,7 @@ export class TranslateService {
         ? this.openAiTranslator.translateText(text, target, config, signal)
         : this.translators[engine]([text], target, config, signal).then((results) => results[0]),
     );
-    throwIfAborted(signal);
-    if (isUsableTranslation(translated) && translated.trim() !== text)
-      return ensureTargetChinese(translated.trim(), target);
+    if (translated?.trim() && translated.trim() !== text) return ensureTargetChinese(translated.trim(), target);
 
     this.logger.warn(`Translation engine ${engine} returned no translated text; returning original text`);
     return text;

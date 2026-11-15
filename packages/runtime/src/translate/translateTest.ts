@@ -1,12 +1,13 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { TranslateTestInputDto, TranslateTestResponse } from "@mdcz/shared/serverDtos";
+import type { TranslateTestResponse, translateTestInputSchema } from "@mdcz/shared/serverDtos";
+import type { z } from "zod";
+import { missingLlmSetting } from "../llm";
 import type { RuntimeNetworkClient } from "../network";
 import { TranslateService, type TranslateServiceOptions } from "../scrape/TranslateService";
-import { isMissingRequiredLlmApiKey } from "../scrape/translate/engines/LlmApiClient";
 import { toTarget } from "../scrape/translate/types";
 import { toErrorMessage } from "../shared";
 
-export type TranslateTestInput = TranslateTestInputDto;
+export type TranslateTestInput = z.output<typeof translateTestInputSchema>;
 
 export const testTranslation = async (
   input: TranslateTestInput | undefined,
@@ -14,18 +15,20 @@ export const testTranslation = async (
   networkClient: RuntimeNetworkClient,
   options: TranslateServiceOptions = {},
 ): Promise<TranslateTestResponse> => {
+  const { llm, ...translate } = input ?? {};
   const config: Configuration = {
     ...configuration,
     translate: {
       ...configuration.translate,
-      ...Object.fromEntries(Object.entries(input ?? {}).filter(([, value]) => value !== undefined)),
+      ...Object.fromEntries(Object.entries(translate).filter(([, value]) => value !== undefined)),
     },
+    llm: llm ?? configuration.llm,
   };
   try {
     const settings = config.translate;
-    if (settings.engine === "openai" && !settings.llmModelName.trim()) return { status: "missing_model" };
+    const missingLlm = settings.engine === "openai" ? missingLlmSetting(config.llm) : null;
+    if (missingLlm) return { status: missingLlm };
     if (
-      (settings.engine === "openai" && isMissingRequiredLlmApiKey(settings.llmBaseUrl, settings.llmApiKey)) ||
       (settings.engine === "deepl" && !settings.deeplApiKey.trim()) ||
       (settings.engine === "baidu" &&
         (!settings.baiduAppId.trim() ||

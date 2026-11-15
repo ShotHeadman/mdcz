@@ -232,6 +232,17 @@ export function LibraryPage() {
         onOpenChange={setEditOpen}
         entries={editTargets}
         ignoredFields={configQ.data?.download.nfoIgnoreFields ?? []}
+        getPosterSrc={(entry) =>
+          entry.thumbnailPath
+            ? getLibraryAssetSrc({
+                format: "webp",
+                path: entry.thumbnailPath,
+                rootId:
+                  entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId ?? "",
+                width: 160,
+              })
+            : ""
+        }
         submitting={editM.isPending}
         loading={editLoading || configQ.isLoading}
         error={

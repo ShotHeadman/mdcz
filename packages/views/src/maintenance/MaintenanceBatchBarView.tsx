@@ -22,6 +22,7 @@ export interface MaintenanceBatchBarPreviewGroup {
   hasPathChange: boolean;
   id: string;
   ready: boolean;
+  redrawsPoster: boolean;
   subtitle: string;
   title: string;
 }
@@ -260,7 +261,10 @@ export function MaintenanceBatchBarView({
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                           <span>{t.maintenance.diffCount(group.diffCount)}</span>
                           {group.hasPathChange && <span>{t.maintenance.pathWillChange}</span>}
-                          {!group.hasPathChange && group.diffCount === 0 && <span>{t.maintenance.noExtraChanges}</span>}
+                          {group.redrawsPoster && <span>{t.maintenance.posterWillRedraw}</span>}
+                          {!group.hasPathChange && !group.redrawsPoster && group.diffCount === 0 && (
+                            <span>{t.maintenance.noExtraChanges}</span>
+                          )}
                         </div>
                         {group.hasPathChange && (
                           <div className="mt-3 space-y-2">

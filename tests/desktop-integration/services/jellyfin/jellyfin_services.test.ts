@@ -16,7 +16,7 @@ import {
   stopJellyfinPersonNameMatching,
   syncJellyfinPersons,
 } from "@mdcz/runtime/mediaserver";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient, RuntimeRequestInit } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -55,7 +55,7 @@ const createConfig = (overrides: DeepPartial<Configuration> = {}) =>
   configurationSchema.parse(mergeConfig(defaultConfiguration, overrides));
 
 class FakeNetworkClient {
-  readonly getJson = vi.fn(async (_url: string, _init?: { headers?: HeadersInit }) => ({}));
+  readonly getJson = vi.fn(async (_url: string, _init?: RuntimeRequestInit) => ({}));
   readonly getContent = vi.fn(async (_url: string) => new Uint8Array());
   readonly postContent = vi.fn(async (_url: string, _body: Uint8Array) => undefined);
   readonly postText = vi.fn(async (_url: string, _body: string) => "");
@@ -190,6 +190,19 @@ describe("Jellyfin services", () => {
       ["peopleWrite", "ok"],
     ]);
     expect(result.matchesPeopleByName).toBe(true);
+    expect(
+      networkClient.getJson.mock.calls.map(([url, init]) => [
+        new URL(url).pathname,
+        new Headers(init?.headers).has("authorization"),
+        init?.bypassProxy,
+      ]),
+    ).toEqual([
+      ["/System/Info/Public", false, true],
+      ["/System/Info", true, true],
+      ["/Persons", true, true],
+      ["/Items/person-1/MetadataEditor", true, true],
+      ["/System/Configuration", true, true],
+    ]);
 
     await stopJellyfinPersonNameMatching(networkClient as unknown as NetworkClient, configuration);
     // The rest of the server configuration is written back unchanged.

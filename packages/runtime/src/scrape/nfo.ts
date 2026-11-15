@@ -208,12 +208,15 @@ const buildMdczNode = (
       : [];
 
   const sourcePin = options?.localState?.sourcePin;
+  // A poster this run produced brings its own record; a kept poster keeps the one it had.
+  const posterBadges = options?.assets?.posterBadges ?? options?.localState?.posterBadges;
   return {
     raw_title: rawTitle,
     original_plot: originalPlot,
     source_url: sourcePin ? { "@_site": sourcePin.site, "#text": sourcePin.url } : undefined,
     thumb_source_url: thumbSourceUrl,
     poster_source_url: posterSourceUrl,
+    poster_badges: posterBadges ? { "@_sha256": posterBadges.sha256, "#text": posterBadges.stamp } : undefined,
     fanart_source_url: fanartSourceUrl,
     trailer_source_url: trailerSourceUrl,
     scene_images: sceneImageUrls.length > 0 ? { image: sceneImageUrls } : undefined,

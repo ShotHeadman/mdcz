@@ -2,12 +2,12 @@ import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
 import { describe, expect, it, vi } from "vitest";
 import { buildSiteConnectivityHeaders, probeSiteConnectivity } from "./crawler/siteConnectivity";
+import type { LlmApiClient } from "./llm";
 import { NetworkClient } from "./network";
 import { checkConfiguredSiteCookies } from "./network/cookieChecks";
 import { buildCrawlerOptions } from "./scrape/crawlerOptions";
 import { TranslateService } from "./scrape/TranslateService";
 import { JAVBUS_PAGE_HEADERS } from "./shared";
-import type { LlmApiClient } from "./translate";
 import { testTranslation } from "./translate/translateTest";
 
 const cloneConfig = (): Configuration => structuredClone(defaultConfiguration);
@@ -155,8 +155,9 @@ describe("settings parity runtime helpers", () => {
     "json_schema",
   ] as const)("validates the selected translation engine with %s output", async (outputFormat) => {
     const config = cloneConfig();
-    config.translate.llmOutputFormat = outputFormat;
-    config.translate.llmApiKey = "test-key";
+    config.llm.outputFormat = outputFormat;
+    config.llm.apiKey = "test-key";
+    const edited = (llm: Partial<typeof config.llm>) => ({ ...config.llm, ...llm });
     const networkClient = new NetworkClient();
     const llmApiClient = {
       generateText: vi
@@ -166,19 +167,17 @@ describe("settings parity runtime helpers", () => {
     const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() };
     const options = { llmApiClient, logger };
 
-    await expect(testTranslation({ llmModelName: "" }, config, networkClient, options)).resolves.toEqual({
+    await expect(testTranslation({ llm: edited({ modelName: "" }) }, config, networkClient, options)).resolves.toEqual({
       status: "missing_model",
     });
     expect(llmApiClient.generateText).not.toHaveBeenCalled();
 
-    config.translate.llmBaseUrl = "https://example.test/v1";
+    config.llm.baseUrl = "https://example.test/v1";
     await expect(
       testTranslation(
         {
-          llmModelName: "gpt-test",
           llmPrompt: "{lang}:{content}",
-          llmTemperature: 1.5,
-          llmReasoning: "high",
+          llm: edited({ modelName: "gpt-test", temperature: 1.5, reasoning: "high" }),
         },
         config,
         networkClient,
@@ -207,14 +206,18 @@ describe("settings parity runtime helpers", () => {
       JSON.stringify({ title: "译文", plot: null, genres: [] }),
     ]) {
       vi.mocked(llmApiClient.generateText).mockResolvedValueOnce(content);
-      await expect(testTranslation({ llmModelName: "gpt-test" }, config, networkClient, options)).resolves.toEqual({
+      await expect(
+        testTranslation({ llm: edited({ modelName: "gpt-test" }) }, config, networkClient, options),
+      ).resolves.toEqual({
         status: "failed",
         error: expect.stringContaining("invalid structured output"),
       });
     }
 
     vi.mocked(llmApiClient.generateText).mockRejectedValueOnce(new Error("HTTP 400: invalid temperature"));
-    await expect(testTranslation({ llmModelName: "gpt-test" }, config, networkClient, options)).resolves.toEqual({
+    await expect(
+      testTranslation({ llm: edited({ modelName: "gpt-test" }) }, config, networkClient, options),
+    ).resolves.toEqual({
       status: "failed",
       error: "HTTP 400: invalid temperature",
     });

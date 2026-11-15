@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { type LlmApiClient, LlmTransportError } from "@mdcz/runtime/llm";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { LlmApiClient, LlmTransportError, TranslateService } from "@mdcz/runtime/scrape";
+import { TranslateService } from "@mdcz/runtime/scrape";
 import type { RuntimeLogger } from "@mdcz/runtime/shared";
 import { configurationSchema } from "@mdcz/shared/config";
 import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
@@ -25,9 +26,11 @@ const createBaseConfig = () => {
   return configurationSchema.parse({
     translate: {
       engine: TranslateEngine.OPENAI,
-      llmApiKey: "test-key",
       enableTranslation: true,
-      llmMaxRetries: 1,
+    },
+    llm: {
+      apiKey: "test-key",
+      maxRetries: 1,
     },
   });
 };
@@ -95,6 +98,20 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.title_zh).toBe("中文标题");
     expect(translated.data.plot_zh).toBe(plot);
     expect(translated.data.genres).toEqual(["统一译名"]);
+
+    const input = { title: "Source title", plot: null, genres: ["Sample"] };
+    const skipped = { title: null, plot: null, genres: ["标签"] };
+    generateText.mockResolvedValueOnce(JSON.stringify(skipped));
+    await expect(service.translateMetadata(input, "zh_cn", config)).resolves.toEqual(skipped);
+
+    for (const output of [
+      { ...skipped, plot: "Unexpected plot" },
+      { ...skipped, genres: [null] },
+      { ...skipped, genres: [] },
+    ]) {
+      generateText.mockResolvedValueOnce(JSON.stringify(output));
+      await expect(service.translateMetadata(input, "zh_cn", config)).rejects.toThrow("invalid structured output");
+    }
   });
 
   it.each([
@@ -123,60 +140,6 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.title_zh).toBeUndefined();
     expect(translated.data.plot_zh).toBe(plotZh);
     expect(translated.data.genres).toEqual(["ジャンル"]);
-  });
-
-  it("does not retain refused genre results between failed and successful translations", async () => {
-    const refusal = "可以帮助翻译删去敏感细节后的版本。";
-    const service = createTranslateService(new NetworkClient({}), createLlmApiClient());
-    const translateMetadata = vi
-      .spyOn(service, "translateMetadata")
-      .mockResolvedValueOnce({
-        title: refusal,
-        plot: "A walk in the park",
-        genres: [refusal],
-      })
-      .mockResolvedValueOnce({ title: "旅行日记", plot: "公园散步", genres: ["旅行"] });
-    const data = {
-      title: "Travel diary",
-      plot: "A walk in the park",
-      number: "TEST-001",
-      actors: [],
-      genres: ["Travel"],
-      scene_images: [],
-      website: Website.DMM,
-    };
-    const first = await service.translateCrawlerData(data, createBaseConfig());
-    expect(first.data).toEqual({ ...data, title_zh: undefined, plot_zh: undefined });
-    expect(first.error).toContain("engine refused translation");
-    const second = await service.translateCrawlerData(data, createBaseConfig());
-    expect(second.data).toMatchObject({ title_zh: "旅行日记", plot_zh: "公园散步", genres: ["旅行"] });
-    expect(translateMetadata.mock.calls[1][0].genres).toEqual(["Travel"]);
-  });
-
-  it("rejects plain and JSON single-field refusals without retrying and preserves cancellation", async () => {
-    for (const refusal of ["可以帮助翻译删去敏感细节后的版本。", "该文本包含涉及未成年人的露骨性内容。"]) {
-      for (const structured of [false, true]) {
-        const generateText = vi.fn().mockResolvedValue(structured ? JSON.stringify({ translation: refusal }) : refusal);
-        const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-        const config = createBaseConfig();
-        config.translate.llmOutputFormat = structured ? "json_object" : "none";
-        await expect(service.translateText("Travel diary", "zh_cn", config)).rejects.toThrow("invalid output");
-        expect(generateText).toHaveBeenCalledTimes(1);
-      }
-    }
-    const abort = new DOMException("Cancelled", "AbortError");
-    const generateText = vi.fn().mockRejectedValue(abort);
-    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-    const data = {
-      title: "Travel diary",
-      number: "TEST-001",
-      actors: [],
-      genres: [],
-      scene_images: [],
-      website: Website.DMM,
-    };
-    await expect(service.translateCrawlerData(data, createBaseConfig())).rejects.toBe(abort);
-    expect(sleepMock).not.toHaveBeenCalled();
   });
 
   it("applies actor/genre mappings without llm and preserves actor photos", async () => {
@@ -216,177 +179,107 @@ describe("TranslateService term consistency", () => {
     ]);
   });
 
-  it("retries recoverable failures with the bounded provider-specific delay", async () => {
-    const cases = [
-      [
-        "capped Retry-After",
-        Object.assign(new Error("rate limited"), { status: 429, headers: new Headers({ "Retry-After": "120" }) }),
-        15_000,
-      ],
-      [
-        "default rate-limit delay",
-        Object.assign(new Error("rate limited"), { status: 429, headers: new Headers() }),
-        1000,
-      ],
-      [
-        "timeout",
-        new Error("LLM request failed: Error reading response stream: reqwest::Error { kind: Body, source: TimedOut }"),
-        1000,
-      ],
-    ] as const;
-    for (const [name, error, delay] of cases) {
-      sleepMock.mockClear();
-      const generateText = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("重试成功");
-      const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-      await expect(service.translateText("hello", "zh_cn", createBaseConfig()), name).resolves.toBe("重试成功");
-      expect(generateText).toHaveBeenCalledTimes(2);
-      expect(sleepMock).toHaveBeenCalledExactlyOnceWith(delay, undefined, undefined);
-    }
+  it.each([
+    [
+      "capped Retry-After",
+      Object.assign(new Error("rate limited"), { status: 429, headers: new Headers({ "Retry-After": "120" }) }),
+      15_000,
+    ],
+    [
+      "default rate-limit delay",
+      Object.assign(new Error("rate limited"), { status: 429, headers: new Headers() }),
+      1000,
+    ],
+  ] as const)("retries HTTP 429 llm failures with %s and sets host concurrency", async (_name, error, delay) => {
+    const generateText = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("重试成功");
+    const network = new NetworkClient({});
+    const setDomainLimit = vi.spyOn(network, "setDomainLimit");
+    const service = createTranslateService(network, createLlmApiClient(generateText));
+    const config = createBaseConfig();
+    config.scrape.threadNumber = 4;
+    config.llm.maxRequestsPerSecond = 3;
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("重试成功");
+    expect(setDomainLimit).toHaveBeenCalledWith("api.openai.com", 3, 4);
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(sleepMock).toHaveBeenCalledExactlyOnceWith(delay, undefined, undefined);
   });
 
-  it("retries typed transport errors until llmMaxRetries is exhausted", async () => {
-    const transportError = new LlmTransportError(
-      "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
-      new Error("body timed out"),
-    );
-    const generateText = vi.fn().mockRejectedValue(transportError);
+  it("retries HTTP 429 until llm.maxRetries is exhausted", async () => {
+    const rateLimited = Object.assign(new Error("rate limited"), { status: 429, headers: new Headers() });
+    const generateText = vi.fn().mockRejectedValue(rateLimited);
     const logger = createLogger();
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
     const config = createBaseConfig();
-    config.translate.llmMaxRetries = 3;
+    config.llm.maxRetries = 3;
 
-    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(transportError);
+    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(rateLimited);
 
     expect(generateText).toHaveBeenCalledTimes(4);
     expect(sleepMock).toHaveBeenCalledTimes(3);
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("transport error (1/3)"));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("HTTP 429 (1/3)"));
   });
 
   it.each([
-    "unusable response",
-    "source echo",
-    "refusal",
-  ] as const)("keeps original fields and private response text out of logs on %s", async (failure) => {
-    const data = {
-      title: "Travel diary",
-      plot: "A walk in the park",
-      number: "TEST-001",
-      actors: [],
-      genres: ["Travel"],
-      scene_images: [],
-      website: Website.DMM,
-    };
-    const valid = { title: "旅行日记", plot: "公园散步", genres: ["旅行"] };
-    const outcomes =
-      failure === "source echo"
-        ? [{ output: JSON.stringify({ ...valid, plot: ` ${data.plot}\r\n` }), error: "source echoed" }]
-        : failure === "refusal"
-          ? [
-              {
-                output: JSON.stringify({ ...valid, title: "无法提供该内容的翻译" }),
-                error: "invalid structured output",
-              },
-              {
-                output: JSON.stringify({ ...valid, plot: "该文本包含涉及未成年人的露骨性内容。" }),
-                error: "invalid structured output",
-              },
-              {
-                output: JSON.stringify({ ...valid, genres: ["可以帮助翻译删去敏感细节后的版本。"] }),
-                error: "invalid structured output",
-              },
-            ]
-          : [
-              { output: null, error: "provider failed" },
-              ...[
-                "",
-                "not JSON",
-                JSON.stringify({ ...valid, title: "" }),
-                JSON.stringify({ ...valid, plot: " " }),
-                JSON.stringify({ ...valid, title: null }),
-                JSON.stringify({ ...valid, plot: null }),
-                JSON.stringify({ ...valid, genres: [] }),
-              ].map((output) => ({ output, error: "invalid structured output" })),
-            ];
-    for (const { output, error } of outcomes) {
-      const generateText =
-        output === null ? vi.fn().mockRejectedValue(new Error(error)) : vi.fn().mockResolvedValue(output);
-      const logger = createLogger();
-      const network = new NetworkClient({});
-      const getJson = vi.spyOn(network, "getJson").mockRejectedValue(new Error("unexpected provider fallback"));
-      const service = createTranslateService(network, createLlmApiClient(generateText), logger);
-      const result = await service.translateCrawlerData(data, createBaseConfig());
-      expect(result.data, output ?? error).toEqual({
-        ...data,
-        title_zh: failure === "source echo" ? valid.title : undefined,
-        plot_zh: undefined,
-        genres: failure === "source echo" ? valid.genres : data.genres,
-      });
-      expect(result.error, output ?? error).toContain(error);
-      expect(getJson).not.toHaveBeenCalled();
-      expect(generateText).toHaveBeenCalledTimes(1);
-      const logs = JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls]);
-      expect(logs).not.toContain(data.plot);
-      expect(logs).not.toContain("该文本包含");
-      expect(logs).not.toContain("可以帮助翻译");
+    [null, "engine returned no translation"],
+    [" English plot\r\n", "source echoed"],
+    [" ", "engine returned no translation"],
+  ])("logs field fallback without response content (%s)", async (plot, reason) => {
+    const generateText = vi.fn().mockResolvedValue(JSON.stringify({ title: "中文标题", plot, genres: ["剧情"] }));
+    const logger = createLogger();
+    const network = new NetworkClient({});
+    const getJson = vi.spyOn(network, "getJson").mockRejectedValue(new Error("unexpected Google fallback"));
+    const service = createTranslateService(network, createLlmApiClient(generateText), logger);
+    const config = createBaseConfig();
+    config.llm.maxRetries = 0;
+
+    const result = await service.translateCrawlerData(
+      {
+        title: "English title",
+        plot: "English plot",
+        number: "HMN-869",
+        actors: [],
+        genres: ["Drama"],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+    );
+
+    expect(result.data.plot_zh).toBeUndefined();
+    expect(getJson).not.toHaveBeenCalled();
+    if (plot !== null && !plot.trim()) {
+      expect(result.data.title_zh).toBeUndefined();
+      expect(result.data.genres).toEqual(["Drama"]);
+      expect(result.error).toContain("invalid structured output");
+    } else {
+      expect(result.data.title_zh).toBe("中文标题");
+      expect(result.data.genres).toEqual(["剧情"]);
+      expect(logger.warn).toHaveBeenCalledWith(
+        `Translation engine failed for plot (HMN-869), returning original text: ${reason}`,
+      );
     }
-    if (failure === "refusal") {
-      const content = JSON.stringify(valid);
-      for (const [apiFormat, output] of [
-        [
-          "responses",
-          {
-            output_text: content,
-            output: [
-              {
-                type: "message",
-                content: [
-                  { type: "output_text", text: content },
-                  { type: "refusal", refusal: "Cannot translate this text" },
-                ],
-              },
-            ],
-          },
-        ],
-        ["responses", { status: "failed", output_text: content }],
-        ["chat-completions", { choices: [{ finish_reason: "content_filter", message: { content } }] }],
-      ] as const) {
-        const postJsonDetailed = vi.fn().mockResolvedValue({
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          headers: new Headers(),
-          resolvedUrl: "",
-          data: output,
-        });
-        const service = createTranslateService(new NetworkClient({}), new LlmApiClient({ postJsonDetailed }));
-        const config = createBaseConfig();
-        config.translate.llmApiFormat = apiFormat;
-        const result = await service.translateCrawlerData(data, config);
-        expect(result.data).toEqual({ ...data, title_zh: undefined, plot_zh: undefined });
-        expect(result.error).toBe("LLM response was refused or not completed");
-        expect(postJsonDetailed).toHaveBeenCalledTimes(1);
-      }
-    }
-    expect(sleepMock).not.toHaveBeenCalled();
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain("English plot");
   });
 
-  it("propagates terminal provider failures without retrying", async () => {
-    const failures = [
-      [
-        "empty response",
-        new Error('LLM response did not contain text: {"choices":[{"message":{"role":"assistant"}}]}'),
-      ],
-      [
-        "HTTP 500",
-        Object.assign(new Error("server error"), { status: 500, headers: new Headers({ "Retry-After": "120" }) }),
-      ],
-    ] as const;
-    for (const [name, error] of failures) {
-      const generateText = vi.fn().mockRejectedValue(error);
-      const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-      await expect(service.translateText("hello", "zh_cn", createBaseConfig()), name).rejects.toBe(error);
-      expect(generateText).toHaveBeenCalledTimes(1);
-    }
+  it.each([
+    ["empty response", new Error('LLM response did not contain text: {"choices":[{"message":{"role":"assistant"}}]}')],
+    [
+      "HTTP 500",
+      Object.assign(new Error("server error"), { status: 500, headers: new Headers({ "Retry-After": "120" }) }),
+    ],
+    [
+      "transport error already retried by NetworkClient",
+      new LlmTransportError(
+        "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
+        new Error("body timed out"),
+      ),
+    ],
+  ] as const)("propagates non-retryable llm failures: %s", async (_name, error) => {
+    const generateText = vi.fn().mockRejectedValue(error);
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
+    await expect(service.translateText("hello", "zh_cn", createBaseConfig())).rejects.toBe(error);
+    expect(generateText).toHaveBeenCalledTimes(1);
     expect(sleepMock).not.toHaveBeenCalled();
   });
 
@@ -398,8 +291,16 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn();
     const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
+    const setDomainLimit = vi.spyOn(networkClient, "setDomainLimit");
     const outputs = ["标题", "第一行\n第二行", "剧情"];
-    const getJson = vi.spyOn(networkClient, "getJson").mockImplementation(async () => [[[outputs.shift()]]]);
+    const getJson = vi.spyOn(networkClient, "getJson").mockImplementation(async () => [
+      [
+        ["标题\n", "a\n"],
+        ["第一行\n", "b\n"],
+        ["第二行\n", "c\n"],
+        ["剧情", "d"],
+      ],
+    ]);
     const postJson = vi
       .spyOn(networkClient, "postJson")
       .mockImplementation(async (url, payload) =>
@@ -410,6 +311,7 @@ describe("TranslateService term consistency", () => {
 
     const service = createTranslateService(networkClient, llmApiClient);
     const config = configurationSchema.parse({
+      scrape: { threadNumber: 3 },
       translate: {
         engine,
         deeplApiKey: key,
@@ -439,7 +341,13 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.title_zh).toBe(targetLanguage === "zh-TW" ? "標題" : "标题");
     expect(translated.data.plot_zh).toBe("第一行\n第二行");
     expect(translated.data.genres).toEqual(Array(3).fill(targetLanguage === "zh-TW" ? "劇情" : "剧情"));
-    expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 3 : 0);
+    expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 1 : 0);
+    if (engine === TranslateEngine.GOOGLE) {
+      expect(new URL(getJson.mock.calls[0][0] as string).searchParams.get("q")).toBe(
+        "Original title\nFirst line\nSecond line\nDrama",
+      );
+      expect(setDomainLimit).toHaveBeenCalledWith("translate.googleapis.com", 5, 3);
+    }
     expect(postJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 0 : 1);
   });
 
@@ -529,6 +437,7 @@ describe("TranslateService term consistency", () => {
   it("preserves local mappings and provider errors while propagating cancellation", async () => {
     for (const [engine, failure, message] of [
       [TranslateEngine.GOOGLE, "network", "Google unavailable"],
+      [TranslateEngine.GOOGLE, "count", "Google translation result count mismatch"],
       [TranslateEngine.OPENAI, "network", "LLM unavailable"],
       [TranslateEngine.DEEPL, "quota", "HTTP 456: quota exhausted"],
       [TranslateEngine.DEEPL, "count", "DeepL translation result count mismatch"],
@@ -536,7 +445,8 @@ describe("TranslateService term consistency", () => {
       [TranslateEngine.BAIDU, "count", "Baidu translation result count mismatch"],
     ] as const) {
       const network = new NetworkClient({});
-      vi.spyOn(network, "getJson").mockRejectedValue(new Error(message));
+      if (failure === "count") vi.spyOn(network, "getJson").mockResolvedValue([[["only one line"]]]);
+      else vi.spyOn(network, "getJson").mockRejectedValue(new Error(message));
       if (failure === "quota") vi.spyOn(network, "postJson").mockRejectedValue(new Error(message));
       else
         vi.spyOn(network, "postJson").mockResolvedValue(
@@ -664,10 +574,12 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "test-key",
         enableTranslation: true,
-        llmMaxRetries: 1,
         targetLanguage: "zh-TW",
+      },
+      llm: {
+        apiKey: "test-key",
+        maxRetries: 1,
       },
     });
 
@@ -689,10 +601,12 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "",
-        llmBaseUrl: "http://127.0.0.1:11434/v1",
         enableTranslation: true,
-        llmMaxRetries: 1,
+      },
+      llm: {
+        apiKey: "",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        maxRetries: 1,
       },
     });
 
@@ -717,9 +631,11 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "",
         enableTranslation: true,
-        llmMaxRetries: 1,
+      },
+      llm: {
+        apiKey: "",
+        maxRetries: 1,
       },
     });
 
@@ -735,9 +651,11 @@ describe("TranslateService term consistency", () => {
     const config = configurationSchema.parse({
       translate: {
         engine: TranslateEngine.OPENAI,
-        llmApiKey: "test-key",
         enableTranslation: true,
-        llmMaxRetries: 1,
+      },
+      llm: {
+        apiKey: "test-key",
+        maxRetries: 1,
       },
     });
 
@@ -769,7 +687,7 @@ describe("TranslateService term consistency", () => {
   it("refuses to read a file number without a usable LLM", async () => {
     const generateText = vi.fn();
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-    const config = configurationSchema.parse({ translate: { llmApiKey: "" } });
+    const config = configurationSchema.parse({ llm: { apiKey: "" } });
 
     await expect(service.readFileNumber("www.98T.la@MEYD-911-U", "WWW-98T", config)).rejects.toThrow(
       /requires an LLM model/,

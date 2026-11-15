@@ -1,19 +1,19 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Configuration } from "@mdcz/shared/config";
-import PQueue from "p-queue";
 import { z } from "zod";
-import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
-import { isAbortError, throwIfAborted } from "../../utils/abort";
-import { getTargetLanguageLabel } from "../shared";
-import { isTranslationRefusal, isUsableTranslation } from "../translationValidation";
-import type { LanguageTarget } from "../types";
 import {
-  isMissingRequiredLlmApiKey,
   type LlmApiClient,
   type LlmJsonSchema,
-  LlmTransportError,
+  missingLlmSetting,
+  normalizeLlmBaseUrl,
   toLlmTextRequest,
-} from "./LlmApiClient";
+} from "../../../llm";
+import type { RuntimeNetworkClient } from "../../../network";
+import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
+import { getScrapeConcurrency } from "../../executionPolicy";
+import { isAbortError, throwIfAborted } from "../../utils/abort";
+import { getTargetLanguageLabel } from "../shared";
+import type { LanguageTarget } from "../types";
 
 interface TranslationLogger {
   warn(message: string): void;
@@ -21,8 +21,6 @@ interface TranslationLogger {
 
 const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
-const REQUEST_TIMEOUT_PATTERN =
-  /request timeout|timed ?out|timeout \(\d+ ms\)|error reading response stream|kind: *body|econnreset|etimedout/iu;
 const COMPLETE_LEADING_THINK_PATTERN = /^<think>[\s\S]*?<\/think>\s*/iu;
 const TRANSLATION_ONLY_INSTRUCTION = "只输出最终译文，不要输出思考过程、解释、提示词或原文。";
 const JSON_TRANSLATION_INSTRUCTION = '只输出 JSON 对象，格式为 {"translation":"最终译文"}，不要添加其他字段。';
@@ -83,7 +81,7 @@ export const cleanTranslationOutput = (
   const normalizedPrompt = prompt.trim();
   const normalizedSource = source.trim();
   if (
-    !isUsableTranslation(translated) ||
+    !translated ||
     translated === normalizedPrompt ||
     translated === normalizedSource ||
     translated === buildTranslationPrompt(prompt)
@@ -94,20 +92,14 @@ export const cleanTranslationOutput = (
   return translated;
 };
 
-interface RetryDecision {
-  delayMs: number;
-  reason: string;
-}
-
 export type LlmMetadataTranslationInput = z.infer<typeof metadataTranslationSchema>;
 export type LlmMetadataTranslationResult = z.infer<typeof metadataTranslationSchema>;
 
 export class OpenAiTranslator {
-  private readonly requestQueues = new Map<number, PQueue>();
-
   constructor(
     private readonly logger: TranslationLogger,
     private readonly llmApiClient: LlmApiClient,
+    private readonly networkClient?: RuntimeNetworkClient,
   ) {}
 
   async translateText(
@@ -116,16 +108,13 @@ export class OpenAiTranslator {
     config: Configuration,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
+    if (missingLlmSetting(config.llm)) {
       return null;
     }
 
     throwIfAborted(signal);
 
-    const structured = config.translate.llmOutputFormat !== "none";
+    const structured = config.llm.outputFormat !== "none";
     const contractedPrompt = buildLlmTranslatePrompt(config.translate.llmPrompt, text, target, structured);
     const content = await this.requestText(
       config,
@@ -133,7 +122,6 @@ export class OpenAiTranslator {
       signal,
       structured ? LLM_TEXT_TRANSLATION_SCHEMA : undefined,
     );
-    throwIfAborted(signal);
     const translation = cleanTranslationOutput(content, config.translate.llmPrompt, text, structured);
     if (!translation) throw new Error("LLM translation returned invalid output");
     return translation;
@@ -148,10 +136,7 @@ export class OpenAiTranslator {
     if (!input.title && !input.plot && input.genres.length === 0) {
       return { title: null, plot: null, genres: [] };
     }
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
+    if (missingLlmSetting(config.llm)) {
       throw new Error("LLM metadata translation requires a model and the endpoint's required API key");
     }
 
@@ -160,25 +145,21 @@ export class OpenAiTranslator {
     const prompt = [
       `将输入 JSON 中的影片元数据翻译为${getTargetLanguageLabel(target)}。`,
       '只返回一个 JSON 对象，字段固定为 "title"、"plot" 和 "genres"。',
-      "title 和 plot 为 null 时保持 null，否则只返回最终译文。",
+      "title 和 plot 的原值为 null 时保持 null，否则返回最终译文，无法翻译时返回 null，不要写解释。",
       `genres 必须返回 ${input.genres.length} 项，顺序与输入完全一致，每项只包含一个简短标签。`,
       "不要返回解释、Markdown、提示词或原文之外的额外字段。",
       "输入 JSON：",
       JSON.stringify(input),
     ].join("\n");
     const content = await this.requestText(config, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
-    throwIfAborted(signal);
     try {
       const parsed = metadataTranslationSchema.parse(JSON.parse(content ?? ""));
       if (
-        (input.title === null) !== (parsed.title === null) ||
-        (input.plot === null) !== (parsed.plot === null) ||
+        (input.title === null && parsed.title !== null) ||
+        (input.plot === null && parsed.plot !== null) ||
         parsed.genres.length !== input.genres.length
       ) {
         throw new Error("title/plot nullability or genre count does not match the input");
-      }
-      if ([parsed.title, parsed.plot, ...parsed.genres].some(isTranslationRefusal)) {
-        throw new Error("translation contains a refusal");
       }
       return parsed;
     } catch (error) {
@@ -195,10 +176,7 @@ export class OpenAiTranslator {
     config: Configuration,
     signal?: AbortSignal,
   ): Promise<string | null> {
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
+    if (missingLlmSetting(config.llm)) {
       throw new Error("AI number reading requires an LLM model and the endpoint's required API key");
     }
 
@@ -223,109 +201,53 @@ export class OpenAiTranslator {
     }
   }
 
-  private requestText(config: Configuration, prompt: string, signal?: AbortSignal, outputSchema?: LlmJsonSchema) {
-    return this.executeRequestWithRetry(
-      config,
-      () => this.llmApiClient.generateText(toLlmTextRequest(config.translate, prompt, outputSchema), signal),
-      signal,
-    );
-  }
-
-  private getRequestsPerSecond(config: Configuration): number {
-    return config.translate.llmMaxRequestsPerSecond;
-  }
-
-  private getQueue(config: Configuration): PQueue {
-    const requestsPerSecond = this.getRequestsPerSecond(config);
-    const existing = this.requestQueues.get(requestsPerSecond);
-    if (existing) {
-      return existing;
-    }
-
-    const queue = new PQueue({
-      concurrency: 1,
-      interval: 1000,
-      intervalCap: requestsPerSecond,
-    });
-    this.requestQueues.set(requestsPerSecond, queue);
-    return queue;
-  }
-
-  private async executeRequestWithRetry<T>(
+  private async requestText(
     config: Configuration,
-    request: () => Promise<T>,
+    prompt: string,
     signal?: AbortSignal,
-  ): Promise<T> {
-    const maxRetryCount = config.translate.llmMaxRetries;
+    outputSchema?: LlmJsonSchema,
+  ): Promise<string | null> {
+    this.networkClient?.setDomainLimit?.(
+      new URL(normalizeLlmBaseUrl(config.llm.baseUrl)).host,
+      config.llm.maxRequestsPerSecond,
+      getScrapeConcurrency(config),
+    );
+    const maxRetryCount = config.llm.maxRetries;
     let attempt = 0;
 
     while (true) {
       try {
-        const queue = this.getQueue(config);
-        return await queue.add(
-          async () => {
-            throwIfAborted(signal);
-            return request();
-          },
-          signal ? { signal } : undefined,
-        );
+        throwIfAborted(signal);
+        return await this.llmApiClient.generateText(toLlmTextRequest(config.llm, prompt, outputSchema), signal);
       } catch (error) {
-        if (isAbortError(error)) {
-          throw error;
-        }
-        if (attempt >= maxRetryCount) {
+        if (isAbortError(error) || attempt >= maxRetryCount) {
           throw error;
         }
 
-        const retryDecision = this.getRetryDecision(error, attempt);
-        if (!retryDecision) {
+        const delayMs = this.getRetryDelayMs(error, attempt);
+        if (delayMs === null) {
           throw error;
         }
 
         attempt += 1;
-        this.logger.warn(
-          `LLM request retrying after ${retryDecision.reason} (${attempt}/${maxRetryCount}) in ${retryDecision.delayMs}ms`,
-        );
-        await sleep(retryDecision.delayMs, undefined, signal ? { signal } : undefined);
+        this.logger.warn(`LLM request retrying after HTTP 429 (${attempt}/${maxRetryCount}) in ${delayMs}ms`);
+        await sleep(delayMs, undefined, signal ? { signal } : undefined);
       }
     }
   }
 
-  private getRetryDecision(error: unknown, attempt: number): RetryDecision | null {
-    if (error instanceof LlmTransportError) {
-      return { delayMs: this.getExponentialDelayMs(attempt), reason: "transport error" };
-    }
-
-    if (!error || typeof error !== "object") {
-      return null;
-    }
-
-    const status = (error as { status?: unknown }).status;
-    if (status !== OPENAI_RETRY_STATUS_CODE) {
-      if (this.isRetryableTimeout(error)) {
-        return { delayMs: this.getExponentialDelayMs(attempt), reason: "timeout" };
-      }
+  private getRetryDelayMs(error: unknown, attempt: number): number | null {
+    if (!error || typeof error !== "object" || (error as { status?: unknown }).status !== OPENAI_RETRY_STATUS_CODE) {
       return null;
     }
 
     const headers =
       (error as { headers?: unknown }).headers ?? (error as { response?: { headers?: unknown } }).response?.headers;
-
-    const rawRetryAfter = readRetryAfterHeader(headers);
-    const parsed = parseRetryAfterMs(rawRetryAfter);
+    const parsed = parseRetryAfterMs(readRetryAfterHeader(headers));
     if (parsed !== null) {
-      return { delayMs: Math.min(parsed, RETRY_AFTER_CAP_MS), reason: "HTTP 429" };
+      return Math.min(parsed, RETRY_AFTER_CAP_MS);
     }
 
-    return { delayMs: this.getExponentialDelayMs(attempt), reason: "HTTP 429" };
-  }
-
-  private getExponentialDelayMs(attempt: number): number {
     return Math.min(1000 * 2 ** attempt, RETRY_AFTER_CAP_MS);
-  }
-
-  private isRetryableTimeout(error: unknown): boolean {
-    const message = toErrorMessage(error);
-    return REQUEST_TIMEOUT_PATTERN.test(message);
   }
 }

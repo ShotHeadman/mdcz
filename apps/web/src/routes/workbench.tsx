@@ -1,6 +1,5 @@
 import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
-import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import {
   activateNewScrapeTask,
@@ -11,7 +10,6 @@ import {
   useScrapeTerminalError,
   useWorkbenchSessionSnapshot,
   WorkbenchSetupAdapter,
-  type WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
 import { confirmDialog } from "@mdcz/views/common";
 import { useT } from "@mdcz/views/i18n";
@@ -30,9 +28,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
-import { createWebWorkbenchPorts } from "../adapters/ports";
+import { createWebSetupPort, createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
-import { browseDirectory } from "../desktop";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
@@ -43,28 +40,6 @@ export const Route = createFileRoute("/workbench")({
     intent: search.intent === "maintenance" ? "maintenance" : undefined,
   }),
   component: WorkbenchPage,
-});
-
-const createWebSetupPort = (): WorkbenchSetupPort => ({
-  browseDirectory,
-  suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
-  cancelCandidates: async (scanId) => {
-    await api.scans.cancelCandidates({ scanId });
-  },
-  scanCandidates: async (scanDir, recursive, excludeDirPaths, scanId) => {
-    const result = await api.scans.candidates({
-      scanId,
-      scanDir,
-      recursive,
-      excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
-      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
-    });
-    return {
-      candidates: result.candidates,
-      warnings: result.warnings,
-      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
-    };
-  },
 });
 
 function WorkbenchPage() {
