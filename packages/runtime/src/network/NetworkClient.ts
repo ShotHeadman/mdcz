@@ -680,7 +680,15 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
 
     const text = await response.text();
-    return text.trim().length > 0 ? text : null;
+    if (!text.trim()) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text;
+    }
   }
 
   private buildProbeRangeValue(byteCount: number): string {

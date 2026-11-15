@@ -162,7 +162,7 @@ describe("NetworkClient retry policy", () => {
       .mockResolvedValueOnce(
         new Response('{"output":"ok"}', {
           status: 200,
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "text/event-stream" },
         }),
       );
     const client = new NetworkClient({ getRetryCount: () => 1 });

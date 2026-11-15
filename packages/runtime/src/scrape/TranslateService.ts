@@ -39,7 +39,7 @@ export class TranslateService {
     this.logger = options.logger ?? noopRuntimeLogger;
     this.actorNameNormalizer = new ActorNameNormalizer(options.mappingStore);
     const llmApiClient = options.llmApiClient ?? createLlmApiClient(networkClient);
-    this.openAiTranslator = new OpenAiTranslator(this.logger, llmApiClient);
+    this.openAiTranslator = new OpenAiTranslator(this.logger, llmApiClient, networkClient);
     this.translators = {
       google: new GoogleTranslator(networkClient).translate,
       deepl: new DeeplTranslator(networkClient).translate,

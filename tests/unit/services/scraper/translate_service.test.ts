@@ -176,35 +176,33 @@ describe("TranslateService term consistency", () => {
       Object.assign(new Error("rate limited"), { status: 429, headers: new Headers() }),
       1000,
     ],
-    [
-      "timeout",
-      new Error("LLM request failed: Error reading response stream: reqwest::Error { kind: Body, source: TimedOut }"),
-      1000,
-    ],
-  ] as const)("retries recoverable llm failures with %s", async (_name, error, delay) => {
+  ] as const)("retries HTTP 429 llm failures with %s and sets host concurrency", async (_name, error, delay) => {
     const generateText = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("重试成功");
-    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
-    await expect(service.translateText("hello", "zh_cn", createBaseConfig())).resolves.toBe("重试成功");
+    const network = new NetworkClient({});
+    const setDomainLimit = vi.spyOn(network, "setDomainLimit");
+    const service = createTranslateService(network, createLlmApiClient(generateText));
+    const config = createBaseConfig();
+    config.scrape.threadNumber = 4;
+    config.llm.maxRequestsPerSecond = 3;
+    await expect(service.translateText("hello", "zh_cn", config)).resolves.toBe("重试成功");
+    expect(setDomainLimit).toHaveBeenCalledWith("api.openai.com", 3, 4);
     expect(generateText).toHaveBeenCalledTimes(2);
     expect(sleepMock).toHaveBeenCalledExactlyOnceWith(delay, undefined, undefined);
   });
 
-  it("retries typed transport errors until llmMaxRetries is exhausted", async () => {
-    const transportError = new LlmTransportError(
-      "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
-      new Error("body timed out"),
-    );
-    const generateText = vi.fn().mockRejectedValue(transportError);
+  it("retries HTTP 429 until llm.maxRetries is exhausted", async () => {
+    const rateLimited = Object.assign(new Error("rate limited"), { status: 429, headers: new Headers() });
+    const generateText = vi.fn().mockRejectedValue(rateLimited);
     const logger = createLogger();
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
     const config = createBaseConfig();
     config.llm.maxRetries = 3;
 
-    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(transportError);
+    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(rateLimited);
 
     expect(generateText).toHaveBeenCalledTimes(4);
     expect(sleepMock).toHaveBeenCalledTimes(3);
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("transport error (1/3)"));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("HTTP 429 (1/3)"));
   });
 
   it.each([
@@ -259,6 +257,13 @@ describe("TranslateService term consistency", () => {
       "HTTP 500",
       Object.assign(new Error("server error"), { status: 500, headers: new Headers({ "Retry-After": "120" }) }),
     ],
+    [
+      "transport error already retried by NetworkClient",
+      new LlmTransportError(
+        "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
+        new Error("body timed out"),
+      ),
+    ],
   ] as const)("propagates non-retryable llm failures: %s", async (_name, error) => {
     const generateText = vi.fn().mockRejectedValue(error);
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
@@ -275,8 +280,16 @@ describe("TranslateService term consistency", () => {
     const generateText = vi.fn();
     const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
+    const setDomainLimit = vi.spyOn(networkClient, "setDomainLimit");
     const outputs = ["标题", "第一行\n第二行", "剧情"];
-    const getJson = vi.spyOn(networkClient, "getJson").mockImplementation(async () => [[[outputs.shift()]]]);
+    const getJson = vi.spyOn(networkClient, "getJson").mockImplementation(async () => [
+      [
+        ["标题\n", "a\n"],
+        ["第一行\n", "b\n"],
+        ["第二行\n", "c\n"],
+        ["剧情", "d"],
+      ],
+    ]);
     const postJson = vi
       .spyOn(networkClient, "postJson")
       .mockImplementation(async (url, payload) =>
@@ -287,6 +300,7 @@ describe("TranslateService term consistency", () => {
 
     const service = createTranslateService(networkClient, llmApiClient);
     const config = configurationSchema.parse({
+      scrape: { threadNumber: 3 },
       translate: {
         engine,
         deeplApiKey: key,
@@ -316,7 +330,13 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.title_zh).toBe(targetLanguage === "zh-TW" ? "標題" : "标题");
     expect(translated.data.plot_zh).toBe("第一行\n第二行");
     expect(translated.data.genres).toEqual(Array(3).fill(targetLanguage === "zh-TW" ? "劇情" : "剧情"));
-    expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 3 : 0);
+    expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 1 : 0);
+    if (engine === TranslateEngine.GOOGLE) {
+      expect(new URL(getJson.mock.calls[0][0] as string).searchParams.get("q")).toBe(
+        "Original title\nFirst line\nSecond line\nDrama",
+      );
+      expect(setDomainLimit).toHaveBeenCalledWith("translate.googleapis.com", 5, 3);
+    }
     expect(postJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 0 : 1);
   });
 
@@ -406,6 +426,7 @@ describe("TranslateService term consistency", () => {
   it("preserves local mappings and provider errors while propagating cancellation", async () => {
     for (const [engine, failure, message] of [
       [TranslateEngine.GOOGLE, "network", "Google unavailable"],
+      [TranslateEngine.GOOGLE, "count", "Google translation result count mismatch"],
       [TranslateEngine.OPENAI, "network", "LLM unavailable"],
       [TranslateEngine.DEEPL, "quota", "HTTP 456: quota exhausted"],
       [TranslateEngine.DEEPL, "count", "DeepL translation result count mismatch"],
@@ -413,7 +434,8 @@ describe("TranslateService term consistency", () => {
       [TranslateEngine.BAIDU, "count", "Baidu translation result count mismatch"],
     ] as const) {
       const network = new NetworkClient({});
-      vi.spyOn(network, "getJson").mockRejectedValue(new Error(message));
+      if (failure === "count") vi.spyOn(network, "getJson").mockResolvedValue([[["only one line"]]]);
+      else vi.spyOn(network, "getJson").mockRejectedValue(new Error(message));
       if (failure === "quota") vi.spyOn(network, "postJson").mockRejectedValue(new Error(message));
       else
         vi.spyOn(network, "postJson").mockResolvedValue(
