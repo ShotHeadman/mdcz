@@ -42,6 +42,7 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     !localState.fileinfo &&
     !localState.sourcePin &&
     !localState.dateAdded &&
+    !localState.posterBadges &&
     !foreignElements
   )
     return undefined;
@@ -54,6 +55,7 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     fileinfo: localState.fileinfo,
     sourcePin: localState.sourcePin,
     dateAdded: localState.dateAdded,
+    posterBadges: localState.posterBadges,
     foreignElements,
   };
 };

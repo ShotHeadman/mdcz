@@ -145,7 +145,7 @@ test("settings editor renders registry fields and preserves section order throug
   await expect.poll(readNavigationLabels).toEqual(initialSectionLabels);
 
   for (const [query, labels] of [
-    ["proxy", ["网络连接"]],
+    ["proxy", ["网络连接", "媒体服务器"]],
     ["@group:translate", ["翻译服务"]],
     ["mdcz-no-matching-setting", []],
   ] as const) {

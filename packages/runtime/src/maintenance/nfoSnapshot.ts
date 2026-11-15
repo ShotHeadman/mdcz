@@ -186,6 +186,8 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
   const published = parseFingerprints(mdczNode?.published);
   const sourceUrlNode = toRecord(mdczNode?.source_url);
+  const posterBadgesNode = toRecord(mdczNode?.poster_badges);
+  const posterBadgesSha = toStringValue(posterBadgesNode?.["@_sha256"]);
   const pinnedSite = parseWebsite(sourceUrlNode?.["@_site"]);
   const pinnedUrl = toStringValue(sourceUrlNode?.["#text"]);
   const edits = detectNfoEdits(movieNode, published);
@@ -236,6 +238,9 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       fileinfo: toRecord(movieNode.fileinfo),
       sourcePin: pinnedSite && pinnedUrl ? { site: pinnedSite, url: pinnedUrl } : undefined,
       dateAdded: toStringValue(movieNode.dateadded),
+      posterBadges: posterBadgesSha
+        ? { stamp: toStringValue(posterBadgesNode?.["#text"]) ?? "", sha256: posterBadgesSha }
+        : undefined,
       foreignElements: Object.fromEntries(Object.entries(movieNode).filter(([name]) => !MDCZ_NFO_ELEMENTS.has(name))),
     }),
   };
