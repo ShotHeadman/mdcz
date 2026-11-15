@@ -1,4 +1,4 @@
-import { BriefPage } from "@mdcz/views/brief";
+import { BriefPage, useBriefStore } from "@mdcz/views/brief";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -10,14 +10,17 @@ export function BriefRoutePage() {
   const navigate = useNavigate();
   const port = useWebBriefPort();
   const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read() });
+  const hasCells = useBriefStore((state) => state.cells.length > 0);
   const enabled = configQ.data?.llm.brief === true;
+  // Keep Brief open while the page already holds cells (for example, after switching to a profile where Brief is off),
+  // so the completed row and its Undo button stay reachable until the user clears or leaves.
+  const visible = enabled || hasCells;
 
-  // Turning Brief off removes the page with the sidebar item.
   useEffect(() => {
-    if (configQ.data && !enabled) void navigate({ to: "/overview", replace: true });
-  }, [configQ.data, enabled, navigate]);
+    if (configQ.data && !visible) void navigate({ to: "/overview", replace: true });
+  }, [configQ.data, visible, navigate]);
 
-  return enabled ? <BriefPage port={port} /> : null;
+  return visible ? <BriefPage port={port} /> : null;
 }
 
 export const Route = createFileRoute("/brief")({

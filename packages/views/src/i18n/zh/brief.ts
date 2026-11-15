@@ -6,6 +6,7 @@ export const brief: Messages["brief"] = {
     docked: "描述一项任务…",
     followUp: "修改这份草稿…",
   },
+  offNotice: "当前配置档案未开启指令。你仍可在上方撤销操作，或前往设置开启。",
   hints: { commands: "命令", send: "发送", newJob: "新任务" },
   workflows: {
     scrape: { title: "刮削", description: "将一个目录或单个文件刮削进库" },

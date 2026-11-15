@@ -88,11 +88,13 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
   useWebTaskSync();
   const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list() });
   const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read() });
-  // While Brief is off its sidebar item, page and badge do not exist.
+  // While Brief is off its sidebar item, page and badge do not exist, unless the page still holds cells to inspect/undo.
   const briefEnabled = configQ.data?.llm.brief === true;
+  const hasBriefCells = useBriefStore((state) => state.cells.length > 0);
   const briefPort = useWebBriefPort();
-  useBriefJobFollower(briefEnabled ? briefPort : null);
+  useBriefJobFollower(briefEnabled || hasBriefCells ? briefPort : null);
   const unseenBriefJobs = useBriefStore(selectUnseenCount);
+  const showBriefNav = briefEnabled || (pathname === "/brief" && hasBriefCells);
   const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
   const isToolsRoute = pathname === "/tools";
   const toolsSearch = useRouterState({
@@ -116,7 +118,7 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
         pending: pendingQ.data?.items.length,
         brief: pathname === "/brief" ? undefined : unseenBriefJobs,
       }}
-      primaryNav={briefEnabled ? PRIMARY_SHELL_NAV : PRIMARY_SHELL_NAV.filter((item) => item.id !== "brief")}
+      primaryNav={showBriefNav ? PRIMARY_SHELL_NAV : PRIMARY_SHELL_NAV.filter((item) => item.id !== "brief")}
       systemNav={
         desktop && configQ.data?.ui.showLogsPanel === false
           ? SYSTEM_SHELL_NAV.filter((item) => item.to !== "/logs")

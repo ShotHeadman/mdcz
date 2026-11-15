@@ -154,6 +154,7 @@ export function BriefPage({ port }: { port: BriefPort }) {
   const [libraries, setLibraries] = useState<MediaLibraryDto[]>([]);
   const [config, setConfig] = useState<Configuration>();
   const sendKey = config?.llm.briefSendKey ?? "enter";
+  const briefOff = config !== undefined && !config.llm.brief;
   const scrollRef = useRef<HTMLDivElement>(null);
   const attachedCell = cells.find((cell) => cell.id === expandedId && cell.state === "draft");
   // Labels and descriptions live in the dictionaries, in the user's language, which is also the prompt's.
@@ -321,12 +322,21 @@ export function BriefPage({ port }: { port: BriefPort }) {
         <div className={MARGIN_GRID_CLASS}>
           <span />
           <StateMark state="idle" attached={Boolean(attachedCell)} />
-          <PromptBox
-            attached={Boolean(attachedCell)}
-            sendKey={sendKey}
-            onSubmit={submit}
-            onDetach={() => store().expand(null)}
-          />
+          {briefOff ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-quiet-lg border border-dashed border-border px-3.5 py-2.5 text-sm text-muted-foreground">
+              <span>{t.brief.offNotice}</span>
+              <TextButton onClick={() => port.open({ page: "settings", section: "llm" })}>
+                {t.brief.card.settings.openInSettings}
+              </TextButton>
+            </div>
+          ) : (
+            <PromptBox
+              attached={Boolean(attachedCell)}
+              sendKey={sendKey}
+              onSubmit={submit}
+              onDetach={() => store().expand(null)}
+            />
+          )}
         </div>
       </div>
     </main>

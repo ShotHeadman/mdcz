@@ -9,6 +9,7 @@ export const brief = {
     docked: "Describe a job…",
     followUp: "Change this draft…",
   },
+  offNotice: "Brief is turned off in this profile. You can still undo a card above or enable it in Settings.",
   hints: { commands: "commands", send: "send", newJob: "new job" },
   workflows: {
     scrape: { title: "Scrape", description: "A directory, or one file, into a library" },
