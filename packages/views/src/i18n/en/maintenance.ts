@@ -24,6 +24,8 @@ export const maintenance = {
   noFieldDiffs: "Current preview generated no field diffs",
   diffsWillShowHere: "Field diffs will be shown here after preview",
   unchangedFields: "Unchanged fields",
+  posterRedrawNotice:
+    "The poster badges no longer match the current tags or badge settings, and will be redrawn with the current settings.",
 
   // MaintenanceBatchBarView
   refreshDiff: "Refresh comparison",
@@ -57,6 +59,7 @@ export const maintenance = {
   blockedDefaultReason: "Some disc parts could not complete preview",
   diffCount: (count: number) => `${count} field diff(s)`,
   pathWillChange: "Path will be adjusted",
+  posterWillRedraw: "Poster badges will be redrawn",
   noExtraChanges: "No extra changes",
   noExecutableItems: "No executable items",
   startBatchExecution: (count: number) => `Start batch execution (${count} items)`,

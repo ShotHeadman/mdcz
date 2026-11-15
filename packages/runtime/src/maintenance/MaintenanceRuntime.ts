@@ -136,6 +136,7 @@ export interface MaintenanceRuntimePreviewItem {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
+  redrawsPoster?: boolean;
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
@@ -363,6 +364,10 @@ export class MaintenanceRuntime {
         crawlerData,
         signal,
       });
+      // An online preset that does not keep posters fetches a new one, which gets its badges when it arrives.
+      const keptPoster =
+        preset.dataSource === "online" && !config.download.keepPoster ? undefined : entry.assets.poster;
+
       return {
         entry,
         rootId: input.root.id,
@@ -374,6 +379,7 @@ export class MaintenanceRuntime {
         pathDiff: pathDiff ?? null,
         proposedCrawlerData: crawlerData ?? null,
         imageAlternatives,
+        redrawsPoster: await this.posterIsStale(preset, config, entry, keptPoster, crawlerData),
         affectedFiles,
         files,
       };

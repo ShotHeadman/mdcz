@@ -26,6 +26,7 @@ export const maintenance: Messages["maintenance"] = {
   noFieldDiffs: "当前预览未生成字段差异",
   diffsWillShowHere: "预览后将在此显示字段差异",
   unchangedFields: "未变更字段",
+  posterRedrawNotice: "海报角标与当前标签或角标设置不符，执行后将按当前设置重绘。",
 
   // MaintenanceBatchBarView
   refreshDiff: "刷新对比",
@@ -57,6 +58,7 @@ export const maintenance: Messages["maintenance"] = {
   blockedDefaultReason: "部分分盘文件无法完成预览",
   diffCount: (count: number) => `字段差异 ${count} 项`,
   pathWillChange: "路径将调整",
+  posterWillRedraw: "海报角标将重绘",
   noExtraChanges: "无额外变更",
   noExecutableItems: "无可执行项",
   startBatchExecution: (count: number) => `开始批量执行 ${count} 项`,

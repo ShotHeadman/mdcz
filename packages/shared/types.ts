@@ -308,6 +308,8 @@ export interface MaintenancePreviewItem {
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
+  /** The poster's badges no longer match the movie or the badge settings, so applying redraws it. */
+  redrawsPoster?: boolean;
 }
 
 export interface MaintenanceImageAlternatives {

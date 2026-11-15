@@ -114,6 +114,7 @@ function ReplacementHarness({ onExecute }: { onExecute: () => void }) {
               ready: true,
               diffCount: 1,
               hasPathChange: true,
+              redrawsPoster: false,
               changedPathItems: [{ fileId: "entry-1", fileName: "SSIS-497.mp4", pathDiff }],
             },
           ],

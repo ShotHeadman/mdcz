@@ -4,10 +4,20 @@ import { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { AggregationService } from "@mdcz/runtime/scrape";
-import { DownloadManager, FileOrganizer, MemoryImageHostCooldownStore, NfoGenerator } from "@mdcz/runtime/scrape";
+import {
+  DownloadManager,
+  FileOrganizer,
+  listPosterBadgeDefinitions,
+  MemoryImageHostCooldownStore,
+  NfoGenerator,
+  PosterWatermarkService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import type { PosterTagBadgePosition } from "@mdcz/shared/posterBadges";
+import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeTestServers,
@@ -288,6 +298,84 @@ describe("buildServer maintenance integration", () => {
     await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
     expect(await readFile(join(root, "ABC-500.nfo"), "utf8")).toContain("<title>Official Title</title>");
     expect(crawl).not.toHaveBeenCalled();
+  });
+
+  it("redraws poster badges that no longer match on a maintenance write, unless the poster was replaced", async () => {
+    const root = await createTempRoot("maintenance-badges-root");
+    await writeMaintenanceInput(root, "ABC-600", "Local Title ABC-600");
+    const half = (color: { r: number; g: number; b: number }) =>
+      sharp({ create: { width: 400, height: 538, channels: 3, background: color } })
+        .png()
+        .toBuffer();
+    const thumb = await sharp({
+      create: { width: 800, height: 538, channels: 3, background: { r: 30, g: 90, b: 160 } },
+    })
+      .composite([{ input: await half({ r: 220, g: 200, b: 40 }), left: 400, top: 0 }])
+      .jpeg()
+      .toBuffer();
+    const blank = { width: 200, height: 300, channels: 3, background: { r: 0, g: 0, b: 0 } } as const;
+    await writeFile(join(root, "thumb.jpg"), thumb);
+    await writeFile(join(root, "poster.jpg"), await sharp({ create: blank }).jpeg().toBuffer());
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const library = await createTestLibrary(fastify, token, root);
+    (await services.persistence.getState()).repositories.siteResults.record("ABC-600", [
+      {
+        site: Website.JAVDB,
+        status: "success",
+        elapsedMs: 1,
+        data: {
+          number: "ABC-600",
+          title: "Local Title ABC-600",
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.JAVDB,
+        },
+      },
+    ]);
+    const remerge = async (download: Record<string, unknown>) => {
+      await services.config.update({ translate: { enableTranslation: false }, download });
+      const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "remerge", ["ABC-600.mp4"]);
+      const applied = await fastify.inject({
+        method: "POST",
+        url: "/trpc/maintenance.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { sessionId },
+      });
+      expect(applied.statusCode, applied.body).toBe(200);
+      await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+      return session.previews[0].redrawsPoster;
+    };
+    const pixels = async (path: string) => await sharp(path).raw().toBuffer();
+    const expectPoster = async (position: PosterTagBadgePosition, sizePercent: number) => {
+      const expectedPath = join(root, `expected-${position}-${sizePercent}.jpg`);
+      await sharp(thumb)
+        .rotate()
+        .extract(resolveThumbToPosterCropRegion(800, 538) ?? { left: 0, top: 0, width: 800, height: 538 })
+        .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
+        .toFile(expectedPath);
+      await new PosterWatermarkService({ dataDir: root }).applyTagBadges(
+        expectedPath,
+        listPosterBadgeDefinitions(["censored"]),
+        { position, sizePercent, insetPercent: 3, opacity: 100 },
+      );
+      expect(await pixels(join(root, "poster.jpg"))).toEqual(await pixels(expectedPath));
+    };
+
+    // A poster from before MDCz recorded its badges is redrawn once, cropped again from the local cover.
+    expect(await remerge({ tagBadges: true, tagBadgeTypes: ["censored"] })).toBe(true);
+    await expectPoster("topLeft", 100);
+    expect(await remerge({})).toBe(false);
+    expect(await remerge({ tagBadgeSizePercent: 200 })).toBe(true);
+    await expectPoster("topLeft", 200);
+
+    const replaced = await sharp({ create: { ...blank, background: { r: 255, g: 255, b: 255 } } })
+      .jpeg()
+      .toBuffer();
+    await writeFile(join(root, "poster.jpg"), replaced);
+    expect(await remerge({ tagBadgePosition: "bottomRight" })).toBe(false);
+    expect(await readFile(join(root, "poster.jpg"))).toEqual(replaced);
   });
 
   it("pauses and resumes previews through HTTP, refusing scrapes while one is live", async () => {

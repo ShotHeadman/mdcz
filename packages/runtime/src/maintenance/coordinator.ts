@@ -887,6 +887,7 @@ export class MaintenanceSessionCoordinator {
       pathDiff: item.pathDiff,
       proposedCrawlerData: item.proposedCrawlerData,
       imageAlternatives: item.imageAlternatives,
+      redrawsPoster: item.redrawsPoster,
       affectedFiles: item.affectedFiles,
       files: item.files,
       entry: item.entry,

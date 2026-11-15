@@ -41,6 +41,7 @@ interface MaintenanceGroupPreviewState {
   hasPathChange: boolean;
   hasPreview: boolean;
   ready: boolean;
+  redrawsPoster: boolean;
 }
 
 export interface MaintenanceEntryGroupViewModel extends MaintenanceEntryGroup {
@@ -240,6 +241,7 @@ const buildPreviewState = (
     diffCount: Math.max(0, ...group.previewItems.map((preview) => preview.fieldDiffs?.length ?? 0)),
     changedPathItems,
     hasPathChange: changedPathItems.length > 0,
+    redrawsPoster: group.previewItems.some((preview) => preview.redrawsPoster),
   };
 };
 

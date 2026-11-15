@@ -100,6 +100,7 @@ export interface MaintenanceSessionPreview {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
+  redrawsPoster?: boolean;
   entry?: LocalScanEntry;
   createdAt: Date;
   updatedAt: Date;
