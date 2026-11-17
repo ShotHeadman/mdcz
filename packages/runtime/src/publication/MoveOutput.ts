@@ -7,7 +7,7 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFile } from "../scrape/media/generatedSidecarVideos";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { PublicationConflictError } from "./conflicts";
-import { CreatedDirectories, outputFileSystem, removeEmptyDirectory } from "./outputFileSystem";
+import { CreatedDirectories, copyFileBytes, outputFileSystem, removeEmptyDirectory } from "./outputFileSystem";
 import { publicationJournal, TemporaryPaths } from "./publicationJournal";
 import type { PublicationFileSystem } from "./types";
 import { type WriteArtifact, WriteOutput } from "./WriteOutput";
@@ -231,6 +231,7 @@ export class MoveOutput {
               temporaryPaths.add(staging);
               if (move.rewrittenContent !== undefined)
                 await fs.writeFile(staging, move.rewrittenContent, { flush: true });
+              else if (input.direct) await copyFileBytes(sourcePath, staging);
               else await fs.copyFile(sourcePath, staging);
               if (move.rewrittenContent === undefined) await fs.flush?.(staging);
               const expectedSize =

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
-import { CreatedDirectories, outputFileSystem } from "./outputFileSystem";
+import { CreatedDirectories, copyFileBytes, outputFileSystem } from "./outputFileSystem";
 import { publicationJournal, TemporaryPaths } from "./publicationJournal";
 import type { PublicationFileSystem } from "./types";
 
@@ -27,8 +27,9 @@ export class WriteOutput {
       /** The caller's, which then takes back the empty folders itself once it has restored what else it moved. */
       directories?: CreatedDirectories;
       /**
-       * Writes each target under its final name instead of renaming a temporary file onto it, for cloud mounts
-       * that fail renaming a file they have just created. A target is then replaced without being atomic.
+       * Writes each target under its final name instead of renaming a temporary file onto it, and copies sources
+       * byte by byte instead of letting the kernel do it, for cloud mounts that refuse both on a freshly created
+       * file. A target is then replaced without being atomic.
        */
       direct?: boolean;
     },
@@ -59,12 +60,20 @@ export class WriteOutput {
         throw new Error(`Cannot consume a media file or final artifact: ${artifact.sourcePath}`);
       consumedSources.set(source, artifact);
     }
-    const write = async (artifact: WriteArtifact, destination: string, size: number | undefined): Promise<void> => {
+    const write = async (
+      artifact: WriteArtifact,
+      destination: string,
+      size: number | undefined,
+      plain = false,
+    ): Promise<void> => {
       if ("symlinkTo" in artifact) return await this.fileSystem.symlink(artifact.symlinkTo, destination);
       if ("data" in artifact) {
         await this.fileSystem.writeFile(destination, artifact.data, { flush: true });
       } else {
-        await this.fileSystem.copyFile(artifact.sourcePath, destination);
+        // The kernel's accelerated copy stamps times and modes on the file it creates, which a cloud mount refuses
+        // for as long as the upload registers; a byte stream is the only write it always accepts.
+        if (plain) await copyFileBytes(artifact.sourcePath, destination);
+        else await this.fileSystem.copyFile(artifact.sourcePath, destination);
         await this.fileSystem.flush?.(destination);
       }
       if ((await this.fileSystem.stat(destination)).size !== size)
@@ -148,7 +157,7 @@ export class WriteOutput {
           publicationJournal.record(targetPath);
           // Set first, so a failed write is taken back like a finished one.
           replacement.installed = true;
-          await write(artifact, targetPath, size);
+          await write(artifact, targetPath, size, true);
           publicationJournal.forget(targetPath);
           // The target is whole from here on, so a crash before the commit drops the original instead of restoring it.
           if (replacement.backupPath) publicationJournal.record(replacement.backupPath);

@@ -167,9 +167,13 @@ describe("WriteOutput", () => {
       await writeFile(downloaded, "new poster");
       const original = new Set([nfo, poster]);
       const rename = vi.fn(outputFileSystem.rename);
+      const copyFile = vi.fn(async () => {
+        throw Object.assign(new Error("copyfile refused"), { code: "EIO" });
+      });
       const install = new WriteOutput({
         ...outputFileSystem,
         rename,
+        copyFile,
         writeFile: async (target, data, options) => {
           if (failure === "write" && target === thumb) {
             await outputFileSystem.writeFile(target, "tr");
@@ -199,6 +203,8 @@ describe("WriteOutput", () => {
       else await expect(readFile(thumb, "utf8")).resolves.toBe("new thumb");
       expect((await readdir(library, { recursive: true })).some((name) => name.includes(".mdcz-"))).toBe(false);
       expect(await readdir(staging)).toEqual([]);
+      // Cloud mounts refuse the kernel's copy of a fresh file, so a direct write copies bytes itself.
+      expect(copyFile).not.toHaveBeenCalled();
       // Only files that were there before the publication are ever renamed: aside, and back when it fails.
       expect(rename.mock.calls.length).toBe(failure ? 4 : 2);
       for (const [source] of rename.mock.calls)

@@ -128,13 +128,17 @@ describe("MoveOutput", () => {
     // A direct publication copies the video straight to its final name, renaming nothing it has created.
     const direct = await fixture();
     const directRename = vi.fn(outputFileSystem.rename);
-    await new MoveOutput({ ...outputFileSystem, rename: directRename }).install({
+    const directCopyFile = vi.fn(async () => {
+      throw Object.assign(new Error("copyfile refused"), { code: "EIO" });
+    });
+    await new MoveOutput({ ...outputFileSystem, rename: directRename, copyFile: directCopyFile }).install({
       moves: [{ ...direct.move, transfer: "copy" }],
       artifacts: [{ targetPath: path.join(path.dirname(direct.targetPath), "movie.nfo"), data: "<movie/>" }],
       direct: true,
       commit: () => undefined,
     });
     expect(directRename).not.toHaveBeenCalled();
+    expect(directCopyFile).not.toHaveBeenCalled();
     await expect(readFile(direct.targetPath, "utf8")).resolves.toBe("video");
     await expect(readFile(direct.sourcePath, "utf8")).resolves.toBe("video");
     expect(await fs.readdir(path.dirname(direct.targetPath))).toEqual(["movie.nfo", "target.mp4"]);
