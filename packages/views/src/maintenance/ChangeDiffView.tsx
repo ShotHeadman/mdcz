@@ -446,9 +446,9 @@ export function ChangeDiffView({
     );
   };
 
-  const posterNotice = preview?.redrawsPoster ? (
+  const posterNotice = preview?.poster ? (
     <section className="rounded-quiet-lg bg-surface-low/75 p-4 text-sm text-foreground md:p-5">
-      {t.maintenance.posterRedrawNotice}
+      {preview.poster === "redraw" ? t.maintenance.posterRedrawNotice : t.maintenance.posterKeptNotice}
     </section>
   ) : null;
 

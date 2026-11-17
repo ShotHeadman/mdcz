@@ -1,5 +1,6 @@
 import { Website } from "@mdcz/shared/enums";
-import type { ActorProfile, CrawlerData, NfoLocalState } from "@mdcz/shared/types";
+import { normalizedCropRegionSchema } from "@mdcz/shared/posterCrop";
+import type { ActorProfile, CrawlerData, NfoLocalState, PosterRecord } from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";
 import { MDCZ_NFO_ELEMENTS } from "../scrape/nfo";
 import { detectNfoEdits, parseFingerprints } from "../scrape/nfoEdits";
@@ -58,6 +59,18 @@ const toStringArray = (value: unknown): string[] =>
     .filter((item) => item.length > 0);
 
 const getNodeText = (value: unknown): string | undefined => toStringValue(toRecord(value)?.["#text"] ?? value);
+
+const parsePosterRecord = (node: Record<string, unknown> | undefined): PosterRecord | undefined => {
+  const sha256 = toStringValue(node?.["@_sha256"]);
+  if (!sha256) return undefined;
+  const record = { stamp: toStringValue(node?.["#text"]) ?? "", sha256 };
+  const source = toStringValue(node?.["@_source"]);
+  if (!source) return record;
+  const [x, y, width, height] = (toStringValue(node?.["@_crop"]) ?? "").split(",").map(Number);
+  const crop = normalizedCropRegionSchema.safeParse({ x, y, width, height });
+  // A cut that can't be read can't be repeated, so the poster counts as one MDCz can't vouch for.
+  return crop.success ? { ...record, cut: { source, crop: crop.data } } : undefined;
+};
 
 interface NfoIdentifier {
   number?: string;
@@ -186,8 +199,6 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
   const published = parseFingerprints(mdczNode?.published);
   const sourceUrlNode = toRecord(mdczNode?.source_url);
-  const posterBadgesNode = toRecord(mdczNode?.poster_badges);
-  const posterBadgesSha = toStringValue(posterBadgesNode?.["@_sha256"]);
   const pinnedSite = parseWebsite(sourceUrlNode?.["@_site"]);
   const pinnedUrl = toStringValue(sourceUrlNode?.["#text"]);
   const edits = detectNfoEdits(movieNode, published);
@@ -238,9 +249,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       fileinfo: toRecord(movieNode.fileinfo),
       sourcePin: pinnedSite && pinnedUrl ? { site: pinnedSite, url: pinnedUrl } : undefined,
       dateAdded: toStringValue(movieNode.dateadded),
-      posterBadges: posterBadgesSha
-        ? { stamp: toStringValue(posterBadgesNode?.["#text"]) ?? "", sha256: posterBadgesSha }
-        : undefined,
+      posterRecord: parsePosterRecord(toRecord(mdczNode?.poster_record)),
       foreignElements: Object.fromEntries(Object.entries(movieNode).filter(([name]) => !MDCZ_NFO_ELEMENTS.has(name))),
     }),
   };

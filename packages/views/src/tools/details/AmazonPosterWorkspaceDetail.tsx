@@ -1,5 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import { isPosterShaped, type NormalizedCropRegion, resolvePosterEditorCropRegion } from "@mdcz/shared/posterCrop";
 import type {
+  AmazonPosterApplyItem,
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
@@ -19,10 +21,15 @@ import {
   Progress,
   ScrollArea,
 } from "@mdcz/ui";
-import { ArrowRight, Check, FolderOpen, ImageIcon, LoaderCircle, Minus, Search } from "lucide-react";
+import { ArrowRight, Check, Crop, FolderOpen, ImageIcon, LoaderCircle, Minus, Search } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { ImageOptionCard, type ResolveImageOptionCandidates } from "../../common";
+import {
+  ImageOptionCard,
+  PosterCropDialog,
+  type PosterCropEditSession,
+  type ResolveImageOptionCandidates,
+} from "../../common";
 import { type Messages, useT } from "../../i18n";
 
 const LOOKUP_CONCURRENCY = 2;
@@ -35,29 +42,69 @@ const TOOL_SECONDARY_BUTTON_CLASS =
   "h-11 rounded-quiet-capsule bg-surface-low px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/75";
 const TOOL_SUBSECTION_CLASS = "space-y-4 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5";
 
+/** The found image's size as the browser loaded it, and the 2:3 area of it the poster is cut to. */
+type AmazonCut = { width: number; height: number; crop: NormalizedCropRegion };
+
 type ItemState = {
   scan: AmazonPosterScanItem;
   searchTitle: string;
   lookupSearchTitle: string | null;
   lookup: AmazonPosterLookupResult | null;
+  cut: AmazonCut | null;
   lookupStatus: "pending" | "loading" | "done" | "error";
   selection: "current" | "amazon" | null;
   applyError: string | null;
 };
 
-export interface AmazonPosterApplyItem {
-  amazonPosterUrl: string;
-  nfoPath: string;
-}
-
 export interface AmazonPosterWorkspaceDetailProps {
   onApply: (items: AmazonPosterApplyItem[]) => Promise<AmazonPosterApplyResultItem[]>;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
-  onLookup: (item: AmazonPosterScanItem) => Promise<AmazonPosterLookupResult>;
+  onLookup: (item: AmazonPosterScanItem, title: string) => Promise<AmazonPosterLookupResult>;
   onScan: (directory: string) => Promise<AmazonPosterScanItem[]>;
   resolveImageCandidates?: ResolveImageOptionCandidates;
   /** The directory Brief opened the tool with; each new key fills it in once. */
   prefill?: { key: string; directory?: string };
+}
+
+const measureImage = (src: string) =>
+  new Promise<{ width: number; height: number } | null>((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+
+/**
+ * Looks the movie up and cuts what it finds: by the area the poster was last cut by when it came from the same image,
+ * otherwise by the starting area of the crop dialog. An area is never carried from one movie's image to another's.
+ */
+async function lookupWithCut(
+  scan: AmazonPosterScanItem,
+  title: string,
+  onLookup: AmazonPosterWorkspaceDetailProps["onLookup"],
+): Promise<{ lookup: AmazonPosterLookupResult; cut: AmazonCut | null }> {
+  let lookup: AmazonPosterLookupResult;
+  try {
+    lookup = await onLookup(scan, title);
+  } catch (error) {
+    lookup = {
+      nfoPath: scan.nfoPath,
+      amazonPosterUrl: null,
+      reason: "query_failed",
+      error: toErrorMessage(error),
+      elapsedMs: 0,
+    };
+  }
+  const url = lookup.amazonPosterUrl;
+  if (!url) return { lookup, cut: null };
+  const size = await measureImage(url);
+  if (!size) return { lookup: { ...lookup, amazonPosterUrl: null, reason: "image_unreachable" }, cut: null };
+  const recorded = scan.posterCut;
+  const crop =
+    recorded?.source === url && isPosterShaped(recorded.crop, size.width, size.height)
+      ? recorded.crop
+      : resolvePosterEditorCropRegion(size.width, size.height);
+  return { lookup, cut: { ...size, crop } };
 }
 
 function formatElapsed(elapsedMs: number | null | undefined): string {
@@ -152,6 +199,11 @@ export function AmazonPosterWorkspaceDetail({
   const [itemStates, setItemStates] = useState<ItemState[]>([]);
   const t = useT();
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
+  const [cropping, setCropping] = useState<{
+    filePath: string;
+    session: PosterCropEditSession;
+    crop: NormalizedCropRegion;
+  } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [applying, setApplying] = useState(false);
   // Replacements accumulate across retries of the same scan; failures count only the latest attempt.
@@ -174,16 +226,17 @@ export function AmazonPosterWorkspaceDetail({
 
     const initialStates = items.map((scan) => ({
       scan,
-      searchTitle: scan.searchTitle,
+      searchTitle: scan.title,
       lookupSearchTitle: null,
       lookup: null,
+      cut: null,
       lookupStatus: "pending" as const,
       selection: null,
       applyError: null,
     }));
 
     setItemStates(initialStates);
-    setExpandedPath(items[0]?.nfoPath ?? null);
+    setExpandedPath(items[0]?.filePath ?? null);
     setConfirmOpen(false);
 
     if (items.length === 0) return;
@@ -203,28 +256,18 @@ export function AmazonPosterWorkspaceDetail({
 
         updateItem(currentIndex, (state) => ({ ...state, lookupStatus: "loading" }));
 
-        const queryTitle = items[currentIndex].searchTitle.trim();
-        let result: AmazonPosterLookupResult;
-        try {
-          result = await onLookup({ ...items[currentIndex], searchTitle: queryTitle });
-        } catch (error) {
-          result = {
-            nfoPath: items[currentIndex].nfoPath,
-            amazonPosterUrl: null,
-            reason: "query_failed",
-            error: toErrorMessage(error),
-            elapsedMs: 0,
-          };
-        }
+        const queryTitle = items[currentIndex].title.trim();
+        const { lookup, cut } = await lookupWithCut(items[currentIndex], queryTitle, onLookup);
 
         if (cancelled) return;
 
         updateItem(currentIndex, (state) => ({
           ...state,
           lookupSearchTitle: queryTitle,
-          lookup: result,
-          lookupStatus: result.reason === "query_failed" ? "error" : "done",
-          selection: result.amazonPosterUrl ? (state.selection === "current" ? "current" : "amazon") : state.selection,
+          lookup,
+          cut,
+          lookupStatus: lookup.reason === "query_failed" ? "error" : "done",
+          selection: cut ? (state.selection === "current" ? "current" : "amazon") : state.selection,
         }));
       }
     };
@@ -246,12 +289,11 @@ export function AmazonPosterWorkspaceDetail({
   );
   const selectedAmazonItems = useMemo(
     () =>
-      itemStates
-        .filter((state) => state.selection === "amazon" && state.lookup?.amazonPosterUrl)
-        .map((state) => ({
-          nfoPath: state.scan.nfoPath,
-          amazonPosterUrl: state.lookup?.amazonPosterUrl ?? "",
-        })),
+      itemStates.flatMap((state) =>
+        state.selection === "amazon" && state.lookup?.amazonPosterUrl && state.cut
+          ? [{ filePath: state.scan.filePath, amazonPosterUrl: state.lookup.amazonPosterUrl, crop: state.cut.crop }]
+          : [],
+      ),
     [itemStates],
   );
   const progressValue = itemStates.length > 0 ? Math.round((completedCount / itemStates.length) * 100) : 0;
@@ -289,6 +331,7 @@ export function AmazonPosterWorkspaceDetail({
               ...state,
               searchTitle,
               lookup: state.lookupSearchTitle === searchTitle.trim() ? state.lookup : null,
+              cut: state.lookupSearchTitle === searchTitle.trim() ? state.cut : null,
               lookupStatus: state.lookupSearchTitle === searchTitle.trim() ? state.lookupStatus : "pending",
               selection: state.lookupSearchTitle === searchTitle.trim() ? state.selection : null,
             }
@@ -305,23 +348,12 @@ export function AmazonPosterWorkspaceDetail({
     setItemStates((prev) =>
       prev.map((state, stateIndex) =>
         stateIndex === index
-          ? { ...state, lookupStatus: "loading", lookup: null, selection: null, applyError: null }
+          ? { ...state, lookupStatus: "loading", lookup: null, cut: null, selection: null, applyError: null }
           : state,
       ),
     );
 
-    let result: AmazonPosterLookupResult;
-    try {
-      result = await onLookup({ ...target.scan, searchTitle: queryTitle });
-    } catch (error) {
-      result = {
-        nfoPath: target.scan.nfoPath,
-        amazonPosterUrl: null,
-        reason: "query_failed",
-        error: toErrorMessage(error),
-        elapsedMs: 0,
-      };
-    }
+    const { lookup, cut } = await lookupWithCut(target.scan, queryTitle, onLookup);
 
     setItemStates((prev) =>
       prev.map((state, stateIndex) =>
@@ -329,9 +361,10 @@ export function AmazonPosterWorkspaceDetail({
           ? {
               ...state,
               lookupSearchTitle: queryTitle,
-              lookup: result,
-              lookupStatus: result.reason === "query_failed" ? "error" : "done",
-              selection: result.amazonPosterUrl ? "amazon" : null,
+              lookup,
+              cut,
+              lookupStatus: lookup.reason === "query_failed" ? "error" : "done",
+              selection: cut ? "amazon" : null,
             }
           : state,
       ),
@@ -344,11 +377,11 @@ export function AmazonPosterWorkspaceDetail({
     const errorByPath = new Map<string, string>();
     try {
       for (const result of await onApply(selectedAmazonItems)) {
-        if (result.success) replacedPaths.add(result.nfoPath);
-        else errorByPath.set(result.nfoPath, result.error ?? "");
+        if (result.success) replacedPaths.add(result.filePath);
+        else errorByPath.set(result.filePath, result.error ?? "");
       }
     } catch (error) {
-      for (const item of selectedAmazonItems) errorByPath.set(item.nfoPath, toErrorMessage(error));
+      for (const item of selectedAmazonItems) errorByPath.set(item.filePath, toErrorMessage(error));
     }
     setApplying(false);
     setConfirmOpen(false);
@@ -363,10 +396,10 @@ export function AmazonPosterWorkspaceDetail({
     // Replaced items leave the list; failed ones stay selected so confirming again retries just them.
     setItemStates((prev) =>
       prev
-        .filter((state) => !replacedPaths.has(state.scan.nfoPath))
-        .map((state) => ({ ...state, applyError: errorByPath.get(state.scan.nfoPath) ?? null })),
+        .filter((state) => !replacedPaths.has(state.scan.filePath))
+        .map((state) => ({ ...state, applyError: errorByPath.get(state.scan.filePath) ?? null })),
     );
-    setExpandedPath(selectedAmazonItems.find((item) => errorByPath.has(item.nfoPath))?.nfoPath ?? null);
+    setExpandedPath(selectedAmazonItems.find((item) => errorByPath.has(item.filePath))?.filePath ?? null);
   };
 
   return (
@@ -446,7 +479,7 @@ export function AmazonPosterWorkspaceDetail({
                 </div>
               ) : (
                 itemStates.map((state, index) => {
-                  const isExpanded = state.scan.nfoPath === expandedPath;
+                  const isExpanded = state.scan.filePath === expandedPath;
                   const statusBadge = getStatusBadge(state, t);
                   const StatusIcon = statusBadge.icon;
                   const thumbnailLoading = state.lookupStatus === "loading" || state.lookupStatus === "pending";
@@ -454,7 +487,7 @@ export function AmazonPosterWorkspaceDetail({
 
                   return (
                     <div
-                      key={state.scan.nfoPath}
+                      key={state.scan.filePath}
                       className={cn(
                         "overflow-hidden rounded-xl border bg-card transition-all duration-300",
                         isExpanded ? "border-primary/30 shadow-sm" : "border-border/60",
@@ -463,7 +496,7 @@ export function AmazonPosterWorkspaceDetail({
                       <button
                         type="button"
                         onClick={() =>
-                          setExpandedPath((current) => (current === state.scan.nfoPath ? null : state.scan.nfoPath))
+                          setExpandedPath((current) => (current === state.scan.filePath ? null : state.scan.filePath))
                         }
                         className={cn(
                           "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors",
@@ -579,17 +612,16 @@ export function AmazonPosterWorkspaceDetail({
                                 defaultAspectRatio={2 / 3}
                                 src={state.lookup?.amazonPosterUrl ?? ""}
                                 resolveImageCandidates={resolveImageCandidates}
+                                crop={state.cut?.crop}
+                                width={state.cut ? Math.round(state.cut.crop.width * state.cut.width) : null}
+                                height={state.cut ? Math.round(state.cut.crop.height * state.cut.height) : null}
                                 label={t.tools.amazonPoster}
                                 imageFrameClassName="max-w-48"
                                 metadataClassName="max-w-48"
                                 showDimensions
                                 subtitle={state.lookup?.amazonPosterUrl ? "Amazon.co.jp" : undefined}
                                 selected={state.selection === "amazon"}
-                                onClick={
-                                  state.lookup?.amazonPosterUrl
-                                    ? () => handleSelectionChange(index, "amazon")
-                                    : undefined
-                                }
+                                onClick={state.cut ? () => handleSelectionChange(index, "amazon") : undefined}
                                 loading={thumbnailLoading}
                                 empty={amazonEmpty}
                                 emptyText={
@@ -603,6 +635,33 @@ export function AmazonPosterWorkspaceDetail({
                                 }
                               />
                             </div>
+                            {state.cut ? (
+                              <div className="flex justify-end">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  className="gap-2"
+                                  onClick={() => {
+                                    const { cut } = state;
+                                    const sourceUrl = state.lookup?.amazonPosterUrl;
+                                    if (!cut || !sourceUrl) return;
+                                    setCropping({
+                                      filePath: state.scan.filePath,
+                                      session: {
+                                        sourceUrl,
+                                        width: cut.width,
+                                        height: cut.height,
+                                        initialCrop: cut.crop,
+                                      },
+                                      crop: cut.crop,
+                                    });
+                                  }}
+                                >
+                                  <Crop className="h-4 w-4" />
+                                  {t.tools.adjustAmazonCrop}
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -654,6 +713,29 @@ export function AmazonPosterWorkspaceDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PosterCropDialog
+        open={cropping !== null}
+        session={cropping?.session ?? null}
+        crop={cropping?.crop ?? null}
+        saving={false}
+        confirmLabel={t.common.confirm}
+        onCropChange={(crop) => setCropping((current) => current && { ...current, crop })}
+        onOpenChange={(open) => {
+          if (!open) setCropping(null);
+        }}
+        onSave={() => {
+          if (!cropping) return;
+          setItemStates((prev) =>
+            prev.map((state) =>
+              state.scan.filePath === cropping.filePath && state.cut
+                ? { ...state, cut: { ...state.cut, crop: cropping.crop }, selection: "amazon", applyError: null }
+                : state,
+            ),
+          );
+          setCropping(null);
+        }}
+      />
     </div>
   );
 }

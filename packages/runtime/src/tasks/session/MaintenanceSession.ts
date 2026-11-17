@@ -277,7 +277,7 @@ export class MaintenanceSession {
       existing.pathDiff = preview.pathDiff ?? null;
       existing.proposedCrawlerData = preview.proposedCrawlerData ?? null;
       existing.imageAlternatives = preview.imageAlternatives;
-      existing.redrawsPoster = preview.redrawsPoster;
+      existing.poster = preview.poster;
       existing.entry = preview.entry ?? existing.entry;
       existing.movieGroup = preview.movieGroup;
       existing.affectedFiles = preview.affectedFiles;

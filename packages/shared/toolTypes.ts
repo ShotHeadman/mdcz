@@ -1,3 +1,6 @@
+import type { NormalizedCropRegion } from "./posterCrop";
+import type { PosterCut } from "./types";
+
 export type ConnectionCheckStatus = "ok" | "error" | "skipped";
 export type ConnectionServerInfo = {
   serverName?: string;
@@ -39,15 +42,16 @@ export type PersonSyncResult = {
 };
 
 export type AmazonPosterScanItem = {
+  /** The movie's video; the parts of a movie that share one NFO appear once. */
+  filePath: string;
   nfoPath: string;
-  directory: string;
   title: string;
-  searchTitle: string;
   number: string;
   currentPosterPath: string | null;
   currentPosterWidth: number;
   currentPosterHeight: number;
-  currentPosterSize: number;
+  /** How the current poster was cut, when MDCz cut it; the tool starts from it for the same image. */
+  posterCut?: PosterCut;
 };
 
 export type AmazonPosterLookupReason =
@@ -69,12 +73,15 @@ export type AmazonPosterLookupResult = {
   elapsedMs: number;
 };
 
+export type AmazonPosterApplyItem = {
+  filePath: string;
+  amazonPosterUrl: string;
+  crop: NormalizedCropRegion;
+};
+
 export type AmazonPosterApplyResultItem = {
-  nfoPath: string;
+  filePath: string;
   success: boolean;
-  savedPosterPath: string;
-  replacedExisting: boolean;
-  fileSize: number;
   error?: string;
 };
 

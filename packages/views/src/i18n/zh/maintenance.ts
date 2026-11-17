@@ -27,6 +27,8 @@ export const maintenance: Messages["maintenance"] = {
   diffsWillShowHere: "预览后将在此显示字段差异",
   unchangedFields: "未变更字段",
   posterRedrawNotice: "海报角标与当前标签或角标设置不符，执行后将按当前设置重绘。",
+  posterKeptNotice:
+    "海报角标与当前标签或角标设置不符，但这张海报不是 MDCz 生成的，执行后将保留原样，角标不会更新。如需更新角标：Amazon 海报请重新运行 Amazon 海报增强，其他海报请在详情面板重新裁剪。",
 
   // MaintenanceBatchBarView
   refreshDiff: "刷新对比",
@@ -59,6 +61,7 @@ export const maintenance: Messages["maintenance"] = {
   diffCount: (count: number) => `字段差异 ${count} 项`,
   pathWillChange: "路径将调整",
   posterWillRedraw: "海报角标将重绘",
+  posterKept: "海报将保留，角标不更新",
   noExtraChanges: "无额外变更",
   noExecutableItems: "无可执行项",
   startBatchExecution: (count: number) => `开始批量执行 ${count} 项`,

@@ -80,17 +80,16 @@ export const resolvePosterEditorCropRegion = (imageWidth: number, imageHeight: n
   };
 };
 
+export const isPosterShaped = (crop: NormalizedCropRegion, imageWidth: number, imageHeight: number): boolean =>
+  Math.abs((crop.width * imageWidth) / (crop.height * imageHeight) - POSTER_ASPECT_RATIO) <= 0.005;
+
 export const normalizedCropToPixels = (
   input: NormalizedCropRegion,
   imageWidth: number,
   imageHeight: number,
 ): PixelCropRegion => {
   const crop = normalizedCropRegionSchema.parse(input);
-  const rawWidth = crop.width * imageWidth;
-  const rawHeight = crop.height * imageHeight;
-  if (Math.abs(rawWidth / rawHeight - POSTER_ASPECT_RATIO) > 0.005) {
-    throw new Error("Poster crop must use a 2:3 aspect ratio");
-  }
+  if (!isPosterShaped(crop, imageWidth, imageHeight)) throw new Error("Poster crop must use a 2:3 aspect ratio");
   const left = Math.round(crop.x * imageWidth);
   const top = Math.round(crop.y * imageHeight);
   const maxWidth = imageWidth - left;

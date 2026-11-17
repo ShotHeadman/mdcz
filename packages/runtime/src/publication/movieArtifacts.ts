@@ -351,7 +351,7 @@ export const prepareMovieArtifacts = async (input: {
     ),
   );
   const existingNfoPath = first.existingNfoPath;
-  const writtenAssets = { ...assets, downloaded: [...downloadedTargets], posterBadges: downloaded.posterBadges };
+  const writtenAssets = { ...assets, downloaded: [...downloadedTargets], posterRecord: downloaded.posterRecord };
   let nfoPath = await input.writeNfo(writtenAssets, async (targetPath, data) => {
     if (!allowedNfoPaths.has(resolve(targetPath)))
       throw new Error(`NFO writer selected an undeclared layout destination: ${targetPath}`);

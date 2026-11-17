@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { Configuration } from "@mdcz/shared/config";
 import { POSTER_TAG_BADGE_TYPE_OPTIONS, type PosterTagBadgeType } from "@mdcz/shared/posterBadges";
-import type { CrawlerData, FileInfo, NfoLocalState, PosterBadgeRecord } from "@mdcz/shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState, PosterRebuild, PosterRecord } from "@mdcz/shared/types";
+import sharp from "sharp";
 import { buildMovieTags, normalizeNfoLocalState } from "../maintenance/movieTags";
+import type { ImageDimensions } from "./utils/image";
 import { classifyMovie, type MovieClassification } from "./utils/movieClassification";
 
 export interface PosterBadgeDefinition {
@@ -153,14 +155,19 @@ export const hashPosterFile = async (posterPath: string): Promise<string> =>
     .digest("hex");
 
 /**
- * A poster drawn under another stamp is redrawn, unless the file changed since MDCz drew it. A poster from before MDCz
- * kept records is redrawn once when it should carry badges; otherwise redrawing every library poster would buy nothing.
+ * What a write does with a poster whose badges are out of date. MDCz rebuilds only a poster it can tell is its own: the
+ * file still has the hash it was written with, or it has no record and its rebuild comes out at exactly its size, which
+ * holds for a poster MDCz made because MDCz never resizes one. A poster with no record that shouldn't carry badges is
+ * left alone, since nothing says whether it carries any.
  */
-export const posterNeedsRedraw = async (
+export const decidePosterRebuild = async (
   posterPath: string,
-  record: PosterBadgeRecord | undefined,
+  record: PosterRecord | undefined,
   stamp: string,
-): Promise<boolean> => {
-  if (!record) return stamp !== "";
-  return record.stamp !== stamp && (await hashPosterFile(posterPath)) === record.sha256;
+  rebuildSize: () => Promise<ImageDimensions | undefined>,
+): Promise<PosterRebuild | undefined> => {
+  if (record ? record.stamp === stamp : stamp === "") return undefined;
+  if (record) return (await hashPosterFile(posterPath)) === record.sha256 ? "redraw" : "kept";
+  const [current, rebuilt] = await Promise.all([sharp(posterPath).metadata(), rebuildSize()]);
+  return rebuilt && rebuilt.width === current.width && rebuilt.height === current.height ? "redraw" : "kept";
 };

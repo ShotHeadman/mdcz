@@ -136,15 +136,18 @@ export const ToolDetail = ({
   const state = toRunState(executeM);
   const roots = rootsQ.data?.roots ?? [];
   const browserEntries = browserQ.data?.entries ?? [];
-  const lookupAmazonPoster = useCallback(async (item: AmazonPosterScanItem): Promise<AmazonPosterLookupResult> => {
-    const response = await api.tools.execute({
-      toolId: "amazon-poster",
-      action: "lookup",
-      nfoPath: item.nfoPath,
-      title: item.title,
-    });
-    return response.data as AmazonPosterLookupResult;
-  }, []);
+  const lookupAmazonPoster = useCallback(
+    async (item: AmazonPosterScanItem, title: string): Promise<AmazonPosterLookupResult> => {
+      const response = await api.tools.execute({
+        toolId: "amazon-poster",
+        action: "lookup",
+        nfoPath: item.nfoPath,
+        title,
+      });
+      return response.data as AmazonPosterLookupResult;
+    },
+    [],
+  );
   const resolveAmazonPosterImageCandidates = useCallback(
     async (candidates: string[]) => resolveToolImageCandidates(candidates, roots),
     [roots],

@@ -13,6 +13,7 @@ import type {
   NfoEditableField,
   NfoEditorField,
   NfoLocalState,
+  PosterRecord,
   VideoMeta,
 } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser, XMLValidator } from "fast-xml-parser";
@@ -178,6 +179,15 @@ export const nfoIgnoreFieldsToEnabledFields = (
 ): readonly NfoField[] | undefined =>
   ignoredFields === undefined ? undefined : NFO_FIELD_OPTIONS.filter((field) => !ignoredFields.includes(field));
 
+const buildPosterRecordNode = ({ stamp, sha256, cut }: PosterRecord): Record<string, unknown> => ({
+  ...(cut && {
+    "@_source": cut.source,
+    "@_crop": [cut.crop.x, cut.crop.y, cut.crop.width, cut.crop.height].join(","),
+  }),
+  "@_sha256": sha256,
+  "#text": stamp,
+});
+
 const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
@@ -209,14 +219,14 @@ const buildMdczNode = (
 
   const sourcePin = options?.localState?.sourcePin;
   // A poster this run produced brings its own record; a kept poster keeps the one it had.
-  const posterBadges = options?.assets?.posterBadges ?? options?.localState?.posterBadges;
+  const posterRecord = options?.assets?.posterRecord ?? options?.localState?.posterRecord;
   return {
     raw_title: rawTitle,
     original_plot: originalPlot,
     source_url: sourcePin ? { "@_site": sourcePin.site, "#text": sourcePin.url } : undefined,
     thumb_source_url: thumbSourceUrl,
     poster_source_url: posterSourceUrl,
-    poster_badges: posterBadges ? { "@_sha256": posterBadges.sha256, "#text": posterBadges.stamp } : undefined,
+    poster_record: posterRecord && buildPosterRecordNode(posterRecord),
     fanart_source_url: fanartSourceUrl,
     trailer_source_url: trailerSourceUrl,
     scene_images: sceneImageUrls.length > 0 ? { image: sceneImageUrls } : undefined,
@@ -358,6 +368,14 @@ export class NfoGenerator {
 
   mergeTranslatedXml(existingXml: string, data: CrawlerData, options?: NfoOptions): string {
     return mergeNfoDocuments(existingXml, this.#buildXml(data, options), TRANSLATION_MERGE);
+  }
+
+  /** A poster made outside a scrape changes only its record; whatever else the NFO holds stays as written. */
+  mergePosterRecordXml(existingXml: string, record: PosterRecord): string {
+    const root = requireXmlRecord(parser.parse(existingXml), "Invalid NFO root");
+    const movie = requireXmlRecord(root.movie, "Invalid NFO movie node");
+    movie.mdcz = { ...toRecordOrEmpty(movie.mdcz), poster_record: buildPosterRecordNode(record) };
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(root)}`;
   }
 
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {

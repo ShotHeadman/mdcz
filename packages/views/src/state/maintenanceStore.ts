@@ -79,7 +79,7 @@ const buildMaintenanceSnapshotView = (snapshot: MaintenanceActiveSessionSnapshot
           ...(preview.pathDiff ? { pathDiff: preview.pathDiff } : {}),
           ...(preview.proposedCrawlerData ? { proposedCrawlerData: preview.proposedCrawlerData } : {}),
           ...(preview.imageAlternatives ? { imageAlternatives: preview.imageAlternatives } : {}),
-          ...(preview.redrawsPoster ? { redrawsPoster: true } : {}),
+          ...(preview.poster ? { poster: preview.poster } : {}),
         };
         return [item.fileId, item];
       }),

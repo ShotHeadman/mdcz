@@ -1,18 +1,65 @@
-import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
+import { type NormalizedCropRegion, resolvePosterEditorCropRegion } from "@mdcz/shared/posterCrop";
+import {
+  Button,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@mdcz/ui";
 import { RotateCcw, Save } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { PosterCropEditSession } from "../adapters/ports";
 import { useT } from "../i18n";
+
+export interface PosterCropEditSession {
+  sourceUrl: string;
+  width: number;
+  height: number;
+  /** Where the dialog starts and resets to, e.g. the area the poster was last cut by. */
+  initialCrop: NormalizedCropRegion;
+}
 
 interface PosterCropDialogProps {
   open: boolean;
   session: PosterCropEditSession | null;
   crop: NormalizedCropRegion | null;
   saving: boolean;
+  /** The confirm button's text; the dialog saves the poster unless told otherwise. */
+  confirmLabel?: string;
   onCropChange: (crop: NormalizedCropRegion) => void;
   onOpenChange: (open: boolean) => void;
   onSave: () => void;
+}
+
+export function PosterCutPreview({
+  src,
+  crop,
+  alt,
+  className,
+}: {
+  src: string;
+  crop: NormalizedCropRegion;
+  alt: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative aspect-2/3 overflow-hidden", className)}>
+      <img
+        src={src}
+        alt={alt}
+        className="absolute max-w-none"
+        style={{
+          width: `${100 / crop.width}%`,
+          height: `${100 / crop.height}%`,
+          left: `${(-crop.x / crop.width) * 100}%`,
+          top: `${(-crop.y / crop.height) * 100}%`,
+        }}
+        draggable={false}
+      />
+    </div>
+  );
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
@@ -22,41 +69,37 @@ export function PosterCropDialog({
   session,
   crop,
   saving,
+  confirmLabel,
   onCropChange,
   onOpenChange,
   onSave,
 }: PosterCropDialogProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; crop: NormalizedCropRegion } | null>(null);
+  // Zoom is measured against the largest 2:3 area, so a session that starts zoomed in can still zoom out.
+  const fullArea = useMemo(
+    () => (session ? resolvePosterEditorCropRegion(session.width, session.height) : null),
+    [session],
+  );
+  const zoomOf = (area: NormalizedCropRegion) => (fullArea ? fullArea.width / area.width : 1);
   const [zoom, setZoom] = useState(1);
   useEffect(() => {
-    if (open && session) setZoom(1);
+    if (open && session)
+      setZoom(resolvePosterEditorCropRegion(session.width, session.height).width / session.initialCrop.width);
   }, [open, session]);
-  const previewStyle = useMemo(
-    () =>
-      crop
-        ? {
-            width: `${100 / crop.width}%`,
-            height: `${100 / crop.height}%`,
-            left: `${(-crop.x / crop.width) * 100}%`,
-            top: `${(-crop.y / crop.height) * 100}%`,
-          }
-        : undefined,
-    [crop],
-  );
 
   const reset = () => {
     if (!session) return;
-    setZoom(1);
+    setZoom(zoomOf(session.initialCrop));
     onCropChange(session.initialCrop);
   };
 
   const changeZoom = (nextZoom: number) => {
-    if (!session || !crop) return;
+    if (!fullArea || !crop) return;
     const centerX = crop.x + crop.width / 2;
     const centerY = crop.y + crop.height / 2;
-    const width = session.initialCrop.width / nextZoom;
-    const height = session.initialCrop.height / nextZoom;
+    const width = fullArea.width / nextZoom;
+    const height = fullArea.height / nextZoom;
     setZoom(nextZoom);
     onCropChange({
       x: clamp(centerX - width / 2, 0, 1 - width),
@@ -170,15 +213,12 @@ export function PosterCropDialog({
               <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
                 {t.detail.preview}
               </div>
-              <div className="relative mx-auto aspect-2/3 w-full max-w-[220px] overflow-hidden rounded-quiet-lg bg-surface-low">
-                <img
-                  src={session.sourceUrl}
-                  alt={t.detail.cropPreviewAlt}
-                  className="absolute max-w-none"
-                  style={previewStyle}
-                  draggable={false}
-                />
-              </div>
+              <PosterCutPreview
+                src={session.sourceUrl}
+                crop={crop}
+                alt={t.detail.cropPreviewAlt}
+                className="mx-auto w-full max-w-[220px] rounded-quiet-lg bg-surface-low"
+              />
               <p className="text-xs leading-5 text-muted-foreground">
                 {t.detail.outputRatioAndSize(
                   Math.round(crop.width * session.width),
@@ -198,7 +238,7 @@ export function PosterCropDialog({
           </Button>
           <Button type="button" onClick={onSave} disabled={saving || !crop}>
             <Save />
-            {saving ? t.detail.saving : t.detail.saveCover}
+            {saving ? t.detail.saving : (confirmLabel ?? t.detail.saveCover)}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -98,12 +98,14 @@ export const tools: Messages["tools"] = {
   currentPoster: "当前海报",
   noCurrentPoster: "当前无海报",
   amazonPoster: "Amazon 海报",
+  adjustAmazonCrop: "调整裁剪",
   queryingAmazon: "正在查询 Amazon",
   noAmazonPosterHit: "未命中 Amazon 海报",
   selectedForReplace: (count: number) => `已选择 ${count} 条替换`,
   confirmReplace: "确认替换",
   confirmReplaceTitle: "确认替换海报",
-  confirmReplaceDescription: (count: number) => `即将替换 ${count} 个条目的海报文件。此操作会覆盖现有海报。`,
+  confirmReplaceDescription: (count: number) =>
+    `即将替换 ${count} 个条目的海报文件：按所选区域裁剪为 2:3，并按当前设置添加角标。此操作会覆盖现有海报。`,
   replacing: "替换中...",
   replaceOutcome: ({ replaced, failed }) => `已替换 ${replaced} 张海报${failed > 0 ? `，${failed} 张失败` : ""}`,
 

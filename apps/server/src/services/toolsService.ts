@@ -9,7 +9,14 @@ import {
   stopJellyfinPersonNameMatching,
 } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { AggregationService, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
+import {
+  AggregationService,
+  DownloadManager,
+  type ImageHostCooldownStore,
+  NfoGenerator,
+  TranslateService,
+  toTarget,
+} from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyAmazonPosters,
@@ -30,6 +37,7 @@ import type { ScrapeService } from "./scrapeService";
 export interface ToolsServiceDependencies {
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
+  imageHostCooldownStore: ImageHostCooldownStore;
 }
 
 export class ToolsService {
@@ -42,6 +50,7 @@ export class ToolsService {
   });
   private readonly llmApiClient: LlmApiClient;
   private readonly nfoGenerator = new NfoGenerator();
+  private readonly downloadManager: DownloadManager;
 
   constructor(
     private readonly config: ServerConfigService,
@@ -54,6 +63,9 @@ export class ToolsService {
     this.crawlerProvider = deps.crawlerProvider;
     this.translate = new TranslateService(deps.networkClient);
     this.llmApiClient = new LlmApiClient(deps.networkClient);
+    this.downloadManager = new DownloadManager(deps.networkClient, {
+      imageHostCooldownStore: deps.imageHostCooldownStore,
+    });
   }
 
   catalog(): ToolCatalogResponse {
@@ -153,23 +165,27 @@ export class ToolsService {
           });
           return { toolId: input.toolId, ok: Boolean(result.amazonPosterUrl), data: result };
         }
+        const config = await this.config.get();
         if (input.action === "apply") {
           const items = input.items ?? [];
           if (items.length > 0) {
             await this.mediaRoots.ensurePathRecord({
-              hostPath: resolveDesktopInputRootPath(items.map((item) => item.nfoPath)),
+              hostPath: resolveDesktopInputRootPath(items.map((item) => item.filePath)),
             });
           }
           const state = await this.persistence.getState();
-          const results = await applyAmazonPosters(this.networkClient, items, {
-            outputs: state.repositories.library,
-            library: state.repositories.library,
-            roots: await this.mediaRoots.listRoots(),
+          const results = await applyAmazonPosters(items, config, {
+            downloadManager: this.downloadManager,
+            localScanService: this.localScanService,
+            nfoGenerator: this.nfoGenerator,
+            dataDir: this.config.runtimePaths.dataDir,
+            libraries: state.repositories.mediaLibraries.list(),
+            publication: { library: state.repositories.library, roots: await this.mediaRoots.listRoots() },
           });
           return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }
         if (!input.rootDir) throw new Error("Amazon poster scan requires a root directory");
-        const items = await scanAmazonPosters(input.rootDir);
+        const items = await scanAmazonPosters(input.rootDir, config, this.localScanService);
         return { toolId: input.toolId, ok: true, data: { items } };
       }
     }

@@ -311,7 +311,9 @@ export type PosterCropSaveInput = z.infer<typeof posterCropSaveInputSchema>;
 
 export const posterCropSessionResponseSchema = z.object({
   rootId: z.string().trim().min(1),
-  sourceRelativePath: z.string().trim().min(1),
+  /** Set when the source is a file in the root; otherwise `sourceUrl` names a remote image the browser loads. */
+  sourceRelativePath: z.string().trim().min(1).optional(),
+  sourceUrl: z.string().trim().min(1).optional(),
   targetRelativePath: z.string().trim().min(1),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -1310,8 +1312,9 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     items: z
       .array(
         z.object({
-          nfoPath: z.string().trim().min(1),
+          filePath: z.string().trim().min(1),
           amazonPosterUrl: z.string().trim().min(1),
+          crop: normalizedCropRegionSchema,
         }),
       )
       .optional(),

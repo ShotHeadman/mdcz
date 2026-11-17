@@ -1,195 +1,77 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
-import { buildMovieAssetFileNames, isMovieNfoBaseName, MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
+import { basename, dirname, join, resolve } from "node:path";
+import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
+import type { MediaLibraryRecord } from "@mdcz/persistence";
+import type { Configuration } from "@mdcz/shared/config";
 import type {
+  AmazonPosterApplyItem,
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
 } from "@mdcz/shared/toolTypes";
-import type { CrawlerData } from "@mdcz/shared/types";
-import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
-import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";
-import type { RuntimeDownloadNetworkClient } from "../network";
-import { acquireOutputDirectories } from "../publication/outputMutex";
-import { toRootFileRef } from "../publication/outputRefs";
-import { publicationJournal } from "../publication/publicationJournal";
+import type { LocalScanEntry } from "@mdcz/shared/types";
+import { resolveFileNaming } from "../library/mediaLibraryService";
+import { type MovieLibrary, resolveRegisteredNfoPaths } from "../library/registeredMedia";
+import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
 import type { PublicationOutputPort } from "../publication/types";
-import { WriteOutput } from "../publication/WriteOutput";
-import { DirectoryInventory } from "../scrape/DirectoryInventory";
-import { type ImageValidation, validateImage } from "../scrape/utils/image";
-import { type RuntimeLogger, runtimeLoggerService } from "../shared";
+import type { DownloadManager } from "../scrape/download/DownloadManager";
+import type { NfoGenerator } from "../scrape/nfo";
+import { applyPosterTagBadgesIfNeeded } from "../scrape/output/applyPosterTagBadges";
+import { installPoster, posterTargetPath } from "../scrape/posterOutput";
+import { validateImage } from "../scrape/utils/image";
+import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import {
   AmazonJpImageService,
   type AmazonJpNetworkClient,
   type AmazonJpPosterEnhanceResult,
 } from "./AmazonJpImageService";
 
-const POSTER_FILE_NAME = "poster.jpg";
-
-const toErrorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const uniqueDefinedPaths = (paths: Array<string | undefined>): string[] => {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const path of paths) {
-    if (!path || seen.has(path)) continue;
-    seen.add(path);
-    result.push(path);
-  }
-  return result;
-};
-
-const resolveLocalAssetReference = (directory: string, value: string | undefined): string | undefined => {
-  const normalized = value?.trim();
-  if (!normalized || /^https?:\/\//iu.test(normalized)) return undefined;
-  return isAbsolute(normalized) ? normalized : join(directory, normalized);
-};
-
-const buildPosterCandidatePaths = (
-  directory: string,
-  nfoPath: string,
-  parsed: CrawlerData,
-  allowFixedPosterFallback: boolean,
-): string[] => {
-  const nfoBaseName = basename(nfoPath, extname(nfoPath));
-  return uniqueDefinedPaths([
-    resolveLocalAssetReference(directory, parsed.poster_url),
-    allowFixedPosterFallback ? join(directory, POSTER_FILE_NAME) : undefined,
-    nfoBaseName && !isMovieNfoBaseName(nfoBaseName)
-      ? join(directory, buildMovieAssetFileNames(nfoBaseName, "followVideo").poster)
-      : undefined,
-  ]);
-};
-
-const listNfoFiles = async (rootDirectory: string): Promise<string[]> => {
-  const outputs: string[] = [];
-  const stack = [rootDirectory];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) continue;
-    const entries = await readdir(current, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
-    for (const entry of entries) {
-      const entryPath = join(current, entry.name);
-      if (entry.isDirectory()) stack.push(entryPath);
-      else if (entry.isFile() && extname(entry.name).toLowerCase() === ".nfo") outputs.push(entryPath);
-    }
-  }
-  return outputs;
-};
-
-const countNamedNfoFiles = async (directory: string): Promise<number> => {
-  const entries = await readdir(directory, { withFileTypes: true });
-  return entries.reduce((count, entry) => {
-    if (!entry.isFile() || extname(entry.name).toLowerCase() !== ".nfo") return count;
-    return basename(entry.name, extname(entry.name)).toLowerCase() === MOVIE_NFO_BASE_NAME ? count : count + 1;
-  }, 0);
-};
-
-const pathExists = async (targetPath: string): Promise<boolean> => {
-  try {
-    await stat(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const findCurrentPosterPath = async (
-  directory: string,
-  nfoPath: string,
-  parsed: CrawlerData,
-  allowFixedPosterFallback: boolean,
-): Promise<string | null> => {
-  for (const candidatePath of buildPosterCandidatePaths(directory, nfoPath, parsed, allowFixedPosterFallback)) {
-    try {
-      if ((await stat(candidatePath)).isFile()) return candidatePath;
-    } catch {}
-  }
-  return null;
+type AmazonPosterLocalScanService = {
+  scan(dirPath: string, sceneImagesFolder: string): Promise<LocalScanEntry[]>;
+  scanVideo(root: MediaRoot, videoPath: string, sceneImagesFolder: string): Promise<LocalScanEntry>;
 };
 
 export interface AmazonPosterDependencies {
-  validateImage?: (filePath: string) => Promise<ImageValidation>;
   enhanceAmazonPoster?: (title: string) => Promise<AmazonJpPosterEnhanceResult>;
   logger?: Pick<RuntimeLogger, "warn">;
 }
 
-export type AmazonPosterApplyDependencies = AmazonPosterDependencies & {
-  roots: readonly { id: string; hostPath: string }[];
-  outputs?: PublicationOutputPort;
-  library?: MovieLibrary;
-};
-
-const defaultAmazonPosterDependencies: Required<Pick<AmazonPosterDependencies, "validateImage">> = {
-  validateImage,
-};
+export interface AmazonPosterApplyDependencies {
+  downloadManager: Pick<DownloadManager, "downloadPlainPoster">;
+  localScanService: AmazonPosterLocalScanService;
+  nfoGenerator: Pick<NfoGenerator, "mergePosterRecordXml">;
+  dataDir: string;
+  /** Name a poster for a movie that has none the way its library names files. */
+  libraries: readonly MediaLibraryRecord[];
+  publication: {
+    roots: readonly { id: string; hostPath: string }[];
+    /** Absent outside the library, where no NFO copy or asset row is registered. */
+    library?: MovieLibrary & PublicationOutputPort;
+  };
+  logger?: Pick<RuntimeLogger, "warn">;
+}
 
 export const scanAmazonPosters = async (
   rootDirectory: string,
-  dependencies: AmazonPosterDependencies = {},
+  config: Pick<Configuration, "paths">,
+  localScanService: AmazonPosterLocalScanService,
 ): Promise<AmazonPosterScanItem[]> => {
-  const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
-  const logger = dependencies.logger ?? runtimeLoggerService.getLogger("AmazonPoster");
-  const normalizedRoot = resolve(rootDirectory.trim());
-  if (!(await stat(normalizedRoot)).isDirectory()) throw new Error(`Directory not found: ${normalizedRoot}`);
-  const nfoPaths = await listNfoFiles(normalizedRoot);
-  const directoryNamedNfoCounts = new Map<string, number>();
-  for (const nfoPath of nfoPaths) {
-    const directory = dirname(nfoPath);
-    const nfoBaseName = basename(nfoPath, extname(nfoPath)).toLowerCase();
-    if (nfoBaseName !== MOVIE_NFO_BASE_NAME) {
-      directoryNamedNfoCounts.set(directory, (directoryNamedNfoCounts.get(directory) ?? 0) + 1);
-    }
-  }
-
+  const entries = await localScanService.scan(resolve(rootDirectory.trim()), config.paths.sceneImagesFolder);
+  const nfoPaths = new Set<string>();
   const items: AmazonPosterScanItem[] = [];
-  for (const nfoPath of nfoPaths) {
-    let parsed: CrawlerData;
-    try {
-      parsed = parseNfoSnapshot(await readFile(nfoPath, "utf8")).crawlerData;
-    } catch (error) {
-      // Scanned folders may hold NFOs written by other tools; one unreadable file must not abort the scan.
-      logger.warn(`Skipping unreadable NFO ${nfoPath}: ${toErrorText(error)}`);
-      continue;
-    }
-    const directory = dirname(nfoPath);
-    const nfoBaseName = basename(nfoPath, extname(nfoPath)).toLowerCase();
-    if (nfoBaseName === MOVIE_NFO_BASE_NAME && (directoryNamedNfoCounts.get(directory) ?? 0) > 0) {
-      continue;
-    }
-
-    const currentPosterPath = await findCurrentPosterPath(
-      directory,
-      nfoPath,
-      parsed,
-      (directoryNamedNfoCounts.get(directory) ?? 0) <= 1,
-    );
-    let currentPosterWidth = 0;
-    let currentPosterHeight = 0;
-    let currentPosterSize = 0;
-    if (currentPosterPath) {
-      const posterStats = await stat(currentPosterPath).catch(() => null);
-      if (posterStats?.isFile()) {
-        currentPosterSize = posterStats.size;
-        const validation = await validateImageFn(currentPosterPath).catch(() => null);
-        if (validation?.valid) {
-          currentPosterWidth = validation.width;
-          currentPosterHeight = validation.height;
-        }
-      }
-    }
+  for (const { nfoPath, crawlerData, fileInfo, assets, nfoLocalState } of entries) {
+    if (!nfoPath || !crawlerData || nfoPaths.has(resolve(nfoPath))) continue;
+    nfoPaths.add(resolve(nfoPath));
+    // Small, low-resolution posters are the ones worth replacing, so none is too small to measure.
+    const poster = assets.poster ? await validateImage(assets.poster, 0) : undefined;
     items.push({
+      filePath: fileInfo.filePath,
       nfoPath,
-      directory,
-      title: parsed.title,
-      searchTitle: parsed.title,
-      number: parsed.number,
-      currentPosterPath,
-      currentPosterWidth,
-      currentPosterHeight,
-      currentPosterSize,
+      title: crawlerData.title,
+      number: crawlerData.number || fileInfo.number,
+      currentPosterPath: assets.poster ?? null,
+      currentPosterWidth: poster?.valid ? poster.width : 0,
+      currentPosterHeight: poster?.valid ? poster.height : 0,
+      posterCut: nfoLocalState?.posterRecord?.cut,
     });
   }
   return items.sort((left, right) => left.nfoPath.localeCompare(right.nfoPath, "zh-CN"));
@@ -218,102 +100,92 @@ export const lookupAmazonPoster = async (
       nfoPath: normalizedNfoPath,
       amazonPosterUrl: null,
       reason: "query_failed",
-      error: toErrorText(error),
+      error: toErrorMessage(error),
       elapsedMs: Date.now() - startedAt,
     };
   }
 };
 
+/** Each poster is cut and badged like one maintenance rebuilds, and its NFO records how, so later rebuilds repeat it. */
 export const applyAmazonPosters = async (
-  networkClient: RuntimeDownloadNetworkClient,
-  items: Array<{ nfoPath: string; amazonPosterUrl: string }>,
+  items: readonly AmazonPosterApplyItem[],
+  config: Configuration,
   dependencies: AmazonPosterApplyDependencies,
 ): Promise<AmazonPosterApplyResultItem[]> => {
-  const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
+  const { library, roots } = dependencies.publication;
   const logger = dependencies.logger ?? runtimeLoggerService.getLogger("AmazonPoster");
   const results: AmazonPosterApplyResultItem[] = [];
   for (const item of items) {
-    const normalizedNfoPath = resolve(item.nfoPath.trim());
-    const directory = dirname(normalizedNfoPath);
-    let savedPosterPath = join(directory, POSTER_FILE_NAME);
-    let replacedExisting = false;
+    const videoDirectory = dirname(item.filePath);
+    let stagingDir: string | undefined;
     try {
-      const parsedNfo = parseNfoSnapshot(await readFile(normalizedNfoPath, "utf8")).crawlerData;
-      savedPosterPath =
-        buildPosterCandidatePaths(
-          directory,
-          normalizedNfoPath,
-          parsedNfo,
-          (await countNamedNfoFiles(directory)) <= 1,
-        )[0] ?? savedPosterPath;
-      replacedExisting = await pathExists(savedPosterPath);
-      await mkdir(dirname(savedPosterPath), { recursive: true });
-      const tempPosterPath = join(dirname(savedPosterPath), `.mdcz-staging-${randomUUID()}.jpg`);
-      publicationJournal.record(tempPosterPath);
-      try {
-        await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
-        const validation = await validateImageFn(tempPosterPath);
-        if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
-        const staged = await stat(tempPosterPath);
-        const registered = dependencies.outputs
-          ? await resolveRegisteredNfoPaths(normalizedNfoPath, dependencies.outputs, async (id) => {
-              const root = dependencies.roots.find((root) => root.id === id);
-              if (!root) throw new Error(`Publication root not found: ${id}`);
-              return root;
-            })
-          : undefined;
-        const inventory = new DirectoryInventory();
-        const release = await acquireOutputDirectories([savedPosterPath], (directory) =>
-          inventory.canonicalDirectory(directory),
-        );
-        try {
-          await new WriteOutput(undefined, logger).install(
-            [{ targetPath: savedPosterPath, sourcePath: tempPosterPath, size: staged.size, consume: true }],
-            {
-              protectedMediaFiles: registered?.mediaPaths,
-              commit: async () => {
-                if (!registered) return;
-                if (!dependencies.library) throw new Error("Registered poster write requires library updates");
-                const ref = toRootFileRef(savedPosterPath, dependencies.roots);
-                await writePublishedMovie(dependencies.library, registered.movieId, [
-                  {
-                    kind: "poster",
-                    uri: ref.relativePath,
-                    rootId: ref.rootId,
-                    relativePath: ref.relativePath,
-                    published: true,
-                  },
-                ]);
-              },
-            },
+      const entry = await dependencies.localScanService.scanVideo(
+        createMediaRoot({
+          id: deterministicMediaRootId(videoDirectory),
+          displayName: videoDirectory,
+          hostPath: videoDirectory,
+        }),
+        item.filePath,
+        config.paths.sceneImagesFolder,
+      );
+      const { nfoPath, crawlerData } = entry;
+      if (!nfoPath || !crawlerData) throw new Error("Missing writable NFO or metadata");
+      const posterPath = entry.assets.poster
+        ? entry.assets.poster
+        : posterTargetPath(
+            item.filePath,
+            (
+              await resolveFileNaming({
+                libraries: dependencies.libraries,
+                videoPath: item.filePath,
+                metadataDir: dirname(nfoPath),
+                configuration: config,
+              })
+            ).assetNaming,
+            entry.assets,
           );
-        } finally {
-          release();
-        }
-      } finally {
-        try {
-          await rm(tempPosterPath, { force: true });
-          publicationJournal.forget(tempPosterPath);
-        } catch (error) {
-          logger.warn(`Failed to remove poster staging ${tempPosterPath}: ${toErrorText(error)}`);
-        }
-      }
-      results.push({
-        nfoPath: item.nfoPath,
-        success: true,
-        savedPosterPath,
-        replacedExisting,
-        fileSize: (await stat(savedPosterPath)).size,
+      stagingDir = await createStagingDirectory(dirname(posterPath));
+      const cut = { source: item.amazonPosterUrl, crop: item.crop };
+      const stagedPoster = await dependencies.downloadManager.downloadPlainPoster({
+        data: crawlerData,
+        cut,
+        targetPath: join(stagingDir, basename(posterPath)),
       });
+      if (!stagedPoster) throw new Error(`Could not cut a poster from ${item.amazonPosterUrl}`);
+      const { posterRecord } = await applyPosterTagBadgesIfNeeded({
+        assets: { poster: stagedPoster, sceneImages: [], downloaded: [stagedPoster] },
+        config,
+        crawlerData,
+        dataDir: dependencies.dataDir,
+        fileInfo: entry.fileInfo,
+        localState: entry.nfoLocalState,
+        logger,
+      });
+      if (!posterRecord) throw new Error("Badge drawing returned no poster record");
+      const registered = library
+        ? await resolveRegisteredNfoPaths(nfoPath, library, async (id) => {
+            const root = roots.find((root) => root.id === id);
+            if (!root) throw new Error(`Publication root not found: ${id}`);
+            return root;
+          })
+        : undefined;
+      await installPoster({
+        posterPath,
+        stagedPoster,
+        record: {
+          value: { ...posterRecord, cut },
+          nfoPaths: registered?.paths ?? entry.nfoPaths,
+          nfoGenerator: dependencies.nfoGenerator,
+        },
+        protectedMediaFiles: registered?.mediaPaths ?? [item.filePath],
+        movie: library && registered ? { library, movieId: registered.movieId, roots } : undefined,
+        logger,
+      });
+      results.push({ filePath: item.filePath, success: true });
     } catch (error) {
-      results.push({
-        nfoPath: item.nfoPath,
-        success: false,
-        savedPosterPath,
-        replacedExisting,
-        fileSize: 0,
-        error: toErrorText(error),
-      });
+      results.push({ filePath: item.filePath, success: false, error: toErrorMessage(error) });
+    } finally {
+      if (stagingDir) await removeStagingDirectory(stagingDir);
     }
   }
   return results;

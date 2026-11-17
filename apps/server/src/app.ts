@@ -282,6 +282,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       new ToolsService(config, mediaRoots, scrape, persistence, {
         networkClient,
         crawlerProvider,
+        imageHostCooldownStore,
       }),
   };
   const fastify = Fastify({

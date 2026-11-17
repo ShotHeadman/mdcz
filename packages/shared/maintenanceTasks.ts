@@ -7,6 +7,7 @@ import type {
   MaintenanceImageAlternatives,
   MaintenancePresetId,
   PathDiff,
+  PosterRebuild,
 } from "./types";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
@@ -100,7 +101,7 @@ export interface MaintenanceSessionPreview {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
-  redrawsPoster?: boolean;
+  poster?: PosterRebuild;
   entry?: LocalScanEntry;
   createdAt: Date;
   updatedAt: Date;

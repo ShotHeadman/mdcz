@@ -87,7 +87,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
         blockedError: group.previewState.blockedPreview?.error,
         diffCount: group.previewState.diffCount,
         hasPathChange: group.previewState.hasPathChange,
-        redrawsPoster: group.previewState.redrawsPoster,
+        poster: group.previewState.poster,
         changedPathItems: group.previewState.changedPathItems.map(({ entry, pathDiff }) => ({
           fileId: entry.fileId,
           fileName: entry.fileInfo.fileName,

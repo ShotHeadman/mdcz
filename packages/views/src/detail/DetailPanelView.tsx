@@ -26,13 +26,11 @@ import {
   X,
 } from "lucide-react";
 import { type Dispatch, type SetStateAction, useState } from "react";
-import type { PosterCropEditSession } from "../adapters/ports";
-import { NaturalAspectImageFrame } from "../common";
+import { NaturalAspectImageFrame, PosterCropDialog, type PosterCropEditSession } from "../common";
 import { useT } from "../i18n";
 import { ChangeDiffView, PathPlanView } from "../maintenance";
 import { type EditableNfoData, NfoEditorDialog, type NfoValidationErrors } from "../nfo";
 import { formatBitrate, formatDuration } from "./detailViewAdapters";
-import { PosterCropDialog } from "./PosterCropDialog";
 import { type ResolveImageCandidates, SceneImageGallery } from "./SceneImageGallery";
 import type { DetailViewItem } from "./types";
 

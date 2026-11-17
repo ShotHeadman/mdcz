@@ -87,7 +87,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
         onWarn: expect.any(Function),
       }),
     );
-    expect(assets.posterBadges).toEqual({ stamp: "subtitle,fourK|bottomRight|100|100|3|images", sha256: POSTER_SHA });
+    expect(assets.posterRecord).toEqual({ stamp: "subtitle,fourK|bottomRight|100|100|3|images", sha256: POSTER_SHA });
 
     const kept = createAssets(false);
     await expect(applyPosterTagBadgesIfNeeded({ ...input, assets: kept })).resolves.toBe(kept);
@@ -111,7 +111,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     });
 
     expect(watermarkService.applyTagBadges).not.toHaveBeenCalled();
-    expect(assets.posterBadges).toEqual({ stamp: "", sha256: POSTER_SHA });
+    expect(assets.posterRecord).toEqual({ stamp: "", sha256: POSTER_SHA });
   });
 
   it("logs rendering failures and records the poster as drawn without badges", async () => {
@@ -128,7 +128,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     });
 
     expect(warn).toHaveBeenCalledWith(`Failed to apply poster tag badges for ${posterPath}: render failed`);
-    expect(assets.posterBadges).toEqual({ stamp: "", sha256: POSTER_SHA });
+    expect(assets.posterRecord).toEqual({ stamp: "", sha256: POSTER_SHA });
   });
 
   it("checks cancellation before and after rendering", async () => {

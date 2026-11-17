@@ -215,7 +215,8 @@ export const settingsFields: Messages["settingsFields"] = {
     "download.downloadPoster": { label: "下载海报" },
     "download.tagBadges": {
       label: "为封面添加标签角标",
-      description: "按现有影片标签自动添加角标；可配置启用类型与角落位置，仅处理本次新下载的海报。",
+      description:
+        "按现有影片标签自动添加角标；可配置启用类型与角落位置。标签或角标设置变化后，维护写入（重新合并、原地更新、本地整理）会为保留的海报重绘角标。",
       aliases: ["角标", "标签角标"],
     },
     "download.tagBadgeTypes": {

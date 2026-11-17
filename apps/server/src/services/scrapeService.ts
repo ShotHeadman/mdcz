@@ -7,6 +7,7 @@ import {
   type ActorImageService,
   type AggregationService,
   applyPosterTagBadgesIfNeeded,
+  DownloadManager,
   type ImageHostCooldownStore,
   NfoGenerator,
   PosterCropService,
@@ -96,12 +97,16 @@ export class ScrapeService {
     this.taskGate = resources.taskGate;
     this.aggregationService = resources.aggregationService;
     this.prepareScrapeItem = resources.prepareScrapeItem;
-    this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, new NfoGenerator(), this.persistence);
+    const nfoGenerator = new NfoGenerator();
+    this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, nfoGenerator, this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,
       this.config,
-      new PosterCropService(),
+      new PosterCropService(
+        new DownloadManager(this.networkClient, { imageHostCooldownStore: this.imageHostCooldownStore }),
+      ),
       this.persistence,
+      nfoGenerator,
     );
   }
 

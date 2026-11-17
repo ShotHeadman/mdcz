@@ -183,9 +183,12 @@ export const createWebDetailPort = (): DetailActionPort => ({
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
     const response = await api.scrape.posterCropSession(item.fileRef);
     if (!response) return null;
+    const { rootId, sourceRelativePath, sourceUrl, width, height, initialCrop } = response;
     return {
-      ...response,
-      sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
+      sourceUrl: sourceUrl ?? getLibraryAssetSrc({ rootId, path: sourceRelativePath ?? "" }),
+      width,
+      height,
+      initialCrop,
     };
   },
   savePosterCrop: async (item, crop) => {

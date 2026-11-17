@@ -53,5 +53,5 @@ export const applyPosterTagBadgesIfNeeded = async (input: {
     throwIfAborted(input.signal);
   }
 
-  return { ...input.assets, posterBadges: { stamp: drawn, sha256: await hashPosterFile(posterPath) } };
+  return { ...input.assets, posterRecord: { stamp: drawn, sha256: await hashPosterFile(posterPath) } };
 };

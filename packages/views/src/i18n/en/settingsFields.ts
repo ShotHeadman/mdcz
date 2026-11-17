@@ -268,7 +268,7 @@ const fields: Record<FieldKey, FieldText> = {
   "download.tagBadges": {
     label: "Add tag badges to posters",
     description:
-      "Add badges based on the movie's existing tags; badge types and corner are configurable. Only newly downloaded posters are processed.",
+      "Add badges based on the movie's existing tags; badge types and corner are configurable. When tags or badge settings change, maintenance writes (Re-merge, Refresh in place, Organize locally) redraw the badges on kept posters.",
     aliases: ["badge", "badges", "mark", "corner"],
   },
   "download.tagBadgeTypes": {
