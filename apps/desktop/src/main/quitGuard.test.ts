@@ -1,9 +1,9 @@
 import { setImmediate as flush } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
-import { createQuitGuard } from "./quitGuard";
+import { createQuitGuard, resolveQuitDialogLocale } from "./quitGuard";
 
 describe("quit guard", () => {
-  it("holds a quit while a task is doing work and proceeds once the user confirms", async () => {
+  it("can confirm quitting a running task even when the renderer cannot answer", async () => {
     const answers: Array<(agreed: boolean) => void> = [];
     const confirm = vi.fn(() => new Promise<boolean>((resolve) => answers.push(resolve)));
     const proceed = vi.fn();
@@ -23,5 +23,9 @@ describe("quit guard", () => {
     expect(proceed).toHaveBeenCalledTimes(1);
     expect(hold(proceed)).toBe(true);
     expect(confirm).toHaveBeenCalledTimes(2);
+
+    await expect(resolveQuitDialogLocale("en-US", async () => "zh-CN")).resolves.toBe("zh");
+    await expect(resolveQuitDialogLocale("zh-CN", async () => Promise.reject(new Error("closed")))).resolves.toBe("zh");
+    await expect(resolveQuitDialogLocale("en-US", () => new Promise(() => undefined))).resolves.toBe("en");
   });
 });

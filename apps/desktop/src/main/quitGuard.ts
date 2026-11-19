@@ -1,3 +1,24 @@
+import { setTimeout as delay } from "node:timers/promises";
+
+const QUIT_LOCALE_TIMEOUT_MS = 300;
+
+export const resolveQuitDialogLocale = async (
+  systemLocale: string,
+  readPageLocale?: () => Promise<unknown>,
+): Promise<"en" | "zh"> => {
+  // The renderer may be frozen when the user tries to quit.
+  const pageLocale = readPageLocale
+    ? await Promise.race([
+        Promise.resolve()
+          .then(readPageLocale)
+          .catch(() => undefined),
+        delay(QUIT_LOCALE_TIMEOUT_MS, undefined, { ref: false }),
+      ])
+    : undefined;
+  const locale = typeof pageLocale === "string" && pageLocale ? pageLocale : systemLocale;
+  return locale.toLowerCase().startsWith("zh") ? "zh" : "en";
+};
+
 /**
  * Holds a quit while a task is doing work until the user confirms it. `hold` answers whether the quit may go ahead
  * now; when it may not, it asks once and calls `proceed` after the user agrees, after which every later quit passes.
