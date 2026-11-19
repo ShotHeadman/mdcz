@@ -24,8 +24,14 @@ describe("quit guard", () => {
     expect(hold(proceed)).toBe(true);
     expect(confirm).toHaveBeenCalledTimes(2);
 
-    await expect(resolveQuitDialogLocale("en-US", async () => "zh-CN")).resolves.toBe("zh");
-    await expect(resolveQuitDialogLocale("zh-CN", async () => Promise.reject(new Error("closed")))).resolves.toBe("zh");
-    await expect(resolveQuitDialogLocale("en-US", () => new Promise(() => undefined))).resolves.toBe("en");
+    const systemLanguage = { locale: "zh", rendererResponded: false };
+    await expect(resolveQuitDialogLocale("en-US", async () => "zh-CN")).resolves.toEqual({
+      locale: "zh",
+      rendererResponded: true,
+    });
+    await expect(resolveQuitDialogLocale("zh-CN", async () => Promise.reject(new Error("closed")))).resolves.toEqual(
+      systemLanguage,
+    );
+    await expect(resolveQuitDialogLocale("zh-CN", () => new Promise(() => undefined))).resolves.toEqual(systemLanguage);
   });
 });

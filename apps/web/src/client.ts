@@ -90,7 +90,7 @@ export const getLibraryAssetSrc = (input: {
       url.searchParams.set("format", input.format);
     }
   }
-  const revision = input.revision ?? assetRevisions.get(`${rootId}\0${assetPath}`);
+  const revision = [input.revision, assetRevisions.get(`${rootId}\0${assetPath}`)].filter(Boolean).join(".");
   if (revision) {
     url.searchParams.set("revision", revision);
   }

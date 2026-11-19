@@ -130,7 +130,9 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   }
   if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
     const file = parseLocalFileUrl(trimmed);
-    return getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath }) || trimmed;
+    return (
+      getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath, revision: item?.artworkRevision }) || trimmed
+    );
   }
   if (!item) {
     return trimmed;
@@ -146,7 +148,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
   const path = asset?.type === "local" ? asset.file.relativePath : resolveCandidatePath(trimmed, item, baseDir);
-  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path) }) || trimmed;
+  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path), revision: item.artworkRevision }) || trimmed;
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
@@ -185,7 +187,8 @@ export const createWebDetailPort = (): DetailActionPort => ({
     if (!response) return null;
     const { rootId, sourceRelativePath, sourceUrl, width, height, initialCrop } = response;
     return {
-      sourceUrl: sourceUrl ?? getLibraryAssetSrc({ rootId, path: sourceRelativePath ?? "" }),
+      sourceUrl:
+        sourceUrl ?? getLibraryAssetSrc({ rootId, path: sourceRelativePath ?? "", revision: item.artworkRevision }),
       width,
       height,
       initialCrop,
@@ -195,7 +198,13 @@ export const createWebDetailPort = (): DetailActionPort => ({
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
     const response = await api.scrape.posterCropSave({ ...item.fileRef, crop });
     markLibraryAssetChanged(response.rootId, response.targetRelativePath, response.revision ?? String(Date.now()));
-    return { posterUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }) };
+    return {
+      posterUrl: getLibraryAssetSrc({
+        rootId: response.rootId,
+        path: response.targetRelativePath,
+        revision: item.artworkRevision,
+      }),
+    };
   },
 });
 

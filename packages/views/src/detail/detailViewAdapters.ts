@@ -144,6 +144,7 @@ export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailVi
   const fileRef: RootFileRef = result.output ?? { rootId: result.rootId, relativePath: result.relativePath };
   return {
     resultId: result.resultId,
+    artworkRevision: result.artworkRevision,
     id: result.fileId,
     status: toDetailStatus(result.status),
     number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
@@ -172,6 +173,7 @@ export const toDetailViewItemFromScrapeResultDto = (result: ScrapeResultDto): De
     : undefined;
   return {
     resultId: result.id,
+    artworkRevision: result.updatedAt,
     id: `${result.rootId}:${result.relativePath}`,
     status: toDetailStatus(result.status),
     number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
@@ -221,6 +223,7 @@ export const toDetailViewItemFromMaintenanceEntry = (
 
   return {
     id: entry.fileId,
+    artworkRevision: result && "batchId" in result ? result.batchId : undefined,
     status: toDetailStatus(result?.status),
     number: entry.fileInfo.number,
     minimalErrorView: false,

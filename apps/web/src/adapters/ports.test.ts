@@ -1,5 +1,6 @@
 import { Website } from "@mdcz/shared/enums";
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
 import { getT } from "@mdcz/views/i18n";
@@ -177,6 +178,7 @@ describe("web detail action port", () => {
     });
     const item = {
       id: "root-1:ABC-001.mp4",
+      artworkRevision: "run-1",
       number: "ABC-001",
       path: "ABC-001.mp4",
       fileRef: { rootId: "root-1", relativePath: "ABC-001.mp4" },
@@ -187,7 +189,7 @@ describe("web detail action port", () => {
     const result = await port.savePosterCrop(item, initialCrop);
 
     expect(session?.sourceUrl).toBe(
-      "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
+      "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1&revision=run-1",
     );
     const remote = "https://m.media-amazon.com/images/I/a.jpg";
     vi.spyOn(api.scrape, "posterCropSession").mockResolvedValueOnce({
@@ -201,7 +203,13 @@ describe("web detail action port", () => {
     expect((await port.preparePosterCrop(item))?.sourceUrl).toBe(remote);
     expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
-    expect(result.posterUrl).toContain("revision=42");
+    expect(result.posterUrl).toContain("revision=run-1.42");
+    const [rescrapedPoster] = await port.resolveImageCandidates(
+      [toLocalFileUrl({ rootId: "metadata-root", relativePath: "JAV_output/ABC-001/poster.png" })],
+      undefined,
+      { ...item, artworkRevision: "run-2" },
+    );
+    expect(rescrapedPoster).toContain("revision=run-2.42");
 
     const data = { title: "Title", number: "ABC-001", actors: [], genres: [], scene_images: [], website: Website.DMM };
     const read = vi.spyOn(api.scrape, "nfoRead").mockResolvedValue({

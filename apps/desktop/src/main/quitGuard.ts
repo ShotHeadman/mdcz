@@ -5,18 +5,27 @@ const QUIT_LOCALE_TIMEOUT_MS = 300;
 export const resolveQuitDialogLocale = async (
   systemLocale: string,
   readPageLocale?: () => Promise<unknown>,
-): Promise<"en" | "zh"> => {
+): Promise<{ locale: "en" | "zh"; rendererResponded: boolean }> => {
   // The renderer may be frozen when the user tries to quit.
-  const pageLocale = readPageLocale
-    ? await Promise.race([
+  let pageLocale: unknown;
+  if (readPageLocale) {
+    const timer = new AbortController();
+    try {
+      pageLocale = await Promise.race([
         Promise.resolve()
           .then(readPageLocale)
           .catch(() => undefined),
-        delay(QUIT_LOCALE_TIMEOUT_MS, undefined, { ref: false }),
-      ])
-    : undefined;
+        delay(QUIT_LOCALE_TIMEOUT_MS, undefined, { ref: false, signal: timer.signal }),
+      ]);
+    } finally {
+      timer.abort();
+    }
+  }
   const locale = typeof pageLocale === "string" && pageLocale ? pageLocale : systemLocale;
-  return locale.toLowerCase().startsWith("zh") ? "zh" : "en";
+  return {
+    locale: locale.toLowerCase().startsWith("zh") ? "zh" : "en",
+    rendererResponded: typeof pageLocale === "string",
+  };
 };
 
 /**

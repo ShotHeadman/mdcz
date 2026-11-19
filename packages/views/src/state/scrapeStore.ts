@@ -85,8 +85,9 @@ export const runScrapeRequest = async <T>(request: () => Promise<T>, retryTaskId
   }
 };
 
-const liveItemToScrapeResult = (item: ScrapeLiveItemDto): ScrapeResult => ({
+const liveItemToScrapeResult = (item: ScrapeLiveItemDto, runId: string): ScrapeResult => ({
   ...(item.resultId ? { resultId: item.resultId } : {}),
+  artworkRevision: runId,
   fileId: item.id,
   rootId: item.rootId,
   relativePath: item.relativePath,
@@ -117,11 +118,11 @@ export const selectScrapeResults = (state: ScrapeState): ScrapeResult[] => {
   const cached = scrapeResultsBySnapshot.get(snapshot);
   if (cached) return cached;
 
-  const items = new Map<string, ScrapeLiveItemDto>();
+  const items = new Map<string, { item: ScrapeLiveItemDto; runId: string }>();
   for (const run of [...state.ancestors, snapshot]) {
-    for (const item of run.items) items.set(`${item.rootId}\0${item.relativePath}`, item);
+    for (const item of run.items) items.set(`${item.rootId}\0${item.relativePath}`, { item, runId: run.task.id });
   }
-  const results = [...items.values()].map(liveItemToScrapeResult);
+  const results = [...items.values()].map(({ item, runId }) => liveItemToScrapeResult(item, runId));
   scrapeResultsBySnapshot.set(snapshot, results);
   return results;
 };

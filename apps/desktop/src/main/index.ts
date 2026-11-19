@@ -49,7 +49,7 @@ let cleanupFinished = false;
 
 const confirmQuitWhileTaskRuns = async (): Promise<boolean> => {
   const window = windowService.getMainWindow();
-  const locale = await resolveQuitDialogLocale(
+  const { locale, rendererResponded } = await resolveQuitDialogLocale(
     app.getLocale(),
     window ? () => window.webContents.executeJavaScript("document.documentElement.lang") : undefined,
   );
@@ -63,7 +63,7 @@ const confirmQuitWhileTaskRuns = async (): Promise<boolean> => {
     cancelId: 1,
     noLink: true,
   };
-  const visibleWindow = window && !window.isDestroyed() && window.isVisible() ? window : undefined;
+  const visibleWindow = rendererResponded && window && !window.isDestroyed() && window.isVisible() ? window : undefined;
   const { response } = visibleWindow
     ? await dialog.showMessageBox(visibleWindow, options)
     : await dialog.showMessageBox(options);

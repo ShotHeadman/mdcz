@@ -186,6 +186,21 @@ export function DetailPanelView({
 }: DetailPanelViewProps) {
   const t = useT();
   const [thumbPreviewOpen, setThumbPreviewOpen] = useState(false);
+  const [savedPoster, setSavedPoster] = useState<{ key: string; url: string } | null>(null);
+  const posterKey = JSON.stringify([
+    item?.id,
+    item?.resultId,
+    item?.artworkRevision,
+    item?.status,
+    item?.fileRef?.rootId,
+    item?.fileRef?.relativePath,
+    Boolean(compare),
+    Boolean(posterEditor),
+    posterSrc,
+  ]);
+  if (savedPoster && savedPoster.key !== posterKey) setSavedPoster(null);
+  const overrideUrl = savedPoster?.key === posterKey ? savedPoster.url : undefined;
+  const displayedPosterSrc = overrideUrl || posterSrc;
 
   if (!item) {
     return <EmptyState message={emptyMessage ?? t.detail.selectItemPrompt} />;
@@ -270,7 +285,7 @@ export function DetailPanelView({
     durationLabel ? { label: t.detail.fields.duration, value: durationLabel } : undefined,
     item.publisher ? { label: t.detail.fields.publisher, value: item.publisher } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
-  const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== posterSrc;
+  const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== displayedPosterSrc;
 
   return (
     <>
@@ -301,10 +316,11 @@ export function DetailPanelView({
               <>
                 <section className="grid gap-6 min-[960px]:grid-cols-[minmax(0,180px)_minmax(0,1fr)] min-[960px]:items-start">
                   <DetailPoster
-                    key={item.id}
-                    src={posterSrc}
+                    key={posterKey}
+                    src={displayedPosterSrc}
                     alt={posterAlt}
-                    onError={onPosterError}
+                    onError={displayedPosterSrc !== posterSrc ? () => setSavedPoster(null) : onPosterError}
+                    onSaved={(url) => setSavedPoster({ key: posterKey, url })}
                     editor={posterEditor}
                   />
 
