@@ -20,6 +20,8 @@ export const detail = {
 
   // Poster crop dialog
   editCover: "Edit Cover",
+  loadCropFailed: (error: string) => `Could not open the cover editor. ${error}`,
+  noCropSource: "No image is available for cropping.",
   cropDescription: "Drag selection to reposition, use zoom to adjust framing.",
   cropSourceAlt: "Cover crop source",
   cropRegionAriaLabel: "Cover crop region",

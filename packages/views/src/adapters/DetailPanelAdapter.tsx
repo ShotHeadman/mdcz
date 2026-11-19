@@ -1,12 +1,10 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import { findScrapeResultGroup } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { PosterCropEditSession } from "../common";
 import { confirmDialog } from "../common";
 import { type DetailPanelCompareProps, DetailPanelView, toDetailViewItemFromScrapeResult } from "../detail";
 import { buildDetailArtworkCandidates } from "../detail/imageCandidates";
@@ -34,7 +32,7 @@ const getDirFromPath = (path: string): string => {
 const buildCandidateKey = (candidates: string[]): string => candidates.join("\u0000");
 const readCandidateKey = (key: string): string[] => (key ? key.split("\u0000") : []);
 
-function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActionPort, posterOverride: string) {
+function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActionPort) {
   const candidates = useMemo(() => buildDetailArtworkCandidates(item), [item]);
   const posterCandidateKey = buildCandidateKey(candidates.poster);
   const thumbCandidateKey = buildCandidateKey(candidates.thumb);
@@ -86,7 +84,7 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
   }, [sources]);
 
   return {
-    posterSrc: posterOverride || sources[0][posterIndex] || "",
+    posterSrc: sources[0][posterIndex] ?? "",
     thumbSrc: sources[1][thumbIndex] ?? "",
     trailerSrc: sources[2][trailerIndex] ?? "",
     handlePosterError,
@@ -117,8 +115,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
           })(),
     [explicitItem, results, selectedResultId],
   );
-  const [posterOverride, setPosterOverride] = useState("");
-  const artwork = useResolvedArtworkSources(compare ? null : item, port, posterOverride);
+  const artwork = useResolvedArtworkSources(compare ? null : item, port);
   const resolveImageCandidates = useCallback(
     async (candidates: string[], baseDir?: string) => await port.resolveImageCandidates(candidates, baseDir, item),
     [item, port],
@@ -131,35 +128,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
   const [nfoValidationErrors, setNfoValidationErrors] = useState<NfoValidationErrors>({});
   const [nfoLoading, setNfoLoading] = useState(false);
   const [nfoSaving, setNfoSaving] = useState(false);
-  const [posterEditorOpen, setPosterEditorOpen] = useState(false);
-  const [posterCropSession, setPosterCropSession] = useState<PosterCropEditSession | null>(null);
-  const [posterCrop, setPosterCrop] = useState<NormalizedCropRegion | null>(null);
-  const [posterCropSaving, setPosterCropSaving] = useState(false);
   const nfoDirty = nfoOpen && serializeEditableNfoData(nfoData) !== nfoInitialSnapshot;
-  const posterCropDirty =
-    posterEditorOpen &&
-    posterCropSession !== null &&
-    posterCrop !== null &&
-    JSON.stringify(posterCrop) !== JSON.stringify(posterCropSession.initialCrop);
-
-  useEffect(() => {
-    let cancelled = false;
-    setPosterOverride("");
-    setPosterCropSession(null);
-    setPosterCrop(null);
-    if (!item || item.status !== "success") return;
-    void port
-      .preparePosterCrop(item)
-      .then((session) => {
-        if (cancelled) return;
-        setPosterCropSession(session);
-        setPosterCrop(session?.initialCrop ?? null);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [item, port]);
 
   const openNfoEditor = useCallback(
     async (path: string) => {
@@ -235,48 +204,6 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     if (path) await openNfoEditor(path);
   }, [item?.nfoPath, item?.path, openNfoEditor]);
 
-  const handleOpenPosterEditor = useCallback(() => {
-    if (!posterCropSession) return;
-    setPosterCrop(posterCropSession.initialCrop);
-    setPosterEditorOpen(true);
-  }, [posterCropSession]);
-
-  const setPosterEditorOpenSafe = useCallback(
-    async (open: boolean) => {
-      if (open) {
-        setPosterEditorOpen(true);
-        return;
-      }
-      if (posterCropSaving) return;
-      if (posterCropDirty && !(await confirmDialog({ title: getT().scrape.discardPosterChanges, destructive: true })))
-        return;
-      setPosterEditorOpen(false);
-    },
-    [posterCropDirty, posterCropSaving],
-  );
-
-  const handleSavePosterCrop = useCallback(async () => {
-    if (!item || !posterCrop) return;
-    try {
-      setPosterCropSaving(true);
-      const result = await port.savePosterCrop(item, posterCrop);
-      setPosterOverride(result.posterUrl);
-      setPosterEditorOpen(false);
-      toast.success(getT().scrape.coverSaved, { id: "poster-crop" });
-      void port
-        .preparePosterCrop(item)
-        .then((refreshed) => {
-          setPosterCropSession(refreshed);
-          setPosterCrop(refreshed?.initialCrop ?? null);
-        })
-        .catch(() => undefined);
-    } catch (error) {
-      toast.error(getT().scrape.saveCoverFailed(toErrorMessage(error)), { id: "poster-crop" });
-    } finally {
-      setPosterCropSaving(false);
-    }
-  }, [item, port, posterCrop]);
-
   const actions = useMemo(
     () => ({
       play: port.play ? () => handleFileAction(port.play, item?.fileRef) : undefined,
@@ -334,16 +261,14 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
       onTrailerError={artwork.handleTrailerError}
       resolveImageCandidates={resolveImageCandidates}
       showFilePath={port.showFilePath}
-      posterEditor={{
-        open: posterEditorOpen,
-        session: posterCropSession,
-        crop: posterCrop,
-        saving: posterCropSaving,
-        onCropChange: setPosterCrop,
-        onOpen: handleOpenPosterEditor,
-        onOpenChange: setPosterEditorOpenSafe,
-        onSave: handleSavePosterCrop,
-      }}
+      posterEditor={
+        item?.status === "success" && item.fileRef
+          ? {
+              prepare: () => port.preparePosterCrop(item),
+              save: (crop) => port.savePosterCrop(item, crop),
+            }
+          : undefined
+      }
     />
   );
 }

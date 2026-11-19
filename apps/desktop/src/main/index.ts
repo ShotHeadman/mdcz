@@ -16,7 +16,7 @@ import { registerDesktopBridge } from "./desktopBridge";
 import { localAuth } from "./localAuth";
 import { createLogFile } from "./logFile";
 import { openDatabase } from "./openDatabase";
-import { createQuitGuard } from "./quitGuard";
+import { createQuitGuard, resolveQuitDialogLocale } from "./quitGuard";
 import { API_SCHEME } from "./rendererTrust";
 import { createElectronCookieResolver } from "./services/CookieResolver";
 import { ShortcutService } from "./services/ShortcutService";
@@ -49,16 +49,11 @@ let cleanupFinished = false;
 
 const confirmQuitWhileTaskRuns = async (): Promise<boolean> => {
   const window = windowService.getMainWindow();
-  // The page keeps the language the user picked; a page that cannot answer must not keep the app from quitting.
-  const pageLocale = await window?.webContents.executeJavaScript("document.documentElement.lang").catch(() => "");
-  const text =
-    QUIT_DIALOG_TEXT[
-      String(pageLocale || app.getLocale())
-        .toLowerCase()
-        .startsWith("zh")
-        ? "zh"
-        : "en"
-    ];
+  const { locale, rendererResponded } = await resolveQuitDialogLocale(
+    app.getLocale(),
+    window ? () => window.webContents.executeJavaScript("document.documentElement.lang") : undefined,
+  );
+  const text = QUIT_DIALOG_TEXT[locale];
   const options = {
     type: "warning" as const,
     title: "MDCz",
@@ -68,7 +63,7 @@ const confirmQuitWhileTaskRuns = async (): Promise<boolean> => {
     cancelId: 1,
     noLink: true,
   };
-  const visibleWindow = window?.isVisible() ? window : undefined;
+  const visibleWindow = rendererResponded && window && !window.isDestroyed() && window.isVisible() ? window : undefined;
   const { response } = visibleWindow
     ? await dialog.showMessageBox(visibleWindow, options)
     : await dialog.showMessageBox(options);
