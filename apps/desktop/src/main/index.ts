@@ -129,6 +129,7 @@ const start = async (): Promise<void> => {
         getRetryCount: () => config.getComputed().networkRetryCount,
       }),
       prepareScrapeItem: prepareAppScrapeItem,
+      mediaInfoWasmPath: app.isPackaged ? join(process.resourcesPath, "MediaInfoModule.wasm") : undefined,
       mappingStore: new FileTranslationMappingStore(
         app.isPackaged
           ? join(process.resourcesPath, "mapping_table")

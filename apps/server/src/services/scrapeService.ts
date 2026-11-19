@@ -56,6 +56,7 @@ export interface ScrapeServiceResources {
   taskGate: LibraryTaskGate;
   aggregationService?: Pick<AggregationService, "aggregate">;
   prepareScrapeItem?: PrepareScrapeItem;
+  mediaInfoWasmPath?: string;
 }
 
 export class ScrapeService {
@@ -73,6 +74,7 @@ export class ScrapeService {
   private readonly taskGate: LibraryTaskGate;
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
   private readonly prepareScrapeItem?: PrepareScrapeItem;
+  private readonly mediaInfoWasmPath?: string;
   private posterWatermarkService: PosterWatermarkService | null = null;
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
@@ -97,6 +99,7 @@ export class ScrapeService {
     this.taskGate = resources.taskGate;
     this.aggregationService = resources.aggregationService;
     this.prepareScrapeItem = resources.prepareScrapeItem;
+    this.mediaInfoWasmPath = resources.mediaInfoWasmPath;
     const nfoGenerator = new NfoGenerator();
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, nfoGenerator, this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
@@ -151,6 +154,7 @@ export class ScrapeService {
         taskGate: this.taskGate,
         aggregationService: this.aggregationService,
         prepareScrapeItem: this.prepareScrapeItem,
+        mediaInfoWasmPath: this.mediaInfoWasmPath,
         postProcessAssets: async ({
           assets,
           configuration,

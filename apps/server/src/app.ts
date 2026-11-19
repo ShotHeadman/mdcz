@@ -66,6 +66,7 @@ export interface ServerResourceOverrides {
   mappingStore?: FileTranslationMappingStore;
   aggregationService?: ScrapeServiceResources["aggregationService"];
   prepareScrapeItem?: PrepareScrapeItem;
+  mediaInfoWasmPath?: string;
   maintenanceRuntime?: MaintenanceRuntime;
 }
 
@@ -173,6 +174,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       taskGate,
       aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
+      mediaInfoWasmPath: options.resources?.mediaInfoWasmPath,
     });
   const library =
     options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get());
