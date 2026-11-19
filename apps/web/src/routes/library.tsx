@@ -13,6 +13,7 @@ import {
   mergeLibraryAvailability,
   parseLibraryBrowseSearch,
   toLibraryListScope,
+  useLibrarySort,
   useLibraryView,
 } from "@mdcz/views/library";
 import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
@@ -36,6 +37,8 @@ export function LibraryPage() {
   const scope = toLibraryListScope(search);
   const { libraryId, actor, studio, tag } = scope;
   const libraryView = useLibraryView();
+  const librarySort = useLibrarySort();
+  const { sortBy, sortOrder } = librarySort;
   const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const isScraping = useScrapeStore(selectIsScraping);
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
@@ -108,8 +111,8 @@ export function LibraryPage() {
   // Only a refresh the user asks for skips the server's recent availability checks.
   const freshAvailability = useRef(false);
   const libraryQ = useInfiniteQuery({
-    queryKey: queryKeys.library.list({ query, ...scope }),
-    queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100, ...scope }),
+    queryKey: queryKeys.library.list({ query, ...scope, sortBy, sortOrder }),
+    queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100, ...scope, sortBy, sortOrder }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -155,6 +158,7 @@ export function LibraryPage() {
           summary: summaryQ.data,
           update: (next) => void navigate({ to: "/library", search: next }),
           ...libraryView,
+          ...librarySort,
           fixBlockedReason: isScraping ? t.workbench.taskConflict.scrape : undefined,
           onFix: async (issue) => {
             const matches: LibraryEntryDto[] = [];

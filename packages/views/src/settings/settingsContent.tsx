@@ -840,6 +840,8 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
           </div>
         )}
       </BaseField>
+      <BoolField name="ui.closeToTray" />
+      <BoolField name="ui.startMinimizedToTray" />
       <BoolField name="ui.hideDock" />
       <BoolField name="ui.hideMenu" />
       <BoolField name="ui.hideWindowButtons" />

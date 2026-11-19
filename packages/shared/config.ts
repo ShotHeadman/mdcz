@@ -297,6 +297,8 @@ const shortcutsSchema = z.object({
 const uiSchema = z.object({
   theme: z.enum(ThemeMode).default(ThemeMode.SYSTEM),
   showLogsPanel: z.boolean().default(true),
+  closeToTray: z.boolean().default(false),
+  startMinimizedToTray: z.boolean().default(false),
   hideDock: z.boolean().default(false),
   hideMenu: z.boolean().default(false),
   hideWindowButtons: z.boolean().default(false),

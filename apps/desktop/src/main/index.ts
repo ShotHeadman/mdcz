@@ -68,7 +68,10 @@ const confirmQuitWhileTaskRuns = async (): Promise<boolean> => {
     cancelId: 1,
     noLink: true,
   };
-  const { response } = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+  const visibleWindow = window?.isVisible() ? window : undefined;
+  const { response } = visibleWindow
+    ? await dialog.showMessageBox(visibleWindow, options)
+    : await dialog.showMessageBox(options);
   return response === 0;
 };
 
@@ -77,11 +80,24 @@ const holdQuit = createQuitGuard({
   confirm: confirmQuitWhileTaskRuns,
 });
 
-const openMainWindow = async (configuration: Configuration): Promise<void> => {
-  windowService.createMainWindow({ useCustomTitleBar: configuration.ui.useCustomTitleBar, holdClose: holdQuit });
+const openMainWindow = async (configuration: Configuration, allowStartMinimized = false): Promise<void> => {
+  windowService.createMainWindow({
+    useCustomTitleBar: configuration.ui.useCustomTitleBar,
+    closeToTray: configuration.ui.closeToTray,
+    startMinimizedToTray: allowStartMinimized && configuration.ui.startMinimizedToTray,
+    holdClose: holdQuit,
+  });
   shortcutService.initialize(windowService, configuration);
   windowService.applyUiConfig(configuration.ui);
   await windowService.loadMainWindow();
+};
+
+const showOrOpenMainWindow = (): void => {
+  if (windowService.getMainWindow()) {
+    windowService.showMainWindow();
+    return;
+  }
+  if (server) void server.services.config.get().then((configuration) => openMainWindow(configuration, false));
 };
 
 const start = async (): Promise<void> => {
@@ -138,8 +154,8 @@ const start = async (): Promise<void> => {
   registerDesktopBridge({ services: server.services, updateService, windowService });
 
   const configuration = await config.get();
-  await openMainWindow(configuration);
-  trayService.initialize(windowService);
+  trayService.initialize(showOrOpenMainWindow);
+  await openMainWindow(configuration, true);
   config.onChange((event) => {
     shortcutService.initialize(windowService, event.configuration);
     windowService.applyUiConfig(event.configuration.ui);
@@ -171,7 +187,7 @@ const cleanup = async (): Promise<void> => {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => windowService.showMainWindow());
+  app.on("second-instance", () => showOrOpenMainWindow());
 
   app
     .whenReady()
@@ -185,11 +201,7 @@ if (!app.requestSingleInstanceLock()) {
     });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length > 0) {
-      windowService.showMainWindow();
-      return;
-    }
-    if (server) void server.services.config.get().then(openMainWindow);
+    showOrOpenMainWindow();
   });
 
   app.on("window-all-closed", () => {

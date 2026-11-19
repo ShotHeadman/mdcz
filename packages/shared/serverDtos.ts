@@ -10,6 +10,7 @@ import {
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import { libraryEditJobSchema } from "./libraryEdit";
+import { LIBRARY_SORT_FIELDS, LIBRARY_SORT_ORDERS } from "./libraryPagination";
 
 export type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
 export { libraryEditStartInputSchema } from "./libraryEdit";
@@ -726,12 +727,17 @@ const libraryScopeFields = {
   tag: z.string().trim().min(1).optional(),
 };
 
+export const librarySortFieldSchema = z.enum(LIBRARY_SORT_FIELDS);
+export const librarySortOrderSchema = z.enum(LIBRARY_SORT_ORDERS);
+
 export const libraryListInputSchema = z
   .object({
     cursor: z.string().trim().min(1).max(2048).optional(),
     query: z.string().optional(),
     rootId: z.string().optional(),
     limit: z.number().int().min(1).max(500).optional(),
+    sortBy: librarySortFieldSchema.optional(),
+    sortOrder: librarySortOrderSchema.optional(),
     ...libraryScopeFields,
   })
   .optional();

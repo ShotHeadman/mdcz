@@ -606,6 +606,17 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Requires restarting the app after switching.",
     aliases: ["title bar", "window chrome"],
   },
+  "ui.closeToTray": {
+    label: "Close to system tray",
+    description:
+      "Hide to the system tray instead of quitting when closing the window; running tasks continue in the background.",
+    aliases: ["tray", "background"],
+  },
+  "ui.startMinimizedToTray": {
+    label: "Start minimized to tray",
+    description: "Launch hidden in the system tray without showing the main window.",
+    aliases: ["tray", "silent start"],
+  },
   "ui.hideDock": { label: "Hide Dock icon" },
   "ui.hideMenu": { label: "Hide menu bar" },
   "ui.hideWindowButtons": { label: "Hide window buttons" },

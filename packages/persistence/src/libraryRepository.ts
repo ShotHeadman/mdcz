@@ -75,10 +75,12 @@ export interface UpsertLibraryEntryInput {
   files: LibraryFileInput[];
 }
 
-export interface LibraryEntriesCursor {
-  createdAt: Date;
-  id: string;
-}
+export type LibrarySortField = "createdAt" | "number" | "title";
+export type LibrarySortOrder = "asc" | "desc";
+
+export type LibraryEntriesCursor =
+  | { sortBy: "createdAt"; sortOrder: LibrarySortOrder; createdAt: Date; id: string }
+  | { sortBy: "number" | "title"; sortOrder: LibrarySortOrder; value: string; id: string };
 
 export const LIBRARY_HEALTH_ISSUES = [
   "missingPoster",
@@ -107,6 +109,8 @@ export interface LibraryEntryFilter {
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
   cursor?: LibraryEntriesCursor;
   limit: number;
+  sortBy?: LibrarySortField;
+  sortOrder?: LibrarySortOrder;
 }
 
 export interface LibraryFacetCount {
@@ -288,6 +292,32 @@ const toLibraryEntryRecord = (
     assets,
   };
 };
+
+const NAME_COLLATOR = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+
+const compareNameKey = (
+  left: { value: string; id: string },
+  right: { value: string; id: string },
+  direction: 1 | -1,
+): number => {
+  const primary = NAME_COLLATOR.compare(left.value, right.value);
+  if (primary !== 0) return primary * direction;
+  if (left.id === right.id) return 0;
+  return (left.id < right.id ? -1 : 1) * direction;
+};
+
+const NUMBER_SORT_KEY = sql<string>`coalesce(
+  nullif(trim(${libraryItems.number}), ''),
+  nullif(trim(${libraryItems.mediaIdentity}), ''),
+  ''
+)`;
+
+const TITLE_SORT_KEY = sql<string>`coalesce(
+  nullif(trim(CASE WHEN json_valid(${libraryItems.crawlerDataJson}) THEN json_extract(${libraryItems.crawlerDataJson}, '$.title_zh') END), ''),
+  nullif(trim(${libraryItems.title}), ''),
+  nullif(trim(${libraryItems.number}), ''),
+  ''
+)`;
 
 const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
 
@@ -626,27 +656,80 @@ export class LibraryRepository {
 
   async listEntriesPage(input: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {
     const limit = Math.max(1, Math.trunc(input.limit));
+    const sortBy = input.sortBy ?? "createdAt";
+    const sortOrder = input.sortOrder ?? "desc";
+    if (input.cursor && (input.cursor.sortBy !== sortBy || input.cursor.sortOrder !== sortOrder)) {
+      throw new Error("Invalid library page cursor");
+    }
     const baseWhere = buildLibraryListWhere(input);
-    const cursorTimestamp = input.cursor?.createdAt.getTime();
-    const cursorWhere = input.cursor
-      ? sql`(${libraryItems.createdAt} < ${cursorTimestamp} OR (${libraryItems.createdAt} = ${cursorTimestamp} AND ${libraryItems.id} < ${input.cursor.id}))`
-      : undefined;
-    const where = and(baseWhere, cursorWhere);
-    const items = this.database.db
-      .select()
-      .from(libraryItems)
-      .where(where)
-      .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
-      .limit(limit + 1)
-      .all();
-    const hasMore = items.length > limit;
-    const pageItems = hasMore ? items.slice(0, limit) : items;
+    let pageItems: LibraryItemRow[];
+    let hasMore: boolean;
+    let nextCursor: LibraryEntriesCursor | null = null;
+
+    if (sortBy === "createdAt") {
+      const cursor = input.cursor?.sortBy === "createdAt" ? input.cursor : undefined;
+      const cursorTimestamp = cursor?.createdAt.getTime();
+      const cursorWhere = cursor
+        ? sortOrder === "asc"
+          ? sql`(${libraryItems.createdAt} > ${cursorTimestamp} OR (${libraryItems.createdAt} = ${cursorTimestamp} AND ${libraryItems.id} > ${cursor.id}))`
+          : sql`(${libraryItems.createdAt} < ${cursorTimestamp} OR (${libraryItems.createdAt} = ${cursorTimestamp} AND ${libraryItems.id} < ${cursor.id}))`
+        : undefined;
+      const items = this.database.db
+        .select()
+        .from(libraryItems)
+        .where(and(baseWhere, cursorWhere))
+        .orderBy(
+          ...(sortOrder === "asc"
+            ? [asc(libraryItems.createdAt), asc(libraryItems.id)]
+            : [desc(libraryItems.createdAt), desc(libraryItems.id)]),
+        )
+        .limit(limit + 1)
+        .all();
+      hasMore = items.length > limit;
+      pageItems = hasMore ? items.slice(0, limit) : items;
+      const lastItem = pageItems.at(-1);
+      if (hasMore && lastItem) {
+        nextCursor = { sortBy: "createdAt", sortOrder, createdAt: lastItem.createdAt, id: lastItem.id };
+      }
+    } else {
+      const direction: 1 | -1 = sortOrder === "asc" ? 1 : -1;
+      const cursor = input.cursor && input.cursor.sortBy !== "createdAt" ? input.cursor : undefined;
+      const candidates = this.database.db
+        .select({
+          id: libraryItems.id,
+          value: sortBy === "number" ? NUMBER_SORT_KEY : TITLE_SORT_KEY,
+        })
+        .from(libraryItems)
+        .where(baseWhere)
+        .all();
+      const filtered = cursor
+        ? candidates.filter((row) => compareNameKey(row, { value: cursor.value, id: cursor.id }, direction) > 0)
+        : candidates;
+      filtered.sort((left, right) => compareNameKey(left, right, direction));
+      hasMore = filtered.length > limit;
+      const pageKeys = hasMore ? filtered.slice(0, limit) : filtered;
+      const pageIds = pageKeys.map((row) => row.id);
+      const itemMap = new Map(
+        (pageIds.length
+          ? this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, pageIds)).all()
+          : []
+        ).map((item) => [item.id, item]),
+      );
+      pageItems = pageIds.flatMap((id) => {
+        const item = itemMap.get(id);
+        return item ? [item] : [];
+      });
+      const lastKey = pageKeys.at(-1);
+      if (hasMore && lastKey) {
+        nextCursor = { sortBy, sortOrder, value: lastKey.value, id: lastKey.id };
+      }
+    }
+
     const ids = pageItems.map((item) => item.id);
     const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
     const entries = pageItems.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
-    const lastItem = pageItems.at(-1);
     const totals = this.database.db
       .select({
         fileCount: sql<number>`count(${libraryItemFiles.id})`,
@@ -661,13 +744,7 @@ export class LibraryRepository {
     return {
       entries,
       hasMore,
-      nextCursor:
-        hasMore && lastItem
-          ? {
-              createdAt: lastItem.createdAt,
-              id: lastItem.id,
-            }
-          : null,
+      nextCursor,
       ...totals,
       total: this.getListCount(baseWhere),
     };

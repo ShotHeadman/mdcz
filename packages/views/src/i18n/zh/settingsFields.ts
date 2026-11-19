@@ -500,6 +500,16 @@ export const settingsFields: Messages["settingsFields"] = {
     "shortcuts.playVideo": { label: "播放视频", description: "示例: P" },
     "ui.showLogsPanel": { label: "显示日志面板" },
     "ui.useCustomTitleBar": { label: "使用自定义标题栏", description: "切换后需要重启应用" },
+    "ui.closeToTray": {
+      label: "关闭窗口时最小化到托盘",
+      description: "点击关闭按钮时隐藏到系统托盘而不退出，任务会继续在后台运行",
+      aliases: ["托盘", "关闭到托盘", "后台运行"],
+    },
+    "ui.startMinimizedToTray": {
+      label: "启动时最小化到托盘",
+      description: "启动应用时不弹出主窗口，直接隐藏在系统托盘中",
+      aliases: ["静默启动", "启动到托盘"],
+    },
     "ui.hideDock": { label: "隐藏 Dock 图标" },
     "ui.hideMenu": { label: "隐藏菜单栏" },
     "ui.hideWindowButtons": { label: "隐藏窗口按钮" },

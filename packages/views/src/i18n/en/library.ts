@@ -43,6 +43,18 @@ export const library = {
   allLibraries: "All libraries",
   libraryAriaLabel: "Library",
   view: { list: "List", wall: "Poster wall" },
+  sort: {
+    ariaLabel: "Sort by",
+    fields: {
+      createdAt: "Date added",
+      number: "Number",
+      title: "Title",
+    },
+    order: {
+      asc: "Ascending",
+      desc: "Descending",
+    },
+  },
   health: {
     title: "Health",
     issues: {

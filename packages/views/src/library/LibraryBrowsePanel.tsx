@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { LibrarySortField, LibrarySortOrder } from "@mdcz/shared/libraryPagination";
 import type { LibraryHealthIssue, LibrarySummaryResponse } from "@mdcz/shared/serverDtos";
 import { Button, cn } from "@mdcz/ui";
 import { ChevronDown, EyeOff, LoaderCircle, Pencil, RotateCcw, Wrench, X } from "lucide-react";
@@ -23,12 +24,16 @@ export interface LibraryBrowseControls {
   ignored: boolean;
   facet?: LibraryFacetSelection;
   view: "list" | "wall";
+  sortBy: LibrarySortField;
+  sortOrder: LibrarySortOrder;
   onLibraryChange: (libraryId: string | undefined) => void;
   onHealthChange: (issue: LibraryHealthIssue | undefined) => void;
   onIgnoredChange: (ignored: boolean) => void;
   onFacetChange: (facet: LibraryFacetSelection | undefined) => void;
   onClear: () => void;
   onViewChange: (view: "list" | "wall") => void;
+  onSortByChange: (sortBy: LibrarySortField) => void;
+  onSortOrderChange: (sortOrder: LibrarySortOrder) => void;
   /** Why the repair cannot start now, such as a running scrape. */
   fixBlockedReason?: string;
   /** Starts a preview that repairs the movies matching `health`. */

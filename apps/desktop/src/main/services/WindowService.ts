@@ -20,6 +20,8 @@ const MIN_WINDOW_HEIGHT = 640;
 
 export interface MainWindowCreationOptions {
   useCustomTitleBar: boolean;
+  closeToTray: boolean;
+  startMinimizedToTray: boolean;
   /** Answers whether the window may close now; when it may not, it calls `proceed` once closing may go ahead. */
   holdClose: (proceed: () => void) => boolean;
 }
@@ -59,6 +61,8 @@ export class WindowService {
 
   private useCustomTitleBar = false;
 
+  private closeToTray = false;
+
   createMainWindow(options: MainWindowCreationOptions): BrowserWindow {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       return this.mainWindow;
@@ -79,6 +83,7 @@ export class WindowService {
       minHeight: MIN_WINDOW_HEIGHT,
       title: "MDCz",
       show: false,
+      skipTaskbar: process.platform !== "darwin" && options.startMinimizedToTray,
       autoHideMenuBar: true,
       icon: appIcon,
       ...resolveCustomTitleBarWindowOptions({
@@ -104,17 +109,24 @@ export class WindowService {
     state.manage(mainWindow);
 
     mainWindow.once("ready-to-show", () => {
-      mainWindow.show();
+      if (!options.startMinimizedToTray) {
+        mainWindow.show();
+      }
     });
     // The page is web's app, titled for the browser.
     mainWindow.on("page-title-updated", (event) => event.preventDefault());
 
-    // Elsewhere closing the window quits the app; on macOS the app and its server keep running.
-    if (process.platform !== "darwin") {
-      mainWindow.on("close", (event) => {
-        if (!options.holdClose(() => mainWindow.close())) event.preventDefault();
-      });
-    }
+    mainWindow.on("close", (event) => {
+      if (this.closeToTray) {
+        event.preventDefault();
+        this.hideToTray();
+        return;
+      }
+      // Elsewhere closing the window quits the app; on macOS the app and its server keep running.
+      if (process.platform !== "darwin" && !options.holdClose(() => mainWindow.close())) {
+        event.preventDefault();
+      }
+    });
 
     mainWindow.on("closed", () => {
       if (this.mainWindow === mainWindow) {
@@ -124,6 +136,7 @@ export class WindowService {
 
     this.mainWindow = mainWindow;
     this.useCustomTitleBar = options.useCustomTitleBar;
+    this.closeToTray = options.closeToTray;
 
     return mainWindow;
   }
@@ -163,11 +176,28 @@ export class WindowService {
     return null;
   }
 
+  hideToTray(): void {
+    const mainWindow = this.getMainWindow();
+    if (!mainWindow) {
+      return;
+    }
+
+    if (process.platform !== "darwin") {
+      mainWindow.setSkipTaskbar(true);
+    }
+
+    mainWindow.hide();
+  }
+
   showMainWindow(): void {
     const mainWindow = this.getMainWindow();
 
     if (!mainWindow) {
       return;
+    }
+
+    if (process.platform !== "darwin") {
+      mainWindow.setSkipTaskbar(false);
     }
 
     if (mainWindow.isMinimized()) {
@@ -191,7 +221,13 @@ export class WindowService {
     mainWindow.setTitleBarOverlay(buildTitleBarOverlay(isDark));
   }
 
-  applyUiConfig(config: { hideDock: boolean; hideMenu: boolean; hideWindowButtons: boolean }): void {
+  applyUiConfig(config: {
+    closeToTray: boolean;
+    hideDock: boolean;
+    hideMenu: boolean;
+    hideWindowButtons: boolean;
+  }): void {
+    this.closeToTray = config.closeToTray;
     // hideDock: macOS only — hide/show the app icon in the Dock
     if (process.platform === "darwin" && app.dock) {
       if (config.hideDock) {

@@ -191,6 +191,8 @@ const RAW_FIELD_REGISTRY = [
   { key: "shortcuts.playVideo", anchor: "system" },
   { key: "ui.showLogsPanel", anchor: "system" },
   { key: "ui.useCustomTitleBar", anchor: "system" },
+  { key: "ui.closeToTray", anchor: "system" },
+  { key: "ui.startMinimizedToTray", anchor: "system" },
   { key: "ui.hideDock", anchor: "system" },
   { key: "ui.hideMenu", anchor: "system" },
   { key: "ui.hideWindowButtons", anchor: "system" },

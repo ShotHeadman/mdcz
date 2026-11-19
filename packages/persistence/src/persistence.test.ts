@@ -571,6 +571,58 @@ describe("LibraryRepository", () => {
     expect(second).toMatchObject({ hasMore: false, nextCursor: null, total: 3 });
   });
 
+  it("sorts paged library entries by createdAt, number, and localized title across pages", async () => {
+    database = createTestPersistenceDatabase();
+    await addRoots("root-1");
+    const repository = new LibraryRepository(database);
+    const seed = [
+      {
+        id: "entry-1",
+        number: "SSIS-10",
+        title: "Original One",
+        crawlerDataJson: JSON.stringify({ title_zh: "中国故事" }),
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+      {
+        id: "entry-2",
+        number: "SSIS-2",
+        title: "Original Two",
+        crawlerDataJson: JSON.stringify({ title_zh: "啊哈日记" }),
+        createdAt: new Date("2026-05-03T00:00:00.000Z"),
+      },
+      {
+        id: "entry-3",
+        number: "ABP-001",
+        title: "冰雪奇缘",
+        crawlerDataJson: null,
+        createdAt: new Date("2026-05-02T00:00:00.000Z"),
+      },
+    ];
+    for (const movie of seed) {
+      await repository.upsertEntry({
+        movie,
+        files: [{ rootId: "root-1", rootRelativePath: `${movie.id}.mp4`, fileId: `root-1:${movie.id}.mp4` }],
+      });
+    }
+
+    const collectAll = async (sortBy: "createdAt" | "number" | "title", sortOrder: "asc" | "desc") => {
+      const ids: string[] = [];
+      let cursor: Awaited<ReturnType<LibraryRepository["listEntriesPage"]>>["nextCursor"] | undefined;
+      do {
+        const page = await repository.listEntriesPage({ limit: 2, sortBy, sortOrder, cursor: cursor ?? undefined });
+        ids.push(...page.entries.map((entry) => entry.id));
+        cursor = page.nextCursor;
+      } while (cursor);
+      return ids;
+    };
+
+    expect(await collectAll("createdAt", "asc")).toEqual(["entry-1", "entry-3", "entry-2"]);
+    expect(await collectAll("number", "asc")).toEqual(["entry-3", "entry-2", "entry-1"]);
+    expect(await collectAll("number", "desc")).toEqual(["entry-1", "entry-2", "entry-3"]);
+    expect(await collectAll("title", "asc")).toEqual(["entry-2", "entry-3", "entry-1"]);
+    expect(await collectAll("title", "desc")).toEqual(["entry-1", "entry-3", "entry-2"]);
+  });
+
   it("filters paged library entries by file/root and metadata in SQL", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1", "root-2");

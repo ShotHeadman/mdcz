@@ -182,6 +182,8 @@ export class LibraryService {
       ...filter,
       cursor: decodeLibraryPageCursor(input?.cursor),
       limit: input?.limit ?? 100,
+      sortBy: input?.sortBy,
+      sortOrder: input?.sortOrder,
     });
 
     return {
