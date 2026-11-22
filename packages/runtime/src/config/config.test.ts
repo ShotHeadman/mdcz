@@ -108,10 +108,9 @@ describe("runtime config helpers", () => {
     const merged = mergeRuntimeConfig(defaultConfiguration, { network: { timeout: 33 } });
 
     expect(parseRuntimeConfiguration(merged).network.timeout).toBe(33);
-    for (const folder of ["actorPhotoFolder", "stagingFolder"])
-      expect(() => parseRuntimeConfiguration({ paths: { [folder]: "relative" } })).toThrow(
-        RuntimeConfigValidationError,
-      );
+    expect(() => parseRuntimeConfiguration({ paths: { actorPhotoFolder: "actors" } })).toThrow(
+      RuntimeConfigValidationError,
+    );
     expect(() => parseRuntimeConfiguration({ naming: { partStyle: "invalid" } })).toThrow(RuntimeConfigValidationError);
 
     const configDir = await createTempDir();
@@ -154,6 +153,7 @@ describe("runtime config helpers", () => {
         automation: "scrape",
         discovery: "events",
         cloudPath: "",
+        directWrite: false,
         scanIntervalMinutes: 30,
       },
     });

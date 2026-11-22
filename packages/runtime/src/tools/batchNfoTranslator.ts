@@ -411,7 +411,6 @@ export const applyBatchNfoTranslations = async (
         );
         await new WriteOutput().install(artifacts, {
           protectedMediaFiles: registered?.mediaPaths,
-          direct: Boolean(config.paths.stagingFolder),
           commit: async () => {
             if (!registered) return;
             if (!publication.library) throw new Error("Registered NFO write requires library updates");

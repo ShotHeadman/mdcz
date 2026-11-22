@@ -112,6 +112,7 @@ describe("buildComputedConfiguration", () => {
       discovery: "events",
       cloudPath: "",
       scanIntervalMinutes: 15,
+      directWrite: false,
       createdAt: new Date(0),
       updatedAt: new Date(0),
       ...settings,

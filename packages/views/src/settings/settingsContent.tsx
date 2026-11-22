@@ -187,7 +187,6 @@ export function PathsSection() {
       <PathArrayFieldWrapper name="paths.defaultScanExcludeDirs" />
       <PathFieldWrapper name="paths.actorPhotoFolder" isDirectory />
       <TextField name="paths.sceneImagesFolder" />
-      <PathFieldWrapper name="paths.stagingFolder" isDirectory />
     </>
   );
 }

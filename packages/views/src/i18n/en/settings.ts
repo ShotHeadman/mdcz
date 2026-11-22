@@ -365,7 +365,6 @@ export const settings = {
       actorAliasConflict: "This alias is already added or conflicts with another actor",
       globalTimeoutNotGreater: "Global timeout must be greater than per-crawler timeout",
       actorPhotoFolderNotAbsolute: "The actor photo directory must be an absolute path",
-      stagingFolderNotAbsolute: "The staging directory must be an absolute path",
       jellyfinUserIdNotUuid: "Jellyfin user ID must be a UUID, or leave empty for server default",
     } satisfies Record<ConfigIssueCode, string> as Record<string, string | undefined>,
   },

@@ -142,7 +142,7 @@ export class ServerPathService {
       this.libraries.list().catch(() => []),
     ]);
     const configuredPathValues = [
-      ...(configuration ? [configuration.paths.actorPhotoFolder.trim(), configuration.paths.stagingFolder] : []),
+      ...(configuration ? [configuration.paths.actorPhotoFolder.trim()] : []),
       ...libraries.flatMap((library) => [library.sourcePath, library.outputPath]),
     ];
     const candidates = [...mediaRootList.roots.map((root) => root.hostPath), ...configuredPathValues];

@@ -72,6 +72,7 @@ export const mediaLibraries = sqliteTable("media_libraries", {
   discovery: text("discovery").notNull(),
   cloudPath: text("cloud_path").notNull(),
   scanIntervalMinutes: integer("scan_interval_minutes").notNull(),
+  directWrite: integer("direct_write", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

@@ -510,7 +510,7 @@ export class FileScraper {
         })),
         assets: prepared.assets,
       };
-      const directory = await createStagingDirectory(configuration.paths.stagingFolder || plan.metadataDir);
+      const directory = await createStagingDirectory(plan.metadataDir);
       stagingDir = directory;
       const metadataOutputDir = plan.metadataDir;
       let crawlerData = prepared.crawlerData;

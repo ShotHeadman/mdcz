@@ -197,7 +197,6 @@ export type ConfigIssueCode =
   | "actorAliasConflict"
   | "globalTimeoutNotGreater"
   | "actorPhotoFolderNotAbsolute"
-  | "stagingFolderNotAbsolute"
   | "jellyfinUserIdNotUuid";
 
 const actorAliasesSchema = z
@@ -310,8 +309,6 @@ const pathsSchema = z.object({
   actorPhotoFolder: z.string().default(""),
   defaultScanExcludeDirs: z.array(z.string()).default([]),
   sceneImagesFolder: z.string().default("extrafanart"),
-  /** Empty stages next to the output; a local folder keeps every temporary file off volumes that fail fresh renames. */
-  stagingFolder: z.string().trim().default(""),
 });
 
 const behaviorSchema = z.object({
@@ -558,13 +555,6 @@ export const configurationSchema = z
         code: "custom",
         path: ["paths", "actorPhotoFolder"],
         message: "actorPhotoFolderNotAbsolute" satisfies ConfigIssueCode,
-      });
-
-    if (data.paths.stagingFolder && !localPathStyle(data.paths.stagingFolder))
-      ctx.addIssue({
-        code: "custom",
-        path: ["paths", "stagingFolder"],
-        message: "stagingFolderNotAbsolute" satisfies ConfigIssueCode,
       });
 
     if (

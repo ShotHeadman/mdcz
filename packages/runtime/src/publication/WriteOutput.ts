@@ -3,6 +3,7 @@ import path from "node:path";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { CreatedDirectories, copyFileBytes, outputFileSystem } from "./outputFileSystem";
 import { publicationJournal, TemporaryPaths } from "./publicationJournal";
+import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
 
 export type WriteArtifact = { targetPath: string; removeSourcesAfterCommit?: readonly string[] } & (
@@ -35,6 +36,8 @@ export class WriteOutput {
     },
   ): Promise<TResult> {
     const directories = options.directories ?? new CreatedDirectories(this.fileSystem);
+    let directMode =
+      options.direct ?? (artifacts.length > 0 ? await publicationPolicy.isDirectWrite(artifacts[0].targetPath) : false);
     const staged: Array<{ artifact: WriteArtifact; temporaryPath?: string; size?: number }> = [];
     const replacements: Array<{ targetPath: string; backupPath?: string; linkedBackup?: boolean; installed: boolean }> =
       [];
@@ -79,6 +82,38 @@ export class WriteOutput {
       if ((await this.fileSystem.stat(destination)).size !== size)
         throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
     };
+    const writeDirect = async (
+      artifact: WriteArtifact,
+      targetPath: string,
+      size: number | undefined,
+      replacement: (typeof replacements)[number],
+    ): Promise<void> => {
+      if (replacement.linkedBackup && replacement.backupPath) {
+        await this.fileSystem.rm(targetPath, { force: true });
+        replacement.linkedBackup = false;
+        publicationJournal.record(replacement.backupPath, targetPath);
+      }
+      // Journaled while it is written, so a crash leaves no truncated file under a final name and the
+      // original it replaces goes back.
+      publicationJournal.record(targetPath);
+      // Set first, so a failed write is taken back like a finished one.
+      replacement.installed = true;
+      await write(artifact, targetPath, size, true);
+      publicationJournal.forget(targetPath);
+      // The target is whole from here on, so a crash before the commit drops the original instead of restoring it.
+      if (replacement.backupPath) publicationJournal.record(replacement.backupPath);
+    };
+    const fallbackToDirect = async (
+      artifact: WriteArtifact,
+      targetPath: string,
+      size: number | undefined,
+      replacement: (typeof replacements)[number],
+    ): Promise<void> => {
+      directMode = true;
+      const root = await publicationPolicy.markDirectWrite(targetPath);
+      this.logger.warn(`Fresh-file rename returned EIO on ${targetPath}; falling back to direct write for ${root}`);
+      await writeDirect(artifact, targetPath, size, replacement);
+    };
     try {
       for (const artifact of artifacts) {
         // Already in place, e.g. carried along when its movie folder was renamed.
@@ -103,7 +138,7 @@ export class WriteOutput {
                 ? Buffer.byteLength(artifact.data, "utf8")
                 : artifact.data.length
               : artifact.size;
-        if (options.direct) {
+        if (directMode) {
           staged.push({ artifact, size });
           continue;
         }
@@ -119,6 +154,9 @@ export class WriteOutput {
       }
       await options.validate?.();
       await options.beforeCommit?.();
+      if (!directMode && options.direct === undefined && staged.length > 0) {
+        directMode = await publicationPolicy.isDirectWrite(staged[0].artifact.targetPath);
+      }
       for (const { artifact, temporaryPath, size } of staged) {
         const { targetPath } = artifact;
         let existingTarget: Awaited<ReturnType<PublicationFileSystem["lstat"]>> | undefined;
@@ -131,7 +169,7 @@ export class WriteOutput {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
         const replacement: (typeof replacements)[number] = { targetPath, installed: false };
-        const direct = temporaryPath === undefined;
+        const direct = directMode || temporaryPath === undefined;
         if (existingTarget) {
           // A hard link keeps the target in place until the atomic replace, so a stop never leaves it missing.
           // Symlinks, which link(2) may follow to back up the wrong file, filesystems without links, and direct
@@ -144,38 +182,49 @@ export class WriteOutput {
               () => true,
               () => false,
             ));
-          if (!replacement.linkedBackup) {
-            if (direct) publicationJournal.record(backupPath, targetPath);
-            await this.fileSystem.rename(targetPath, backupPath);
+          if (replacement.linkedBackup) {
+            replacement.backupPath = backupPath;
+          } else {
+            try {
+              if (direct) publicationJournal.record(backupPath, targetPath);
+              await this.fileSystem.rename(targetPath, backupPath);
+              replacement.backupPath = backupPath;
+            } catch (error) {
+              if (direct) publicationJournal.forget(backupPath);
+              // Cloud mounts may refuse renaming a freshly created target; overwrite it in place instead.
+              if (!direct || (error as NodeJS.ErrnoException).code !== "EIO") throw error;
+            }
           }
-          replacement.backupPath = backupPath;
         }
         replacements.push(replacement);
         if (direct) {
-          // Journaled while it is written, so a crash leaves no truncated file under a final name and the
-          // original it replaces goes back.
-          publicationJournal.record(targetPath);
-          // Set first, so a failed write is taken back like a finished one.
-          replacement.installed = true;
-          await write(artifact, targetPath, size, true);
-          publicationJournal.forget(targetPath);
-          // The target is whole from here on, so a crash before the commit drops the original instead of restoring it.
-          if (replacement.backupPath) publicationJournal.record(replacement.backupPath);
+          await writeDirect(artifact, targetPath, size, replacement);
           continue;
         }
         try {
           await this.fileSystem.rename(temporaryPath, targetPath);
           temporaryPaths.settle(temporaryPath);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "EXDEV" || size === undefined) throw error;
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code === "EIO" && options.direct === undefined) {
+            await fallbackToDirect(artifact, targetPath, size, replacement);
+            continue;
+          }
+          if (code !== "EXDEV" || size === undefined) throw error;
           const localStaging = `${targetPath}.mdcz-staging-${stagingId}.part`;
           temporaryPaths.add(localStaging);
           await this.fileSystem.copyFile(temporaryPath, localStaging);
           await this.fileSystem.flush?.(localStaging);
           if ((await this.fileSystem.stat(localStaging)).size !== size)
             throw new Error(`Staged artifact size mismatch: ${targetPath}`);
-          await this.fileSystem.rename(localStaging, targetPath);
-          temporaryPaths.settle(localStaging);
+          try {
+            await this.fileSystem.rename(localStaging, targetPath);
+            temporaryPaths.settle(localStaging);
+          } catch (localError) {
+            if ((localError as NodeJS.ErrnoException).code !== "EIO" || options.direct !== undefined) throw localError;
+            await fallbackToDirect(artifact, targetPath, size, replacement);
+            continue;
+          }
         }
         replacement.installed = true;
       }
@@ -207,7 +256,7 @@ export class WriteOutput {
             else if (backupPath) temporaryPaths.add(backupPath);
             else if (replacement.installed) await this.fileSystem.rm(targetPath, { force: true });
             // The records of a direct write that failed would otherwise undo this restore on the next start.
-            if (options.direct) {
+            if (directMode) {
               publicationJournal.forget(targetPath);
               if (backupPath) publicationJournal.forget(backupPath);
             }

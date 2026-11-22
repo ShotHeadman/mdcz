@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { basename, dirname, extname, join, parse, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
@@ -554,7 +553,6 @@ export class MaintenanceRuntime {
     try {
       const stagingParent = members[0].layout.metadataDir;
       if (preset.dataSource === "online") {
-        await mkdir(stagingParent, { recursive: true });
         stagingDir = await createStagingDirectory(stagingParent);
       }
 
@@ -633,7 +631,6 @@ export class MaintenanceRuntime {
       if (keptPoster && posterRebuild === "redraw") {
         if (!this.deps.downloadManager) throw new Error("Rebuilding a poster requires the download service");
         if (!stagingDir) {
-          await mkdir(stagingParent, { recursive: true });
           stagingDir = await createStagingDirectory(stagingParent);
         }
         const posterName = parse(buildMovieAssetFileNames(movieBaseName, naming.assetNaming).poster).name;

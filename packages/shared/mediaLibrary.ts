@@ -76,6 +76,8 @@ export const mediaLibrarySettingsSchema = z
     cloudPath: z.string().trim().default(""),
     /** Full rescans catch what events miss: network mounts without change events, or a missed webhook. */
     scanIntervalMinutes: z.number().int().min(1).max(1440).default(15),
+    /** Stages locally and writes final files directly without temp-file renames, for cloud mounts (CloudDrive2/rclone). */
+    directWrite: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
     if (value.placement !== "inPlace" && !value.outputPath) {
@@ -135,6 +137,7 @@ export const mediaLibraryDtoSchema = z.object({
   discovery: z.enum(DISCOVERY_MODES),
   cloudPath: z.string(),
   scanIntervalMinutes: z.number().int(),
+  directWrite: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -116,6 +116,7 @@ export const convertLegacyConfiguration = (raw: unknown): LegacyConfigurationCon
       automation: flag(watch.enabled, false) ? "scrape" : "off",
       discovery: "events",
       cloudPath: "",
+      directWrite: false,
       scanIntervalMinutes:
         typeof watch.intervalMinutes === "number" ? Math.min(1440, Math.max(1, Math.trunc(watch.intervalMinutes))) : 15,
     },

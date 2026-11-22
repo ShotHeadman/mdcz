@@ -4,11 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertSymlinkSupport, outputFileSystem } from "./outputFileSystem";
 import { type PublicationJournalEntry, publicationJournal } from "./publicationJournal";
+import { publicationPolicy } from "./publicationPolicy";
 import { WriteOutput } from "./WriteOutput";
 
 const directories: string[] = [];
 
 afterEach(async () => {
+  publicationPolicy.reset();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
@@ -211,6 +213,30 @@ describe("WriteOutput", () => {
         expect(original.has(source) || source.includes(".mdcz-backup-")).toBe(true);
       expect(journal.size).toBe(0);
     }
+
+    // When a cloud mount is not detected up front, EIO on a fresh-file rename falls back to direct write and latches.
+    const undetected = await mkdtemp(path.join(tmpdir(), "mdcz-write-eio-"));
+    directories.push(undetected);
+    const eioNfo = path.join(undetected, "movie.nfo");
+    const eioPoster = path.join(undetected, "poster.jpg");
+    await writeFile(eioNfo, "old nfo");
+    const logger = { warn: vi.fn() };
+    const eioRename = vi.fn(async (source: string, target: string) => {
+      if (source.endsWith(".part")) throw Object.assign(new Error("i/o error"), { code: "EIO" });
+      await outputFileSystem.rename(source, target);
+    });
+    await new WriteOutput({ ...outputFileSystem, rename: eioRename }, logger).install(
+      [
+        { targetPath: eioNfo, data: "new nfo" },
+        { targetPath: eioPoster, data: "new poster" },
+      ],
+      { commit: () => undefined },
+    );
+    await expect(readFile(eioNfo, "utf8")).resolves.toBe("new nfo");
+    await expect(readFile(eioPoster, "utf8")).resolves.toBe("new poster");
+    expect((await readdir(undetected)).sort()).toEqual(["movie.nfo", "poster.jpg"]);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(await publicationPolicy.isDirectWrite(path.join(undetected, "fanart.jpg"))).toBe(true);
   });
 
   it("rejects artifact targets that overwrite source media", async () => {
