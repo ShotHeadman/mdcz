@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { toErrorMessage } from "../shared";
+import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
 
 export type PublicationJournalEntry = { path: string; restoreTo: string | null };
@@ -31,11 +32,12 @@ export const publicationJournal = {
   },
 };
 
-/** A journaled folder inside `parent` for the assets a scrape prepares before publishing them. */
+/** A journaled folder for assets prepared before publication; redirected to local staging for direct-write outputs. */
 export const createStagingDirectory = async (parent: string): Promise<string> => {
-  const directory = path.join(parent, `.mdcz-staging-${randomUUID()}`);
+  const stagingParent = await publicationPolicy.stagingParent(parent);
+  const directory = path.join(stagingParent, `.mdcz-staging-${randomUUID()}`);
   publicationJournal.record(directory);
-  await mkdir(directory);
+  await mkdir(directory, { recursive: true });
   return directory;
 };
 
@@ -53,7 +55,7 @@ export class TemporaryPaths {
     this.#paths.add(temporaryPath);
   }
 
-  /** The file was renamed into place, so there is nothing left to remove. */
+  /** The file is in place under its final name, so there is nothing left to remove. */
   settle(temporaryPath: string): void {
     this.#paths.delete(temporaryPath);
     publicationJournal.forget(temporaryPath);

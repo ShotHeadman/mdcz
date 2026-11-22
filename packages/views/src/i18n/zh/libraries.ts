@@ -49,6 +49,8 @@ export const libraries: Messages["libraries"] = {
     cloudPathHint: "这个库的根目录在 CloudDrive2 中的路径，例如 /115/Downloads。",
     scanIntervalMinutes: "完整重扫间隔（分钟）",
     scanIntervalHint: "补上变更事件遗漏的文件，例如不发送事件的网络挂载。",
+    directWrite: "网盘直写",
+    directWriteHint: "先在本地暂存，再直接写入最终文件名，跳过在网盘挂载上容易报 EIO 的临时文件重命名。",
   },
   assetNamings: { fixed: "固定命名", followVideo: "跟随影片文件名" },
   nfoNamings: { both: "两者均生成 (movie.nfo 与 <文件名>.nfo)", movie: "仅 movie.nfo", filename: "仅 文件名.nfo" },

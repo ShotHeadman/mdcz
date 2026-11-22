@@ -4,10 +4,16 @@ import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
-import { findNamingPolicy, MediaLibraryService, PendingService } from "@mdcz/runtime/library";
+import {
+  findNamingPolicy,
+  MediaLibraryService,
+  PendingService,
+  resolveLibraryDirectWrite,
+} from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { ActorSyncFollowUp, PersonSyncLock } from "@mdcz/runtime/mediaserver";
 import { type CookieResolver, NetworkClient } from "@mdcz/runtime/network";
+import { publicationPolicy } from "@mdcz/runtime/publication";
 import { ActorImageService, applyScrapeNetworkPolicy, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { LibraryTaskGate } from "@mdcz/runtime/tasks";
@@ -107,6 +113,13 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       .warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
   });
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
+  const publicationPolicyHooks = {
+    stagingRoot: () => path.join(config.runtimePaths.dataDir, "staging"),
+    isDirectWrite: async (targetPath: string) =>
+      resolveLibraryDirectWrite(await libraries.list(), targetPath).directWrite,
+    resolveRoot: async (targetPath: string) => resolveLibraryDirectWrite(await libraries.list(), targetPath).root,
+  };
+  publicationPolicy.configure(publicationPolicyHooks);
   // libvips keeps cached WebP inputs open, and Windows refuses to rename or delete an open file, failing publication.
   sharp.cache({ files: 0 });
   const mappingStore = options.resources?.mappingStore ?? createServerTranslationMappingStore();
@@ -334,6 +347,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.addHook("onClose", async () => {
     if (closed) return;
     closed = true;
+    publicationPolicy.reset(publicationPolicyHooks);
     services.automation.close();
     services.actorSync.close();
     // An in-flight poll submits through library watch, so it ends first.

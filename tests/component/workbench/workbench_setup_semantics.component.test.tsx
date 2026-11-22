@@ -39,6 +39,7 @@ const library: MediaLibraryDto = {
   discovery: "events",
   cloudPath: "",
   scanIntervalMinutes: 15,
+  directWrite: false,
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
 };

@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MoveOutput } from "./MoveOutput";
 import { outputFileSystem } from "./outputFileSystem";
+import { publicationPolicy } from "./publicationPolicy";
 
 vi.mock("node:fs/promises", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:fs/promises")>()),
@@ -15,6 +16,7 @@ vi.mock("node:fs/promises", async (importOriginal) => ({
 const directories: string[] = [];
 
 afterEach(async () => {
+  publicationPolicy.reset();
   vi.restoreAllMocks();
   vi.mocked(fs.readlink).mockReset();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
@@ -124,6 +126,47 @@ describe("MoveOutput", () => {
     expect(commit).toHaveBeenCalledOnce();
     await expect(readFile(test.targetPath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+
+    // A direct publication copies the video straight to its final name, renaming nothing it has created.
+    const direct = await fixture();
+    const directRename = vi.fn(outputFileSystem.rename);
+    const directCopyFile = vi.fn(async () => {
+      throw Object.assign(new Error("copyfile refused"), { code: "EIO" });
+    });
+    await new MoveOutput({ ...outputFileSystem, rename: directRename, copyFile: directCopyFile }).install({
+      moves: [{ ...direct.move, transfer: "copy" }],
+      artifacts: [{ targetPath: path.join(path.dirname(direct.targetPath), "movie.nfo"), data: "<movie/>" }],
+      direct: true,
+      commit: () => undefined,
+    });
+    expect(directRename).not.toHaveBeenCalled();
+    expect(directCopyFile).not.toHaveBeenCalled();
+    await expect(readFile(direct.targetPath, "utf8")).resolves.toBe("video");
+    await expect(readFile(direct.sourcePath, "utf8")).resolves.toBe("video");
+    expect(await fs.readdir(path.dirname(direct.targetPath))).toEqual(["movie.nfo", "target.mp4"]);
+
+    // An undetected mount that returns EIO on the copied video's rename falls back to direct write for video and artifacts.
+    const fallback = await fixture();
+    const fallbackLogger = { warn: vi.fn() };
+    await new MoveOutput(
+      {
+        ...outputFileSystem,
+        rename: async (source, target) => {
+          if (source.endsWith(".part")) throw Object.assign(new Error("i/o error"), { code: "EIO" });
+          await fs.rename(source, target);
+        },
+      },
+      fallbackLogger,
+    ).install({
+      moves: [{ ...fallback.move, transfer: "copy" }],
+      artifacts: [{ targetPath: path.join(path.dirname(fallback.targetPath), "movie.nfo"), data: "<movie/>" }],
+      commit: () => undefined,
+    });
+    await expect(readFile(fallback.targetPath, "utf8")).resolves.toBe("video");
+    await expect(readFile(path.join(path.dirname(fallback.targetPath), "movie.nfo"), "utf8")).resolves.toBe("<movie/>");
+    expect((await fs.readdir(path.dirname(fallback.targetPath))).sort()).toEqual(["movie.nfo", "target.mp4"]);
+    expect(fallbackLogger.warn).toHaveBeenCalledOnce();
+    publicationPolicy.reset();
 
     const failedCleanup = await fixture();
     const logger = { warn: vi.fn() };

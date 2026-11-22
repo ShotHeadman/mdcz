@@ -69,6 +69,13 @@ it("journals temporary paths and recovers only those: staging removed, parked so
   publicationJournal.record(blocked, path.join(movie, "ABC-123-cd2.mp4"));
   await writeFile(blocked, "parked cd2");
   await writeFile(path.join(movie, "ABC-123-cd2.mp4"), "current cd2");
+  // A direct write interrupted mid-file: the truncated target goes and the original it replaced comes back.
+  const truncated = path.join(movie, "fanart.jpg");
+  const replaced = `${truncated}.mdcz-backup-${randomUUID()}`;
+  publicationJournal.record(replaced, truncated);
+  await writeFile(replaced, "original fanart");
+  publicationJournal.record(truncated);
+  await writeFile(truncated, "fan");
   const offline = path.join(root, "offline-mount", ".mdcz-staging-offline");
   publicationJournal.record(offline);
   const logger = { warn: vi.fn() };
@@ -80,6 +87,8 @@ it("journals temporary paths and recovers only those: staging removed, parked so
   await expect(readFile(path.join(movie, "ABC-123-cd1.mp4"), "utf8")).resolves.toBe("cd1");
   await expect(readFile(path.join(movie, "ABC-123-cd2.mp4"), "utf8")).resolves.toBe("current cd2");
   await expect(readFile(blocked, "utf8")).resolves.toBe("parked cd2");
+  await expect(readFile(truncated, "utf8")).resolves.toBe("original fanart");
+  expect(existsSync(replaced)).toBe(false);
   expect(logger.warn).toHaveBeenCalledOnce();
   expect(logger.warn.mock.calls[0]?.[0]).toContain(blocked);
   expect(store.list().map((entry) => entry.path)).toEqual([blocked, offline]);

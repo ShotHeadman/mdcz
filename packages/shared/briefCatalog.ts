@@ -143,6 +143,7 @@ export const BRIEF_CATALOG = {
         discovery: z.enum(DISCOVERY_MODES),
         cloudPath: text,
         scanIntervalMinutes: z.number().int().min(1).max(1440),
+        directWrite: z.boolean(),
         issue: z.enum(LIBRARY_HEALTH_ISSUES).describe("The health issue to ignore."),
       })
       .partial(),

@@ -153,6 +153,7 @@ describe("runtime config helpers", () => {
         automation: "scrape",
         discovery: "events",
         cloudPath: "",
+        directWrite: false,
         scanIntervalMinutes: 30,
       },
     });

@@ -25,6 +25,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Switch,
 } from "@mdcz/ui";
 import { FolderOpen, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
@@ -60,6 +61,7 @@ export const emptyLibrarySettings = (): MediaLibrarySettingsInput => ({
   discovery: "events",
   cloudPath: "",
   scanIntervalMinutes: 15,
+  directWrite: false,
 });
 
 export function LibraryEditorDialog({
@@ -404,7 +406,11 @@ export function LibraryEditorFields({
                 {(id) => (
                   <Select
                     value={settings.discovery ?? "events"}
-                    onValueChange={(value) => set("discovery", value as MediaLibrarySettingsInput["discovery"])}
+                    onValueChange={(value) => {
+                      const next = value as MediaLibrarySettingsInput["discovery"];
+                      if (next === "clouddrive") onChange({ discovery: next, directWrite: true });
+                      else set("discovery", next);
+                    }}
                   >
                     <SelectTrigger id={id} className="w-full">
                       <SelectValue />
@@ -451,6 +457,17 @@ export function LibraryEditorFields({
           ) : null}
         </div>
       ) : null}
+      <Field label={t.libraries.fields.directWrite} hint={t.libraries.fields.directWriteHint}>
+        {(id) => (
+          <div className="flex items-center pt-1">
+            <Switch
+              id={id}
+              checked={Boolean(settings.directWrite)}
+              onCheckedChange={(checked) => set("directWrite", checked)}
+            />
+          </div>
+        )}
+      </Field>
     </>
   );
 }

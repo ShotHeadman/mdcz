@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   copyFile,
   link,
@@ -14,6 +15,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import type { PublicationFileSystem } from "./types";
 
@@ -40,8 +42,29 @@ const retryWhileLocked = async (operation: () => Promise<void>, canRetry: () => 
   }
 };
 
+// Cloud mounts register a new file's metadata for 10-30 seconds and refuse kernel copy acceleration until then:
+// libuv's copyfile stamps times and modes on the file it creates and copies with sendfile(2), so fs.copyFile fails
+// with EIO. A plain write(2) stream never asks for either and works throughout; ENOSPC and ENOENT stay fatal.
+const KERNEL_REFUSALS = new Set(["EIO", "EINVAL", "EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"]);
+const isKernelRefusal = (error: unknown) =>
+  KERNEL_REFUSALS.has((error as NodeJS.ErrnoException | undefined)?.code ?? "");
+
+/** Copies byte by byte with write(2), the one file operation cloud mounts perform on a file they have just created. */
+export const copyFileBytes = async (source: string, target: string): Promise<void> => {
+  await pipeline(createReadStream(source), createWriteStream(target));
+};
+
+const copyFileReliably = async (source: string, target: string): Promise<void> => {
+  try {
+    await copyFile(source, target);
+  } catch (error) {
+    if (!isKernelRefusal(error)) throw error;
+    await copyFileBytes(source, target);
+  }
+};
+
 export const outputFileSystem: PublicationFileSystem = {
-  copyFile,
+  copyFile: copyFileReliably,
   link,
   symlink: async (target, path) => await symlink(target, path, "file"),
   mkdir,

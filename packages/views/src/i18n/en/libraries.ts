@@ -53,6 +53,9 @@ export const libraries = {
     cloudPathHint: "This library's root as CloudDrive2 names it, for example /115/Downloads.",
     scanIntervalMinutes: "Full rescan interval (minutes)",
     scanIntervalHint: "Catches what change events miss, such as network mounts that send none.",
+    directWrite: "Direct write (cloud mount)",
+    directWriteHint:
+      "Stages files locally and writes straight to final names, skipping temporary .part renames that fail on cloud mounts.",
   },
   assetNamings: { fixed: "Fixed names", followVideo: "Follow the video file name" } satisfies Record<
     AssetNamingMode,

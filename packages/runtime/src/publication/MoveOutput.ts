@@ -7,8 +7,9 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFile } from "../scrape/media/generatedSidecarVideos";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { PublicationConflictError } from "./conflicts";
-import { CreatedDirectories, outputFileSystem, removeEmptyDirectory } from "./outputFileSystem";
+import { CreatedDirectories, copyFileBytes, outputFileSystem, removeEmptyDirectory } from "./outputFileSystem";
 import { publicationJournal, TemporaryPaths } from "./publicationJournal";
+import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
 import { type WriteArtifact, WriteOutput } from "./WriteOutput";
 
@@ -59,6 +60,8 @@ export class MoveOutput {
     commit(): TResult | Promise<TResult>;
     protectedMediaFiles?: readonly string[];
     reorganize?: boolean;
+    /** See `WriteOutput.install`; a copied video is likewise written under its final name. */
+    direct?: boolean;
   }): Promise<TResult> {
     const fs = this.fileSystem;
     const temporaryPaths = new TemporaryPaths();
@@ -72,6 +75,8 @@ export class MoveOutput {
     if (targets.size !== input.moves.length) throw new Error("Duplicate media move target");
     const targetEntries = new Map<string, Set<string>>();
     let committed = false;
+    const probeTarget = input.moves[0]?.targetPath ?? input.artifacts[0]?.targetPath;
+    let direct = input.direct ?? (probeTarget ? await publicationPolicy.isDirectWrite(probeTarget) : false);
     const assertSource = async (move: SourceMove, sourcePath: string, observed?: Stats) => {
       const current = observed ?? (await fs.stat(sourcePath));
       if (!current.isFile() || !sameMediaFile(current, move))
@@ -154,6 +159,7 @@ export class MoveOutput {
       const value = await new WriteOutput(fs, this.logger).install(artifacts, {
         validate,
         directories,
+        direct: input.direct ?? (direct ? true : undefined),
         protectedMediaFiles: [...protectedMediaFiles, ...moves.flatMap((move) => [move.sourcePath, move.targetPath])],
         beforeCommit: async () => {
           const parkedSources = new Map<string, string>();
@@ -224,20 +230,40 @@ export class MoveOutput {
               }
             }
             if (copied) {
-              const staging = `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
-              temporaryPaths.add(staging);
-              if (move.rewrittenContent !== undefined)
-                await fs.writeFile(staging, move.rewrittenContent, { flush: true });
-              else await fs.copyFile(sourcePath, staging);
-              if (move.rewrittenContent === undefined) await fs.flush?.(staging);
               const expectedSize =
                 move.rewrittenContent === undefined ? move.size : Buffer.byteLength(move.rewrittenContent);
-              if ((await fs.stat(staging)).size !== expectedSize)
-                throw new Error(`Staged transfer size mismatch: ${move.targetPath}`);
+              const writeCopy = async (destination: string, plain: boolean): Promise<void> => {
+                if (move.rewrittenContent !== undefined)
+                  await fs.writeFile(destination, move.rewrittenContent, { flush: true });
+                else if (plain) await copyFileBytes(sourcePath, destination);
+                else await fs.copyFile(sourcePath, destination);
+                if (move.rewrittenContent === undefined) await fs.flush?.(destination);
+                if ((await fs.stat(destination)).size !== expectedSize)
+                  throw new Error(`Staged transfer size mismatch: ${move.targetPath}`);
+              };
+              const staging = direct ? move.targetPath : `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
+              temporaryPaths.add(staging);
+              await writeCopy(staging, direct);
               await assertSource(move, sourcePath);
-              await assertTarget(move, sourcePath);
-              await fs.rename(staging, move.targetPath);
-              temporaryPaths.settle(staging);
+              if (direct) {
+                temporaryPaths.settle(staging);
+              } else {
+                await assertTarget(move, sourcePath);
+                try {
+                  await fs.rename(staging, move.targetPath);
+                  temporaryPaths.settle(staging);
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code !== "EIO" || input.direct !== undefined) throw error;
+                  direct = true;
+                  const root = await publicationPolicy.markDirectWrite(move.targetPath);
+                  warn(
+                    `Fresh-file rename returned EIO on ${move.targetPath}; falling back to direct write for ${root}`,
+                  );
+                  temporaryPaths.add(move.targetPath);
+                  await writeCopy(move.targetPath, true);
+                  temporaryPaths.settle(move.targetPath);
+                }
+              }
               relocations.push({ from: sourcePath, to: move.targetPath, kind: "copied" });
               if (move.transfer === "move") retainedSources.set(sourcePath, move);
             } else {

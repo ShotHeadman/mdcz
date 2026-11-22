@@ -10,6 +10,7 @@ import {
   PLACEMENT_MODES,
 } from "@mdcz/shared/mediaLibrary";
 import { LIBRARY_HEALTH_ISSUES, type LibraryHealthIssue } from "@mdcz/shared/serverDtos";
+import { Switch } from "@mdcz/ui";
 import { useState } from "react";
 import { useT } from "../i18n";
 import { emptyLibrarySettings, Field, LibraryEditorFields, NamingPreview } from "../libraries/LibraryEditorDialog";
@@ -244,6 +245,14 @@ function UpdateLibrary({ cell, libraries, port, onChange, onConfirmed }: BriefCa
                   options={choiceOptions(t, "library", key, CHOICES[key] ?? [])}
                   onChange={(value) => onChange({ [key]: value }, [key])}
                 />
+              ) : key === "directWrite" ? (
+                <div className="flex items-center pt-1">
+                  <Switch
+                    id={id}
+                    checked={Boolean(params[key])}
+                    onCheckedChange={(checked) => onChange({ directWrite: checked }, ["directWrite"])}
+                  />
+                </div>
               ) : (
                 <TextValue
                   id={id}

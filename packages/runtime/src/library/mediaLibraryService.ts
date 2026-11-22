@@ -56,6 +56,25 @@ export const toPublicationTarget = (record: MediaLibraryRecord): PublicationTarg
   };
 };
 
+/** The effective output root of the library that most closely owns `hostPath`, and whether direct write is enabled. */
+export const resolveLibraryDirectWrite = (
+  records: readonly Pick<MediaLibraryRecord, "placement" | "sourcePath" | "outputPath" | "directWrite">[],
+  hostPath: string,
+): { directWrite: boolean; root?: string } => {
+  const owners = records
+    .map((record) => ({
+      record,
+      root: record.placement === "inPlace" ? record.sourcePath : record.outputPath,
+    }))
+    .filter(({ root }) => root && isPathInside(root, hostPath))
+    .map(({ record, root }) => ({ record, root, depth: path.resolve(root).length }));
+  if (!owners.length) return { directWrite: false };
+  const depth = Math.max(...owners.map((owner) => owner.depth));
+  const closest = owners.filter((owner) => owner.depth === depth);
+  const direct = closest.find(({ record }) => record.directWrite);
+  return { directWrite: Boolean(direct), root: (direct ?? closest[0]).root };
+};
+
 /**
  * The naming policy of the library a movie at `hostPath` belongs to: the one whose source or output directory most
  * closely contains it. Libraries may share an output directory; at the same depth they must name movies alike, or the

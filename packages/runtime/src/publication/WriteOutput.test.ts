@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertSymlinkSupport, outputFileSystem } from "./outputFileSystem";
+import { type PublicationJournalEntry, publicationJournal } from "./publicationJournal";
+import { publicationPolicy } from "./publicationPolicy";
 import { WriteOutput } from "./WriteOutput";
 
 const directories: string[] = [];
 
 afterEach(async () => {
+  publicationPolicy.reset();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
@@ -145,6 +148,96 @@ describe("WriteOutput", () => {
       expect(await readdir(directory)).toEqual([]);
     },
   );
+
+  it("writes targets under their final names when direct, renaming no file it has created", async () => {
+    const journal = new Map<string, PublicationJournalEntry>();
+    publicationJournal.attach({
+      record: (entry) => void journal.set(entry.path, entry),
+      forget: (entryPath) => void journal.delete(entryPath),
+      list: () => [...journal.values()],
+    });
+    for (const failure of [undefined, "write", "commit"] as const) {
+      const library = await mkdtemp(path.join(tmpdir(), "mdcz-write-output-"));
+      const staging = await mkdtemp(path.join(tmpdir(), "mdcz-write-staging-"));
+      directories.push(library, staging);
+      const nfo = path.join(library, "movie.nfo");
+      const poster = path.join(library, "poster.jpg");
+      const thumb = path.join(library, "extra", "thumb.jpg");
+      const downloaded = path.join(staging, "poster.jpg");
+      await writeFile(nfo, "old nfo");
+      await writeFile(poster, "old poster");
+      await writeFile(downloaded, "new poster");
+      const original = new Set([nfo, poster]);
+      const rename = vi.fn(outputFileSystem.rename);
+      const copyFile = vi.fn(async () => {
+        throw Object.assign(new Error("copyfile refused"), { code: "EIO" });
+      });
+      const install = new WriteOutput({
+        ...outputFileSystem,
+        rename,
+        copyFile,
+        writeFile: async (target, data, options) => {
+          if (failure === "write" && target === thumb) {
+            await outputFileSystem.writeFile(target, "tr");
+            throw Object.assign(new Error("i/o error"), { code: "EIO" });
+          }
+          await outputFileSystem.writeFile(target, data, options);
+        },
+      }).install(
+        [
+          { targetPath: nfo, data: "new nfo" },
+          { targetPath: poster, sourcePath: downloaded, size: 10, consume: true },
+          { targetPath: thumb, data: "new thumb" },
+        ],
+        {
+          direct: true,
+          commit: () => {
+            if (failure === "commit") throw new Error("commit failed");
+          },
+        },
+      );
+      if (failure) await expect(install).rejects.toThrow(failure === "write" ? "i/o error" : "commit failed");
+      else await install;
+
+      await expect(readFile(nfo, "utf8")).resolves.toBe(failure ? "old nfo" : "new nfo");
+      await expect(readFile(poster, "utf8")).resolves.toBe(failure ? "old poster" : "new poster");
+      if (failure) expect(await readdir(library)).toEqual(["movie.nfo", "poster.jpg"]);
+      else await expect(readFile(thumb, "utf8")).resolves.toBe("new thumb");
+      expect((await readdir(library, { recursive: true })).some((name) => name.includes(".mdcz-"))).toBe(false);
+      expect(await readdir(staging)).toEqual([]);
+      // Cloud mounts refuse the kernel's copy of a fresh file, so a direct write copies bytes itself.
+      expect(copyFile).not.toHaveBeenCalled();
+      // Only files that were there before the publication are ever renamed: aside, and back when it fails.
+      expect(rename.mock.calls.length).toBe(failure ? 4 : 2);
+      for (const [source] of rename.mock.calls)
+        expect(original.has(source) || source.includes(".mdcz-backup-")).toBe(true);
+      expect(journal.size).toBe(0);
+    }
+
+    // When a cloud mount is not detected up front, EIO on a fresh-file rename falls back to direct write and latches.
+    const undetected = await mkdtemp(path.join(tmpdir(), "mdcz-write-eio-"));
+    directories.push(undetected);
+    const eioNfo = path.join(undetected, "movie.nfo");
+    const eioPoster = path.join(undetected, "poster.jpg");
+    await writeFile(eioNfo, "old nfo");
+    const logger = { warn: vi.fn() };
+    const eioRename = vi.fn(async (source: string, target: string) => {
+      if (source.endsWith(".part")) throw Object.assign(new Error("i/o error"), { code: "EIO" });
+      await outputFileSystem.rename(source, target);
+    });
+    await new WriteOutput({ ...outputFileSystem, rename: eioRename }, logger).install(
+      [
+        { targetPath: eioNfo, data: "new nfo" },
+        { targetPath: eioPoster, data: "new poster" },
+      ],
+      { commit: () => undefined },
+    );
+    await expect(readFile(eioNfo, "utf8")).resolves.toBe("new nfo");
+    await expect(readFile(eioPoster, "utf8")).resolves.toBe("new poster");
+    expect((await readdir(undetected)).sort()).toEqual(["movie.nfo", "poster.jpg"]);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(await publicationPolicy.isDirectWrite(path.join(undetected, "fanart.jpg"))).toBe(true);
+  });
 
   it("rejects artifact targets that overwrite source media", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "mdcz-write-output-"));
