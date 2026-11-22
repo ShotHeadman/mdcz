@@ -91,6 +91,8 @@ export interface BatchNfoTranslatorWorkspaceDetailProps {
   ) => Promise<BatchTranslateApplyResultItem[]>;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
   onScan: (directory: string, mode: BatchTranslateMode) => Promise<BatchTranslateScanItem[]>;
+  /** The form Brief opened the tool with; each new key fills it in once. */
+  prefill?: { key: string; directory?: string; mode?: BatchTranslateMode };
 }
 
 const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus): string => {
@@ -112,6 +114,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
   onApply,
   onBrowseDirectory,
   onScan,
+  prefill,
 }: BatchNfoTranslatorWorkspaceDetailProps) {
   const t = useT();
   const [directory, setDirectory] = useState(readStoredBatchTranslateDirectory);
@@ -133,6 +136,13 @@ export function BatchNfoTranslatorWorkspaceDetail({
   } | null>(null);
   const [results, setResults] = useState<BatchTranslateApplyResultItem[]>([]);
   const [itemStatusByPath, setItemStatusByPath] = useState<Record<string, BatchTranslateItemApplyStatus>>({});
+  // A translation already running keeps its form; the tool stays mounted while the user is elsewhere.
+  const [prefillKey, setPrefillKey] = useState<string>();
+  if (prefill && prefill.key !== prefillKey && !applying) {
+    setPrefillKey(prefill.key);
+    if (prefill.directory) setDirectory(prefill.directory);
+    if (prefill.mode) setMode(prefill.mode);
+  }
   const previewRows = items.slice(0, 300);
   const resultByPath = useMemo(() => new Map(results.map((result) => [result.filePath, result])), [results]);
   const pendingFieldCount = useMemo(() => items.reduce((sum, item) => sum + item.pendingFields.length, 0), [items]);

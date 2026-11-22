@@ -1,13 +1,28 @@
+import { createHash, randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
+import { MaintenanceRuntime, type MaintenanceRuntimeDependencies, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { AggregationService } from "@mdcz/runtime/scrape";
-import { DownloadManager, FileOrganizer, MemoryImageHostCooldownStore, NfoGenerator } from "@mdcz/runtime/scrape";
+import {
+  DownloadManager,
+  FileOrganizer,
+  listPosterBadgeDefinitions,
+  MemoryImageHostCooldownStore,
+  NfoGenerator,
+  PosterWatermarkService,
+} from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
-import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
+import {
+  normalizedCropToPixels,
+  type PixelCropRegion,
+  resolvePosterEditorCropRegion,
+  resolveThumbToPosterCropRegion,
+} from "@mdcz/shared/posterCrop";
+import type { CrawlerData, MaintenancePresetId, PosterCut, PosterRebuild } from "@mdcz/shared/types";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeTestServers,
@@ -17,6 +32,7 @@ import {
   createTestPngBytes,
   createTestServer,
   loginAsAdmin,
+  startLocalHttpServer,
   startTestImageServer,
 } from "./app.testSupport";
 import type { ServerConfigService } from "./services/configService";
@@ -83,10 +99,14 @@ const waitForMaintenanceSession = async (
 ): Promise<MaintenanceActiveSessionSnapshot> => {
   let session: MaintenanceActiveSessionSnapshot | null = null;
   await expect
-    .poll(async () => {
-      session = await readMaintenanceSession(fastify, token);
-      return session?.id === sessionId ? session : null;
-    })
+    .poll(
+      async () => {
+        session = await readMaintenanceSession(fastify, token);
+        return session?.id === sessionId ? session : null;
+      },
+      // Rebuilding posters draws badges on every movie of a batch.
+      { timeout: 10_000 },
+    )
     .toMatchObject({ phase, status });
   if (!session) throw new Error(`Maintenance session disappeared: ${sessionId}`);
   return session;
@@ -288,6 +308,187 @@ describe("buildServer maintenance integration", () => {
     await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
     expect(await readFile(join(root, "ABC-500.nfo"), "utf8")).toContain("<title>Official Title</title>");
     expect(crawl).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds out-of-date poster badges the way each poster was made, keeping posters MDCz can't tell are its own", async () => {
+    const root = await createTempRoot("maintenance-badges-root");
+    const solid = async (width: number, height: number, color: { r: number; g: number; b: number }) =>
+      await sharp({ create: { width, height, channels: 3, background: color } })
+        .jpeg()
+        .toBuffer();
+    const noise = async (width: number, height: number) =>
+      await sharp(randomBytes(width * height * 3), { raw: { width, height, channels: 3 } })
+        .jpeg({ quality: 95 })
+        .toBuffer();
+    const cover = await sharp(await solid(800, 538, { r: 30, g: 90, b: 160 }))
+      .composite([{ input: await solid(400, 538, { r: 220, g: 200, b: 40 }), left: 400, top: 0 }])
+      .jpeg()
+      .toBuffer();
+    // Large enough that the scrape's rule keeps a site poster instead of cropping the cover.
+    const sitePoster = await noise(400, 600);
+    const amazonImage = await noise(600, 800);
+    const images = await startLocalHttpServer((request, response) => {
+      const body = { "/site.jpg": sitePoster, "/amazon.jpg": amazonImage }[request.url ?? ""];
+      if (!body) {
+        response.writeHead(404).end();
+        return;
+      }
+      // Size probes read the head of an image through a ranged request.
+      const range = /^bytes=0-(\d+)$/u.exec(request.headers.range ?? "");
+      response.writeHead(range ? 206 : 200, { "content-type": "image/jpeg" });
+      response.end(range ? body.subarray(0, Number(range[1]) + 1) : body);
+    });
+    const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+    const fromSite = { poster_source_url: `${images.url}/site.jpg`, thumb_source_url: `${images.url}/cover.jpg` };
+    const amazonCut = { source: `${images.url}/amazon.jpg`, crop: resolvePosterEditorCropRegion(600, 800) };
+    const coverCut = { source: "cover", crop: { x: 0, y: 0, width: (538 * 2) / 3 / 800, height: 1 } };
+    const cutOf = (image: Buffer, crop: PixelCropRegion | null) =>
+      (crop ? sharp(image).extract(crop) : sharp(image)).jpeg({ quality: 95, chromaSubsampling: "4:4:4" }).toBuffer();
+    const blank = await solid(200, 300, { r: 0, g: 0, b: 0 });
+    const rows: Array<{
+      name: string;
+      sources?: Pick<CrawlerData, "poster_source_url" | "thumb_source_url">;
+      poster: Buffer;
+      record?: "own" | "changed";
+      cut?: PosterCut;
+      preview: PosterRebuild;
+      plain?: Buffer;
+    }> = [
+      {
+        name: "a cover cut",
+        poster: blank,
+        record: "own",
+        preview: "redraw",
+        plain: await cutOf(cover, resolveThumbToPosterCropRegion(800, 538)),
+      },
+      { name: "a site poster", sources: fromSite, poster: blank, record: "own", preview: "redraw", plain: sitePoster },
+      {
+        name: "an Amazon URL with a crop",
+        poster: blank,
+        record: "own",
+        cut: amazonCut,
+        preview: "redraw",
+        plain: await cutOf(amazonImage, normalizedCropToPixels(amazonCut.crop, 600, 800)),
+      },
+      {
+        name: "the cover with a crop",
+        poster: blank,
+        record: "own",
+        cut: coverCut,
+        preview: "redraw",
+        plain: await cutOf(cover, normalizedCropToPixels(coverCut.crop, 800, 538)),
+      },
+      { name: "a file changed after MDCz wrote it", poster: blank, record: "changed", preview: "kept" },
+      {
+        name: "no record and the same size",
+        sources: fromSite,
+        poster: await solid(400, 600, { r: 0, g: 0, b: 0 }),
+        preview: "redraw",
+        plain: sitePoster,
+      },
+      { name: "no record and another size", poster: blank, preview: "kept" },
+      {
+        name: "an unreachable source",
+        poster: blank,
+        record: "own",
+        cut: { ...amazonCut, source: `${images.url}/gone.jpg` },
+        preview: "redraw",
+      },
+    ];
+    const numbered = rows.map((row, index) => ({ ...row, number: `ABC-${601 + index}` }));
+    for (const row of numbered) {
+      const directory = join(root, row.number);
+      await mkdir(directory);
+      await writeFile(join(directory, `${row.number}.mp4`), "video");
+      await writeFile(join(directory, "thumb.jpg"), cover);
+      await writeFile(join(directory, "poster.jpg"), row.poster);
+      const record = row.record && {
+        stamp: "",
+        sha256: sha256(row.record === "own" ? row.poster : Buffer.from("changed")),
+        cut: row.cut,
+      };
+      await writeFile(
+        join(directory, `${row.number}.nfo`),
+        new NfoGenerator().buildXml(
+          {
+            title: row.number,
+            number: row.number,
+            actors: [],
+            genres: [],
+            scene_images: [],
+            website: Website.JAVDB,
+            ...row.sources,
+          },
+          { localState: { posterRecord: record } },
+        ),
+      );
+    }
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const library = await createTestLibrary(fastify, token, root);
+    for (const { number } of numbered)
+      (await services.persistence.getState()).repositories.siteResults.record(number, [
+        {
+          site: Website.JAVDB,
+          status: "success",
+          elapsedMs: 1,
+          data: { number, title: number, actors: [], genres: [], scene_images: [], website: Website.JAVDB },
+        },
+      ]);
+    await services.config.update({
+      translate: { enableTranslation: false },
+      download: { tagBadges: true, tagBadgeTypes: ["censored"] },
+    });
+    const preview = async () => {
+      const previewed = await startMaintenancePreview(
+        fastify,
+        token,
+        library,
+        "remerge",
+        numbered.map(({ number }) => `${number}/${number}.mp4`),
+      );
+      const posters = numbered.map(
+        ({ number }) => previewed.session.previews.find((item) => item.relativePath.startsWith(`${number}/`))?.poster,
+      );
+      return { ...previewed, posters };
+    };
+
+    const first = await preview();
+    expect(first.posters).toEqual(numbered.map((row) => row.preview));
+    const applied = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sessionId: first.sessionId },
+    });
+    expect(applied.statusCode, applied.body).toBe(200);
+    await waitForMaintenanceSession(fastify, token, first.sessionId, "apply", "completed");
+
+    for (const row of numbered) {
+      const posterPath = join(root, row.number, "poster.jpg");
+      const poster = await readFile(posterPath);
+      const record = parseNfoSnapshot(await readFile(join(root, row.number, `${row.number}.nfo`), "utf8")).localState
+        ?.posterRecord;
+      if (!row.plain) {
+        expect(poster, row.name).toEqual(row.poster);
+        expect(record?.stamp, row.name).toBe(row.record ? "" : undefined);
+        continue;
+      }
+      const expectedPath = join(root, row.number, "expected.jpg");
+      await writeFile(expectedPath, row.plain);
+      await new PosterWatermarkService({ dataDir: root }).applyTagBadges(
+        expectedPath,
+        listPosterBadgeDefinitions(["censored"]),
+        { position: "topLeft", sizePercent: 100, insetPercent: 3, opacity: 100 },
+      );
+      expect(await sharp(posterPath).raw().toBuffer(), row.name).toEqual(await sharp(expectedPath).raw().toBuffer());
+      expect(record?.sha256, row.name).toBe(sha256(poster));
+      expect(record?.cut, row.name).toEqual(row.cut);
+    }
+
+    // A rebuild writes a record, so it happens once; a poster MDCz can't vouch for stays kept.
+    const second = await preview();
+    expect(second.posters).toEqual(numbered.map((row) => (row.plain ? undefined : row.preview)));
   });
 
   it("pauses and resumes previews through HTTP, refusing scrapes while one is live", async () => {

@@ -1,4 +1,4 @@
-import type { Configuration } from "@mdcz/shared/config";
+import type { LlmSettings } from "@mdcz/shared/config";
 import {
   DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,
@@ -6,7 +6,8 @@ import {
   type LlmReasoning,
   type LlmServiceType,
 } from "@mdcz/shared/llm";
-import { toErrorMessage } from "../../../shared";
+import type { RuntimeNetworkClient, RuntimeRequestInit } from "../network";
+import { toErrorMessage } from "../shared";
 
 type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
 
@@ -46,35 +47,22 @@ export interface LlmJsonSchema {
   schema: Record<string, unknown>;
 }
 
-export type LlmRequestConfig = Pick<
-  Configuration["translate"],
-  | "llmModelName"
-  | "llmApiKey"
-  | "llmBaseUrl"
-  | "llmApiFormat"
-  | "llmTemperature"
-  | "llmReasoning"
-  | "llmServiceType"
-  | "llmOutputFormat"
-  | "llmTimeout"
->;
-
 export const toLlmTextRequest = (
-  config: LlmRequestConfig,
+  settings: LlmSettings,
   prompt: string,
   outputSchema?: LlmJsonSchema,
 ): LlmTextRequest => ({
-  model: config.llmModelName,
-  apiKey: config.llmApiKey,
-  baseUrl: config.llmBaseUrl,
-  apiFormat: config.llmApiFormat,
-  temperature: config.llmTemperature ?? undefined,
+  model: settings.modelName,
+  apiKey: settings.apiKey,
+  baseUrl: settings.baseUrl,
+  apiFormat: settings.apiFormat,
+  temperature: settings.temperature ?? undefined,
   prompt,
-  reasoning: config.llmReasoning,
-  serviceType: config.llmServiceType,
-  outputFormat: config.llmOutputFormat,
+  reasoning: settings.reasoning,
+  serviceType: settings.serviceType,
+  outputFormat: settings.outputFormat,
   outputSchema,
-  timeout: Math.max(1, Math.trunc(config.llmTimeout)) * 1000,
+  timeout: Math.max(1, Math.trunc(settings.timeout)) * 1000,
 });
 
 interface ResponsesApiResponse {
@@ -136,6 +124,14 @@ export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>
 
 export const isMissingRequiredLlmApiKey = (baseUrl: string, apiKey: string): boolean =>
   isOfficialOpenAiBaseUrl(baseUrl) && apiKey.trim().length === 0;
+
+/** Null when the settings can make a request; otherwise what is missing. */
+export const missingLlmSetting = (settings: LlmSettings): "missing_model" | "missing_credentials" | null =>
+  !settings.modelName.trim()
+    ? "missing_model"
+    : isMissingRequiredLlmApiKey(settings.baseUrl, settings.apiKey)
+      ? "missing_credentials"
+      : null;
 
 class FetchLlmApiTransport implements LlmApiTransport {
   async postJsonDetailed<TResponse>(
@@ -209,6 +205,16 @@ class FetchLlmApiTransport implements LlmApiTransport {
     };
   }
 }
+
+/** Sends requests through the app's network client, so they follow its proxy. */
+export const createLlmApiClient = (networkClient: RuntimeNetworkClient): LlmApiClient => {
+  const postJsonDetailed = networkClient.postJsonDetailed;
+  if (typeof postJsonDetailed !== "function") return new LlmApiClient();
+  return new LlmApiClient({
+    postJsonDetailed: async <TResponse>(url: string, payload: unknown, init?: RuntimeRequestInit) =>
+      (await postJsonDetailed.call(networkClient, url, payload, init)) as RuntimeNetworkJsonResponse<TResponse>,
+  });
+};
 
 export class LlmApiClient {
   constructor(private readonly transport: LlmApiTransport = new FetchLlmApiTransport()) {}

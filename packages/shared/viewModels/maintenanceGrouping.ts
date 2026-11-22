@@ -1,4 +1,10 @@
-import type { LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem, PathDiff } from "@mdcz/shared/types";
+import type {
+  LocalScanEntry,
+  MaintenanceItemResult,
+  MaintenancePreviewItem,
+  PathDiff,
+  PosterRebuild,
+} from "@mdcz/shared/types";
 import { buildRendererGroups, findRendererGroup, type RendererGroup } from "./rendererGroupModel";
 
 export interface MaintenanceEntryGroup extends RendererGroup<LocalScanEntry> {
@@ -41,6 +47,7 @@ interface MaintenanceGroupPreviewState {
   hasPathChange: boolean;
   hasPreview: boolean;
   ready: boolean;
+  poster?: PosterRebuild;
 }
 
 export interface MaintenanceEntryGroupViewModel extends MaintenanceEntryGroup {
@@ -240,6 +247,8 @@ const buildPreviewState = (
     diffCount: Math.max(0, ...group.previewItems.map((preview) => preview.fieldDiffs?.length ?? 0)),
     changedPathItems,
     hasPathChange: changedPathItems.length > 0,
+    // The parts of a movie share its poster, so they agree.
+    poster: group.previewItems.find((preview) => preview.poster)?.poster,
   };
 };
 

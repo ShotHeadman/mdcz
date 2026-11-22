@@ -105,7 +105,7 @@ export class ActorImageFileStore {
       return manualImagePath;
     }
 
-    if (!options.expectedRemoteUrl) {
+    if (!options.expectedRemoteUrl && !usesLocalActorImageSource(configuration)) {
       return undefined;
     }
 

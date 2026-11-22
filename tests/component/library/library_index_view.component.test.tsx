@@ -107,12 +107,16 @@ test("a health filter offers to ignore its movies, and the ignored view only res
     },
     ignored: false,
     view: "list",
+    sortBy: "createdAt",
+    sortOrder: "desc",
     onLibraryChange: vi.fn(),
     onHealthChange: vi.fn(),
     onIgnoredChange: vi.fn(),
     onFacetChange: vi.fn(),
     onClear: vi.fn(),
     onViewChange: vi.fn(),
+    onSortByChange: vi.fn(),
+    onSortOrderChange: vi.fn(),
     onFix: vi.fn(async () => undefined),
     onIgnore: vi.fn(async () => undefined),
     onRestore: vi.fn(async () => undefined),
@@ -126,6 +130,8 @@ test("a health filter offers to ignore its movies, and the ignored view only res
   const restore = screen.getByRole("button", { name: "取消忽略 3 部", exact: true });
 
   await expect.element(refresh).toBeVisible();
+  await screen.getByRole("button", { name: "降序" }).click();
+  expect(browse.onSortOrderChange).toHaveBeenCalledWith("asc");
   await ignore.click();
   expect(browse.onIgnore).toHaveBeenCalledWith("missingSynopsis");
 

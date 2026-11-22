@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { assertFoldersHoldNoOtherMovie } from "@mdcz/runtime/publication";
-import { type AggregationResult, PosterWatermarkService } from "@mdcz/runtime/scrape";
+import { type AggregationResult, listPosterBadgeDefinitions, PosterWatermarkService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
@@ -1019,7 +1019,14 @@ describe("buildServer scrape integration", () => {
     const root = await createTempRoot("ambiguous-uncensored-root");
     const names = scenario === "single" ? ["ABP-999-U.mp4"] : ["ABP-999-U-CD1.mp4", "ABP-999-U-CD2.mp4"];
     for (const name of names) await writeFile(join(root, name), "video");
-    const imageServer = await startTestImageServer();
+    const imageServer = await startTestImageServer(
+      Buffer.concat([
+        await sharp({ create: { width: 400, height: 600, channels: 3, background: { r: 240, g: 240, b: 240 } } })
+          .png()
+          .toBuffer(),
+        Buffer.alloc(9000),
+      ]),
+    );
     let aggregateCount = 0;
     const aggregation = createAmbiguousUncensoredAggregation(`${imageServer.url}/image.png`);
     const { fastify, services } = await createTestServer({
@@ -1034,6 +1041,7 @@ describe("buildServer scrape integration", () => {
     const token = await loginAsAdmin(fastify);
     const headers = { authorization: `Bearer ${token}` };
     const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
+    await services.config.update({ download: { tagBadges: true, tagBadgeTypes: ["uncensored", "leak"] } });
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.start",
@@ -1110,6 +1118,21 @@ describe("buildServer scrape integration", () => {
     }
     const previousEntries = await readdir(join(root, previousDirectory)).catch(() => [] as string[]);
     expect(previousEntries.some((name) => name.endsWith(".nfo"))).toBe(false);
+    // The scrape badged the poster 无码; the confirmed type redraws it from the cover instead of stamping over it.
+    const expectedPoster = join(root, "expected-poster.png");
+    await sharp(join(root, confirmedDirectory, "thumb.png"))
+      .rotate()
+      .png()
+      .toFile(expectedPoster);
+    await new PosterWatermarkService({ dataDir: root }).applyTagBadges(
+      expectedPoster,
+      listPosterBadgeDefinitions(["leak"]),
+      { insetPercent: defaultConfiguration.download.tagBadgeInsetPercent },
+    );
+    const [posterPixels, expectedPixels] = await Promise.all(
+      [join(root, confirmedDirectory, "poster.png"), expectedPoster].map((path) => sharp(path).raw().toBuffer()),
+    );
+    expect(posterPixels).toEqual(expectedPixels);
     expect(await pendingItems()).toEqual([]);
     expect((await confirm()).statusCode).not.toBe(200);
     expect(aggregateCount).toBe(1);

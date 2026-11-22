@@ -17,15 +17,23 @@ const getToolStorage = (): Pick<Storage, "getItem" | "setItem" | "removeItem"> =
 
 export interface ToolsRouteViewProps {
   tools: ToolDefinition[];
+  /** A tool a link opened, such as a Brief card; each new key selects it once. */
+  request?: { toolId: ToolId; key: string };
   renderDetail: (toolId: ToolId) => ReactNode;
 }
 
-export function ToolsRouteView({ tools, renderDetail }: ToolsRouteViewProps) {
+export function ToolsRouteView({ tools, request, renderDetail }: ToolsRouteViewProps) {
   const pageScrollRef = useRef<HTMLDivElement>(null);
   const [selectedToolId, setSelectedToolId] = useState<ToolId | null>(() => {
     const storedToolId = getToolStorage().getItem(SELECTED_TOOL_STORAGE_KEY);
     return tools.some((tool) => tool.id === storedToolId) ? (storedToolId as ToolId) : null;
   });
+  const [requestKey, setRequestKey] = useState<string>();
+  if (request && request.key !== requestKey) {
+    setRequestKey(request.key);
+    setSelectedToolId(request.toolId);
+    getToolStorage().setItem(SELECTED_TOOL_STORAGE_KEY, request.toolId);
+  }
 
   const setSelectedTool = (toolId: ToolId | null) => {
     setSelectedToolId(toolId);

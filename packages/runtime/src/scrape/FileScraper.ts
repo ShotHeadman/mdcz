@@ -514,6 +514,11 @@ export class FileScraper {
       stagingDir = directory;
       const metadataOutputDir = plan.metadataDir;
       let crawlerData = prepared.crawlerData;
+      if (!crawlerData.website) throw new Error("Scrape crawler website not initialized");
+      signalService.showScrapeStep("download");
+      if (configuration.personSync.downloadActorPhotos && crawlerData.actors.length > 0) {
+        signalService.showLogText(`[${fileInfo.number}] Resolving actor profiles (${crawlerData.actors.length})...`);
+      }
       const actorOutput = await prepareOutputCrawlerData({
         actorImageService: this.deps.actorImageService,
         actorSourceProvider: this.deps.actorSourceProvider,
@@ -526,8 +531,6 @@ export class FileScraper {
       crawlerData = actorOutput.data ?? crawlerData;
       throwIfAborted(signal);
       this.setProgress(progress, 60);
-      if (!crawlerData.website) throw new Error("Scrape crawler website not initialized");
-      signalService.showScrapeStep("download");
       const downloaded = await downloadCrawlerAssets({
         config: configuration,
         naming,

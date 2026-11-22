@@ -1,5 +1,6 @@
 import type { Messages } from "../en";
 import { about } from "./about";
+import { brief } from "./brief";
 import { common } from "./common";
 import { configForm } from "./configForm";
 import { detail } from "./detail";
@@ -25,6 +26,7 @@ import { workbench } from "./workbench";
 export const zh: Messages = {
   common,
   shell,
+  brief,
   domain,
   settingsFields,
   toolCatalog,

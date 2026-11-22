@@ -60,6 +60,10 @@ export class ScanQueueService {
     private readonly config: ServerConfigService,
   ) {}
 
+  get busy(): boolean {
+    return this.activeScan !== null || this.queuedTaskIds.length > 0;
+  }
+
   async start(rootId: string): Promise<ScanTaskDto> {
     this.assertAdmittable();
     await this.mediaRoots.get(rootId);

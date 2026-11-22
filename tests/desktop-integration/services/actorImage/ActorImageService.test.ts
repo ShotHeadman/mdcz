@@ -265,14 +265,18 @@ describe("ActorImageService", () => {
       actorProfiles: [{ name: "Actor D", photo_url: "https://img.example.com/actor-d.png" }],
     });
 
+    const actorSourceProvider = {
+      lookup: vi.fn(),
+    } as unknown as ActorSourceProvider;
     const profiles = await service.prepareActorProfilesForMovie(createConfig(secondRoot), {
       movieDir: join(secondRoot, "Movie"),
       actors: ["Actor D"],
-      actorProfiles: [{ name: "Actor D", photo_url: "https://img.example.com/actor-d.png" }],
+      actorSourceProvider,
     });
 
     expect(profiles).toEqual([{ name: "Actor D", photo_url: ".actors/Actor D.png" }]);
     expect(await readFile(join(secondRoot, "Movie", ".actors", "Actor D.png"))).toEqual(validPngBytes);
     expect(networkClient.getContent).toHaveBeenCalledTimes(1);
+    expect(actorSourceProvider.lookup).not.toHaveBeenCalled();
   });
 });

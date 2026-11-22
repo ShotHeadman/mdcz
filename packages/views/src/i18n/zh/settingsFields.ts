@@ -7,6 +7,7 @@ export const settingsFields: Messages["settingsFields"] = {
     scrape: { label: "刮削设置" },
     network: { label: "网络连接" },
     translate: { label: "翻译服务" },
+    llm: { label: "AI 模型", aliases: ["ai", "llm", "模型", "指令", "助手"] },
     naming: { label: "命名规则" },
     download: { label: "下载选项" },
     mediaServer: { label: "媒体服务器", aliases: ["媒体服务器", "Jellyfin", "Emby", "人物", "演员"] },
@@ -69,7 +70,7 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "scrape.aiNumberFallback": {
       label: "AI 兜底识别番号",
-      description: "所有站点均未找到番号时，由翻译配置的 LLM 从文件名重新提取（仅采纳文件名中真实包含的番号）。",
+      description: "所有站点均未找到番号时，由 AI 模型从文件名重新提取（仅采纳文件名中真实包含的番号）。",
       aliases: ["ai", "llm"],
     },
     "scrape.filenameBlacklistTokens": {
@@ -220,7 +221,8 @@ export const settingsFields: Messages["settingsFields"] = {
     "download.downloadPoster": { label: "下载海报" },
     "download.tagBadges": {
       label: "为封面添加标签角标",
-      description: "按现有影片标签自动添加角标；可配置启用类型与角落位置，仅处理本次新下载的海报。",
+      description:
+        "按现有影片标签自动添加角标；可配置启用类型与角落位置。标签或角标设置变化后，维护写入（重新合并、原地更新、本地整理）会为保留的海报重绘角标。",
       aliases: ["角标", "标签角标"],
     },
     "download.tagBadgeTypes": {
@@ -371,32 +373,43 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["翻译范围", "只翻译简介"],
     },
     "translate.engine": { label: "翻译引擎", aliases: ["翻译引擎"] },
-    "translate.llmModelName": { label: "LLM 模型名称" },
-    "translate.llmApiKey": {
-      label: "LLM 密钥（可选）",
+    "llm.modelName": { label: "模型名称", aliases: ["模型", "llm"] },
+    "llm.brief": {
+      label: "指令",
+      description:
+        "用自己的话描述任务，核对 MDCz 准备好的卡片后确认执行。开启前会先检查此模型能否起草任务。描述、库名称和库路径会发送给此模型。",
+      aliases: ["助手", "指令", "提示"],
+    },
+    "llm.briefSendKey": {
+      label: "指令发送键",
+      description: "另一种组合键用于在输入框中换行。",
+      aliases: ["回车", "发送", "快捷键", "换行", "enter", "ctrl", "cmd"],
+    },
+    "llm.apiKey": {
+      label: "密钥（可选）",
       description: "默认 OpenAI 地址通常必须填写；本地或兼容服务是否需要密钥取决于服务端配置",
       aliases: ["密钥"],
     },
-    "translate.llmBaseUrl": {
-      label: "LLM API 地址",
+    "llm.baseUrl": {
+      label: "API 地址",
       description: `默认值：${DEFAULT_LLM_BASE_URL}。Google Gemini 示例：https://generativelanguage.googleapis.com/v1beta/openai。本地示例：Ollama 用 http://127.0.0.1:11434/v1`,
       aliases: ["api 地址"],
     },
-    "translate.llmApiFormat": { label: "请求形式" },
-    "translate.llmServiceType": {
+    "llm.apiFormat": { label: "请求形式" },
+    "llm.serviceType": {
       label: "服务类型",
       description: "自定义代理需要显式选择 Google 或 DeepSeek；不要依赖网址域名识别。",
     },
     "translate.llmPrompt": { label: "LLM 翻译提示词", aliases: ["提示词"] },
-    "translate.llmTemperature": { label: "LLM 温度（高级，可选）", description: "留空时使用服务端默认值。" },
-    "translate.llmReasoning": { label: "LLM 推理强度", aliases: ["思考", "推理强度"] },
-    "translate.llmOutputFormat": {
+    "llm.temperature": { label: "温度（高级，可选）", description: "留空时使用服务端默认值。" },
+    "llm.reasoning": { label: "推理强度", aliases: ["思考", "推理强度", "llm"] },
+    "llm.outputFormat": {
       label: "输出格式",
       description: "提示词 JSON 省略结构化输出参数；元数据翻译始终要求 JSON 并在本地校验。",
     },
-    "translate.llmTimeout": { label: "LLM 请求超时(秒)" },
-    "translate.llmMaxRetries": { label: "LLM 最大重试次数" },
-    "translate.llmMaxRequestsPerSecond": { label: "LLM 每秒最大请求数" },
+    "llm.timeout": { label: "请求超时(秒)" },
+    "llm.maxRetries": { label: "最大重试次数" },
+    "llm.maxRequestsPerSecond": { label: "每秒最大请求数" },
     "translate.targetLanguage": { label: "目标语言", aliases: ["语言"] },
     "personSync.personOverviewSources": { label: "人物简介来源顺序" },
     "personSync.personImageSources": { label: "人物头像来源顺序" },
@@ -421,6 +434,11 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "Jellyfin 用户 ID",
       description: "必须是 UUID。用于人物列表读取，留空则按服务端默认处理。",
     },
+    "jellyfin.useProxy": {
+      label: "使用代理连接 Jellyfin",
+      description: "默认直连；仅在远程 Jellyfin 服务器需要通过全局代理访问时开启。",
+      aliases: ["代理", "直连", "proxy", "jellyfin"],
+    },
     "jellyfin.lockOverviewAfterSync": {
       label: "同步后锁定人物简介",
       description: "写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。",
@@ -428,6 +446,11 @@ export const settingsFields: Messages["settingsFields"] = {
     "emby.url": { label: "Emby 服务器地址" },
     "emby.apiKey": { label: "Emby API Key" },
     "emby.userId": { label: "Emby 用户 ID", description: "用于人物列表读取，留空则按服务端默认处理。" },
+    "emby.useProxy": {
+      label: "使用代理连接 Emby",
+      description: "默认直连；仅在远程 Emby 服务器需要通过全局代理访问时开启。",
+      aliases: ["代理", "直连", "proxy", "emby"],
+    },
     "emby.notifyAfterPublish": {
       label: "入库后增量刷新目录",
       description: "影片整理入库后，请求 Emby 仅刷新该影片所在目录，无需全局扫描媒体库即可即时显示。",
@@ -483,6 +506,16 @@ export const settingsFields: Messages["settingsFields"] = {
     "shortcuts.playVideo": { label: "播放视频", description: "示例: P" },
     "ui.showLogsPanel": { label: "显示日志面板" },
     "ui.useCustomTitleBar": { label: "使用自定义标题栏", description: "切换后需要重启应用" },
+    "ui.closeToTray": {
+      label: "关闭窗口时最小化到托盘",
+      description: "点击关闭按钮时隐藏到系统托盘而不退出，任务会继续在后台运行",
+      aliases: ["托盘", "关闭到托盘", "后台运行"],
+    },
+    "ui.startMinimizedToTray": {
+      label: "启动时最小化到托盘",
+      description: "启动应用时不弹出主窗口，直接隐藏在系统托盘中",
+      aliases: ["静默启动", "启动到托盘"],
+    },
     "ui.hideDock": { label: "隐藏 Dock 图标" },
     "ui.hideMenu": { label: "隐藏菜单栏" },
     "ui.hideWindowButtons": { label: "隐藏窗口按钮" },

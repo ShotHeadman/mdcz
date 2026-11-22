@@ -43,6 +43,18 @@ export const library: Messages["library"] = {
   allLibraries: "全部媒体库",
   libraryAriaLabel: "媒体库",
   view: { list: "列表", wall: "海报墙" },
+  sort: {
+    ariaLabel: "排序方式",
+    fields: {
+      createdAt: "入库时间",
+      number: "番号",
+      title: "标题",
+    },
+    order: {
+      asc: "升序",
+      desc: "降序",
+    },
+  },
   health: {
     title: "健康状况",
     issues: {

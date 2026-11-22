@@ -7,6 +7,7 @@
 
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as AboutRouteImport } from "./routes/about";
+import { Route as BriefRouteImport } from "./routes/brief";
 import { Route as IndexRouteImport } from "./routes/index";
 import { Route as LibrariesRouteImport } from "./routes/libraries";
 import { Route as LibraryRouteImport } from "./routes/library";
@@ -28,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: "/about",
   path: "/about",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const BriefRoute = BriefRouteImport.update({
+  id: "/brief",
+  path: "/brief",
   getParentRoute: () => rootRouteImport,
 } as any);
 const LibraryRoute = LibraryRouteImport.update({
@@ -88,6 +94,7 @@ const WorkbenchRoute = WorkbenchRouteImport.update({
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AboutRoute: typeof AboutRoute;
+  BriefRoute: typeof BriefRoute;
   LibraryRoute: typeof LibraryRoute;
   PendingRoute: typeof PendingRoute;
   LibrariesRoute: typeof LibrariesRoute;
@@ -104,6 +111,7 @@ export interface RootRouteChildren {
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
+  "/brief": typeof BriefRoute;
   "/library": typeof LibraryRoute;
   "/pending": typeof PendingRoute;
   "/libraries": typeof LibrariesRoute;
@@ -120,6 +128,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
+  "/brief": typeof BriefRoute;
   "/library": typeof LibraryRoute;
   "/pending": typeof PendingRoute;
   "/libraries": typeof LibrariesRoute;
@@ -137,6 +146,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
   "/about": typeof AboutRoute;
+  "/brief": typeof BriefRoute;
   "/library": typeof LibraryRoute;
   "/pending": typeof PendingRoute;
   "/libraries": typeof LibrariesRoute;
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/about"
+    | "/brief"
     | "/library"
     | "/pending"
     | "/libraries"
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/about"
+    | "/brief"
     | "/library"
     | "/pending"
     | "/libraries"
@@ -185,6 +197,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/about"
+    | "/brief"
     | "/library"
     | "/pending"
     | "/libraries"
@@ -213,6 +226,13 @@ declare module "@tanstack/react-router" {
       path: "/about";
       fullPath: "/about";
       preLoaderRoute: typeof AboutRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/brief": {
+      id: "/brief";
+      path: "/brief";
+      fullPath: "/brief";
+      preLoaderRoute: typeof BriefRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/library": {
@@ -298,6 +318,7 @@ declare module "@tanstack/react-router" {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute,
   AboutRoute,
+  BriefRoute,
   LibraryRoute,
   PendingRoute,
   LibrariesRoute,

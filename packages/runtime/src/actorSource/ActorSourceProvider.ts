@@ -175,7 +175,11 @@ export class ActorSourceProvider {
     }
 
     try {
-      return await source.lookup(configuration, query);
+      const result = await source.lookup(configuration, query);
+      for (const warning of result.warnings) {
+        this.logger.warn(warning);
+      }
+      return result;
     } catch (error) {
       if (isUnrecoverableNetworkError(error)) throw error;
       const message = `Actor source "${sourceName}" failed for ${query.name}: ${toErrorMessage(error)}`;

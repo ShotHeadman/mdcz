@@ -11,6 +11,7 @@ import {
   AutomationTopLevelSection,
   DownloadTopLevelSection,
   LanguageTopLevelSection,
+  LlmTopLevelSection,
   MediaServerTopLevelSection,
   NamingTopLevelSection,
   NetworkTopLevelSection,
@@ -51,6 +52,7 @@ export function SettingsForm({
           <ScrapeTopLevelSection siteOptions={siteOptions} />
           <NetworkTopLevelSection />
           <TranslateTopLevelSection />
+          <LlmTopLevelSection />
           <NamingTopLevelSection />
           <DownloadTopLevelSection />
           <MediaServerTopLevelSection />

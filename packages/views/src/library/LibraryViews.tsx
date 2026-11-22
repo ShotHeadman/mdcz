@@ -1,6 +1,7 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
+import { LIBRARY_SORT_FIELDS, type LibrarySortField } from "@mdcz/shared/libraryPagination";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/serverDtos";
 import {
@@ -33,6 +34,8 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
   ChevronDown,
   Copy,
   Database,
@@ -312,25 +315,66 @@ export function LibraryIndexView({
                 {t.library.refresh}
               </Button>
               {browse ? (
-                <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
-                  {(["list", "wall"] as const).map((view) => (
-                    <Button
-                      aria-pressed={browse.view === view}
-                      className={cn(
-                        "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
-                        browse.view === view && "bg-surface text-foreground shadow-sm",
-                      )}
-                      key={view}
-                      onClick={() => browse.onViewChange(view)}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
+                <>
+                  <div className="inline-flex shrink-0 items-center gap-1 rounded-quiet bg-surface-low p-1 shadow-inner">
+                    <Select
+                      value={browse.sortBy}
+                      onValueChange={(value) => browse.onSortByChange(value as LibrarySortField)}
                     >
-                      {view === "list" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-                      {t.library.view[view]}
-                    </Button>
-                  ))}
-                </div>
+                      <SelectTrigger
+                        aria-label={t.library.sort.ariaLabel}
+                        className="h-7 w-auto gap-1.5 border-0 bg-transparent px-2.5 text-xs font-bold text-foreground shadow-none"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LIBRARY_SORT_FIELDS.map((field) => (
+                          <SelectItem key={field} value={field}>
+                            {t.library.sort.fields[field]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          aria-label={t.library.sort.order[browse.sortOrder]}
+                          className="h-7 w-7 rounded-[var(--radius-quiet-sm)] p-0 text-muted-foreground hover:bg-surface hover:text-foreground"
+                          onClick={() => browse.onSortOrderChange(browse.sortOrder === "asc" ? "desc" : "asc")}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          {browse.sortOrder === "asc" ? (
+                            <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                          ) : (
+                            <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t.library.sort.order[browse.sortOrder]}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
+                    {(["list", "wall"] as const).map((view) => (
+                      <Button
+                        aria-pressed={browse.view === view}
+                        className={cn(
+                          "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
+                          browse.view === view && "bg-surface text-foreground shadow-sm",
+                        )}
+                        key={view}
+                        onClick={() => browse.onViewChange(view)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        {view === "list" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                        {t.library.view[view]}
+                      </Button>
+                    ))}
+                  </div>
+                </>
               ) : null}
             </div>
           </section>

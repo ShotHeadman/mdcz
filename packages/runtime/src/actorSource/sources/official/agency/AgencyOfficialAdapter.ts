@@ -16,7 +16,7 @@ export class AgencyOfficialAdapter extends BaseRosterOfficialAdapter<OfficialAct
     deps: OfficialActorSourceDependencies,
     private readonly site: AgencySite,
   ) {
-    super(deps, { key: site.key, rateLimitedHosts: [new URL(site.rosterUrl).hostname] });
+    super(deps, { key: site.key, rateLimitedHosts: [new URL(site.rosterUrl).host] });
   }
 
   // No movie or actor source names an actress's agency, so its roster is always checked; the exact stage name on an

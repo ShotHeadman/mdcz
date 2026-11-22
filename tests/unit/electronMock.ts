@@ -68,12 +68,19 @@ export class BrowserWindow {
   }
 
   setMenuBarVisibility(): void {}
+  setAutoHideMenuBar(): void {}
+  setWindowButtonVisibility(): void {}
+  setSkipTaskbar(): void {}
   removeMenu(): void {}
   once(): void {}
   on(): void {}
   show(): void {}
+  hide(): void {}
   focus(): void {}
   restore(): void {}
+  isVisible(): boolean {
+    return true;
+  }
   isMinimized(): boolean {
     return false;
   }

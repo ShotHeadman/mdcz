@@ -18,6 +18,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  PencilLine,
   PlaySquare,
   Settings,
   Sun,
@@ -48,6 +49,7 @@ export interface AppShellProps {
   children: ReactNode;
   currentPath: string;
   linkComponent: (props: ShellLinkProps) => ReactNode;
+  primaryNav?: ShellNavItem[];
   systemNav?: ShellNavItem[];
   /** Counts shown beside nav items, such as the pending items waiting for the user. */
   navBadges?: Partial<Record<DesktopRouteId, number>>;
@@ -57,6 +59,7 @@ const COLLAPSED_STORAGE_KEY = "mdcz-sidebar-collapsed";
 
 const SHELL_ROUTE_ICONS: Record<DesktopRouteId, LucideIcon> = {
   about: Info,
+  brief: PencilLine,
   libraries: FolderCog,
   library: Library,
   logs: FileText,
@@ -81,6 +84,7 @@ export function AppShell({
   children,
   currentPath,
   linkComponent: LinkComponent,
+  primaryNav = PRIMARY_SHELL_NAV,
   systemNav = SYSTEM_SHELL_NAV,
   navBadges = {},
 }: AppShellProps) {
@@ -120,6 +124,7 @@ export function AppShell({
               linkComponent={LinkComponent}
               navBadges={navBadges}
               onCollapse={() => setDrawerPath(null)}
+              primaryNav={primaryNav}
               systemNav={systemNav}
             />
           </aside>
@@ -139,6 +144,7 @@ export function AppShell({
             linkComponent={LinkComponent}
             navBadges={navBadges}
             onCollapse={setCollapsed}
+            primaryNav={primaryNav}
             systemNav={systemNav}
           />
         </aside>
@@ -156,6 +162,7 @@ function NavContent({
   linkComponent,
   navBadges,
   onCollapse,
+  primaryNav,
   systemNav,
 }: {
   collapsed: boolean;
@@ -163,6 +170,7 @@ function NavContent({
   linkComponent: (props: ShellLinkProps) => ReactNode;
   navBadges: Partial<Record<DesktopRouteId, number>>;
   onCollapse: (collapsed: boolean) => void;
+  primaryNav: ShellNavItem[];
   systemNav: ShellNavItem[];
 }) {
   const t = useT();
@@ -184,7 +192,7 @@ function NavContent({
       </div>
       <Separator className="mx-auto my-1 w-[calc(100%-32px)]! opacity-40" />
       <nav className={cn("flex flex-1 flex-col gap-2 overflow-y-auto py-3", collapsed ? "items-center px-1.5" : "")}>
-        {PRIMARY_SHELL_NAV.map((item) => (
+        {primaryNav.map((item) => (
           <NavLink
             key={item.to}
             collapsed={collapsed}

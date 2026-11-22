@@ -1,5 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { RuntimeNetworkClient } from "../network";
+import type { RuntimeNetworkClient, RuntimeRequestInit } from "../network";
 import { getHttpStatus, type MediaServerErrorMapping, type MediaServerServiceError } from "./errors";
 
 export type MediaServerKey = "jellyfin" | "emby";
@@ -40,21 +40,20 @@ export const buildMediaServerUrl = (
   return url.toString();
 };
 
-export const buildMediaServerHeaders = (
+/** Public endpoints pass `authenticated: false` so diagnostics can tell reachability from auth failures. */
+export const buildMediaServerRequestInit = (
   configuration: Configuration,
   serverKey: MediaServerKey,
-  headers: MediaServerHeadersInit = {},
-): Headers => {
-  const next = new Headers(headers);
-  const apiKey = getMediaServerConfig(configuration, serverKey).apiKey.trim();
-  if (!apiKey) {
-    return next;
-  }
-
+  headersInit: MediaServerHeadersInit = {},
+  { authenticated = true }: { authenticated?: boolean } = {},
+): RuntimeRequestInit => {
+  const { apiKey, useProxy } = getMediaServerConfig(configuration, serverKey);
+  const headers = new Headers(headersInit);
+  const token = authenticated ? apiKey.trim() : "";
   // Jellyfin 12 disables legacy token headers and api_key by default; Emby documents X-Emby-Token for API keys.
-  if (serverKey === "jellyfin") next.set("authorization", `MediaBrowser Token="${apiKey}"`);
-  else next.set("x-emby-token", apiKey);
-  return next;
+  if (token && serverKey === "jellyfin") headers.set("authorization", `MediaBrowser Token="${token}"`);
+  else if (token) headers.set("x-emby-token", token);
+  return { headers, bypassProxy: !useProxy };
 };
 
 export const normalizeMediaServerPersons = <TPerson extends MediaServerPersonBase>(
@@ -110,11 +109,12 @@ export const fetchMediaServerPersons = async <TPerson, TError extends MediaServe
   const url = buildMediaServerUrl(options.configuration, options.serverKey, options.path ?? "/Persons", options.query);
 
   try {
-    const response = await options.networkClient.getJson<unknown>(url, {
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
+    const response = await options.networkClient.getJson<unknown>(
+      url,
+      buildMediaServerRequestInit(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
-    });
+    );
 
     const persons = options.extractItems(response).flatMap((item): TPerson[] => {
       const parsed = options.parsePerson(item);
@@ -139,11 +139,12 @@ export const fetchMediaServerItemDetail = async <
   const url = buildMediaServerUrl(options.configuration, options.serverKey, options.path);
 
   try {
-    return await options.networkClient.getJson<TDetail>(url, {
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
+    return await options.networkClient.getJson<TDetail>(
+      url,
+      buildMediaServerRequestInit(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
-    });
+    );
   } catch (error) {
     throw options.toServiceError(error, errorMappings.statusMappings, errorMappings.fallback);
   }
@@ -165,11 +166,12 @@ export const fetchMediaServerResolvedUserId = async <TError extends MediaServerS
 
   let response: unknown;
   try {
-    response = await options.networkClient.getJson<unknown>(url, {
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
+    response = await options.networkClient.getJson<unknown>(
+      url,
+      buildMediaServerRequestInit(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
-    });
+    );
   } catch (error) {
     throw options.toServiceError(error, errorMappings.statusMappings, errorMappings.fallback);
   }
@@ -221,11 +223,12 @@ export const fetchMediaServerMetadataEditorInfo = async <TError extends MediaSer
   );
 
   try {
-    return await options.networkClient.getJson<Record<string, unknown>>(url, {
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
+    return await options.networkClient.getJson<Record<string, unknown>>(
+      url,
+      buildMediaServerRequestInit(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
-    });
+    );
   } catch (error) {
     throw options.toServiceError(error, errorMappings.statusMappings, errorMappings.fallback);
   }
@@ -242,9 +245,7 @@ export const deleteMediaServerPrimaryImage = async <TError extends MediaServerSe
   );
 
   try {
-    await options.networkClient.deleteText(url, {
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey),
-    });
+    await options.networkClient.deleteText(url, buildMediaServerRequestInit(options.configuration, options.serverKey));
   } catch (error) {
     throw options.toServiceError(error, errorMappings.statusMappings, errorMappings.fallback);
   }
@@ -263,11 +264,13 @@ export const updateMediaServerItem = async <TError extends MediaServerServiceErr
   );
 
   try {
-    await options.networkClient.postText(url, JSON.stringify(options.payload), {
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
+    await options.networkClient.postText(
+      url,
+      JSON.stringify(options.payload),
+      buildMediaServerRequestInit(options.configuration, options.serverKey, {
         "content-type": "application/json",
       }),
-    });
+    );
   } catch (error) {
     throw options.toServiceError(error, errorMappings.statusMappings, errorMappings.fallback);
   }
@@ -289,7 +292,7 @@ export const uploadMediaServerPrimaryImage = async <TError extends MediaServerSe
 ): Promise<void> => {
   const primaryPath = `/Items/${encodeURIComponent(options.personId)}/Images/Primary`;
   const body = Buffer.from(options.bytes).toString("base64");
-  const headers = buildMediaServerHeaders(options.configuration, options.serverKey, {
+  const requestInit = buildMediaServerRequestInit(options.configuration, options.serverKey, {
     "content-type": options.contentType,
   });
 
@@ -297,9 +300,7 @@ export const uploadMediaServerPrimaryImage = async <TError extends MediaServerSe
     await options.networkClient.postText(
       buildMediaServerUrl(options.configuration, options.serverKey, primaryPath),
       body,
-      {
-        headers,
-      },
+      requestInit,
     );
     return;
   } catch (error) {
@@ -314,9 +315,7 @@ export const uploadMediaServerPrimaryImage = async <TError extends MediaServerSe
     await options.networkClient.postText(
       buildMediaServerUrl(options.configuration, options.serverKey, options.fallbackPath, options.fallbackQuery),
       body,
-      {
-        headers,
-      },
+      requestInit,
     );
   } catch (error) {
     throw options.toServiceError(

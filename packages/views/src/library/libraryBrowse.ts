@@ -1,3 +1,11 @@
+import {
+  DEFAULT_LIBRARY_SORT,
+  LIBRARY_SORT_FIELDS,
+  LIBRARY_SORT_ORDERS,
+  type LibrarySort,
+  type LibrarySortField,
+  type LibrarySortOrder,
+} from "@mdcz/shared/libraryPagination";
 import { LIBRARY_HEALTH_ISSUES, type LibraryHealthIssue, type LibrarySummaryResponse } from "@mdcz/shared/serverDtos";
 import { useState } from "react";
 import type { LibraryFacetSelection } from "./healthIssues";
@@ -46,6 +54,7 @@ const facetFromSearch = (search: LibraryBrowseSearch): LibraryFacetSelection | u
 type LibraryView = LibraryBrowseControls["view"];
 
 const VIEW_STORAGE_KEY = "mdcz.library.view";
+const SORT_STORAGE_KEY = "mdcz.library.sort";
 
 /** The list or wall is the viewer's preference, not a filter, so it is remembered here rather than in the URL. */
 export const useLibraryView = () => {
@@ -59,6 +68,34 @@ export const useLibraryView = () => {
   return { view, onViewChange: setView };
 };
 
+const readStoredLibrarySort = (): LibrarySort => {
+  if (typeof localStorage === "undefined") return DEFAULT_LIBRARY_SORT;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SORT_STORAGE_KEY) ?? "") as Partial<LibrarySort>;
+    const sortBy = LIBRARY_SORT_FIELDS.find((field) => field === parsed.sortBy);
+    const sortOrder = LIBRARY_SORT_ORDERS.find((order) => order === parsed.sortOrder);
+    return sortBy && sortOrder ? { sortBy, sortOrder } : DEFAULT_LIBRARY_SORT;
+  } catch {
+    return DEFAULT_LIBRARY_SORT;
+  }
+};
+
+export const useLibrarySort = () => {
+  const [sort, setSortState] = useState<LibrarySort>(readStoredLibrarySort);
+  const persist = (next: LibrarySort) => {
+    setSortState(next);
+    if (typeof localStorage !== "undefined") localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(next));
+  };
+  return {
+    sortBy: sort.sortBy,
+    sortOrder: sort.sortOrder,
+    // Switching to date defaults to newest first; switching to number or title defaults to A→Z.
+    onSortByChange: (sortBy: LibrarySortField) =>
+      persist({ sortBy, sortOrder: sortBy === "createdAt" ? "desc" : "asc" }),
+    onSortOrderChange: (sortOrder: LibrarySortOrder) => persist({ ...sort, sortOrder }),
+  };
+};
+
 export const createLibraryBrowseControls = (input: {
   search: LibraryBrowseSearch;
   libraries: LibraryBrowseControls["libraries"];
@@ -66,6 +103,10 @@ export const createLibraryBrowseControls = (input: {
   update: (search: LibraryBrowseSearch) => void;
   view: LibraryView;
   onViewChange: (view: LibraryView) => void;
+  sortBy: LibrarySortField;
+  sortOrder: LibrarySortOrder;
+  onSortByChange: (sortBy: LibrarySortField) => void;
+  onSortOrderChange: (sortOrder: LibrarySortOrder) => void;
   fixBlockedReason?: string;
   onFix: LibraryBrowseControls["onFix"];
   onIgnore: LibraryBrowseControls["onIgnore"];
@@ -80,6 +121,8 @@ export const createLibraryBrowseControls = (input: {
     ignored: search.ignored === true,
     facet: facetFromSearch(search),
     view: input.view,
+    sortBy: input.sortBy,
+    sortOrder: input.sortOrder,
     // Another library has other actors and issues, so its filters start over.
     onLibraryChange: (libraryId) => update({ libraryId }),
     onHealthChange: (health) => update({ ...search, health, ignored: undefined }),
@@ -93,6 +136,8 @@ export const createLibraryBrowseControls = (input: {
       }),
     onClear: () => update({ libraryId: search.libraryId }),
     onViewChange: input.onViewChange,
+    onSortByChange: input.onSortByChange,
+    onSortOrderChange: input.onSortOrderChange,
     fixBlockedReason: input.fixBlockedReason,
     onFix: input.onFix,
     onIgnore: input.onIgnore,

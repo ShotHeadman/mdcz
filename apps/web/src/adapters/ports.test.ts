@@ -189,6 +189,16 @@ describe("web detail action port", () => {
     expect(session?.sourceUrl).toBe(
       "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
+    const remote = "https://m.media-amazon.com/images/I/a.jpg";
+    vi.spyOn(api.scrape, "posterCropSession").mockResolvedValueOnce({
+      rootId: "metadata-root",
+      sourceUrl: remote,
+      targetRelativePath: "JAV_output/ABC-001/poster.png",
+      width: 600,
+      height: 800,
+      initialCrop,
+    });
+    expect((await port.preparePosterCrop(item))?.sourceUrl).toBe(remote);
     expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
     expect(result.posterUrl).toContain("revision=42");

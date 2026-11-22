@@ -16,6 +16,7 @@ import {
   AssetDownloadsSection,
   FilenameFilteringSection,
   FilenameMarkersSection,
+  LlmSection,
   NamingSection,
   NetworkConnectionSection,
   NetworkSiteAccessSection,
@@ -117,6 +118,20 @@ export function TranslateTopLevelSection({ forceOpen = false }: { forceOpen?: bo
       forceOpen={forceOpen}
     >
       <TranslateSection />
+    </SectionAnchor>
+  );
+}
+
+export function LlmTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+  const t = useT();
+  return (
+    <SectionAnchor
+      id="llm"
+      label={t.settingsFields.sections.llm.label}
+      title={t.settingsFields.sections.llm.label}
+      forceOpen={forceOpen}
+    >
+      <LlmSection />
     </SectionAnchor>
   );
 }

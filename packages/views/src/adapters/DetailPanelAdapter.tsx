@@ -6,6 +6,7 @@ import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeSto
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import type { PosterCropEditSession } from "../common";
 import { confirmDialog } from "../common";
 import { type DetailPanelCompareProps, DetailPanelView, toDetailViewItemFromScrapeResult } from "../detail";
 import { buildDetailArtworkCandidates } from "../detail/imageCandidates";
@@ -20,7 +21,7 @@ import {
   serializeEditableNfoData,
   validateEditableNfoData,
 } from "../nfo";
-import type { DetailActionPort, PosterCropEditSession } from "./ports";
+import type { DetailActionPort } from "./ports";
 
 const EMPTY_RESULTS: ReturnType<typeof selectScrapeResults> = [];
 

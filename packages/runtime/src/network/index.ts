@@ -7,6 +7,8 @@ export interface RuntimeRequestInit {
   timeout?: number;
   headers?: RuntimeHeaderInit;
   signal?: AbortSignal;
+  /** Forces a direct connection; local network addresses always connect directly. */
+  bypassProxy?: boolean;
 }
 
 export interface RuntimeProbeRequestInit extends RuntimeRequestInit {

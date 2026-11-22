@@ -3,9 +3,10 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState } from "@mdcz/shared/types";
 import type { RuntimeScrapeSignalService } from "../FileScraper";
 import { PosterWatermarkService } from "../PosterWatermarkService";
-import { resolvePosterBadgeDefinitions } from "../posterBadges";
+import { hashPosterFile, resolvePosterBadgeStamp } from "../posterBadges";
 import { throwIfAborted } from "../utils/abort";
 
+/** Badges go only on a poster this run produced, so they never stack; the record says what the file carries. */
 export const applyPosterTagBadgesIfNeeded = async (input: {
   assets: DownloadedAssets;
   config: Pick<Configuration, "download">;
@@ -18,42 +19,39 @@ export const applyPosterTagBadgesIfNeeded = async (input: {
   signalService?: Pick<RuntimeScrapeSignalService, "showLogText">;
   watermarkService?: Pick<PosterWatermarkService, "applyTagBadges">;
 }): Promise<DownloadedAssets> => {
-  if (!input.config.download.tagBadges) {
-    return input.assets;
-  }
-
   const posterPath = input.assets.poster;
   if (!posterPath || !input.assets.downloaded.includes(posterPath)) {
     return input.assets;
   }
 
-  const badges = resolvePosterBadgeDefinitions(
+  const { badges, stamp } = resolvePosterBadgeStamp(
     input.crawlerData,
     input.fileInfo,
     input.localState,
-    input.config.download.tagBadgeTypes,
+    input.config.download,
   );
-  if (badges.length === 0) {
-    return input.assets;
+  let drawn = "";
+  if (badges.length > 0) {
+    throwIfAborted(input.signal);
+    input.signalService?.showLogText(`[${input.fileInfo.number}] Applying poster tag badges...`);
+
+    try {
+      const watermarkService = input.watermarkService ?? new PosterWatermarkService({ dataDir: input.dataDir });
+      await watermarkService.applyTagBadges(posterPath, badges, {
+        imageOverrides: input.config.download.tagBadgeImageOverrides,
+        insetPercent: input.config.download.tagBadgeInsetPercent,
+        onWarn: (message) => input.logger.warn(message),
+        opacity: input.config.download.tagBadgeOpacity,
+        position: input.config.download.tagBadgePosition,
+        sizePercent: input.config.download.tagBadgeSizePercent,
+      });
+      drawn = stamp;
+    } catch (error) {
+      input.logger.warn(`Failed to apply poster tag badges for ${posterPath}: ${toErrorMessage(error)}`);
+    }
+
+    throwIfAborted(input.signal);
   }
 
-  throwIfAborted(input.signal);
-  input.signalService?.showLogText(`[${input.fileInfo.number}] Applying poster tag badges...`);
-
-  try {
-    const watermarkService = input.watermarkService ?? new PosterWatermarkService({ dataDir: input.dataDir });
-    await watermarkService.applyTagBadges(posterPath, badges, {
-      imageOverrides: input.config.download.tagBadgeImageOverrides,
-      insetPercent: input.config.download.tagBadgeInsetPercent,
-      onWarn: (message) => input.logger.warn(message),
-      opacity: input.config.download.tagBadgeOpacity,
-      position: input.config.download.tagBadgePosition,
-      sizePercent: input.config.download.tagBadgeSizePercent,
-    });
-  } catch (error) {
-    input.logger.warn(`Failed to apply poster tag badges for ${posterPath}: ${toErrorMessage(error)}`);
-  }
-
-  throwIfAborted(input.signal);
-  return input.assets;
+  return { ...input.assets, posterRecord: { stamp: drawn, sha256: await hashPosterFile(posterPath) } };
 };

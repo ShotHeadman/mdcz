@@ -7,6 +7,7 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId, NfoEditorField } from "@mdcz/shared/types";
+import type { PosterCropEditSession } from "../common";
 import type { DetailViewItem } from "../detail";
 
 export interface DetailNfoReadResponse {
@@ -28,13 +29,6 @@ export interface DetailActionPort extends Partial<FileActions> {
   /** Null when the item has no saved cover to crop. */
   preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession | null>;
   savePosterCrop(item: DetailViewItem, crop: NormalizedCropRegion): Promise<{ posterUrl: string }>;
-}
-
-export interface PosterCropEditSession {
-  sourceUrl: string;
-  width: number;
-  height: number;
-  initialCrop: NormalizedCropRegion;
 }
 
 export interface ScrapeActionTarget {

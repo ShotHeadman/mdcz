@@ -2,8 +2,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
+import type { LlmApiClient } from "@mdcz/runtime/llm";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { type LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
+import { NfoGenerator } from "@mdcz/runtime/scrape";
 import {
   applyBatchNfoTranslations,
   type BatchNfoTranslatorApplyOptions,
@@ -27,11 +28,10 @@ const createConfig = (overrides: Partial<ReturnType<typeof configurationSchema.p
     ...overrides,
     translate: {
       ...defaultConfiguration.translate,
-      llmModelName: "gpt-5.2",
-      llmApiKey: "test-key",
       targetLanguage: "zh-CN",
       ...(overrides.translate ?? {}),
     },
+    llm: { ...defaultConfiguration.llm, apiKey: "test-key", ...(overrides.llm ?? {}) },
   });
 
 type EntryOverrides = Omit<Partial<LocalScanEntry>, "assets" | "crawlerData" | "fileInfo"> & {

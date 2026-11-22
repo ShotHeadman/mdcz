@@ -24,6 +24,10 @@ export const maintenance = {
   noFieldDiffs: "Current preview generated no field diffs",
   diffsWillShowHere: "Field diffs will be shown here after preview",
   unchangedFields: "Unchanged fields",
+  posterRedrawNotice:
+    "The poster badges no longer match the current tags or badge settings, and will be redrawn with the current settings.",
+  posterKeptNotice:
+    "The poster badges no longer match the current tags or badge settings, but MDCz didn't make this poster, so it is kept as it is and its badges aren't updated. To update them, run Amazon poster enhancement again for an Amazon poster, or crop the poster again from the detail panel.",
 
   // MaintenanceBatchBarView
   refreshDiff: "Refresh comparison",
@@ -57,6 +61,8 @@ export const maintenance = {
   blockedDefaultReason: "Some disc parts could not complete preview",
   diffCount: (count: number) => `${count} field diff(s)`,
   pathWillChange: "Path will be adjusted",
+  posterWillRedraw: "Poster badges will be redrawn",
+  posterKept: "Poster kept, badges not updated",
   noExtraChanges: "No extra changes",
   noExecutableItems: "No executable items",
   startBatchExecution: (count: number) => `Start batch execution (${count} items)`,

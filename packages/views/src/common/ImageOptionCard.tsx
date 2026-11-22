@@ -1,14 +1,18 @@
 import { dedupeMediaSources } from "@mdcz/shared/imageSource";
+import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import { Badge, cn } from "@mdcz/ui";
 import { ImageIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { NaturalAspectImageFrame } from "./NaturalAspectImageFrame";
+import { PosterCutPreview } from "./PosterCropDialog";
 
 export type ResolveImageOptionCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
 
 export interface ImageOptionCardProps {
   baseDir?: string;
+  /** Shows only this 2:3 area of the image, as the poster cut from it. */
+  crop?: NormalizedCropRegion;
   defaultAspectRatio?: number;
   empty?: boolean;
   emptyText?: string;
@@ -77,6 +81,7 @@ const useResolvedImageOptionCandidates = (
 
 export function ImageOptionCard({
   baseDir,
+  crop,
   defaultAspectRatio,
   empty = false,
   emptyText,
@@ -123,31 +128,40 @@ export function ImageOptionCard({
 
   const content = (
     <div className={cn("flex min-w-0 gap-4", layout === "inline" ? "flex-col sm:flex-row" : "flex-col items-center")}>
-      <NaturalAspectImageFrame
-        src={renderSrc}
-        alt={label}
-        width={width}
-        height={height}
-        loading={loading}
-        empty={empty || !renderSrc}
-        defaultAspectRatio={defaultAspectRatio}
-        className={cn("mx-auto rounded-lg bg-muted/20", imageFrameClassName)}
-        emptyNode={
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
-            <ImageIcon className="h-8 w-8 opacity-40" />
-            <span className="text-xs">{effectiveEmptyText}</span>
-          </div>
-        }
-        onError={() => {
-          setMeasuredSize(null);
-          setCandidateIndex((currentIndex) =>
-            currentIndex < candidates.length - 1 ? currentIndex + 1 : candidates.length,
-          );
-        }}
-        onLoadDimensions={({ height: naturalHeight, width: naturalWidth }) => {
-          setMeasuredSize({ height: naturalHeight, src: renderSrc, width: naturalWidth });
-        }}
-      />
+      {crop && renderSrc && !loading && !empty ? (
+        <PosterCutPreview
+          src={renderSrc}
+          crop={crop}
+          alt={label}
+          className={cn("mx-auto w-full rounded-lg bg-muted/20", imageFrameClassName)}
+        />
+      ) : (
+        <NaturalAspectImageFrame
+          src={renderSrc}
+          alt={label}
+          width={width}
+          height={height}
+          loading={loading}
+          empty={empty || !renderSrc}
+          defaultAspectRatio={defaultAspectRatio}
+          className={cn("mx-auto rounded-lg bg-muted/20", imageFrameClassName)}
+          emptyNode={
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
+              <ImageIcon className="h-8 w-8 opacity-40" />
+              <span className="text-xs">{effectiveEmptyText}</span>
+            </div>
+          }
+          onError={() => {
+            setMeasuredSize(null);
+            setCandidateIndex((currentIndex) =>
+              currentIndex < candidates.length - 1 ? currentIndex + 1 : candidates.length,
+            );
+          }}
+          onLoadDimensions={({ height: naturalHeight, width: naturalWidth }) => {
+            setMeasuredSize({ height: naturalHeight, src: renderSrc, width: naturalWidth });
+          }}
+        />
+      )}
       <div
         className={cn(
           "flex w-full min-w-0 flex-col justify-center gap-2",

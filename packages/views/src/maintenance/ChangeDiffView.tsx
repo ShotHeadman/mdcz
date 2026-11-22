@@ -446,7 +446,13 @@ export function ChangeDiffView({
     );
   };
 
-  if (diffs.length === 0 && unchangedDiffs.length === 0) {
+  const posterNotice = preview?.poster ? (
+    <section className="rounded-quiet-lg bg-surface-low/75 p-4 text-sm text-foreground md:p-5">
+      {preview.poster === "redraw" ? t.maintenance.posterRedrawNotice : t.maintenance.posterKeptNotice}
+    </section>
+  ) : null;
+
+  if (diffs.length === 0 && unchangedDiffs.length === 0 && !posterNotice) {
     const isProcessing = preview?.status === "processing";
     const isPending = preview?.status === "pending";
     return (
@@ -475,6 +481,7 @@ export function ChangeDiffView({
 
   return (
     <div className="space-y-6">
+      {posterNotice}
       {sortedDiffs.length > 0 && (
         <div className="space-y-4">{sortedDiffs.map((diff) => renderDiffCard(diff, "changed"))}</div>
       )}

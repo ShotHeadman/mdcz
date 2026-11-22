@@ -33,7 +33,7 @@ export const applyScrapeNetworkPolicy = (
 
   const javdbHosts = new Set([
     ...OFFICIAL_SITE_HOSTS[Website.JAVDB],
-    new URL(resolveSiteUrl(configuration.network, Website.JAVDB)).hostname,
+    new URL(resolveSiteUrl(configuration.network, Website.JAVDB)).host,
   ]);
   const delaySeconds = Math.max(0, Math.trunc(configuration.scrape.javdbDelaySeconds));
   for (const host of javdbHosts) {

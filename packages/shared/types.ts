@@ -1,5 +1,6 @@
 import type { Website } from "./enums";
 import type { AssetRef, RootFileRef } from "./mediaRef";
+import type { NormalizedCropRegion } from "./posterCrop";
 
 export type FileId = string;
 
@@ -97,6 +98,27 @@ export interface DownloadedAssets {
   trailer?: string;
   /** Flat list of every asset path created during the current scrape. */
   downloaded: string[];
+  /** Set when this run produced `poster`. */
+  posterRecord?: PosterRecord;
+}
+
+/**
+ * How MDCz made a poster, so every rebuild repeats it: what it was cut from and how, the badges drawn on it, and a hash
+ * of the file as written. A poster that no longer matches the hash was changed since and is not MDCz's to rebuild.
+ */
+export interface PosterRecord {
+  /** Badge ids and look settings, or empty when nothing was drawn. */
+  stamp: string;
+  sha256: string;
+  /** Absent when scraping made the poster, whose rebuild then follows the scrape's rule. */
+  cut?: PosterCut;
+}
+
+export interface PosterCut {
+  /** An image URL, or `cover` for the movie's cover. */
+  source: string;
+  /** Always 2:3. */
+  crop: NormalizedCropRegion;
 }
 
 export interface ScrapeResult {
@@ -157,6 +179,7 @@ export interface NfoLocalState {
   sourcePin?: { site: Website; url: string };
   /** `<dateadded>` as first written; a rewrite keeps it. */
   dateAdded?: string;
+  posterRecord?: PosterRecord;
   /** `<movie>` children (and root attributes) MDCz doesn't write, as parsed; a rewrite carries them over. */
   foreignElements?: Record<string, unknown>;
 }
@@ -295,7 +318,14 @@ export interface MaintenancePreviewItem {
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
+  /**
+   * Set when the poster's badges no longer match the movie or the badge settings: `redraw` when applying rebuilds it,
+   * `kept` when MDCz can't tell the poster is its own and leaves it as it is.
+   */
+  poster?: PosterRebuild;
 }
+
+export type PosterRebuild = "redraw" | "kept";
 
 export interface MaintenanceImageAlternatives {
   thumb_url?: string[];

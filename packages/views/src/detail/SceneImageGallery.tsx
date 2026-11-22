@@ -1,6 +1,6 @@
 import { cn, Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
 import { ChevronLeft, ChevronRight, ImageIcon, Play, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { TrailerPlayer } from "./TrailerPlayer";
 
@@ -277,48 +277,18 @@ function LazyImage({
   baseDir?: string;
   resolveImageCandidates: ResolveImageCandidates;
 }) {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
+  const [status, setStatus] = useState<{ src: string; state: "loaded" | "error" } | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir);
+  const currentState = status?.src === resolvedSrc ? status.state : "loading";
 
   useEffect(() => {
-    setLoaded(false);
-    setError(false);
-
-    if (!resolvedSrc) {
-      return;
-    }
-
-    let cancelled = false;
-    const probe = new Image();
-    probe.onload = () => {
-      if (!cancelled) {
-        setLoaded(true);
-      }
-    };
-    probe.onerror = () => {
-      if (!cancelled) {
-        setError(true);
-      }
-    };
-    probe.src = resolvedSrc;
-
-    if (probe.complete) {
-      if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
-        setLoaded(true);
-      } else {
-        setError(true);
-      }
-    }
-
-    return () => {
-      cancelled = true;
-      probe.onload = null;
-      probe.onerror = null;
-    };
+    const img = imgRef.current;
+    if (!resolvedSrc || !img?.complete) return;
+    setStatus({ src: resolvedSrc, state: img.naturalWidth > 0 && img.naturalHeight > 0 ? "loaded" : "error" });
   }, [resolvedSrc]);
 
-  if (error || !resolvedSrc) {
+  if (currentState === "error" || !resolvedSrc) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <ImageIcon className="h-4 w-4 text-muted-foreground/30" />
@@ -328,14 +298,17 @@ function LazyImage({
 
   return (
     <>
-      {!loaded ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
+      {currentState !== "loaded" ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
       <img
+        ref={imgRef}
         key={resolvedSrc}
         src={resolvedSrc}
         alt={alt}
-        onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
-        className={cn("h-full w-full object-cover", !loaded && "invisible")}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setStatus({ src: resolvedSrc, state: "loaded" })}
+        onError={() => setStatus({ src: resolvedSrc, state: "error" })}
+        className={cn("h-full w-full object-cover", currentState !== "loaded" && "invisible")}
       />
     </>
   );

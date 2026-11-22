@@ -39,11 +39,17 @@ export const createVideoProbe = (wasmPath?: string) => {
   let queue: Promise<unknown> = Promise.resolve();
 
   const analyze = async (filePath: string): Promise<VideoMeta | undefined> => {
-    mediaInfo ??= mediaInfoFactory({
-      format: "object",
-      chunkSize: CHUNK_SIZE,
-      ...(wasmPath ? { locateFile: () => pathToFileURL(wasmPath).href } : {}),
-    });
+    if (!mediaInfo) {
+      const pending = mediaInfoFactory({
+        format: "object",
+        chunkSize: CHUNK_SIZE,
+        ...(wasmPath ? { locateFile: () => pathToFileURL(wasmPath).href } : {}),
+      });
+      pending.catch(() => {
+        if (mediaInfo === pending) mediaInfo = undefined;
+      });
+      mediaInfo = pending;
+    }
     const instance = await mediaInfo;
     const handle = await open(filePath, "r");
     try {

@@ -4,17 +4,13 @@ import {
   type Configuration,
   type DeepPartial,
   downloadSchema,
+  llmSchema,
   type notificationsSchema,
 } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import { libraryEditJobSchema } from "./libraryEdit";
-import {
-  LLM_API_FORMAT_OPTIONS,
-  LLM_OUTPUT_FORMAT_OPTIONS,
-  LLM_REASONING_OPTIONS,
-  LLM_SERVICE_TYPE_OPTIONS,
-} from "./llm";
+import { LIBRARY_SORT_FIELDS, LIBRARY_SORT_ORDERS } from "./libraryPagination";
 
 export type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
 export { libraryEditStartInputSchema } from "./libraryEdit";
@@ -316,7 +312,9 @@ export type PosterCropSaveInput = z.infer<typeof posterCropSaveInputSchema>;
 
 export const posterCropSessionResponseSchema = z.object({
   rootId: z.string().trim().min(1),
-  sourceRelativePath: z.string().trim().min(1),
+  /** Set when the source is a file in the root; otherwise `sourceUrl` names a remote image the browser loads. */
+  sourceRelativePath: z.string().trim().min(1).optional(),
+  sourceUrl: z.string().trim().min(1).optional(),
   targetRelativePath: z.string().trim().min(1),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -729,12 +727,17 @@ const libraryScopeFields = {
   tag: z.string().trim().min(1).optional(),
 };
 
+export const librarySortFieldSchema = z.enum(LIBRARY_SORT_FIELDS);
+export const librarySortOrderSchema = z.enum(LIBRARY_SORT_ORDERS);
+
 export const libraryListInputSchema = z
   .object({
     cursor: z.string().trim().min(1).max(2048).optional(),
     query: z.string().optional(),
     rootId: z.string().optional(),
     limit: z.number().int().min(1).max(500).optional(),
+    sortBy: librarySortFieldSchema.optional(),
+    sortOrder: librarySortOrderSchema.optional(),
     ...libraryScopeFields,
   })
   .optional();
@@ -1124,21 +1127,12 @@ export const translateTestInputSchema = z.object({
   baiduAppId: z.string().optional(),
   baiduSecretKey: z.string().optional(),
   baiduApiKey: z.string().optional(),
-  llmModelName: z.string().optional(),
-  llmApiKey: z.string().optional(),
-  llmBaseUrl: z.string().optional(),
-  llmApiFormat: z.enum(LLM_API_FORMAT_OPTIONS).optional(),
-  llmServiceType: z.enum(LLM_SERVICE_TYPE_OPTIONS).optional(),
   llmPrompt: z.string().optional(),
-  llmTemperature: z.number().min(0).max(2).nullable().optional(),
-  llmReasoning: z.enum(LLM_REASONING_OPTIONS).optional(),
-  llmOutputFormat: z.enum(LLM_OUTPUT_FORMAT_OPTIONS).optional(),
-  llmTimeout: z.number().optional(),
-  llmMaxRetries: z.number().int().min(1).max(20).optional(),
-  llmMaxRequestsPerSecond: z.number().int().min(1).max(100).optional(),
+  /** The AI model section as edited, in place of the saved one. */
+  llm: llmSchema.optional(),
 });
 
-export type TranslateTestInputDto = z.infer<typeof translateTestInputSchema>;
+export type TranslateTestInputDto = z.input<typeof translateTestInputSchema>;
 
 export type NotificationTestInputDto = z.input<typeof notificationsSchema>;
 
@@ -1324,8 +1318,9 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
     items: z
       .array(
         z.object({
-          nfoPath: z.string().trim().min(1),
+          filePath: z.string().trim().min(1),
           amazonPosterUrl: z.string().trim().min(1),
+          crop: normalizedCropRegionSchema,
         }),
       )
       .optional(),
