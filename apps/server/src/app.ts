@@ -115,9 +115,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
   const publicationPolicyHooks = {
     stagingRoot: () => path.join(config.runtimePaths.dataDir, "staging"),
-    isDirectWrite: async (targetPath: string) =>
-      resolveLibraryDirectWrite(await libraries.list(), targetPath).directWrite,
-    resolveRoot: async (targetPath: string) => resolveLibraryDirectWrite(await libraries.list(), targetPath).root,
+    resolveTarget: async (targetPath: string) => resolveLibraryDirectWrite(await libraries.list(), targetPath),
   };
   publicationPolicy.configure(publicationPolicyHooks);
   // libvips keeps cached WebP inputs open, and Windows refuses to rename or delete an open file, failing publication.

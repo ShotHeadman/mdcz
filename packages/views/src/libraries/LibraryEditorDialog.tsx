@@ -406,11 +406,7 @@ export function LibraryEditorFields({
                 {(id) => (
                   <Select
                     value={settings.discovery ?? "events"}
-                    onValueChange={(value) => {
-                      const next = value as MediaLibrarySettingsInput["discovery"];
-                      if (next === "clouddrive") onChange({ discovery: next, directWrite: true });
-                      else set("discovery", next);
-                    }}
+                    onValueChange={(value) => set("discovery", value as MediaLibrarySettingsInput["discovery"])}
                   >
                     <SelectTrigger id={id} className="w-full">
                       <SelectValue />

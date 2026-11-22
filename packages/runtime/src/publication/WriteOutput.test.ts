@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { assertSymlinkSupport, outputFileSystem } from "./outputFileSystem";
 import { type PublicationJournalEntry, publicationJournal } from "./publicationJournal";
 import { publicationPolicy } from "./publicationPolicy";
+import { recoverInterruptedPublications } from "./recoverInterruptedPublications";
 import { WriteOutput } from "./WriteOutput";
 
 const directories: string[] = [];
@@ -214,29 +215,162 @@ describe("WriteOutput", () => {
       expect(journal.size).toBe(0);
     }
 
-    // When a cloud mount is not detected up front, EIO on a fresh-file rename falls back to direct write and latches.
+    // When a cloud mount is not detected up front, EIO on a fresh-file rename falls back to direct write, reuses the
+    // staged bytes instead of re-reading the source, and latches the root.
     const undetected = await mkdtemp(path.join(tmpdir(), "mdcz-write-eio-"));
-    directories.push(undetected);
+    const undetectedSourceDir = await mkdtemp(path.join(tmpdir(), "mdcz-write-eio-src-"));
+    directories.push(undetected, undetectedSourceDir);
     const eioNfo = path.join(undetected, "movie.nfo");
     const eioPoster = path.join(undetected, "poster.jpg");
+    const eioSource = path.join(undetectedSourceDir, "source.jpg");
     await writeFile(eioNfo, "old nfo");
+    await writeFile(eioSource, "staged-img");
     const logger = { warn: vi.fn() };
     const eioRename = vi.fn(async (source: string, target: string) => {
-      if (source.endsWith(".part")) throw Object.assign(new Error("i/o error"), { code: "EIO" });
+      if (source.endsWith(".part")) {
+        await writeFile(eioSource, "mutated-im");
+        throw Object.assign(new Error("i/o error"), { code: "EIO" });
+      }
       await outputFileSystem.rename(source, target);
     });
     await new WriteOutput({ ...outputFileSystem, rename: eioRename }, logger).install(
       [
+        { targetPath: eioPoster, sourcePath: eioSource, size: 10 },
         { targetPath: eioNfo, data: "new nfo" },
-        { targetPath: eioPoster, data: "new poster" },
       ],
       { commit: () => undefined },
     );
+    await expect(readFile(eioPoster, "utf8")).resolves.toBe("staged-img");
     await expect(readFile(eioNfo, "utf8")).resolves.toBe("new nfo");
-    await expect(readFile(eioPoster, "utf8")).resolves.toBe("new poster");
     expect((await readdir(undetected)).sort()).toEqual(["movie.nfo", "poster.jpg"]);
     expect(logger.warn).toHaveBeenCalledOnce();
     expect(await publicationPolicy.isDirectWrite(path.join(undetected, "fanart.jpg"))).toBe(true);
+
+    // Direct write aborts instead of overwriting when backing up an existing file returns EIO.
+    const backupFailDir = await mkdtemp(path.join(tmpdir(), "mdcz-write-backup-eio-"));
+    directories.push(backupFailDir);
+    const protectedNfo = path.join(backupFailDir, "movie.nfo");
+    await writeFile(protectedNfo, "original nfo");
+    await expect(
+      new WriteOutput({
+        ...outputFileSystem,
+        rename: async () => {
+          throw Object.assign(new Error("backup rename refused"), { code: "EIO" });
+        },
+      }).install([{ targetPath: protectedNfo, data: "new nfo" }], {
+        direct: true,
+        commit: () => undefined,
+      }),
+    ).rejects.toMatchObject({ code: "EIO" });
+    await expect(readFile(protectedNfo, "utf8")).resolves.toBe("original nfo");
+    expect(await readdir(backupFailDir)).toEqual(["movie.nfo"]);
+    expect(journal.size).toBe(0);
+
+    // If commit fails and rollback rename also fails with EIO, startup recovery deletes the uncommitted target and
+    // restores the original backup rather than deleting the backup.
+    const rollbackFailDir = await mkdtemp(path.join(tmpdir(), "mdcz-write-rollback-eio-"));
+    directories.push(rollbackFailDir);
+    const rollbackNfo = path.join(rollbackFailDir, "movie.nfo");
+    await writeFile(rollbackNfo, "original nfo");
+    const rollbackLogger = { warn: vi.fn() };
+    await expect(
+      new WriteOutput(
+        {
+          ...outputFileSystem,
+          rename: async (source, target) => {
+            if (source.includes(".mdcz-backup-")) throw Object.assign(new Error("restore refused"), { code: "EIO" });
+            await outputFileSystem.rename(source, target);
+          },
+        },
+        rollbackLogger,
+      ).install([{ targetPath: rollbackNfo, data: "uncommitted nfo" }], {
+        direct: true,
+        commit: () => {
+          throw new Error("commit failed");
+        },
+      }),
+    ).rejects.toThrow("commit failed");
+    await recoverInterruptedPublications(
+      {
+        record: (entry) => void journal.set(entry.path, entry),
+        forget: (entryPath) => void journal.delete(entryPath),
+        list: () => [...journal.values()],
+      },
+      rollbackLogger,
+    );
+    await expect(readFile(rollbackNfo, "utf8")).resolves.toBe("original nfo");
+    expect(await readdir(rollbackFailDir)).toEqual(["movie.nfo"]);
+    expect(journal.size).toBe(0);
+
+    // If a failed direct write leaves a backup after rollback EIO, a subsequent successful retry cleans up the stale
+    // backup so a later restart does not overwrite the newly committed file with the older backup.
+    const retryDir = await mkdtemp(path.join(tmpdir(), "mdcz-write-retry-"));
+    directories.push(retryDir);
+    const retryNfo = path.join(retryDir, "movie.nfo");
+    await writeFile(retryNfo, "v1 nfo");
+    await expect(
+      new WriteOutput(
+        {
+          ...outputFileSystem,
+          rename: async (source, target) => {
+            if (source.includes(".mdcz-backup-")) throw Object.assign(new Error("restore refused"), { code: "EIO" });
+            await outputFileSystem.rename(source, target);
+          },
+        },
+        { warn: vi.fn() },
+      ).install([{ targetPath: retryNfo, data: "failed v2" }], {
+        direct: true,
+        commit: () => {
+          throw new Error("commit failed");
+        },
+      }),
+    ).rejects.toThrow("commit failed");
+    await new WriteOutput().install([{ targetPath: retryNfo, data: "committed v3" }], {
+      direct: true,
+      commit: () => undefined,
+    });
+    await recoverInterruptedPublications({
+      record: (entry) => void journal.set(entry.path, entry),
+      forget: (entryPath) => void journal.delete(entryPath),
+      list: () => [...journal.values()],
+    });
+    await expect(readFile(retryNfo, "utf8")).resolves.toBe("committed v3");
+    expect(await readdir(retryDir)).toEqual(["movie.nfo"]);
+    expect(journal.size).toBe(0);
+
+    // Mixed batches decide direct vs atomic mode per target directory regardless of artifact order.
+    const localDir = await mkdtemp(path.join(tmpdir(), "mdcz-write-mixed-local-"));
+    const cloudDir = await mkdtemp(path.join(tmpdir(), "mdcz-write-mixed-cloud-"));
+    directories.push(localDir, cloudDir);
+    publicationPolicy.configure({
+      resolveTarget: (targetPath) => ({
+        directWrite: path.resolve(targetPath).startsWith(path.resolve(cloudDir)),
+      }),
+    });
+    for (const cloudFirst of [true, false]) {
+      const localTarget = path.join(localDir, `${cloudFirst ? "a" : "b"}.nfo`);
+      const cloudTarget = path.join(cloudDir, `${cloudFirst ? "a" : "b"}.jpg`);
+      const renames: Array<[string, string]> = [];
+      const mixedArtifacts = cloudFirst
+        ? [
+            { targetPath: cloudTarget, data: "cloud" },
+            { targetPath: localTarget, data: "local" },
+          ]
+        : [
+            { targetPath: localTarget, data: "local" },
+            { targetPath: cloudTarget, data: "cloud" },
+          ];
+      await new WriteOutput({
+        ...outputFileSystem,
+        rename: async (source, target) => {
+          renames.push([source, target]);
+          await outputFileSystem.rename(source, target);
+        },
+      }).install(mixedArtifacts, { commit: () => undefined });
+      expect(renames).toEqual([[expect.stringContaining(".mdcz-staging-"), localTarget]]);
+      await expect(readFile(localTarget, "utf8")).resolves.toBe("local");
+      await expect(readFile(cloudTarget, "utf8")).resolves.toBe("cloud");
+    }
   });
 
   it("rejects artifact targets that overwrite source media", async () => {

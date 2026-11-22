@@ -75,8 +75,6 @@ export class MoveOutput {
     if (targets.size !== input.moves.length) throw new Error("Duplicate media move target");
     const targetEntries = new Map<string, Set<string>>();
     let committed = false;
-    const probeTarget = input.moves[0]?.targetPath ?? input.artifacts[0]?.targetPath;
-    let direct = input.direct ?? (probeTarget ? await publicationPolicy.isDirectWrite(probeTarget) : false);
     const assertSource = async (move: SourceMove, sourcePath: string, observed?: Stats) => {
       const current = observed ?? (await fs.stat(sourcePath));
       if (!current.isFile() || !sameMediaFile(current, move))
@@ -159,7 +157,7 @@ export class MoveOutput {
       const value = await new WriteOutput(fs, this.logger).install(artifacts, {
         validate,
         directories,
-        direct: input.direct ?? (direct ? true : undefined),
+        direct: input.direct,
         protectedMediaFiles: [...protectedMediaFiles, ...moves.flatMap((move) => [move.sourcePath, move.targetPath])],
         beforeCommit: async () => {
           const parkedSources = new Map<string, string>();
@@ -230,6 +228,7 @@ export class MoveOutput {
               }
             }
             if (copied) {
+              const direct = input.direct ?? (await publicationPolicy.isDirectWrite(move.targetPath));
               const expectedSize =
                 move.rewrittenContent === undefined ? move.size : Buffer.byteLength(move.rewrittenContent);
               const writeCopy = async (destination: string, plain: boolean): Promise<void> => {
@@ -254,7 +253,6 @@ export class MoveOutput {
                   temporaryPaths.settle(staging);
                 } catch (error) {
                   if ((error as NodeJS.ErrnoException).code !== "EIO" || input.direct !== undefined) throw error;
-                  direct = true;
                   const root = await publicationPolicy.markDirectWrite(move.targetPath);
                   warn(
                     `Fresh-file rename returned EIO on ${move.targetPath}; falling back to direct write for ${root}`,
@@ -278,18 +276,18 @@ export class MoveOutput {
         commit: async () => {
           const value = await input.commit();
           committed = true;
-          for (const [sourcePath, facts] of retainedSources) {
-            try {
-              if (!sameMediaFile(await fs.stat(sourcePath), facts))
-                throw new Error("Source changed after transfer; leaving it intact");
-              await fs.rm(sourcePath, { force: true });
-            } catch (error) {
-              this.logger.warn(`Published media but left source ${sourcePath}: ${toErrorMessage(error)}`);
-            }
-          }
           return value;
         },
       });
+      for (const [sourcePath, facts] of retainedSources) {
+        try {
+          if (!sameMediaFile(await fs.stat(sourcePath), facts))
+            throw new Error("Source changed after transfer; leaving it intact");
+          await fs.rm(sourcePath, { force: true });
+        } catch (error) {
+          this.logger.warn(`Published media but left source ${sourcePath}: ${toErrorMessage(error)}`);
+        }
+      }
       // A moved file leaves no empty folders between its old place and its media root, which itself always stays.
       for (const move of input.moves) {
         if (move.transfer !== "move") continue;

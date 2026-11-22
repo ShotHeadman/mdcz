@@ -10,10 +10,10 @@ export interface CloudMountInfo {
 export interface PublicationPolicyHooks {
   /** Local directory for staging folders when publishing to a direct-write destination. */
   stagingRoot?: () => string | undefined;
-  /** Whether a target path is configured for direct write (for example, by its owning library). */
-  isDirectWrite?: (targetPath: string) => Promise<boolean> | boolean;
-  /** Root directory to remember when a fresh-file rename hits EIO (defaults to the target's directory). */
-  resolveRoot?: (targetPath: string) => Promise<string | undefined> | string | undefined;
+  /** Resolves the owning library's direct-write setting and effective output root for `targetPath`. */
+  resolveTarget?: (
+    targetPath: string,
+  ) => Promise<{ directWrite: boolean; root?: string }> | { directWrite: boolean; root?: string };
 }
 
 interface MountEntry {
@@ -104,10 +104,6 @@ const readLinuxMounts = async (): Promise<MountEntry[]> => {
   }
 };
 
-export const clearCloudMountCache = (): void => {
-  mountCache = undefined;
-};
-
 export const detectCloudMount = async (targetPath: string): Promise<CloudMountInfo | undefined> => {
   if (process.platform !== "linux" || !targetPath.trim()) return undefined;
   const entries = await readLinuxMounts();
@@ -137,7 +133,7 @@ export const publicationPolicy = {
     for (const root of learnedDirectRoots) {
       if (isPathInside(root, resolved)) return true;
     }
-    if (await hooks?.isDirectWrite?.(resolved)) return true;
+    if ((await hooks?.resolveTarget?.(resolved))?.directWrite) return true;
     return (await detectCloudMount(resolved)) !== undefined;
   },
   async stagingParent(outputDir: string): Promise<string> {
@@ -147,7 +143,7 @@ export const publicationPolicy = {
   },
   async markDirectWrite(targetPath: string): Promise<string> {
     const resolved = path.resolve(targetPath);
-    const root = path.resolve((await hooks?.resolveRoot?.(resolved)) || path.dirname(resolved));
+    const root = path.resolve((await hooks?.resolveTarget?.(resolved))?.root || path.dirname(resolved));
     learnedDirectRoots.add(root);
     return root;
   },

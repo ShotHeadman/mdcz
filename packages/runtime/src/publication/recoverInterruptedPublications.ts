@@ -2,7 +2,7 @@ import { lstat, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { assertMoveTargetAbsent } from "./MoveOutput";
-import { type PublicationJournalStore, publicationJournal } from "./publicationJournal";
+import { isArtifactBackupPath, type PublicationJournalStore, publicationJournal } from "./publicationJournal";
 
 const exists = async (filePath: string): Promise<boolean> =>
   await lstat(filePath).then(
@@ -37,8 +37,13 @@ export const recoverInterruptedPublications = async (
       if (entry.restoreTo === null) {
         await rm(entry.path, { recursive: true, force: true });
       } else if (await exists(entry.path)) {
-        // A crash between parking and relocating a source hides the video behind a dot-prefixed name.
-        await assertMoveTargetAbsent(entry.restoreTo);
+        if (isArtifactBackupPath(entry.path, entry.restoreTo)) {
+          // A direct-write backup still on disk means the target holds an uncommitted or truncated write.
+          await rm(entry.restoreTo, { force: true });
+        } else {
+          // A crash between parking and relocating a source hides the video behind a dot-prefixed name.
+          await assertMoveTargetAbsent(entry.restoreTo);
+        }
         await rename(entry.path, entry.restoreTo);
       }
       store.forget(entry.path);

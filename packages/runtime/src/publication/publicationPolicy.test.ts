@@ -70,8 +70,7 @@ describe("publicationPolicy", () => {
 
     publicationPolicy.configure({
       stagingRoot: () => localStaging,
-      isDirectWrite: (targetPath) => resolveLibraryDirectWrite(libraries, targetPath).directWrite,
-      resolveRoot: (targetPath) => resolveLibraryDirectWrite(libraries, targetPath).root,
+      resolveTarget: (targetPath) => resolveLibraryDirectWrite(libraries, targetPath),
     });
 
     const cloudStaging = await createStagingDirectory(path.join(cloudOut, "ABC-123"));

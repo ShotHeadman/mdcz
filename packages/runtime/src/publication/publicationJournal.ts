@@ -15,6 +15,15 @@ export interface PublicationJournalStore {
 
 let store: PublicationJournalStore | undefined;
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** True only for a WriteOutput backup (`<targetPath>.mdcz-backup-<uuid>`), never a parked source video. */
+export const isArtifactBackupPath = (backupPath: string, targetPath: string): boolean => {
+  const prefix = `${path.resolve(targetPath)}.mdcz-backup-`;
+  const resolved = path.resolve(backupPath);
+  return resolved.startsWith(prefix) && UUID_PATTERN.test(resolved.slice(prefix.length));
+};
+
 /**
  * Process-wide like the runtime logger, so every publication records into the app's database whoever starts it.
  * Paths are recorded before they are created and forgotten once they are gone; a crash leaves exactly the records
@@ -29,6 +38,9 @@ export const publicationJournal = {
   },
   forget(temporaryPath: string): void {
     store?.forget(path.resolve(temporaryPath));
+  },
+  list(): PublicationJournalEntry[] {
+    return store?.list() ?? [];
   },
 };
 
