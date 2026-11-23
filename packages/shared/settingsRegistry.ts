@@ -140,6 +140,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "translate.llmPrompt", anchor: "translate" },
   { key: "translate.targetLanguage", anchor: "translate" },
   { key: "llm.brief", anchor: "llm" },
+  { key: "llm.briefModel", anchor: "llm", secret: true },
   { key: "llm.briefSendKey", anchor: "llm" },
   { key: "llm.modelName", anchor: "llm" },
   { key: "llm.apiKey", anchor: "llm", secret: true },

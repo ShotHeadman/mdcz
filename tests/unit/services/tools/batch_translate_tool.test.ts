@@ -31,7 +31,7 @@ const createConfig = (overrides: Partial<ReturnType<typeof configurationSchema.p
       targetLanguage: "zh-CN",
       ...(overrides.translate ?? {}),
     },
-    llm: { ...defaultConfiguration.llm, apiKey: "test-key", ...(overrides.llm ?? {}) },
+    llm: { ...defaultConfiguration.llm, modelName: "test-model", apiKey: "test-key", ...(overrides.llm ?? {}) },
   });
 
 type EntryOverrides = Omit<Partial<LocalScanEntry>, "assets" | "crawlerData" | "fileInfo"> & {

@@ -88,7 +88,7 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
   useWebTaskSync();
   const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list() });
   const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read() });
-  // While Brief is off its sidebar item, page and badge do not exist, unless the page still holds cells to inspect/undo.
+  // While Brief is off its sidebar item, page and badge stay hidden unless the page still holds cells to inspect/undo.
   const briefEnabled = configQ.data?.llm.brief === true;
   const hasBriefCells = useBriefStore((state) => state.cells.length > 0);
   const briefPort = useWebBriefPort();

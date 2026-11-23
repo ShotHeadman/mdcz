@@ -28,9 +28,9 @@ export const briefSettingsChangeSchema = z.object({
   to: z.number().int().optional(),
 });
 
-/** Every field the Settings page shows. */
+/** Settings fields Brief can read and change by prompt; structured connection objects are edited in Settings. */
 export const BRIEF_SETTINGS_KEYS: readonly FieldKey[] = FIELD_REGISTRY.filter(
-  (entry) => entry.visibility !== "hidden",
+  (entry) => entry.visibility !== "hidden" && entry.key !== "llm.briefModel",
 ).map((entry) => entry.key);
 const SETTINGS_KEY_SET: ReadonlySet<string> = new Set(BRIEF_SETTINGS_KEYS);
 

@@ -1,5 +1,5 @@
 import type { BriefCheckResponse, BriefPlan, BriefPlanInput } from "./briefCatalog";
-import type { Configuration, LlmSettingsInput } from "./config";
+import type { Configuration, LlmConnectionSettingsInput } from "./config";
 import type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
@@ -133,7 +133,7 @@ export interface ServerApiContract {
   };
   brief: {
     plan(input: BriefPlanInput): Promise<BriefPlan>;
-    check(input: LlmSettingsInput): Promise<BriefCheckResponse>;
+    check(input: LlmConnectionSettingsInput): Promise<BriefCheckResponse>;
   };
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;

@@ -146,9 +146,9 @@ const translateSchema = z.object({
 /** Which keys send a Brief prompt; the other combination starts a new line. `modEnter` is Ctrl+Enter, or ⌘+Enter on macOS. */
 export const BRIEF_SEND_KEY_OPTIONS = ["enter", "modEnter"] as const;
 
-/** One connection shared by translation, the AI number fallback and Brief. */
-export const llmSchema = z.object({
-  modelName: z.string().default("gpt-5.2"),
+/** Shared connection fields for an OpenAI-compatible, Google or DeepSeek LLM endpoint. */
+export const llmConnectionSchema = z.object({
+  modelName: z.string().default(""),
   apiKey: z.string().default(""),
   baseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
   apiFormat: z.enum(LLM_API_FORMAT_OPTIONS).default("responses"),
@@ -159,12 +159,22 @@ export const llmSchema = z.object({
   timeout: z.number().int().min(1).max(300).default(120),
   maxRetries: z.number().int().min(1).max(20).default(3),
   maxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
-  /** The Brief page. It is turned on only after a planning check passes against these settings. */
+});
+export type LlmConnectionSettings = z.infer<typeof llmConnectionSchema>;
+export type LlmConnectionSettingsInput = z.input<typeof llmConnectionSchema>;
+
+/** Default connection used by translation and the AI number fallback, plus Brief settings and optional dedicated model. */
+export const llmSchema = llmConnectionSchema.extend({
+  /** The Brief page. It is turned on only after a planning check passes against the effective Brief model. */
   brief: z.boolean().default(false),
   briefSendKey: z.enum(BRIEF_SEND_KEY_OPTIONS).default("enter"),
+  /** Optional dedicated connection for Brief; null reuses the shared AI model connection above. */
+  briefModel: llmConnectionSchema.nullable().default(null),
 });
 export type LlmSettings = z.infer<typeof llmSchema>;
 export type LlmSettingsInput = z.input<typeof llmSchema>;
+
+export const resolveBriefLlmSettings = (llm: LlmSettings): LlmConnectionSettings => llm.briefModel ?? llm;
 
 export const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),

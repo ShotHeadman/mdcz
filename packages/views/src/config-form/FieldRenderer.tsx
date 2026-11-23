@@ -175,10 +175,12 @@ export function TextField({
   name,
   description,
   labelAddon,
+  placeholder,
 }: {
   name: FieldKey;
   description?: string;
   labelAddon?: ReactNode;
+  placeholder?: string;
 }) {
   return (
     <BaseField name={name} description={description} labelAddon={labelAddon} commitMode="debounce">
@@ -190,6 +192,7 @@ export function TextField({
                 name={control.name}
                 ref={control.ref}
                 value={control.value}
+                placeholder={placeholder}
                 onFocus={control.handleFocus}
                 onChange={(event) => control.handleChangeValue(event.target.value)}
                 onBlur={control.handleBlur}

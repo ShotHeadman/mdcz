@@ -12,3 +12,39 @@ export type LlmServiceType = (typeof LLM_SERVICE_TYPE_OPTIONS)[number];
 
 export const LLM_OUTPUT_FORMAT_OPTIONS = ["none", "json_object", "json_schema"] as const;
 export type LlmOutputFormat = (typeof LLM_OUTPUT_FORMAT_OPTIONS)[number];
+
+export const normalizeLlmBaseUrl = (baseUrl: string): string => {
+  const trimmed = baseUrl.trim();
+  if (!trimmed) {
+    return DEFAULT_LLM_BASE_URL;
+  }
+
+  return trimmed.replace(/\/+$/u, "").replace(/\/(chat\/completions|responses)$/iu, "");
+};
+
+export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>
+  normalizeLlmBaseUrl(baseUrl) === DEFAULT_LLM_BASE_URL;
+
+export const isMissingRequiredLlmApiKey = (baseUrl: string, apiKey: string): boolean =>
+  isOfficialOpenAiBaseUrl(baseUrl) && apiKey.trim().length === 0;
+
+export type MissingLlmSetting = "missing_model" | "missing_credentials";
+
+/** Every required field missing from the connection, in display order. */
+export const missingLlmSettings = (settings: {
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+}): MissingLlmSetting[] => {
+  const missing: MissingLlmSetting[] = [];
+  if (!settings.modelName.trim()) missing.push("missing_model");
+  if (isMissingRequiredLlmApiKey(settings.baseUrl, settings.apiKey)) missing.push("missing_credentials");
+  return missing;
+};
+
+/** Null when the connection has enough information to send a request; otherwise the first missing item. */
+export const missingLlmSetting = (settings: {
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+}): MissingLlmSetting | null => missingLlmSettings(settings)[0] ?? null;

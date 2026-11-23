@@ -1,10 +1,13 @@
-import type { LlmSettings } from "@mdcz/shared/config";
+import type { LlmConnectionSettings } from "@mdcz/shared/config";
 import {
-  DEFAULT_LLM_BASE_URL,
+  isMissingRequiredLlmApiKey,
+  isOfficialOpenAiBaseUrl,
   type LlmApiFormat,
   type LlmOutputFormat,
   type LlmReasoning,
   type LlmServiceType,
+  missingLlmSetting,
+  normalizeLlmBaseUrl,
 } from "@mdcz/shared/llm";
 import type { RuntimeNetworkClient, RuntimeRequestInit } from "../network";
 import { toErrorMessage } from "../shared";
@@ -48,7 +51,7 @@ export interface LlmJsonSchema {
 }
 
 export const toLlmTextRequest = (
-  settings: LlmSettings,
+  settings: LlmConnectionSettings,
   prompt: string,
   outputSchema?: LlmJsonSchema,
 ): LlmTextRequest => ({
@@ -110,28 +113,7 @@ export class LlmTransportError extends Error {
   }
 }
 
-export const normalizeLlmBaseUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.trim();
-  if (!trimmed) {
-    return DEFAULT_LLM_BASE_URL;
-  }
-
-  return trimmed.replace(/\/+$/u, "").replace(/\/(chat\/completions|responses)$/iu, "");
-};
-
-export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>
-  normalizeLlmBaseUrl(baseUrl) === DEFAULT_LLM_BASE_URL;
-
-export const isMissingRequiredLlmApiKey = (baseUrl: string, apiKey: string): boolean =>
-  isOfficialOpenAiBaseUrl(baseUrl) && apiKey.trim().length === 0;
-
-/** Null when the settings can make a request; otherwise what is missing. */
-export const missingLlmSetting = (settings: LlmSettings): "missing_model" | "missing_credentials" | null =>
-  !settings.modelName.trim()
-    ? "missing_model"
-    : isMissingRequiredLlmApiKey(settings.baseUrl, settings.apiKey)
-      ? "missing_credentials"
-      : null;
+export { isMissingRequiredLlmApiKey, isOfficialOpenAiBaseUrl, missingLlmSetting, normalizeLlmBaseUrl };
 
 class FetchLlmApiTransport implements LlmApiTransport {
   async postJsonDetailed<TResponse>(

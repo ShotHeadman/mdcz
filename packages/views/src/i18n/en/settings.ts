@@ -447,6 +447,21 @@ export const settings = {
     incomplete: (count: number) => `${count} setting${count === 1 ? "" : "s"} incomplete`,
     focus: "Focus",
   },
+  briefModel: {
+    configure: "Configure",
+    modelPlaceholder: "e.g. gpt-6.2-sol, deepseek-chat",
+    dialogTitle: "Brief model",
+    dialogDescription:
+      "Configure a dedicated model connection for Brief without affecting translation or number fallback.",
+    useDedicated: "Use dedicated model",
+    useDedicatedHint: "Uses the default AI model when turned off.",
+    moreOptions: "Advanced parameters",
+    verify: "Verify model",
+    verified: "Model check passed.",
+    save: "Save",
+    testing: "Verifying…",
+    invalidConfig: "Check the API URL and parameter ranges.",
+  },
   resetToDefault: {
     title: "Reset to default",
     ariaLabel: (field: string) => `Reset ${field} to default`,

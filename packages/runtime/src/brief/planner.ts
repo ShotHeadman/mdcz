@@ -24,7 +24,7 @@ import {
   settingsFieldShape,
   validateSettingsValues,
 } from "@mdcz/shared/briefSettings";
-import { type Configuration, defaultConfiguration, type LlmSettings } from "@mdcz/shared/config";
+import { type Configuration, defaultConfiguration, type LlmConnectionSettings } from "@mdcz/shared/config";
 import type { LibraryEdit } from "@mdcz/shared/libraryEdit";
 import { isAbsoluteHostPath, normalizeComparableHostPath } from "@mdcz/shared/mediaCandidate";
 import { type MediaLibrarySettings, mediaLibrarySettingsSchema } from "@mdcz/shared/mediaLibrary";
@@ -510,7 +510,7 @@ const sameValue = (left: unknown, right: unknown): boolean => JSON.stringify(lef
 
 export const planBriefRequest = async (
   input: BriefPlanInput,
-  settings: LlmSettings,
+  settings: LlmConnectionSettings,
   context: BriefPlannerContext,
   client: Pick<LlmApiClient, "generateText">,
   signal?: AbortSignal,
@@ -608,7 +608,7 @@ const CHECK_CONTEXT: BriefPlannerContext = {
  * answers but cannot plan (no JSON, the wrong workflow, an id it made up) is turned away here once.
  */
 export const checkBriefPlanner = async (
-  settings: LlmSettings,
+  settings: LlmConnectionSettings,
   client: Pick<LlmApiClient, "generateText">,
   signal?: AbortSignal,
 ): Promise<BriefCheckResponse> => {

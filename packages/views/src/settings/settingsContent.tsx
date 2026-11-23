@@ -1,6 +1,7 @@
 import type { ActorAliasGroup } from "@mdcz/shared/actorAliases";
 import {
   type Configuration,
+  type LlmConnectionSettings,
   type LlmSettings,
   NFO_FIELD_OPTIONS,
   NOTIFICATION_CHANNELS,
@@ -10,6 +11,7 @@ import {
 } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { missingLlmSettings } from "@mdcz/shared/llm";
 import {
   POSTER_TAG_BADGE_ASPECT_HEIGHT,
   POSTER_TAG_BADGE_ASPECT_WIDTH,
@@ -33,7 +35,7 @@ import {
   Label,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
+import { AlertCircle, CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FieldError, FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
@@ -57,6 +59,7 @@ import {
 } from "../config-form/FieldRenderer";
 import { useT } from "../i18n";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
+import { BriefModelField } from "./BriefModelField";
 import { PosterBadgePreview } from "./PosterBadgePreview";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
@@ -77,16 +80,20 @@ const TAG_BADGE_IMAGE_RATIO_LABEL = `${POSTER_TAG_BADGE_ASPECT_WIDTH}:${POSTER_T
 const toEnumOptions = (labels: Record<string, string>): Array<{ value: string; label: string }> =>
   Object.entries(labels).map(([value, label]) => ({ value, label }));
 
-const ASSET_DOWNLOAD_FIELD_KEYS = [
-  "download.downloadThumb",
-  "download.downloadPoster",
-  "download.tagBadges",
+const TAG_BADGE_DETAIL_KEYS = [
   "download.tagBadgeTypes",
   "download.tagBadgePosition",
   "download.tagBadgeSizePercent",
   "download.tagBadgeOpacity",
   "download.tagBadgeInsetPercent",
   "download.tagBadgeImageOverrides",
+] as const;
+
+const ASSET_DOWNLOAD_FIELD_KEYS = [
+  "download.downloadThumb",
+  "download.downloadPoster",
+  "download.tagBadges",
+  ...TAG_BADGE_DETAIL_KEYS,
   "download.downloadFanart",
   "download.downloadSceneImages",
   "download.downloadTrailer",
@@ -258,6 +265,8 @@ export function NetworkSiteAccessSection() {
 export function AssetDownloadsSection() {
   const t = useT();
   const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
+  const hasVisibleBadgeDetails = useHasRenderableFields(TAG_BADGE_DETAIL_KEYS);
+  const sectionMode = useSettingsSectionMode();
   const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
   const [downloadThumb, downloadPoster, tagBadges, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
@@ -276,6 +285,7 @@ export function AssetDownloadsSection() {
     boolean | undefined,
   ];
   const showTagBadgeSettings = Boolean(downloadPoster) && Boolean(tagBadges);
+  const showTagBadgePreview = sectionMode === "public" && showTagBadgeSettings && hasVisibleBadgeDetails;
 
   if (!hasRenderableFields) {
     return null;
@@ -286,8 +296,8 @@ export function AssetDownloadsSection() {
       <BoolField name="download.downloadThumb" />
       <BoolField name="download.downloadPoster" />
       {shouldMountConditionalSettings(Boolean(downloadPoster), search) && <BoolField name="download.tagBadges" />}
-      {shouldMountConditionalSettings(showTagBadgeSettings, search) && (
-        <div className="grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_14rem]">
+      {shouldMountConditionalSettings(showTagBadgeSettings, search) && hasVisibleBadgeDetails && (
+        <div className={showTagBadgePreview ? "grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_14rem]" : undefined}>
           <div>
             <ChipArrayFieldWrapper
               name="download.tagBadgeTypes"
@@ -309,7 +319,7 @@ export function AssetDownloadsSection() {
             <NumberField name="download.tagBadgeInsetPercent" min={0} max={20} />
             <PosterBadgeImageOverridesField />
           </div>
-          <PosterBadgePreview />
+          {showTagBadgePreview && <PosterBadgePreview />}
         </div>
       )}
       <BoolField name="download.downloadFanart" />
@@ -666,18 +676,47 @@ export function TranslateSection() {
   );
 }
 
-/** The connection translation, the AI number fallback and Brief share, whatever the translation engine is. */
+/** Default connection shared by translation and AI number fallback, plus Brief controls. */
 export function LlmSection() {
   const t = useT();
+  const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
-  const serviceType = useWatch({ control: form.control, name: "llm.serviceType" }) as LlmSettings["serviceType"];
-  const brief = useWatch({ control: form.control, name: "llm.brief" }) === true;
+  const [serviceType, brief, briefModel, modelName, baseUrl, apiKey] = useWatch({
+    control: form.control,
+    name: ["llm.serviceType", "llm.brief", "llm.briefModel", "llm.modelName", "llm.baseUrl", "llm.apiKey"],
+  }) as [
+    LlmSettings["serviceType"],
+    boolean | undefined,
+    LlmConnectionSettings | null | undefined,
+    string | undefined,
+    string | undefined,
+    string | undefined,
+  ];
+  const briefEnabled = brief === true;
+  const effectiveBriefConnection = briefModel ?? {
+    modelName: modelName ?? "",
+    baseUrl: baseUrl ?? "",
+    apiKey: apiKey ?? "",
+  };
+  const missingBriefItems = briefEnabled ? missingLlmSettings(effectiveBriefConnection) : [];
 
   return (
     <>
-      <BriefSwitchField />
-      {brief ? <EnumField name="llm.briefSendKey" options={toEnumOptions(t.settings.options.briefSendKey)} /> : null}
-      <TextField name="llm.modelName" />
+      <BoolField name="llm.brief" />
+      {missingBriefItems.length > 0 && !search?.hasActiveFilters ? (
+        <div
+          role="status"
+          className="mb-2 flex items-center gap-2 rounded-quiet border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>{t.brief.setup.missingNotice(missingBriefItems.map((item) => t.brief.missingItems[item]))}</span>
+        </div>
+      ) : null}
+      {shouldMountConditionalSettings(briefEnabled, search) && <BriefModelField />}
+      {shouldMountConditionalSettings(briefEnabled, search) && (
+        <EnumField name="llm.briefSendKey" options={toEnumOptions(t.settings.options.briefSendKey)} />
+      )}
+      <TextField name="llm.modelName" placeholder={t.settings.briefModel.modelPlaceholder} />
       <SecretField name="llm.apiKey" />
       <UrlField name="llm.baseUrl" />
       {serviceType === "openai-compatible" && (
@@ -706,46 +745,6 @@ export function LlmSection() {
       <NumberField name="llm.maxRetries" min={1} max={20} />
       <NumberField name="llm.maxRequestsPerSecond" min={1} max={100} />
     </>
-  );
-}
-
-/** Turning Brief on saves only after a planning check passes with the connection as edited. */
-function BriefSwitchField() {
-  const t = useT();
-  const services = useSettingsServices();
-  const form = useFormContext<FieldValues>();
-  const [checking, setChecking] = useState(false);
-
-  return (
-    <BaseField name="llm.brief">
-      {(field) => (
-        <div className="flex items-center gap-2">
-          {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
-          <FormControl>
-            <Switch
-              checked={Boolean(field.value)}
-              disabled={checking}
-              onCheckedChange={async (checked) => {
-                if (!checked) {
-                  field.onChange(false);
-                  return;
-                }
-                setChecking(true);
-                try {
-                  const result = await services.checkBrief(form.getValues("llm") as LlmSettings);
-                  if (result.status === "ok") field.onChange(true);
-                  else toast.error(t.brief.check.failed[result.status](result.error ?? ""), { id: "brief" });
-                } catch (error) {
-                  toast.error(t.brief.check.failed.failed(toErrorMessage(error)), { id: "brief" });
-                } finally {
-                  setChecking(false);
-                }
-              }}
-            />
-          </FormControl>
-        </div>
-      )}
-    </BaseField>
   );
 }
 

@@ -369,33 +369,39 @@ export const settingsFields: Messages["settingsFields"] = {
     "translate.engine": { label: "翻译引擎", aliases: ["翻译引擎"] },
     "llm.modelName": { label: "模型名称", aliases: ["模型", "llm"] },
     "llm.brief": {
-      label: "指令",
-      description:
-        "用自己的话描述任务，核对 MDCz 准备好的卡片后确认执行。开启前会先检查此模型能否起草任务。描述、库名称和库路径会发送给此模型。",
+      label: "启用指令",
+      description: "通过自然语言生成待确认的任务草稿。",
       aliases: ["助手", "指令", "提示"],
     },
+    "llm.briefModel": {
+      label: "指令模型",
+      aliases: ["指令模型", "独立模型", "助手模型", "llm", "brief"],
+    },
     "llm.briefSendKey": {
-      label: "指令发送键",
-      description: "另一种组合键用于在输入框中换行。",
+      label: "发送快捷键",
+      description: "另一组按键用于输入换行。",
       aliases: ["回车", "发送", "快捷键", "换行", "enter", "ctrl", "cmd"],
     },
     "llm.apiKey": {
-      label: "密钥（可选）",
-      description: "默认 OpenAI 地址通常必须填写；本地或兼容服务是否需要密钥取决于服务端配置",
+      label: "API 密钥",
+      description: "官方 OpenAI 接口需填写；本地或兼容服务按服务端要求配置。",
       aliases: ["密钥"],
     },
     "llm.baseUrl": {
       label: "API 地址",
-      description: `默认值：${DEFAULT_LLM_BASE_URL}。Google Gemini 示例：https://generativelanguage.googleapis.com/v1beta/openai。本地示例：Ollama 用 http://127.0.0.1:11434/v1`,
+      description: `默认 ${DEFAULT_LLM_BASE_URL}；Gemini 示例：https://generativelanguage.googleapis.com/v1beta/openai；Ollama 示例：http://127.0.0.1:11434/v1`,
       aliases: ["api 地址"],
     },
-    "llm.apiFormat": { label: "请求形式" },
+    "llm.apiFormat": { label: "接口协议" },
     "llm.serviceType": {
       label: "服务类型",
-      description: "自定义代理需要显式选择 Google 或 DeepSeek；不要依赖网址域名识别。",
+      description: "使用自定义中转地址时需手动指定服务类型，不按域名自动推断。",
     },
     "translate.llmPrompt": { label: "LLM 翻译提示词", aliases: ["提示词"] },
-    "llm.temperature": { label: "温度（高级，可选）", description: "留空时使用服务端默认值。" },
+    "llm.temperature": {
+      label: "温度",
+      description: "控制输出随机性（0–2），值越低结果越稳定；留空使用服务端默认值。",
+    },
     "llm.reasoning": { label: "推理强度", aliases: ["思考", "推理强度", "llm"] },
     "llm.outputFormat": {
       label: "输出格式",

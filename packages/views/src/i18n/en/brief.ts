@@ -10,6 +10,12 @@ export const brief = {
     followUp: "Change this draft…",
   },
   offNotice: "Brief is turned off in this profile. You can still undo a card above or enable it in Settings.",
+  unconfiguredNotice: (items: readonly string[]) =>
+    `Brief is missing required settings (${items.join(", ")}). Complete setup in Settings to continue.`,
+  missingItems: {
+    missing_model: "Model name",
+    missing_credentials: "API key",
+  },
   hints: { commands: "commands", send: "send", newJob: "new job" },
   workflows: {
     scrape: { title: "Scrape", description: "A directory, or one file, into a library" },
@@ -306,22 +312,23 @@ export const brief = {
     },
   },
   setup: {
-    title: "Describe a job instead of finding its page",
-    example: "“Scrape everything new in Downloads”",
-    exampleCard: "Scrape 42 files into Main",
-    action: "Set up",
-    dismiss: "Not now",
-    dialogTitle: "Set up Brief",
-    dialogDescription:
-      "Brief turns a description into a card with the job filled in. Nothing runs until you confirm the card.",
-    privacy:
-      "What you type, your library names and library paths, and the values on a draft you change are sent to the configured service.",
-    service: "Service",
-    baseUrl: "API URL",
-    apiKey: "API key",
-    model: "Model",
-    testAndTurnOn: "Test and turn on",
-    testing: "Testing…",
-    turnedOn: "Brief is on. It is in the sidebar under Overview.",
+    description:
+      "Describe the operation in natural language. Brief prepares a structured task draft and runs only after confirmation.",
+    steps: {
+      describe: {
+        title: "Describe",
+        body: "“Scrape new videos in Downloads into the Main library”",
+      },
+      draft: {
+        title: "Draft",
+        body: "Maps the request to a workflow with paths, libraries, and parameters ready to review.",
+      },
+      confirm: {
+        title: "Confirm",
+        body: "Nothing writes or runs until confirmed. Settings changes can be undone.",
+      },
+    },
+    action: "Open AI model settings",
+    missingNotice: (items: readonly string[]) => `Missing required settings: ${items.join(", ")}`,
   },
 };

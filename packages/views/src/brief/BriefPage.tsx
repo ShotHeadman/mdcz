@@ -5,11 +5,13 @@ import {
   maskSecretsInPrompt,
   withoutSecretValues,
 } from "@mdcz/shared/briefSettings";
-import type { Configuration } from "@mdcz/shared/config";
+import { type Configuration, resolveBriefLlmSettings } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { type MissingLlmSetting, missingLlmSettings } from "@mdcz/shared/llm";
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
-import { cn, randomId } from "@mdcz/ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button, cn, randomId } from "@mdcz/ui";
+import { AlertCircle, ArrowDown, ArrowRight } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { type Messages, useT } from "../i18n";
 import { BriefCellView, MARGIN_GRID_CLASS, StateMark, TextButton } from "./BriefCellView";
@@ -155,6 +157,8 @@ export function BriefPage({ port }: { port: BriefPort }) {
   const [config, setConfig] = useState<Configuration>();
   const sendKey = config?.llm.briefSendKey ?? "enter";
   const briefOff = config !== undefined && !config.llm.brief;
+  const missingItems = config ? missingLlmSettings(resolveBriefLlmSettings(config.llm)) : [];
+  const hasMissingConfig = missingItems.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
   const attachedCell = cells.find((cell) => cell.id === expandedId && cell.state === "draft");
   // Labels and descriptions live in the dictionaries, in the user's language, which is also the prompt's.
@@ -193,6 +197,17 @@ export function BriefPage({ port }: { port: BriefPort }) {
   };
 
   if (cells.length === 0) {
+    if (!config) {
+      return <main className="h-full bg-surface-canvas text-foreground" />;
+    }
+    if (briefOff || hasMissingConfig) {
+      return (
+        <BriefOnboarding
+          missing={missingItems}
+          onOpenSettings={() => port.open({ page: "settings", section: "llm" })}
+        />
+      );
+    }
     return (
       <main className="flex h-full items-center justify-center bg-surface-canvas px-4 text-foreground">
         <div className="w-full max-w-2xl">
@@ -322,9 +337,13 @@ export function BriefPage({ port }: { port: BriefPort }) {
         <div className={MARGIN_GRID_CLASS}>
           <span />
           <StateMark state="idle" attached={Boolean(attachedCell)} />
-          {briefOff ? (
+          {briefOff || hasMissingConfig ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-quiet-lg border border-dashed border-border px-3.5 py-2.5 text-sm text-muted-foreground">
-              <span>{t.brief.offNotice}</span>
+              <span>
+                {briefOff
+                  ? t.brief.offNotice
+                  : t.brief.unconfiguredNotice(missingItems.map((item) => t.brief.missingItems[item]))}
+              </span>
               <TextButton onClick={() => port.open({ page: "settings", section: "llm" })}>
                 {t.brief.card.settings.openInSettings}
               </TextButton>
@@ -337,6 +356,95 @@ export function BriefPage({ port }: { port: BriefPort }) {
               onDetach={() => store().expand(null)}
             />
           )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function BriefOnboarding({
+  missing,
+  onOpenSettings,
+}: {
+  missing: readonly MissingLlmSetting[];
+  onOpenSettings: () => void;
+}) {
+  const t = useT();
+  const { setup } = t.brief;
+  const steps = [
+    {
+      index: "01",
+      title: setup.steps.describe.title,
+      body: setup.steps.describe.body,
+      cardClass: "border border-border/35 bg-surface-low/55 text-foreground/80",
+      indexClass: "text-muted-foreground/70",
+      bodyClass: "text-muted-foreground",
+      arrowClass: "text-muted-foreground/45",
+    },
+    {
+      index: "02",
+      title: setup.steps.draft.title,
+      body: setup.steps.draft.body,
+      cardClass: "border border-border/65 bg-surface-low text-foreground",
+      indexClass: "text-muted-foreground",
+      bodyClass: "text-foreground/80",
+      arrowClass: "text-foreground/70",
+    },
+    {
+      index: "03",
+      title: setup.steps.confirm.title,
+      body: setup.steps.confirm.body,
+      cardClass: "bg-foreground text-background",
+      indexClass: "text-background/55",
+      bodyClass: "text-background/80",
+      arrowClass: "",
+    },
+  ];
+  const missingLabels = missing.map((item) => t.brief.missingItems[item]);
+
+  return (
+    <main className="flex h-full items-center justify-center overflow-y-auto bg-surface-canvas px-6 py-10 text-foreground">
+      <div className="w-full max-w-3xl space-y-8">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold tracking-tight">{t.shell.nav.brief}</h1>
+          <p className="max-w-xl text-sm leading-6 text-muted-foreground">{setup.description}</p>
+        </div>
+
+        <ol className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:gap-4">
+          {steps.map((step, index) => (
+            <Fragment key={step.index}>
+              <li className={cn("flex flex-col justify-between gap-4 rounded-quiet-xl p-5", step.cardClass)}>
+                <div className="flex items-baseline gap-2.5">
+                  <span className={cn("font-numeric text-xs font-semibold", step.indexClass)}>{step.index}</span>
+                  <h2 className="text-sm font-semibold">{step.title}</h2>
+                </div>
+                <p className={cn("text-sm leading-6", step.bodyClass)}>{step.body}</p>
+              </li>
+              {index < steps.length - 1 ? (
+                <li aria-hidden="true" className={cn("flex items-center justify-center", step.arrowClass)}>
+                  <ArrowRight className="hidden h-4 w-4 md:block" />
+                  <ArrowDown className="h-4 w-4 md:hidden" />
+                </li>
+              ) : null}
+            </Fragment>
+          ))}
+        </ol>
+
+        <div className="space-y-4">
+          {missingLabels.length > 0 ? (
+            <div
+              role="status"
+              className="flex items-center gap-2.5 rounded-quiet-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
+            >
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{setup.missingNotice(missingLabels)}</span>
+            </div>
+          ) : null}
+
+          <Button type="button" className="h-11 rounded-quiet-capsule px-6 font-semibold" onClick={onOpenSettings}>
+            {setup.action}
+            <ArrowRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </main>

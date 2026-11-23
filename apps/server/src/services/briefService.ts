@@ -3,7 +3,7 @@ import type { MediaLibraryService } from "@mdcz/runtime/library";
 import { createLlmApiClient, type LlmApiClient } from "@mdcz/runtime/llm";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { type BriefCheckResponse, type BriefPlan, type BriefPlanInput, MEDIA_SERVERS } from "@mdcz/shared/briefCatalog";
-import type { LlmSettings } from "@mdcz/shared/config";
+import { type LlmConnectionSettings, resolveBriefLlmSettings } from "@mdcz/shared/config";
 import type { ServerConfigService } from "./configService";
 import type { LibraryService } from "./libraryService";
 
@@ -25,7 +25,7 @@ export class BriefService {
     if (!configuration.llm.brief) throw new Error("Brief is turned off");
     return await planBriefRequest(
       input,
-      configuration.llm,
+      resolveBriefLlmSettings(configuration.llm),
       {
         libraries: await this.libraries.list(),
         mediaServers: MEDIA_SERVERS.filter(
@@ -52,7 +52,7 @@ export class BriefService {
     );
   }
 
-  async check(settings: LlmSettings): Promise<BriefCheckResponse> {
+  async check(settings: LlmConnectionSettings): Promise<BriefCheckResponse> {
     return await checkBriefPlanner(settings, this.client);
   }
 }

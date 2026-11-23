@@ -29,6 +29,7 @@ const createBaseConfig = () => {
       enableTranslation: true,
     },
     llm: {
+      modelName: "test-model",
       apiKey: "test-key",
       maxRetries: 1,
     },
@@ -567,6 +568,7 @@ describe("TranslateService term consistency", () => {
         targetLanguage: "zh-TW",
       },
       llm: {
+        modelName: "test-model",
         apiKey: "test-key",
         maxRetries: 1,
       },
@@ -593,6 +595,7 @@ describe("TranslateService term consistency", () => {
         enableTranslation: true,
       },
       llm: {
+        modelName: "test-model",
         apiKey: "",
         baseUrl: "http://127.0.0.1:11434/v1",
         maxRetries: 1,
@@ -643,6 +646,7 @@ describe("TranslateService term consistency", () => {
         enableTranslation: true,
       },
       llm: {
+        modelName: "test-model",
         apiKey: "test-key",
         maxRetries: 1,
       },

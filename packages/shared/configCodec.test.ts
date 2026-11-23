@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoField } from "./config";
+import {
+  configurationSchema,
+  defaultConfiguration,
+  NFO_FIELD_OPTIONS,
+  type NfoField,
+  resolveBriefLlmSettings,
+} from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 
 describe("configuration codec", () => {
@@ -132,6 +138,49 @@ describe("configuration codec", () => {
           format,
         ),
       ).toThrow();
+    }
+  });
+
+  it("defaults, resolves, and round-trips dedicated Brief model settings", () => {
+    expect(defaultConfiguration.llm.briefModel).toBeNull();
+    expect(resolveBriefLlmSettings(defaultConfiguration.llm).modelName).toBe(defaultConfiguration.llm.modelName);
+
+    const dedicated = {
+      ...defaultConfiguration,
+      llm: {
+        ...defaultConfiguration.llm,
+        modelName: "gpt-4o-mini",
+        briefModel: {
+          ...defaultConfiguration.llm,
+          modelName: "deepseek-reasoner",
+          serviceType: "deepseek" as const,
+          apiKey: "sk-brief",
+          baseUrl: "https://api.deepseek.com/v1",
+          reasoning: "enabled" as const,
+          outputFormat: "json_object" as const,
+          temperature: null,
+        },
+      },
+    };
+
+    for (const format of ["toml", "json"] as const) {
+      const roundTripped = parseConfigurationContent(serializeConfiguration(dedicated, format), format);
+      expect(roundTripped.llm.briefModel).toMatchObject({
+        modelName: "deepseek-reasoner",
+        serviceType: "deepseek",
+        apiKey: "sk-brief",
+        reasoning: "enabled",
+        outputFormat: "json_object",
+        temperature: null,
+      });
+      expect(resolveBriefLlmSettings(roundTripped.llm).modelName).toBe("deepseek-reasoner");
+
+      const cleared = parseConfigurationContent(
+        serializeConfiguration({ ...dedicated, llm: { ...dedicated.llm, briefModel: null } }, format),
+        format,
+      );
+      expect(cleared.llm.briefModel).toBeNull();
+      expect(resolveBriefLlmSettings(cleared.llm).modelName).toBe("gpt-4o-mini");
     }
   });
 });

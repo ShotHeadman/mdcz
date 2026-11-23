@@ -448,36 +448,39 @@ const fields: Record<FieldKey, FieldText> = {
   "translate.engine": { label: "Translation engine", aliases: ["translator", "translation"] },
   "llm.modelName": { label: "Model name", aliases: ["model", "openai", "llm"] },
   "llm.brief": {
-    label: "Brief",
-    description:
-      "Describe a job in your own words, check the card MDCz prepares, and confirm it. Turning it on first checks that this model can plan a job. Requests, library names and library paths are sent to this model.",
+    label: "Enable Brief",
+    description: "Draft confirmable tasks from natural language.",
     aliases: ["assistant", "brief", "prompt"],
   },
+  "llm.briefModel": {
+    label: "Brief model",
+    aliases: ["brief model", "dedicated model", "assistant model", "llm", "brief"],
+  },
   "llm.briefSendKey": {
-    label: "Send a Brief prompt with",
-    description: "The other combination starts a new line in the prompt box.",
+    label: "Send shortcut",
+    description: "The alternate key combination inserts a new line.",
     aliases: ["enter", "ctrl", "cmd", "send", "shortcut", "keyboard"],
   },
   "llm.apiKey": {
-    label: "API key (optional)",
-    description:
-      "Usually required for the default OpenAI endpoint; whether local or compatible services need a key depends on the server.",
+    label: "API key",
+    description: "Required for the default OpenAI endpoint; optional for local or compatible services as configured.",
     aliases: ["api key", "token", "openai key"],
   },
   "llm.baseUrl": {
     label: "API URL",
-    description: `Default: ${DEFAULT_LLM_BASE_URL}. Google Gemini example: https://generativelanguage.googleapis.com/v1beta/openai. Local example: Ollama uses http://127.0.0.1:11434/v1`,
+    description: `Default: ${DEFAULT_LLM_BASE_URL}. Gemini: https://generativelanguage.googleapis.com/v1beta/openai. Ollama: http://127.0.0.1:11434/v1`,
     aliases: ["base url", "endpoint"],
   },
-  "llm.apiFormat": { label: "Request format" },
+  "llm.apiFormat": { label: "API protocol" },
   "llm.serviceType": {
     label: "Service type",
-    description: "Custom proxies must select Google or DeepSeek explicitly; the URL domain is not used for detection.",
+    description: "Select Google or DeepSeek explicitly for custom endpoints; not inferred from the URL.",
   },
   "translate.llmPrompt": { label: "LLM translation prompt", aliases: ["prompt"] },
   "llm.temperature": {
-    label: "Temperature (advanced, optional)",
-    description: "Leave empty to use the server default.",
+    label: "Temperature",
+    description:
+      "Controls output randomness (0–2); lower values are more consistent. Leave blank for the server default.",
   },
   "llm.reasoning": { label: "Reasoning effort", aliases: ["reasoning", "thinking", "llm"] },
   "llm.outputFormat": {

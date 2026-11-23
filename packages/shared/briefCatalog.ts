@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ASSET_NAMING_MODES, NFO_NAMING_MODES } from "./assetNaming";
 import type { BriefSettingsChange } from "./briefSettings";
-import { llmSchema } from "./config";
+import { llmConnectionSchema } from "./config";
 import { Website } from "./enums";
 import { LIBRARY_EDIT_FIELDS } from "./libraryEdit";
 import { AUTOMATION_LEVELS, DISCOVERY_MODES, PLACEMENT_MODES } from "./mediaLibrary";
@@ -271,7 +271,7 @@ export const briefPlanInputSchema = z.object({
 export type BriefPlanInput = z.infer<typeof briefPlanInputSchema>;
 
 /** The AI model section as edited, so the switch can be turned on before the connection is saved. */
-export const briefCheckInputSchema = llmSchema;
+export const briefCheckInputSchema = llmConnectionSchema;
 
 export const briefCheckResponseSchema = z.object({
   status: z.enum(["ok", "missing_model", "missing_credentials", "failed", "wrong_plan"]),

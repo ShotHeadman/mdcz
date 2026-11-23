@@ -7,6 +7,11 @@ export const brief: Messages["brief"] = {
     followUp: "修改这份草稿…",
   },
   offNotice: "当前配置档案未开启指令。你仍可在上方撤销操作，或前往设置开启。",
+  unconfiguredNotice: (items) => `指令尚缺少必填项（${items.join("、")}），请前往设置补全后继续使用。`,
+  missingItems: {
+    missing_model: "模型名称",
+    missing_credentials: "API 密钥",
+  },
   hints: { commands: "命令", send: "发送", newJob: "新任务" },
   workflows: {
     scrape: { title: "刮削", description: "将一个目录或单个文件刮削进库" },
@@ -287,20 +292,22 @@ export const brief: Messages["brief"] = {
     },
   },
   setup: {
-    title: "描述任务，不必再找它在哪个页面",
-    example: "“把下载目录里的新视频都刮削一遍”",
-    exampleCard: "将 42 个文件刮削到 Main",
-    action: "设置",
-    dismiss: "暂不",
-    dialogTitle: "设置指令",
-    dialogDescription: "指令会把你的描述变成一张填好任务的卡片。确认卡片之前不会执行任何操作。",
-    privacy: "你输入的内容、库名称和库路径，以及你修改的草稿中的值，会发送给所配置的服务。",
-    service: "服务类型",
-    baseUrl: "API 地址",
-    apiKey: "密钥",
-    model: "模型",
-    testAndTurnOn: "测试并开启",
-    testing: "测试中…",
-    turnedOn: "指令已开启，位于侧边栏的概览下方。",
+    description: "以自然语言提交操作意图，系统解析为结构化任务草稿，经确认后方才执行。",
+    steps: {
+      describe: {
+        title: "输入指令",
+        body: "“将下载目录中的新增视频刮削至 Main 库”",
+      },
+      draft: {
+        title: "生成草稿",
+        body: "自动匹配工作流并填充路径、目标库与参数，支持手动微调。",
+      },
+      confirm: {
+        title: "确认执行",
+        body: "确认前不产生任何写入操作；配置类变更支持一键撤销。",
+      },
+    },
+    action: "前往 AI 模型设置",
+    missingNotice: (items) => `当前缺少必填配置：${items.join("、")}`,
   },
 };
