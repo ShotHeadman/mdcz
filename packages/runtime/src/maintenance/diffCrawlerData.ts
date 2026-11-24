@@ -248,7 +248,14 @@ const buildImageFieldDiff = (
     toRemoteHttpSource(oldData[sourceField]) || toRemoteHttpSource(oldValue) || toRemoteHttpSource(oldPreview.src);
   const newSource =
     toRemoteHttpSource(newData[sourceField]) || toRemoteHttpSource(newValue) || toRemoteHttpSource(newPreview.src);
-  const changed = oldSource || newSource ? oldSource !== newSource : rawChanged;
+  // Sites without a standalone poster derive it from the cover, so an empty new poster_url is not a replacement.
+  const hasNewPosterProposal = Boolean(newSource || newPreview.src || newPreview.fallbackSrcs.length);
+  const changed =
+    field === "poster_url" && !hasNewPosterProposal
+      ? false
+      : oldSource || newSource
+        ? oldSource !== newSource
+        : rawChanged;
 
   return {
     kind: "image",

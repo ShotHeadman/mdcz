@@ -330,7 +330,7 @@ exports[`scrapes recorded movies end to end: 'fc2 extra moves with its movie' 1`
     "output/Unknown/FC2-4984259/extrafanart/fanart1.jpg 1280x720",
     "output/Unknown/FC2-4984259/fanart.png 1280x720",
     "output/Unknown/FC2-4984259/movie.nfo",
-    "output/Unknown/FC2-4984259/poster.png 276x276",
+    "output/Unknown/FC2-4984259/poster.png 480x720",
     "output/Unknown/FC2-4984259/thumb.png 1280x720",
     "source/",
   ],

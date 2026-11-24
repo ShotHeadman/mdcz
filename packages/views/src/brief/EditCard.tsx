@@ -12,6 +12,7 @@ import {
   LibrarySelect,
   paramLabel,
   TextValue,
+  useBriefFollowUpPending,
   useConfirm,
 } from "./cardParts";
 
@@ -37,6 +38,7 @@ export function EditCard({
   const filterKey = JSON.stringify(filter);
   const movies = useLoad(() => port.movies(filter), filterKey);
   const entries = movies.data ?? null;
+  const followUpPending = useBriefFollowUpPending();
   const { confirming, error, run } = useConfirm();
 
   const reportDraft = (draft: LibraryEditDraft) => {
@@ -105,7 +107,7 @@ export function EditCard({
           initial={{ field: params.field, operation: params.operation, value: params.value, from: params.from }}
           onDraftChange={reportDraft}
           getPosterSrc={port.posterSrc}
-          submitting={confirming}
+          submitting={confirming || followUpPending}
           onSubmit={(input) => void run(async () => onConfirmed({ kind: "edit", jobId: await port.startEdit(input) }))}
         />
       )}

@@ -9,7 +9,13 @@ import { formatDateTime, type Messages, useT } from "../i18n";
 import type { BriefPort } from "./BriefPort";
 import type { BriefCell, BriefCellState, BriefFollowUp, BriefJob, BriefOutcome } from "./briefStore";
 import { CheckCard, type CheckResult, CheckResultView } from "./CheckCard";
-import { type BriefRequestAnswer, describeDrop, describeValue, paramLabel } from "./cardParts";
+import {
+  BriefFollowUpPendingProvider,
+  type BriefRequestAnswer,
+  describeDrop,
+  describeValue,
+  paramLabel,
+} from "./cardParts";
 import { DirectoryCard } from "./DirectoryCard";
 import { EditCard } from "./EditCard";
 import { HealthRepairCard } from "./HealthRepairCard";
@@ -567,7 +573,9 @@ export function BriefCellView({
           <span />
           {marginTrail}
           {draft ? (
-            <DraftCard cell={cell} config={config} libraries={libraries} port={port} actions={actions} />
+            <BriefFollowUpPendingProvider value={cell.followUps.some((line) => line.planning)}>
+              <DraftCard cell={cell} config={config} libraries={libraries} port={port} actions={actions} />
+            </BriefFollowUpPendingProvider>
           ) : hasResult ? (
             <RequestResult cell={cell} />
           ) : (

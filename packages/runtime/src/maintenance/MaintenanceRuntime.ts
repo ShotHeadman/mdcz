@@ -334,8 +334,21 @@ export class MaintenanceRuntime {
         const merged = mergeSiteData(siteData, config);
         imageAlternatives = merged.imageAlternatives;
         const publication = await publishMetadata({
-          // Actor photos are output, not site data; re-merging must not fetch them again.
-          data: { ...merged.data, actor_profiles: entry.crawlerData?.actor_profiles },
+          // Re-merging never fetches remote media, so keep the published artwork fields alongside actor photos.
+          data: {
+            ...merged.data,
+            actor_profiles: entry.crawlerData?.actor_profiles,
+            ...(entry.crawlerData
+              ? {
+                  thumb_url: entry.crawlerData.thumb_url,
+                  thumb_source_url: entry.crawlerData.thumb_source_url,
+                  poster_url: entry.crawlerData.poster_url,
+                  poster_source_url: entry.crawlerData.poster_source_url,
+                  fanart_url: entry.crawlerData.fanart_url,
+                  fanart_source_url: entry.crawlerData.fanart_source_url,
+                }
+              : {}),
+          },
           published,
           keepEdits: false,
           keepPublishedGenres: true,
@@ -374,7 +387,7 @@ export class MaintenanceRuntime {
         undefined,
       );
       const keptPoster =
-        (preset.dataSource === "online" && !config.download.keepPoster) || applied.assetDecisions?.poster === "replace"
+        preset.dataSource === "online" && (!config.download.keepPoster || applied.assetDecisions?.poster === "replace")
           ? undefined
           : entry.assets.poster;
 
@@ -619,7 +632,7 @@ export class MaintenanceRuntime {
           : (downloadedAssets.poster ?? entry.assets.poster);
       const thumbPath = downloadedAssets.thumb ?? entry.assets.thumb;
       const posterRebuild =
-        committed?.assetDecisions?.poster === "replace"
+        preset.dataSource === "online" && committed?.assetDecisions?.poster === "replace"
           ? undefined
           : await this.posterRebuild(preset, config, entry, keptPoster, preparedCrawlerData, thumbPath, signal);
       const logger = this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime");

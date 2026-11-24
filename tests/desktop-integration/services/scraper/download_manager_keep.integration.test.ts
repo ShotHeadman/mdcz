@@ -762,24 +762,33 @@ describe("DownloadManager keep flags", () => {
     expect(await readFile(join(root, "published-thumb.webp"))).toEqual(webp);
   });
 
-  it("crops tiny posters and copies fanart from one cover download, with or without the thumb", async () => {
-    for (const downloadThumb of [true, false]) {
+  it("crops tiny or non-portrait posters and copies fanart from one cover download, with or without the thumb", async () => {
+    const cases = [
+      { downloadThumb: true, thumb: { width: 800, height: 500 }, poster: { width: 120, height: 180, minBytes: 0 } },
+      { downloadThumb: false, thumb: { width: 800, height: 500 }, poster: { width: 120, height: 180, minBytes: 0 } },
+      {
+        downloadThumb: true,
+        thumb: { width: 1200, height: 714 },
+        poster: { width: 1200, height: 714, minBytes: 60_000 },
+      },
+    ];
+    for (const { downloadThumb, thumb, poster } of cases) {
       const { root, manager, networkClient } = await createSubject();
       networkClient.download.mockImplementation(async (url, outputPath) => {
         if (url.includes("thumb")) {
-          await writeSvgImage(outputPath, { width: 800, height: 500, color: "#4a8bd6" });
+          await writeSvgImage(outputPath, { ...thumb, color: "#4a8bd6" });
           return outputPath;
         }
         if (url.includes("poster")) {
-          await writeSvgImage(outputPath, { width: 120, height: 180, color: "#d64a4a" });
+          await writeSvgImage(outputPath, { ...poster, color: "#d64a4a" });
           return outputPath;
         }
         return writeDownloadedFile(outputPath, url);
       });
       const validateSpy = vi.spyOn(imageUtils, "validateImage").mockResolvedValue({
         valid: true,
-        width: 800,
-        height: 500,
+        width: thumb.width,
+        height: thumb.height,
         format: "jpeg",
       });
       const data = createCrawlerData({
@@ -798,7 +807,7 @@ describe("DownloadManager keep flags", () => {
       });
       const assets = await download(manager, root, data, config, {}, { onDerivedPosterSource });
       validateSpy.mockRestore();
-      const cropRegion = resolveThumbToPosterCropRegion(800, 500);
+      const cropRegion = resolveThumbToPosterCropRegion(thumb.width, thumb.height);
       expect(assets.poster).toBe(join(root, "poster.jpg"));
       expect(assets.thumb).toBe(downloadThumb ? join(root, "thumb.jpg") : undefined);
       expect(assets.fanart).toBe(join(root, "fanart.jpg"));

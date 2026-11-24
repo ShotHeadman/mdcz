@@ -84,7 +84,10 @@ const followUp = async (plan: Plan, cell: BriefCell, prompt: string) => {
       { id: lineId, prompt, sentAt: new Date().toISOString(), planning: true, changed: [], dropped: [], before },
     ],
   }));
-  const isPending = () => findCell(cell.id)?.followUps.some((line) => line.id === lineId && line.planning);
+  const isPending = () => {
+    const current = findCell(cell.id);
+    return current?.state === "draft" && current.followUps.some((line) => line.id === lineId && line.planning);
+  };
   // A secret typed on the card stays in the browser; the model gets the draft without it.
   const params = Array.isArray(cell.params.changes)
     ? { ...cell.params, changes: withoutSecretValues(cell.params.changes as BriefSettingsChange[]) }
@@ -198,7 +201,7 @@ export function BriefPage({ port }: { port: BriefPort }) {
 
   if (cells.length === 0) {
     if (!config) {
-      return <main className="h-full bg-surface-canvas text-foreground" />;
+      return <div className="h-full bg-surface-canvas text-foreground" />;
     }
     if (briefOff || hasMissingConfig) {
       return (
@@ -209,11 +212,11 @@ export function BriefPage({ port }: { port: BriefPort }) {
       );
     }
     return (
-      <main className="flex h-full items-center justify-center bg-surface-canvas px-4 text-foreground">
+      <div className="flex h-full items-center justify-center bg-surface-canvas px-4 text-foreground">
         <div className="w-full max-w-2xl">
           <PromptBox large sendKey={sendKey} onSubmit={submit} />
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -235,16 +238,24 @@ export function BriefPage({ port }: { port: BriefPort }) {
         })),
       confirmed: (confirmedJob: NonNullable<BriefCell["job"]>, outcome?: BriefCell["outcome"]) => {
         const instant = confirmedJob.kind === "instant";
-        update({
+        store().updateCell(cell.id, (current) => ({
           job: confirmedJob,
           outcome,
           state: !instant ? "running" : outcome?.kind === "opened" ? "opened" : "done",
           finishedAt: instant ? new Date().toISOString() : undefined,
-        });
+          followUps: current.followUps.filter((line) => !line.planning),
+        }));
         if (outcome?.kind === "settings" || outcome?.kind === "library" || outcome?.kind === "profile") reload();
       },
       request: (run: () => Promise<{ outcome: NonNullable<BriefCell["outcome"]>; result?: unknown }>) => {
-        update({ job: { kind: "request" }, state: "running", outcome: undefined, result: undefined, error: undefined });
+        store().updateCell(cell.id, (current) => ({
+          job: { kind: "request" },
+          state: "running",
+          outcome: undefined,
+          result: undefined,
+          error: undefined,
+          followUps: current.followUps.filter((line) => !line.planning),
+        }));
         void run().then(
           ({ outcome, result }) =>
             findCell(cell.id) && update({ state: "done", outcome, result, finishedAt: new Date().toISOString() }),
@@ -311,7 +322,7 @@ export function BriefPage({ port }: { port: BriefPort }) {
   };
 
   return (
-    <main className="flex h-full flex-col bg-surface-canvas text-foreground">
+    <div className="flex h-full flex-col bg-surface-canvas text-foreground">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-4 pt-6 md:px-8">
           <header className={cn(MARGIN_GRID_CLASS, "mb-3")}>
@@ -358,7 +369,7 @@ export function BriefPage({ port }: { port: BriefPort }) {
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -403,7 +414,7 @@ function BriefOnboarding({
   const missingLabels = missing.map((item) => t.brief.missingItems[item]);
 
   return (
-    <main className="flex h-full items-center justify-center overflow-y-auto bg-surface-canvas px-6 py-10 text-foreground">
+    <div className="flex h-full items-center justify-center overflow-y-auto bg-surface-canvas px-6 py-10 text-foreground">
       <div className="w-full max-w-3xl space-y-8">
         <div className="space-y-2">
           <h1 className="text-2xl font-bold tracking-tight">{t.shell.nav.brief}</h1>
@@ -447,6 +458,6 @@ function BriefOnboarding({
           </Button>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

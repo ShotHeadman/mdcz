@@ -52,6 +52,14 @@ export const resolveThumbToPosterCropRegion = (imageWidth: number, imageHeight: 
   } else if (imageWidth === 840 && imageHeight === 472) {
     left = 473;
     right = 788;
+  } else {
+    // Wide covers (e.g. 16:9) leave a right half that is still too wide for a 2:3 poster frame; narrow it to 2:3.
+    const width = right - left;
+    if (imageHeight / width < 1.4) {
+      const cropWidth = Math.floor(imageHeight / 1.5);
+      left = Math.round(left + (width - cropWidth) / 2);
+      right = left + cropWidth;
+    }
   }
 
   return clampPixelCrop({ left, top: 0, width: right - left, height: imageHeight }, imageWidth, imageHeight);

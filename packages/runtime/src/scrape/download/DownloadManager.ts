@@ -195,11 +195,14 @@ export class DownloadManager {
     signal?: AbortSignal;
   }): Promise<ImageDimensions | undefined> {
     const sitePoster = scrapedSitePoster(input.data);
-    if (sitePoster) return await this.probeImageSize(sitePoster, input.signal);
-    if (!input.thumbPath) return undefined;
-    const { width = 0, height = 0 } = await sharp(input.thumbPath).metadata();
-    const region = resolveThumbToPosterCropRegion(width, height);
-    return region ? { width: region.width, height: region.height } : { width, height };
+    const size = sitePoster
+      ? await this.probeImageSize(sitePoster, input.signal)
+      : input.thumbPath
+        ? await sharp(input.thumbPath).metadata()
+        : undefined;
+    if (!size?.width || !size.height) return undefined;
+    const region = resolveThumbToPosterCropRegion(size.width, size.height);
+    return region ? { width: region.width, height: region.height } : { width: size.width, height: size.height };
   }
 
   private createExecutionPlan(

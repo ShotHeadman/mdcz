@@ -4,7 +4,7 @@ import { type MediaLibraryDto, mediaLibrarySettingsSchema } from "@mdcz/shared/m
 import { isFieldAnchor } from "@mdcz/shared/settingsRegistry";
 import { Button, Checkbox, cn, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useId, useState } from "react";
 import { type Messages, useT } from "../i18n";
 import { PERSON_SERVER_NAMES } from "../tools/details/PersonMediaLibraryDetail";
 import type { BriefPort } from "./BriefPort";
@@ -48,6 +48,12 @@ export function useConfirm() {
   return { confirming, error, setError, run };
 }
 
+const BriefFollowUpPendingContext = createContext(false);
+
+export const BriefFollowUpPendingProvider = BriefFollowUpPendingContext.Provider;
+
+export const useBriefFollowUpPending = () => useContext(BriefFollowUpPendingContext);
+
 /** The expanded draft's outline: dashed while it holds what the model proposed, until Confirm locks it. */
 export const DRAFT_OUTLINE_CLASS =
   "space-y-4 rounded-quiet-lg border border-dashed border-border px-5 py-4 transition-[border-style] duration-200 motion-reduce:transition-none";
@@ -69,6 +75,7 @@ export function CardShell({
   footer?: ReactNode;
   onConfirm: () => void;
 }) {
+  const followUpPending = useBriefFollowUpPending();
   return (
     <div className={DRAFT_OUTLINE_CLASS}>
       {children}
@@ -79,7 +86,7 @@ export function CardShell({
       ) : null}
       <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="mr-auto flex flex-wrap items-center gap-3 text-xs text-muted-foreground">{footer}</div>
-        <Button type="button" disabled={confirmDisabled || confirming} onClick={onConfirm}>
+        <Button type="button" disabled={confirmDisabled || confirming || followUpPending} onClick={onConfirm}>
           {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {confirmLabel}
         </Button>
