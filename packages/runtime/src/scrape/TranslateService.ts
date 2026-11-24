@@ -2,7 +2,7 @@ import { toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateEngine } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
-import { createLlmApiClient, type LlmApiClient } from "../llm";
+import { LlmApiClient } from "../llm";
 import { isUnrecoverableNetworkError, type RuntimeNetworkClient, runWithNetworkChannel } from "../network";
 import { detectLanguage, noopRuntimeLogger, type RuntimeLogger, toErrorMessage } from "../shared";
 import { ActorNameNormalizer } from "./translate/ActorNameNormalizer";
@@ -38,7 +38,7 @@ export class TranslateService {
   constructor(networkClient: RuntimeNetworkClient, options: TranslateServiceOptions = {}) {
     this.logger = options.logger ?? noopRuntimeLogger;
     this.actorNameNormalizer = new ActorNameNormalizer(options.mappingStore);
-    const llmApiClient = options.llmApiClient ?? createLlmApiClient(networkClient);
+    const llmApiClient = options.llmApiClient ?? new LlmApiClient(networkClient);
     this.openAiTranslator = new OpenAiTranslator(this.logger, llmApiClient, networkClient);
     this.translators = {
       google: new GoogleTranslator(networkClient).translate,

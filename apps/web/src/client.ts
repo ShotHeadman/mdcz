@@ -2,6 +2,7 @@ import type { TaskNotificationDto } from "@mdcz/shared";
 import type { Configuration } from "@mdcz/shared/config";
 import { DomainErrorCode, type DomainErrorShape, type LibraryTaskConflictDomainError } from "@mdcz/shared/error";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
+import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { getT } from "@mdcz/views/i18n";
 import { createTRPCUntypedClient, httpLink, TRPCClientError } from "@trpc/client";
 
@@ -96,6 +97,15 @@ export const getLibraryAssetSrc = (input: {
   }
   return url.toString();
 };
+
+/** A library movie's poster at list size, or "" when it has none. */
+export const getLibraryPosterSrc = (entry: LibraryEntryDto): string =>
+  getLibraryAssetSrc({
+    format: "webp",
+    path: entry.thumbnailPath,
+    rootId: entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId,
+    width: 160,
+  });
 
 const getAuthorizationHeaders = (): Record<string, string> => {
   const token = getAdminToken();

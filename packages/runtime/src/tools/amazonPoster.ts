@@ -1,4 +1,4 @@
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
 import type { MediaLibraryRecord } from "@mdcz/persistence";
 import type { Configuration } from "@mdcz/shared/config";
@@ -10,13 +10,7 @@ import type {
 } from "@mdcz/shared/toolTypes";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { resolveFileNaming } from "../library/mediaLibraryService";
-import { type MovieLibrary, resolveRegisteredNfoPaths } from "../library/registeredMedia";
-import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
-import type { PublicationOutputPort } from "../publication/types";
-import type { DownloadManager } from "../scrape/download/DownloadManager";
-import type { NfoGenerator } from "../scrape/nfo";
-import { applyPosterTagBadgesIfNeeded } from "../scrape/output/applyPosterTagBadges";
-import { installPoster, posterTargetPath } from "../scrape/posterOutput";
+import { installPoster, type PosterInstallContext, posterTargetPath } from "../scrape/posterOutput";
 import { validateImage } from "../scrape/utils/image";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import {
@@ -35,18 +29,10 @@ export interface AmazonPosterDependencies {
   logger?: Pick<RuntimeLogger, "warn">;
 }
 
-export interface AmazonPosterApplyDependencies {
-  downloadManager: Pick<DownloadManager, "downloadPlainPoster">;
+export interface AmazonPosterApplyDependencies extends Omit<PosterInstallContext, "config" | "logger"> {
   localScanService: AmazonPosterLocalScanService;
-  nfoGenerator: Pick<NfoGenerator, "mergePosterRecordXml">;
-  dataDir: string;
   /** Name a poster for a movie that has none the way its library names files. */
   libraries: readonly MediaLibraryRecord[];
-  publication: {
-    roots: readonly { id: string; hostPath: string }[];
-    /** Absent outside the library, where no NFO copy or asset row is registered. */
-    library?: MovieLibrary & PublicationOutputPort;
-  };
   logger?: Pick<RuntimeLogger, "warn">;
 }
 
@@ -112,12 +98,10 @@ export const applyAmazonPosters = async (
   config: Configuration,
   dependencies: AmazonPosterApplyDependencies,
 ): Promise<AmazonPosterApplyResultItem[]> => {
-  const { library, roots } = dependencies.publication;
   const logger = dependencies.logger ?? runtimeLoggerService.getLogger("AmazonPoster");
   const results: AmazonPosterApplyResultItem[] = [];
   for (const item of items) {
     const videoDirectory = dirname(item.filePath);
-    let stagingDir: string | undefined;
     try {
       const entry = await dependencies.localScanService.scanVideo(
         createMediaRoot({
@@ -128,64 +112,30 @@ export const applyAmazonPosters = async (
         item.filePath,
         config.paths.sceneImagesFolder,
       );
-      const { nfoPath, crawlerData } = entry;
-      if (!nfoPath || !crawlerData) throw new Error("Missing writable NFO or metadata");
-      const posterPath = entry.assets.poster
-        ? entry.assets.poster
-        : posterTargetPath(
-            item.filePath,
-            (
-              await resolveFileNaming({
-                libraries: dependencies.libraries,
-                videoPath: item.filePath,
-                metadataDir: dirname(nfoPath),
-                configuration: config,
-              })
-            ).assetNaming,
-            entry.assets,
-          );
-      stagingDir = await createStagingDirectory(dirname(posterPath));
-      const cut = { source: item.amazonPosterUrl, crop: item.crop };
-      const stagedPoster = await dependencies.downloadManager.downloadPlainPoster({
-        data: crawlerData,
-        cut,
-        targetPath: join(stagingDir, basename(posterPath)),
-      });
-      if (!stagedPoster) throw new Error(`Could not cut a poster from ${item.amazonPosterUrl}`);
-      const { posterRecord } = await applyPosterTagBadgesIfNeeded({
-        assets: { poster: stagedPoster, sceneImages: [], downloaded: [stagedPoster] },
-        config,
-        crawlerData,
-        dataDir: dependencies.dataDir,
-        fileInfo: entry.fileInfo,
-        localState: entry.nfoLocalState,
-        logger,
-      });
-      if (!posterRecord) throw new Error("Badge drawing returned no poster record");
-      const registered = library
-        ? await resolveRegisteredNfoPaths(nfoPath, library, async (id) => {
-            const root = roots.find((root) => root.id === id);
-            if (!root) throw new Error(`Publication root not found: ${id}`);
-            return root;
-          })
-        : undefined;
-      await installPoster({
+      if (!entry.nfoPath || !entry.crawlerData) throw new Error("Missing writable NFO or metadata");
+      const posterPath =
+        entry.assets.poster ??
+        posterTargetPath(
+          item.filePath,
+          (
+            await resolveFileNaming({
+              libraries: dependencies.libraries,
+              videoPath: item.filePath,
+              metadataDir: dirname(entry.nfoPath),
+              configuration: config,
+            })
+          ).assetNaming,
+          entry.assets,
+        );
+      await installPoster(
+        entry,
         posterPath,
-        stagedPoster,
-        record: {
-          value: { ...posterRecord, cut },
-          nfoPaths: registered?.paths ?? entry.nfoPaths,
-          nfoGenerator: dependencies.nfoGenerator,
-        },
-        protectedMediaFiles: registered?.mediaPaths ?? [item.filePath],
-        movie: library && registered ? { library, movieId: registered.movieId, roots } : undefined,
-        logger,
-      });
+        { source: item.amazonPosterUrl, crop: item.crop },
+        { ...dependencies, config, logger },
+      );
       results.push({ filePath: item.filePath, success: true });
     } catch (error) {
       results.push({ filePath: item.filePath, success: false, error: toErrorMessage(error) });
-    } finally {
-      if (stagingDir) await removeStagingDirectory(stagingDir);
     }
   }
   return results;

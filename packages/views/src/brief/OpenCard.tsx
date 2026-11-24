@@ -2,6 +2,7 @@ import { BATCH_TRANSLATE_MODES, type BriefParams, OPEN_TARGETS } from "@mdcz/sha
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import { LIBRARY_HEALTH_ISSUES } from "@mdcz/shared/serverDtos";
 import { SECTION_ORDER } from "@mdcz/shared/settingsRegistry";
+import { useLoad } from "../common/useLoad";
 import { type Messages, useT } from "../i18n";
 import { PosterStrip } from "../library/LibraryEditForm";
 import type { BriefDestination } from "./BriefPort";
@@ -16,7 +17,6 @@ import {
   LibrarySelect,
   OptionSelect,
   TextValue,
-  useLoad,
 } from "./cardParts";
 
 type OpenParams = BriefParams["open"];

@@ -1,11 +1,20 @@
 import { type BriefParams, matchPendingItems } from "@mdcz/shared/briefCatalog";
-import { toErrorMessage } from "@mdcz/shared/error";
 import { PENDING_KINDS, type PendingItemDto } from "@mdcz/shared/pending";
 import { Checkbox, cn } from "@mdcz/ui";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
+import { useLoad } from "../common/useLoad";
 import { useT } from "../i18n";
 import { PendingItemSummary } from "../pending/PendingParts";
-import { type BriefCardProps, CardRow, CardShell, findDrop, LibrarySelect, OptionSelect, TextValue } from "./cardParts";
+import {
+  type BriefCardProps,
+  CardRow,
+  CardShell,
+  findDrop,
+  LibrarySelect,
+  OptionSelect,
+  TextValue,
+  useConfirm,
+} from "./cardParts";
 
 type PendingAction = NonNullable<BriefParams["pending"]["action"]>;
 
@@ -17,21 +26,10 @@ export function PendingCard({ cell, libraries, port, onChange, onConfirmed }: Br
   const t = useT();
   const params = cell.params as BriefParams["pending"];
   const action = params.action;
-  const [items, setItems] = useState<PendingItemDto[] | null>(null);
+  const pending = useLoad(() => port.pendingItems(), "pending");
+  const items = pending.data ?? null;
   const [ticks, setTicks] = useState<{ key: string; ids: ReadonlySet<string> } | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let current = true;
-    port.pendingItems().then(
-      (loaded) => current && setItems(loaded),
-      (loadError) => current && setError(toErrorMessage(loadError)),
-    );
-    return () => {
-      current = false;
-    };
-  }, [port]);
+  const { confirming, error, run } = useConfirm();
 
   const eligible = matchPendingItems(items ?? [], params).filter((item) => fits(action, item));
   // New filters start the ticks over: everything they match, or for a repair the one file when only one matches.
@@ -99,19 +97,11 @@ export function PendingCard({ cell, libraries, port, onChange, onConfirmed }: Br
       confirmDisabled={confirmDisabled}
       confirming={confirming}
       error={
-        error ?? (action === "repair" && ticked.length !== 1 ? t.brief.card.repairNeedsOne(eligible.length) : null)
+        error ??
+        pending.error ??
+        (action === "repair" && ticked.length !== 1 ? t.brief.card.repairNeedsOne(eligible.length) : null)
       }
-      onConfirm={async () => {
-        setConfirming(true);
-        setError(null);
-        try {
-          await confirm();
-        } catch (confirmError) {
-          setError(toErrorMessage(confirmError));
-        } finally {
-          setConfirming(false);
-        }
-      }}
+      onConfirm={() => void run(confirm)}
     >
       <CardRow label={t.brief.params.action} dropped={findDrop(cell, "action")}>
         {(id) => (

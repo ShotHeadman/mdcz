@@ -66,7 +66,7 @@ export interface LibraryIndexViewProps {
   className?: string;
   entries: LibraryEntryDto[];
   errorMessage?: string | null;
-  getImageSrc?: (path: string, entry: LibraryEntryDto) => string;
+  getPosterSrc?: (entry: LibraryEntryDto) => string;
   isLoading?: boolean;
   isAvailabilityLoading?: boolean;
   isLoadingMore?: boolean;
@@ -101,7 +101,7 @@ export function LibraryIndexView({
   className,
   entries,
   errorMessage,
-  getImageSrc = (path) => path,
+  getPosterSrc = (entry) => entry.thumbnailPath ?? "",
   isLoading = false,
   isAvailabilityLoading = false,
   isLoadingMore = false,
@@ -470,7 +470,7 @@ export function LibraryIndexView({
             {filteredEntries.length > 0 && browse?.view === "wall" && (
               <LibraryPosterWall
                 entries={filteredEntries}
-                getImageSrc={getImageSrc}
+                getPosterSrc={getPosterSrc}
                 linkComponent={LinkComponent}
                 onToggleSelected={toggleSelected}
                 selectable={selectionMode}
@@ -491,7 +491,7 @@ export function LibraryIndexView({
                     >
                       <LibraryEntryRow
                         entry={entry}
-                        getImageSrc={getImageSrc}
+                        getPosterSrc={getPosterSrc}
                         linkComponent={LinkComponent}
                         selectable={selectionMode}
                         selected={selectedIds.has(entry.id)}
@@ -579,7 +579,7 @@ export function LibraryDeleteDialog({ entries, submitting = false, onCancel, onC
 
 function LibraryEntryRow({
   entry,
-  getImageSrc,
+  getPosterSrc,
   linkComponent: LinkComponent,
   selectable,
   selected,
@@ -590,7 +590,7 @@ function LibraryEntryRow({
   onToggleSelected,
 }: {
   entry: LibraryEntryDto;
-  getImageSrc: (path: string, entry: LibraryEntryDto) => string;
+  getPosterSrc: (entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   selectable: boolean;
   selected: boolean;
@@ -607,7 +607,7 @@ function LibraryEntryRow({
   const t = useT();
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
-  const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
+  const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getPosterSrc(entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
   const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile);
   const isMultiFile = entry.fileRefs.length > 1;

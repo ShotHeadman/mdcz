@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import {
   BRIEF_CATALOG,
@@ -20,12 +21,14 @@ import {
   isSecretField,
   isTextValueField,
   resolveSettingsRow,
+  SECRET_MASK,
   SETTINGS_OPERATIONS,
   settingsFieldShape,
   validateSettingsValues,
 } from "@mdcz/shared/briefSettings";
 import { type Configuration, defaultConfiguration, type LlmConnectionSettings } from "@mdcz/shared/config";
 import type { LibraryEdit } from "@mdcz/shared/libraryEdit";
+import { missingLlmSetting } from "@mdcz/shared/llm";
 import { isAbsoluteHostPath, normalizeComparableHostPath } from "@mdcz/shared/mediaCandidate";
 import { type MediaLibrarySettings, mediaLibrarySettingsSchema } from "@mdcz/shared/mediaLibrary";
 import { PENDING_KINDS, type PendingKindDto } from "@mdcz/shared/pending";
@@ -36,7 +39,7 @@ import {
 } from "@mdcz/shared/serverDtos";
 import type { FieldKey } from "@mdcz/shared/settingsRegistry";
 import { z } from "zod";
-import { type LlmApiClient, type LlmJsonSchema, missingLlmSetting, toLlmTextRequest } from "../llm";
+import { type LlmApiClient, type LlmJsonSchema, toLlmTextRequest } from "../llm";
 import { toErrorMessage } from "../shared";
 
 export type BriefPlannerLibrary = MediaLibrarySettings & { id: string };
@@ -82,7 +85,6 @@ const TEXT_PARAMS: Record<ParamWorkflow, readonly string[]> = {
 const FACET_PARAMS = { actor: "actors", studio: "studios", tag: "tags" } as const;
 const SCALAR_EDIT_FIELDS: ReadonlySet<string> = new Set(["studio", "publisher", "director", "series"]);
 const LIBRARY_SETTING_KEYS = Object.keys(mediaLibrarySettingsSchema.shape);
-const COMPLETE_LEADING_THINK_PATTERN = /^\s*<think>[\s\S]*?<\/think>\s*/iu;
 
 const answerSchema = z.object({
   workflow: z.string().nullable().optional(),
@@ -170,7 +172,7 @@ const describeWorkflow = (workflow: BriefWorkflow): string => {
   return `- ${workflow}: ${BRIEF_CATALOG[workflow].when}\n  Parameters (JSON Schema): ${JSON.stringify(parameters)}`;
 };
 
-export const buildBriefPrompt = (
+const buildBriefPrompt = (
   input: BriefPlanInput,
   context: Pick<BriefPlannerContext, "libraries" | "mediaServers">,
 ): string =>
@@ -203,7 +205,7 @@ export const buildBriefPrompt = (
     input.prompt,
   ].join("\n");
 
-export const buildSettingsPrompt = (input: BriefPlanInput, draftChanges: readonly BriefSettingsChange[]) =>
+const buildSettingsPrompt = (input: BriefPlanInput, draftChanges: readonly BriefSettingsChange[]) =>
   [
     "You prepare a change to the settings of MDCz, an app that scrapes and organizes movie metadata. You never save anything: the user reviews each change on a card and confirms it.",
     'Answer with one JSON object and nothing else, in this shape: {"changes": [{"key": "<field key>", "op": "<operation>", "value": <value or null>, "to": <position or null>}], "clear": []}',
@@ -242,7 +244,7 @@ export const buildSettingsPrompt = (input: BriefPlanInput, draftChanges: readonl
   ].join("\n");
 
 const parseJson = <T extends z.ZodType>(content: string | null, schema: T): z.infer<T> => {
-  const json = (content ?? "").replace(COMPLETE_LEADING_THINK_PATTERN, "").match(/\{[\s\S]*\}/u)?.[0];
+  const json = content?.match(/\{[\s\S]*\}/u)?.[0];
   if (!json) throw new BriefAnswerError(`The model did not answer with a plan: ${(content ?? "").slice(0, 200)}`);
   try {
     return schema.parse(JSON.parse(json));
@@ -250,9 +252,6 @@ const parseJson = <T extends z.ZodType>(content: string | null, schema: T): z.in
     throw new BriefAnswerError(`The model's plan is not valid JSON: ${toErrorMessage(error)}`, { cause: error });
   }
 };
-
-export const parseBriefAnswer = (content: string | null): z.infer<typeof answerSchema> =>
-  parseJson(content, answerSchema);
 
 const normalizeText = (value: string): string => value.toLowerCase().replace(/\\/gu, "/").replace(/\s+/gu, " ").trim();
 const foundInPrompt = (prompt: string, value: string | number): boolean =>
@@ -428,7 +427,7 @@ const resolveSettings = (
   const incoming: BriefSettingsChange[] = [];
   for (const raw of answer.changes ?? []) {
     const secret = isSecretField(raw.key);
-    const shown = secret ? "••••••" : display(raw.value);
+    const shown = secret ? SECRET_MASK : display(raw.value);
     const op = SETTINGS_OPERATIONS.find((operation) => operation === raw.op);
     if (!isBriefSettingsKey(raw.key)) dropped.push({ param: raw.key, value: shown, reason: "unknownField" });
     else if (!op) dropped.push({ param: raw.key, value: raw.op, reason: "invalid" });
@@ -459,7 +458,7 @@ const resolveSettings = (
       } else
         dropped.push({
           param: key,
-          value: isSecretField(key) ? "••••••" : display(change.value ?? change.op),
+          value: isSecretField(key) ? SECRET_MASK : display(change.value ?? change.op),
           reason: result.reason,
         });
     }
@@ -485,7 +484,11 @@ const resolveSettings = (
   const problems = validateSettingsValues(configuration, values);
   for (const key of answered)
     if (problems.has(key))
-      dropped.push({ param: key, value: isSecretField(key) ? "••••••" : display(values.get(key)), reason: "invalid" });
+      dropped.push({
+        param: key,
+        value: isSecretField(key) ? SECRET_MASK : display(values.get(key)),
+        reason: "invalid",
+      });
   const changes = merged.filter((change) => !(answered.has(change.key) && problems.has(change.key)));
 
   const forKey = (list: readonly BriefSettingsChange[], key: FieldKey) =>
@@ -505,8 +508,6 @@ const resolveSettings = (
     dropped,
   };
 };
-
-const sameValue = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 export const planBriefRequest = async (
   input: BriefPlanInput,
@@ -564,7 +565,7 @@ export const planBriefRequest = async (
     return {
       workflow: draftWorkflow,
       params,
-      changed: Object.keys(paramShape(draftWorkflow)).filter((key) => !sameValue(base[key], params[key])),
+      changed: Object.keys(paramShape(draftWorkflow)).filter((key) => !isDeepStrictEqual(base[key], params[key])),
       workedOut: resolved.workedOut,
       dropped: [...dropped, ...resolved.dropped],
     } as BriefPlan;

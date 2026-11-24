@@ -11,7 +11,7 @@ import {
 } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
-import { missingLlmSettings } from "@mdcz/shared/llm";
+import { fitLlmChoices, llmServiceChoices, missingLlmSettings } from "@mdcz/shared/llm";
 import {
   POSTER_TAG_BADGE_ASPECT_HEIGHT,
   POSTER_TAG_BADGE_ASPECT_WIDTH,
@@ -40,6 +40,7 @@ import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "rea
 import type { FieldError, FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { useLoad } from "../common/useLoad";
 import { ChipArrayField } from "../config-form/ChipArrayField";
 import {
   BaseField,
@@ -157,33 +158,12 @@ function shouldMountConditionalSettings(
 
 export function useCrawlerSiteOptions(flatDefaults: Record<string, unknown>): string[] {
   const services = useSettingsServices();
-  const [sites, setSites] = useState<string[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    services
-      .listCrawlerSites()
-      .then((result) => {
-        if (!cancelled) {
-          setSites(toSiteOptions(result.sites));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSites([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [services]);
+  const { data } = useLoad(() => services.listCrawlerSites(), "sites");
 
   return useMemo(() => {
     const fromConfig = toStringArray(flatDefaults["scrape.sites"]);
-    return Array.from(new Set([...sites, ...fromConfig]));
-  }, [sites, flatDefaults]);
+    return Array.from(new Set([...toSiteOptions(data?.sites), ...fromConfig]));
+  }, [data, flatDefaults]);
 }
 
 // ── Section renderers ──
@@ -699,6 +679,18 @@ export function LlmSection() {
     apiKey: apiKey ?? "",
   };
   const missingBriefItems = briefEnabled ? missingLlmSettings(effectiveBriefConnection) : [];
+  const choices = llmServiceChoices(serviceType);
+  const reasoningLabels: Partial<Record<LlmSettings["reasoning"], string>> =
+    serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning;
+  // A switch of service keeps only the choices the new service accepts.
+  useEffect(() => {
+    const reasoning = form.getValues("llm.reasoning") as LlmSettings["reasoning"];
+    const outputFormat = form.getValues("llm.outputFormat") as LlmSettings["outputFormat"];
+    const fitted = fitLlmChoices({ serviceType, reasoning, outputFormat });
+    if (fitted.reasoning !== reasoning) form.setValue("llm.reasoning", fitted.reasoning, { shouldDirty: true });
+    if (fitted.outputFormat !== outputFormat)
+      form.setValue("llm.outputFormat", fitted.outputFormat, { shouldDirty: true });
+  }, [form, serviceType]);
 
   return (
     <>
@@ -731,15 +723,11 @@ export function LlmSection() {
             serviceType === "google" || serviceType === "deepseek" ? serviceType : "default"
           ]
         }
-        options={toEnumOptions(
-          serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning,
-        )}
+        options={choices.reasoning.map((value) => ({ value, label: reasoningLabels[value] ?? value }))}
       />
       <EnumField
         name="llm.outputFormat"
-        options={toEnumOptions(t.settings.options.llmOutputFormat).filter(
-          (option) => serviceType !== "deepseek" || option.value !== "json_schema",
-        )}
+        options={choices.outputFormat.map((value) => ({ value, label: t.settings.options.llmOutputFormat[value] }))}
       />
       <NumberField name="llm.timeout" min={1} max={300} />
       <NumberField name="llm.maxRetries" min={1} max={20} />

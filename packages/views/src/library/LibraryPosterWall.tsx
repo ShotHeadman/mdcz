@@ -5,7 +5,7 @@ import { useT } from "../i18n";
 
 export interface LibraryPosterWallProps {
   entries: LibraryEntryDto[];
-  getImageSrc: (path: string, entry: LibraryEntryDto) => string;
+  getPosterSrc: (entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   selectable?: boolean;
   selectedIds?: ReadonlySet<string>;
@@ -14,7 +14,7 @@ export interface LibraryPosterWallProps {
 
 export function LibraryPosterWall({
   entries,
-  getImageSrc,
+  getPosterSrc,
   linkComponent: LinkComponent,
   selectable = false,
   selectedIds,
@@ -25,7 +25,7 @@ export function LibraryPosterWall({
       {entries.map((entry) => (
         <PosterTile
           entry={entry}
-          getImageSrc={getImageSrc}
+          getPosterSrc={getPosterSrc}
           key={entry.id}
           linkComponent={LinkComponent}
           onToggleSelected={onToggleSelected}
@@ -39,12 +39,12 @@ export function LibraryPosterWall({
 
 function PosterTile({
   entry,
-  getImageSrc,
+  getPosterSrc,
   linkComponent: LinkComponent,
   selectable,
   selected,
   onToggleSelected,
-}: Pick<LibraryPosterWallProps, "getImageSrc" | "linkComponent" | "selectable" | "onToggleSelected"> & {
+}: Pick<LibraryPosterWallProps, "getPosterSrc" | "linkComponent" | "selectable" | "onToggleSelected"> & {
   entry: LibraryEntryDto;
   selected: boolean;
 }) {
@@ -53,7 +53,7 @@ function PosterTile({
   const fileName = entry.fileRefs.find((file) => file.id === entry.displayFileId)?.fileName;
   const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || fileName || entry.id;
   const title = entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || id;
-  const src = !imageFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
+  const src = !imageFailed && entry.thumbnailPath ? getPosterSrc(entry) : "";
   const checkboxId = `poster-select-${entry.id}`;
   const tile = (
     <>

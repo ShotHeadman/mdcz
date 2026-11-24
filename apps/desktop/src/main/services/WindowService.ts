@@ -20,7 +20,6 @@ const MIN_WINDOW_HEIGHT = 640;
 
 export interface MainWindowCreationOptions {
   useCustomTitleBar: boolean;
-  closeToTray: boolean;
   startMinimizedToTray: boolean;
   /** Answers whether the window may close now; when it may not, it calls `proceed` once closing may go ahead. */
   holdClose: (proceed: () => void) => boolean;
@@ -136,7 +135,6 @@ export class WindowService {
 
     this.mainWindow = mainWindow;
     this.useCustomTitleBar = options.useCustomTitleBar;
-    this.closeToTray = options.closeToTray;
 
     return mainWindow;
   }

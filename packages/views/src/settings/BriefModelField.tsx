@@ -7,9 +7,10 @@ import {
 import { toErrorMessage } from "@mdcz/shared/error";
 import {
   DEFAULT_LLM_BASE_URL,
+  fitLlmChoices,
   LLM_API_FORMAT_OPTIONS,
-  LLM_OUTPUT_FORMAT_OPTIONS,
   LLM_SERVICE_TYPE_OPTIONS,
+  llmServiceChoices,
 } from "@mdcz/shared/llm";
 import {
   Button,
@@ -77,8 +78,7 @@ const parseDraft = (draft: BriefModelDraft) => {
     modelName: draft.modelName.trim(),
     apiFormat: draft.apiFormat,
     reasoning: draft.reasoning,
-    outputFormat:
-      draft.serviceType === "deepseek" && draft.outputFormat === "json_schema" ? "json_object" : draft.outputFormat,
+    outputFormat: draft.outputFormat,
     temperature,
     timeout: Number(draft.timeout),
     maxRetries: Number(draft.maxRetries),
@@ -150,12 +150,9 @@ function BriefModelDialog({
     setFeedback(null);
   };
 
-  const reasoningOptions = Object.entries(
-    draft.serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning,
-  ) as Array<[LlmConnectionSettings["reasoning"], string]>;
-  const outputFormatOptions = LLM_OUTPUT_FORMAT_OPTIONS.filter(
-    (option) => draft.serviceType !== "deepseek" || option !== "json_schema",
-  );
+  const choices = llmServiceChoices(draft.serviceType);
+  const reasoningLabels: Partial<Record<LlmConnectionSettings["reasoning"], string>> =
+    draft.serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning;
 
   const resolveNext = (): { ok: true; value: LlmConnectionSettings | null } | { ok: false } => {
     if (!useDedicated) return { ok: true, value: null };
@@ -221,20 +218,9 @@ function BriefModelDialog({
                 <Label htmlFor={`${id}-service`}>{fields["llm.serviceType"].label}</Label>
                 <Select
                   value={draft.serviceType}
-                  onValueChange={(value) => {
-                    const serviceType = value as LlmConnectionSettings["serviceType"];
-                    const nextReasoningLabels =
-                      serviceType === "deepseek"
-                        ? t.settings.options.llmReasoningDeepseek
-                        : t.settings.options.llmReasoning;
-                    edit({
-                      serviceType,
-                      ...(draft.reasoning in nextReasoningLabels ? {} : { reasoning: "default" }),
-                      ...(serviceType === "deepseek" && draft.outputFormat === "json_schema"
-                        ? { outputFormat: "json_object" }
-                        : {}),
-                    });
-                  }}
+                  onValueChange={(value) =>
+                    edit(fitLlmChoices({ ...draft, serviceType: value as LlmConnectionSettings["serviceType"] }))
+                  }
                 >
                   <SelectTrigger id={`${id}-service`} className="w-full">
                     <SelectValue />
@@ -322,9 +308,9 @@ function BriefModelDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {reasoningOptions.map(([value, label]) => (
+                          {choices.reasoning.map((value) => (
                             <SelectItem key={value} value={value}>
-                              {label}
+                              {reasoningLabels[value] ?? value}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -343,7 +329,7 @@ function BriefModelDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {outputFormatOptions.map((value) => (
+                          {choices.outputFormat.map((value) => (
                             <SelectItem key={value} value={value}>
                               {t.settings.options.llmOutputFormat[value]}
                             </SelectItem>

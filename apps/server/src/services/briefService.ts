@@ -1,6 +1,6 @@
 import { checkBriefPlanner, planBriefRequest } from "@mdcz/runtime/brief";
 import type { MediaLibraryService } from "@mdcz/runtime/library";
-import { createLlmApiClient, type LlmApiClient } from "@mdcz/runtime/llm";
+import { LlmApiClient } from "@mdcz/runtime/llm";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { type BriefCheckResponse, type BriefPlan, type BriefPlanInput, MEDIA_SERVERS } from "@mdcz/shared/briefCatalog";
 import { type LlmConnectionSettings, resolveBriefLlmSettings } from "@mdcz/shared/config";
@@ -17,7 +17,7 @@ export class BriefService {
     private readonly library: LibraryService,
     networkClient: NetworkClient,
   ) {
-    this.client = createLlmApiClient(networkClient);
+    this.client = new LlmApiClient(networkClient);
   }
 
   async plan(input: BriefPlanInput): Promise<BriefPlan> {
@@ -34,19 +34,7 @@ export class BriefService {
         configuration,
         profiles: async () => await this.config.listProfiles(),
         facets: async (libraryId) => (await this.library.summary({ libraryId })).facets,
-        movieValues: async (filter, field) => {
-          const values = new Set<string>();
-          let cursor: string | undefined;
-          do {
-            const page = await this.library.list({ ...filter, cursor, limit: 500 });
-            for (const entry of page.entries) {
-              const value = entry.crawlerData?.[field];
-              for (const item of Array.isArray(value) ? value : value ? [value] : []) values.add(item);
-            }
-            cursor = page.nextCursor ?? undefined;
-          } while (cursor);
-          return [...values];
-        },
+        movieValues: async (filter, field) => await this.library.fieldValues(filter, field),
       },
       this.client,
     );

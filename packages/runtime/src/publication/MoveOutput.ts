@@ -7,7 +7,7 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFile } from "../scrape/media/generatedSidecarVideos";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { PublicationConflictError } from "./conflicts";
-import { CreatedDirectories, copyFileBytes, outputFileSystem, removeEmptyDirectory } from "./outputFileSystem";
+import { CreatedDirectories, outputFileSystem, removeEmptyDirectory, writeVerifiedFile } from "./outputFileSystem";
 import { publicationJournal, TemporaryPaths } from "./publicationJournal";
 import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
@@ -231,18 +231,10 @@ export class MoveOutput {
               const direct = input.direct ?? (await publicationPolicy.isDirectWrite(move.targetPath));
               const expectedSize =
                 move.rewrittenContent === undefined ? move.size : Buffer.byteLength(move.rewrittenContent);
-              const writeCopy = async (destination: string, plain: boolean): Promise<void> => {
-                if (move.rewrittenContent !== undefined)
-                  await fs.writeFile(destination, move.rewrittenContent, { flush: true });
-                else if (plain) await copyFileBytes(sourcePath, destination);
-                else await fs.copyFile(sourcePath, destination);
-                if (move.rewrittenContent === undefined) await fs.flush?.(destination);
-                if ((await fs.stat(destination)).size !== expectedSize)
-                  throw new Error(`Staged transfer size mismatch: ${move.targetPath}`);
-              };
+              const content = move.rewrittenContent === undefined ? { sourcePath } : { data: move.rewrittenContent };
               const staging = direct ? move.targetPath : `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
               temporaryPaths.add(staging);
-              await writeCopy(staging, direct);
+              await writeVerifiedFile(fs, staging, content, expectedSize, direct);
               await assertSource(move, sourcePath);
               if (direct) {
                 temporaryPaths.settle(staging);
@@ -253,12 +245,9 @@ export class MoveOutput {
                   temporaryPaths.settle(staging);
                 } catch (error) {
                   if ((error as NodeJS.ErrnoException).code !== "EIO" || input.direct !== undefined) throw error;
-                  const root = await publicationPolicy.markDirectWrite(move.targetPath);
-                  warn(
-                    `Fresh-file rename returned EIO on ${move.targetPath}; falling back to direct write for ${root}`,
-                  );
+                  await publicationPolicy.markDirectWrite(move.targetPath, warn);
                   temporaryPaths.add(move.targetPath);
-                  await writeCopy(move.targetPath, true);
+                  await writeVerifiedFile(fs, move.targetPath, content, expectedSize, true);
                   temporaryPaths.settle(move.targetPath);
                 }
               }

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
+import { missingLlmSetting } from "@mdcz/shared/llm";
 import type {
   BatchTranslateApplyResultItem,
   BatchTranslateField,
@@ -11,7 +12,7 @@ import type {
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
-import { type LlmApiClient, missingLlmSetting, toLlmTextRequest } from "../llm";
+import { type LlmApiClient, toLlmTextRequest } from "../llm";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
@@ -385,11 +386,7 @@ export const applyBatchNfoTranslations = async (
 
     try {
       const registered = publication.outputs
-        ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, async (id) => {
-            const root = publication.roots.find((root) => root.id === id);
-            if (!root) throw new Error(`Publication root not found: ${id}`);
-            return root;
-          })
+        ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, publication.roots)
         : undefined;
       // Metadata is read from one NFO, but every copy a media server may read must carry the translation.
       const targetPaths = registered?.paths ?? entry.nfoPaths;

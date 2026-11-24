@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
-import { CreatedDirectories, copyFileBytes, outputFileSystem } from "./outputFileSystem";
+import { CreatedDirectories, outputFileSystem, writeVerifiedFile } from "./outputFileSystem";
 import { isArtifactBackupPath, publicationJournal, TemporaryPaths } from "./publicationJournal";
 import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
@@ -76,29 +76,14 @@ export class WriteOutput {
         throw new Error(`Cannot consume a media file or final artifact: ${artifact.sourcePath}`);
       consumedSources.set(source, artifact);
     }
-    const write = async (
-      artifact: WriteArtifact,
-      destination: string,
-      size: number | undefined,
-      plain = false,
-    ): Promise<void> => {
+    const write = async (artifact: WriteArtifact, destination: string, direct = false): Promise<void> => {
       if ("symlinkTo" in artifact) return await this.fileSystem.symlink(artifact.symlinkTo, destination);
-      if ("data" in artifact) {
-        await this.fileSystem.writeFile(destination, artifact.data, { flush: true });
-      } else {
-        // The kernel's accelerated copy stamps times and modes on the file it creates, which a cloud mount refuses
-        // for as long as the upload registers; a byte stream is the only write it always accepts.
-        if (plain) await copyFileBytes(artifact.sourcePath, destination);
-        else await this.fileSystem.copyFile(artifact.sourcePath, destination);
-        await this.fileSystem.flush?.(destination);
-      }
-      if ((await this.fileSystem.stat(destination)).size !== size)
-        throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
+      const size = "data" in artifact ? Buffer.byteLength(artifact.data) : artifact.size;
+      await writeVerifiedFile(this.fileSystem, destination, artifact, size, direct);
     };
     const writeDirect = async (
       artifact: WriteArtifact,
       targetPath: string,
-      size: number | undefined,
       replacement: (typeof replacements)[number],
     ): Promise<void> => {
       if (replacement.linkedBackup && replacement.backupPath) {
@@ -112,18 +97,7 @@ export class WriteOutput {
       else publicationJournal.record(targetPath);
       // Set first, so a failed write is taken back like a finished one.
       replacement.installed = true;
-      await write(artifact, targetPath, size, true);
-    };
-    const fallbackToDirect = async (
-      artifact: WriteArtifact,
-      targetPath: string,
-      size: number | undefined,
-      replacement: (typeof replacements)[number],
-    ): Promise<void> => {
-      const root = await publicationPolicy.markDirectWrite(targetPath);
-      directByDirectory.clear();
-      this.logger.warn(`Fresh-file rename returned EIO on ${targetPath}; falling back to direct write for ${root}`);
-      await writeDirect(artifact, targetPath, size, replacement);
+      await write(artifact, targetPath, true);
     };
     try {
       for (const artifact of artifacts) {
@@ -142,13 +116,7 @@ export class WriteOutput {
             throw new Error(`Artifact source changed: ${artifact.sourcePath}`);
         }
         const size =
-          "symlinkTo" in artifact
-            ? undefined
-            : "data" in artifact
-              ? typeof artifact.data === "string"
-                ? Buffer.byteLength(artifact.data, "utf8")
-                : artifact.data.length
-              : artifact.size;
+          "symlinkTo" in artifact ? undefined : "data" in artifact ? Buffer.byteLength(artifact.data) : artifact.size;
         if (await isDirectTarget(artifact.targetPath)) {
           staged.push({ artifact, size });
           continue;
@@ -160,7 +128,7 @@ export class WriteOutput {
         }
         const temporaryPath = `${artifact.targetPath}.mdcz-staging-${stagingId}.part`;
         temporaryPaths.add(temporaryPath);
-        await write(artifact, temporaryPath, size);
+        await write(artifact, temporaryPath);
         staged.push({ artifact, temporaryPath, size });
       }
       await options.validate?.();
@@ -204,7 +172,7 @@ export class WriteOutput {
         }
         replacements.push(replacement);
         if (direct) {
-          await writeDirect(artifact, targetPath, size, replacement);
+          await writeDirect(artifact, targetPath, replacement);
           continue;
         }
         try {
@@ -215,18 +183,19 @@ export class WriteOutput {
             if ((error as NodeJS.ErrnoException).code !== "EXDEV" || size === undefined) throw error;
             const localStaging = `${targetPath}.mdcz-staging-${stagingId}.part`;
             temporaryPaths.add(localStaging);
-            await this.fileSystem.copyFile(temporaryPath, localStaging);
-            await this.fileSystem.flush?.(localStaging);
-            if ((await this.fileSystem.stat(localStaging)).size !== size)
-              throw new Error(`Staged artifact size mismatch: ${targetPath}`);
+            await writeVerifiedFile(this.fileSystem, localStaging, { sourcePath: temporaryPath }, size, false);
             await this.fileSystem.rename(localStaging, targetPath);
             temporaryPaths.settle(localStaging);
           }
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "EIO" || options.direct !== undefined) throw error;
-          const stagedArtifact: WriteArtifact =
-            "symlinkTo" in artifact || size === undefined ? artifact : { targetPath, sourcePath: temporaryPath, size };
-          await fallbackToDirect(stagedArtifact, targetPath, size, replacement);
+          await publicationPolicy.markDirectWrite(targetPath, (message) => this.logger.warn(message));
+          directByDirectory.clear();
+          await writeDirect(
+            "symlinkTo" in artifact || size === undefined ? artifact : { targetPath, sourcePath: temporaryPath, size },
+            targetPath,
+            replacement,
+          );
           continue;
         }
         replacement.installed = true;

@@ -619,8 +619,14 @@ describe("LibraryRepository", () => {
     expect(await collectAll("createdAt", "asc")).toEqual(["entry-1", "entry-3", "entry-2"]);
     expect(await collectAll("number", "asc")).toEqual(["entry-3", "entry-2", "entry-1"]);
     expect(await collectAll("number", "desc")).toEqual(["entry-1", "entry-2", "entry-3"]);
-    expect(await collectAll("title", "asc")).toEqual(["entry-2", "entry-3", "entry-1"]);
     expect(await collectAll("title", "desc")).toEqual(["entry-1", "entry-3", "entry-2"]);
+    expect(await collectAll("title", "asc")).toEqual(["entry-2", "entry-3", "entry-1"]);
+
+    await repository.upsertEntry({
+      movie: { ...seed[2], title: "最后一夜" },
+      files: [{ rootId: "root-1", rootRelativePath: "entry-3.mp4", fileId: "root-1:entry-3.mp4" }],
+    });
+    expect(await collectAll("title", "asc")).toEqual(["entry-2", "entry-1", "entry-3"]);
   });
 
   it("filters paged library entries by file/root and metadata in SQL", async () => {
@@ -756,6 +762,13 @@ describe("LibraryRepository", () => {
     await expect(ids({ actor: "Bob" })).resolves.toEqual(["bare", "translated"]);
     await expect(ids({ studio: "S2", tag: "drama" })).resolves.toEqual([]);
     await expect(ids({ tag: "3p" })).resolves.toEqual(["bare"]);
+    // A list field gives each of its entries, a scalar field its one value, from the movies the filter lists.
+    expect(repository.crawlerFieldValues({}, "genres").sort()).toEqual(["3p", "drama"]);
+    expect(repository.crawlerFieldValues({ pathPrefixes: [resolve("/root-1")] }, "studio").sort()).toEqual([
+      "S1",
+      "S2",
+    ]);
+    expect(repository.crawlerFieldValues({ tag: "3p" }, "studio")).toEqual(["S1"]);
 
     // An ignored issue stops counting for that movie only; its other issues still list it.
     repository.ignoreHealth({ health: "missingSynopsis" });

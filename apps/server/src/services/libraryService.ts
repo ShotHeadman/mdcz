@@ -11,6 +11,7 @@ import {
 } from "@mdcz/runtime/library";
 import type { Configuration } from "@mdcz/shared/config";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
+import type { LibraryEdit } from "@mdcz/shared/libraryEdit";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type {
   LibraryAvailabilityInput,
@@ -49,6 +50,12 @@ export class LibraryService {
     return state.repositories.library.summary(
       await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
     );
+  }
+
+  /** Every value `field` holds across the movies the filter lists. */
+  async fieldValues(input: LibraryListInput, field: LibraryEdit["field"]): Promise<string[]> {
+    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
+    return (await this.persistence.getState()).repositories.library.crawlerFieldValues(filter, field);
   }
 
   async ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }> {

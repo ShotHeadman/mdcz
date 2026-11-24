@@ -1,7 +1,7 @@
 import type { Configuration } from "@mdcz/shared/config";
+import { missingLlmSetting } from "@mdcz/shared/llm";
 import type { TranslateTestResponse, translateTestInputSchema } from "@mdcz/shared/serverDtos";
 import type { z } from "zod";
-import { missingLlmSetting } from "../llm";
 import type { RuntimeNetworkClient } from "../network";
 import { TranslateService, type TranslateServiceOptions } from "../scrape/TranslateService";
 import { toTarget } from "../scrape/translate/types";
@@ -22,7 +22,7 @@ export const testTranslation = async (
       ...configuration.translate,
       ...Object.fromEntries(Object.entries(translate).filter(([, value]) => value !== undefined)),
     },
-    llm: llm ?? configuration.llm,
+    llm: { ...configuration.llm, ...llm },
   };
   try {
     const settings = config.translate;

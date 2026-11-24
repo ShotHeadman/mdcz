@@ -55,11 +55,7 @@ export async function writeNfoPublication(
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
   const paths = getNfoWritePaths(plannedPath, nfoNaming);
   const owned = publication.outputs
-    ? await resolveRegisteredNfoPaths(nfoPath, publication.outputs, async (id) => {
-        const root = publication.roots.find((root) => root.id === id);
-        if (!root) throw new Error(`Publication root not found: ${id}`);
-        return root;
-      })
+    ? await resolveRegisteredNfoPaths(nfoPath, publication.outputs, publication.roots)
     : undefined;
   const library = publication.library;
   if (owned && !library) throw new Error("Registered NFO write requires library updates");

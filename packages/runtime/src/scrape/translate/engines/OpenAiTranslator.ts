@@ -1,13 +1,8 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Configuration } from "@mdcz/shared/config";
+import { missingLlmSetting, normalizeLlmBaseUrl } from "@mdcz/shared/llm";
 import { z } from "zod";
-import {
-  type LlmApiClient,
-  type LlmJsonSchema,
-  missingLlmSetting,
-  normalizeLlmBaseUrl,
-  toLlmTextRequest,
-} from "../../../llm";
+import { type LlmApiClient, type LlmJsonSchema, toLlmTextRequest } from "../../../llm";
 import type { RuntimeNetworkClient } from "../../../network";
 import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
 import { getScrapeConcurrency } from "../../executionPolicy";
@@ -21,7 +16,6 @@ interface TranslationLogger {
 
 const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
-const COMPLETE_LEADING_THINK_PATTERN = /^<think>[\s\S]*?<\/think>\s*/iu;
 const TRANSLATION_ONLY_INSTRUCTION = "只输出最终译文，不要输出思考过程、解释、提示词或原文。";
 const JSON_TRANSLATION_INSTRUCTION = '只输出 JSON 对象，格式为 {"translation":"最终译文"}，不要添加其他字段。';
 
@@ -69,7 +63,7 @@ export const cleanTranslationOutput = (
     return null;
   }
 
-  const cleaned = output.replace(COMPLETE_LEADING_THINK_PATTERN, "").trim();
+  const cleaned = output.trim();
   let translated = cleaned;
   if (structured) {
     try {
@@ -193,8 +187,8 @@ export class OpenAiTranslator {
     ].join("\n");
     const content = await this.requestText(config, prompt, signal, LLM_FILE_NUMBER_SCHEMA);
     try {
-      // Without a JSON output mode, models may wrap the object in a think block or a code fence.
-      const json = (content ?? "").replace(COMPLETE_LEADING_THINK_PATTERN, "").match(/\{[\s\S]*\}/u)?.[0] ?? "";
+      // Without a JSON output mode, models may wrap the object in a code fence.
+      const json = content?.match(/\{[\s\S]*\}/u)?.[0] ?? "";
       return fileNumberSchema.parse(JSON.parse(json)).number;
     } catch (error) {
       throw new Error(`AI number reading returned invalid output: ${toErrorMessage(error)}`, { cause: error });

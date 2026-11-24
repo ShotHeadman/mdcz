@@ -226,7 +226,7 @@ export const validateSettingsValues = (
 export const withoutSecretValues = (changes: readonly BriefSettingsChange[]): BriefSettingsChange[] =>
   changes.map((change) => (isSecretField(change.key) ? { key: change.key, op: change.op } : change));
 
-const SECRET_MASK = "••••••";
+export const SECRET_MASK = "••••••";
 /** A secret is taken only as typed in the prompt, so the part of the prompt to mask is known exactly. */
 export const maskSecretsInPrompt = (prompt: string, changes: readonly BriefSettingsChange[]): string =>
   changes

@@ -29,6 +29,7 @@ import {
 } from "@mdcz/ui";
 import { FolderOpen, Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import { useLoad } from "../common/useLoad";
 import { useT } from "../i18n";
 import { PathAutocompleteInput, type PathAutocompleteResult } from "../path";
 import { NamingTemplateHelp } from "../settings/settingsContent";
@@ -189,25 +190,14 @@ export function LibraryEditorFields({
   probeStubs?: (sourcePath: string) => Promise<boolean>;
 }) {
   const t = useT();
-  const [sourceHasStubs, setSourceHasStubs] = useState(false);
-
-  useEffect(() => {
-    setSourceHasStubs(false);
-    const sourcePath = settings.sourcePath?.trim();
-    if (!probeStubs || !sourcePath) return;
-    let active = true;
-    const timer = window.setTimeout(() => {
-      // A path still being typed may be relative or incomplete; that only means no hint.
-      probeStubs(sourcePath).then(
-        (found) => active && setSourceHasStubs(found),
-        () => undefined,
-      );
-    }, 500);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [probeStubs, settings.sourcePath]);
+  const sourcePath = settings.sourcePath?.trim();
+  // A path still being typed may be relative or incomplete; a failed probe only means no hint.
+  const sourceHasStubs =
+    useLoad(
+      async () => Boolean(probeStubs && sourcePath && (await probeStubs(sourcePath))),
+      probeStubs && sourcePath ? sourcePath : null,
+      500,
+    ).data ?? false;
 
   const parsed = useMemo(() => mediaLibrarySettingsSchema.safeParse(settings), [settings]);
   const fieldErrors = useMemo(() => {
@@ -508,31 +498,9 @@ export function NamingPreview({
   onPreviewNaming: (settings: MediaLibrarySettingsInput) => Promise<NamingPreviewItem[]>;
 }) {
   const t = useT();
-  const [items, setItems] = useState<NamingPreviewItem[]>([]);
-  const [error, setError] = useState("");
-  const key = JSON.stringify(settings);
-
-  useEffect(() => {
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      onPreviewNaming(JSON.parse(key) as MediaLibrarySettingsInput).then(
-        (next) => {
-          if (cancelled) return;
-          setItems(next);
-          setError("");
-        },
-        (reason: unknown) => {
-          if (cancelled) return;
-          setItems([]);
-          setError(reason instanceof Error ? reason.message : String(reason));
-        },
-      );
-    }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [key, onPreviewNaming]);
+  const preview = useLoad(() => onPreviewNaming(settings), JSON.stringify(settings), 200);
+  const items = preview.error ? [] : (preview.latest ?? []);
+  const error = preview.error ?? "";
 
   const [details, setDetails] = useState(false);
   const outputs = items[0]?.outputs ?? [];

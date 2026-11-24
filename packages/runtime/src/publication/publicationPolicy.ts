@@ -141,10 +141,11 @@ export const publicationPolicy = {
     const stagingRoot = hooks?.stagingRoot?.()?.trim();
     return stagingRoot || outputDir;
   },
-  async markDirectWrite(targetPath: string): Promise<string> {
+  /** A fresh-file rename failed with EIO on a mount detection missed, so the target's library writes directly from now on. */
+  async markDirectWrite(targetPath: string, warn: (message: string) => void): Promise<void> {
     const resolved = path.resolve(targetPath);
     const root = path.resolve((await hooks?.resolveTarget?.(resolved))?.root || path.dirname(resolved));
     learnedDirectRoots.add(root);
-    return root;
+    warn(`Fresh-file rename returned EIO on ${targetPath}; falling back to direct write for ${root}`);
   },
 };

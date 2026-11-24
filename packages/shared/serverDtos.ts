@@ -4,7 +4,7 @@ import {
   type Configuration,
   type DeepPartial,
   downloadSchema,
-  llmSchema,
+  llmConnectionSchema,
   type notificationsSchema,
 } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
@@ -1128,8 +1128,8 @@ export const translateTestInputSchema = z.object({
   baiduSecretKey: z.string().optional(),
   baiduApiKey: z.string().optional(),
   llmPrompt: z.string().optional(),
-  /** The AI model section as edited, in place of the saved one. */
-  llm: llmSchema.optional(),
+  /** The AI model connection as edited, in place of the saved one. */
+  llm: llmConnectionSchema.optional(),
 });
 
 export type TranslateTestInputDto = z.input<typeof translateTestInputSchema>;

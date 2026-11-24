@@ -5,6 +5,7 @@ import {
   isListField,
   isSecretField,
   resolveSettingsRow,
+  SECRET_MASK,
   SETTINGS_ENTRY_KEYS,
   type SettingsRowResult,
   settingsFieldShape,
@@ -29,6 +30,7 @@ import {
 } from "@mdcz/ui";
 import { Plus } from "lucide-react";
 import { useState } from "react";
+import { useLoad } from "../common/useLoad";
 import { type Messages, useT } from "../i18n";
 import type { BriefFieldRecord } from "./briefStore";
 import {
@@ -40,10 +42,7 @@ import {
   OptionSelect,
   TextValue,
   useConfirm,
-  useLoad,
 } from "./cardParts";
-
-const SECRET_MASK = "••••••";
 
 /** The labels the Settings page gives a choice, or a list's entries; other values read as they are. */
 const optionLabels = (t: Messages, key: FieldKey): Record<string, string> | undefined => {

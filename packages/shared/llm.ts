@@ -13,6 +13,28 @@ export type LlmServiceType = (typeof LLM_SERVICE_TYPE_OPTIONS)[number];
 export const LLM_OUTPUT_FORMAT_OPTIONS = ["none", "json_object", "json_schema"] as const;
 export type LlmOutputFormat = (typeof LLM_OUTPUT_FORMAT_OPTIONS)[number];
 
+/** The reasoning and output choices each service accepts: the settings forms offer only these, and requests refuse the rest. */
+export const llmServiceChoices = (
+  serviceType: LlmServiceType,
+): { reasoning: readonly LlmReasoning[]; outputFormat: readonly LlmOutputFormat[] } =>
+  serviceType === "deepseek"
+    ? { reasoning: ["default", "disabled", "enabled", "low", "high", "max"], outputFormat: ["none", "json_object"] }
+    : { reasoning: ["default", "disabled", "low", "medium", "high"], outputFormat: LLM_OUTPUT_FORMAT_OPTIONS };
+
+/** A connection moved to another service keeps the choices that service accepts and takes the nearest one otherwise. */
+export const fitLlmChoices = <
+  T extends { serviceType: LlmServiceType; reasoning: LlmReasoning; outputFormat: LlmOutputFormat },
+>(
+  connection: T,
+): T => {
+  const choices = llmServiceChoices(connection.serviceType);
+  return {
+    ...connection,
+    reasoning: choices.reasoning.includes(connection.reasoning) ? connection.reasoning : "default",
+    outputFormat: choices.outputFormat.includes(connection.outputFormat) ? connection.outputFormat : "json_object",
+  };
+};
+
 export const normalizeLlmBaseUrl = (baseUrl: string): string => {
   const trimmed = baseUrl.trim();
   if (!trimmed) {

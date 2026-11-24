@@ -12,6 +12,7 @@ import {
 import { LIBRARY_HEALTH_ISSUES, type LibraryHealthIssue } from "@mdcz/shared/serverDtos";
 import { Switch } from "@mdcz/ui";
 import { useState } from "react";
+import { useLoad } from "../common/useLoad";
 import { useT } from "../i18n";
 import { emptyLibrarySettings, Field, LibraryEditorFields, NamingPreview } from "../libraries/LibraryEditorDialog";
 import type { BriefFieldRecord } from "./briefStore";
@@ -28,7 +29,6 @@ import {
   paramLabel,
   TextValue,
   useConfirm,
-  useLoad,
 } from "./cardParts";
 
 type LibraryParams = BriefParams["library"];

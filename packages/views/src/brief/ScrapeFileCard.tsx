@@ -1,8 +1,15 @@
-import { toErrorMessage } from "@mdcz/shared/error";
 import { isAbsoluteHostPath } from "@mdcz/shared/mediaCandidate";
-import { useState } from "react";
 import { useT } from "../i18n";
-import { type BriefCardProps, basename, CardRow, CardShell, findDrop, LibrarySelect, TextValue } from "./cardParts";
+import {
+  type BriefCardProps,
+  basename,
+  CardRow,
+  CardShell,
+  findDrop,
+  LibrarySelect,
+  TextValue,
+  useConfirm,
+} from "./cardParts";
 
 /** One file, today's single-file tool: optionally from a given detail page or with a corrected number. */
 export function ScrapeFileCard({ cell, libraries, port, onChange, onConfirmed }: BriefCardProps) {
@@ -10,8 +17,7 @@ export function ScrapeFileCard({ cell, libraries, port, onChange, onConfirmed }:
   const params = cell.params;
   const file = typeof params.file === "string" ? params.file : "";
   const library = libraries.find((candidate) => candidate.id === params.libraryId);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { confirming, error, run } = useConfirm();
   const text = (key: "file" | "url" | "number") => (typeof params[key] === "string" ? (params[key] as string) : "");
 
   return (
@@ -20,25 +26,18 @@ export function ScrapeFileCard({ cell, libraries, port, onChange, onConfirmed }:
       confirmDisabled={!library || !isAbsoluteHostPath(file)}
       confirming={confirming}
       error={error}
-      onConfirm={async () => {
+      onConfirm={() => {
         if (!library) return;
-        setConfirming(true);
-        setError(null);
-        try {
-          const ref = await port.fileRef(file);
+        void run(async () => {
           const taskId = await port.startScrape({
             executionMode: "single",
             libraryId: library.id,
-            refs: [ref],
+            refs: [await port.fileRef(file)],
             manualUrl: text("url") || undefined,
             number: text("number") || undefined,
           });
           onConfirmed({ kind: "scrape", taskIds: [taskId] });
-        } catch (startError) {
-          setError(toErrorMessage(startError));
-        } finally {
-          setConfirming(false);
-        }
+        });
       }}
     >
       {(["file", "url", "number"] as const).map((key) => (

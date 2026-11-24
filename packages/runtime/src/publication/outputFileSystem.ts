@@ -50,7 +50,7 @@ const isKernelRefusal = (error: unknown) =>
   KERNEL_REFUSALS.has((error as NodeJS.ErrnoException | undefined)?.code ?? "");
 
 /** Copies byte by byte with write(2), the one file operation cloud mounts perform on a file they have just created. */
-export const copyFileBytes = async (source: string, target: string): Promise<void> => {
+const copyFileBytes = async (source: string, target: string): Promise<void> => {
   await pipeline(createReadStream(source), createWriteStream(target));
 };
 
@@ -65,6 +65,7 @@ const copyFileReliably = async (source: string, target: string): Promise<void> =
 
 export const outputFileSystem: PublicationFileSystem = {
   copyFile: copyFileReliably,
+  copyFileBytes,
   link,
   symlink: async (target, path) => await symlink(target, path, "file"),
   mkdir,
@@ -96,6 +97,28 @@ export const outputFileSystem: PublicationFileSystem = {
       await handle.close();
     }
   },
+};
+
+/**
+ * Writes a file to `destination`, flushed to disk, and checks it came out at `size`. A direct write copies byte by
+ * byte, since the kernel's accelerated copy stamps times and modes on the file it creates, which a cloud mount refuses
+ * for as long as the upload registers.
+ */
+export const writeVerifiedFile = async (
+  fileSystem: PublicationFileSystem,
+  destination: string,
+  content: { data: Buffer | string } | { sourcePath: string },
+  size: number,
+  direct: boolean,
+): Promise<void> => {
+  if ("data" in content) {
+    await fileSystem.writeFile(destination, content.data, { flush: true });
+  } else {
+    if (direct) await fileSystem.copyFileBytes(content.sourcePath, destination);
+    else await fileSystem.copyFile(content.sourcePath, destination);
+    await fileSystem.flush?.(destination);
+  }
+  if ((await fileSystem.stat(destination)).size !== size) throw new Error(`Written file size mismatch: ${destination}`);
 };
 
 /** Removes `directory` if it is empty; false when it holds anything, is already gone, or cannot be removed. */

@@ -4,6 +4,8 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 
 export interface PublicationFileSystem {
   copyFile(source: string, target: string): Promise<void>;
+  /** A plain write(2) stream, for cloud mounts that refuse the kernel's accelerated copy on a file just created. */
+  copyFileBytes(source: string, target: string): Promise<void>;
   link(existingPath: string, newPath: string): Promise<void>;
   symlink(target: string, path: string): Promise<void>;
   mkdir(path: string, options: { recursive: true }): Promise<string | undefined>;

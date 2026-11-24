@@ -10,6 +10,7 @@ import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
+import type { RuntimeJsonResponse } from "./index";
 import {
   getCrawlerExecutionSource,
   getNetworkSignal,
@@ -131,15 +132,6 @@ export interface ProbeResult {
   reason?: FailureReason;
 }
 
-export interface NetworkJsonResponse<T = unknown> {
-  ok: boolean;
-  status: number;
-  statusText: string;
-  resolvedUrl: string;
-  headers: Headers;
-  data: T | string | null;
-}
-
 interface RequestBehavior<TResult> {
   allowNonOkResponse?: boolean;
   retryLogPrefix?: string;
@@ -225,7 +217,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     url: string,
     payload: unknown,
     init: Omit<ImpitRequestInit, "method" | "body"> = {},
-  ): Promise<NetworkJsonResponse<TResponse>> {
+  ): Promise<RuntimeJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
 

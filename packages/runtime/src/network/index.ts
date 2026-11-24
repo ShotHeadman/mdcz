@@ -31,6 +31,15 @@ export interface RuntimeProbeResult {
   reason?: FailureReason;
 }
 
+export interface RuntimeJsonResponse<T = unknown> {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  resolvedUrl: string;
+  headers: Headers;
+  data: T | string | null;
+}
+
 export interface RuntimeNetworkClient {
   setDomainLimit?(domain: string, requestsPerSecond: number, concurrency?: number): void;
   setDomainInterval?(domain: string, intervalMs: number, intervalCap?: number, concurrency?: number): void;
@@ -40,18 +49,11 @@ export interface RuntimeNetworkClient {
   postText(url: string, body: string, init?: RuntimeRequestInit): Promise<string>;
   deleteText(url: string, init?: RuntimeRequestInit): Promise<string>;
   postJson<T>(url: string, payload: unknown, init?: RuntimeRequestInit): Promise<T>;
-  postJsonDetailed?<TResponse>(
+  postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
     init?: RuntimeRequestInit,
-  ): Promise<{
-    ok: boolean;
-    status: number;
-    statusText: string;
-    resolvedUrl: string;
-    headers: Headers;
-    data: TResponse | string | null;
-  }>;
+  ): Promise<RuntimeJsonResponse<TResponse>>;
   head(url: string, init?: RuntimeRequestInit): Promise<{ status: number; ok: boolean }>;
   probe(url: string, init?: RuntimeProbeRequestInit): Promise<RuntimeProbeResult>;
 }

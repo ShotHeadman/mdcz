@@ -6,7 +6,7 @@ describe("library page cursors", () => {
     {
       sortBy: "createdAt",
       sortOrder: "desc",
-      createdAt: new Date("2026-08-17T10:20:30.456Z"),
+      createdAt: Date.parse("2026-08-17T10:20:30.456Z"),
       id: "root:影片%ABC-001",
     },
     {
@@ -25,7 +25,11 @@ describe("library page cursors", () => {
     expect(decodeLibraryPageCursor(encodeLibraryPageCursor(cursor))).toEqual(cursor);
   });
 
-  it.each(["invalid", "!!!", "e30"])("rejects malformed cursor %s", (cursor) => {
+  it.each([
+    "invalid",
+    "{}",
+    '{"sortBy":"title","sortOrder":"asc","value":"A","id":""}',
+  ])("rejects malformed cursor %s", (cursor) => {
     expect(() => decodeLibraryPageCursor(cursor)).toThrow("Invalid library page cursor");
   });
 

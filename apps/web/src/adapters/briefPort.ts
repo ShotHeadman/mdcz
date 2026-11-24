@@ -4,7 +4,7 @@ import type { BriefDestination, BriefPort, CrawlerTestResult, SymlinkResult } fr
 import { useNavigate } from "@tanstack/react-router";
 import { TRPCClientError } from "@trpc/client";
 import { useMemo } from "react";
-import { api, getLibraryAssetSrc } from "../client";
+import { api, getLibraryPosterSrc } from "../client";
 import { desktop } from "../desktop";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { refreshPendingQueries } from "../lib/pendingQueries";
@@ -68,13 +68,7 @@ const createWebBriefPort = (navigate: {
     const page = await api.library.list({ ...filter, limit });
     return { entries: page.entries, total: page.total };
   },
-  posterSrc: (entry) =>
-    getLibraryAssetSrc({
-      format: "webp",
-      path: entry.thumbnailPath,
-      rootId: entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId ?? "",
-      width: 160,
-    }),
+  posterSrc: getLibraryPosterSrc,
   fileRef: async (path) => {
     const { directory, name } = splitHostPath(path);
     const root = await api.mediaRoots.ensurePath({ hostPath: directory });

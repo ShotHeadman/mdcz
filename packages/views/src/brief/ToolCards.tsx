@@ -3,6 +3,7 @@ import { isAbsoluteHostPath } from "@mdcz/shared/mediaCandidate";
 import { configProfileNameInputSchema } from "@mdcz/shared/serverDtos";
 import { Checkbox } from "@mdcz/ui";
 import { useId, useState } from "react";
+import { useLoad } from "../common/useLoad";
 import { useT } from "../i18n";
 import { ConnectionCheckResult, PERSON_SERVER_NAMES } from "../tools/details/PersonMediaLibraryDetail";
 import type { SymlinkResult } from "./BriefPort";
@@ -16,7 +17,6 @@ import {
   OptionSelect,
   TextValue,
   useConfirm,
-  useLoad,
 } from "./cardParts";
 
 /** Person sync, with the server's connection check the media server tools run first. */

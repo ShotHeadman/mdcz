@@ -8,6 +8,7 @@ import type {
 } from "@mdcz/shared/serverDtos";
 import type { MediaServerConnectionCheckResult } from "@mdcz/shared/toolTypes";
 import { cn } from "@mdcz/ui";
+import { useLoad } from "../common/useLoad";
 import { type Messages, useT } from "../i18n";
 import { ConnectionCheckResult, PERSON_SERVER_NAMES } from "../tools/details/PersonMediaLibraryDetail";
 import { CrawlerTesterResult } from "../tools/details/ToolDetails";
@@ -22,7 +23,6 @@ import {
   findDrop,
   OptionSelect,
   TextValue,
-  useLoad,
 } from "./cardParts";
 
 type CheckParams = BriefParams["check"];

@@ -181,7 +181,7 @@ export class ServerPosterCropAdapter {
       config: context.configuration,
       dataDir: this.config.runtimePaths.dataDir,
       nfoGenerator: this.nfoGenerator,
-      movie: { library: context.library, movieId: context.movieId, roots: await this.mediaRoots.listRoots() },
+      publication: { library: context.library, movieId: context.movieId, roots: await this.mediaRoots.listRoots() },
       logger: runtimeLoggerService.getLogger("PosterCrop"),
     });
     return { ...toCropSessionResponse(context.root, session), revision: String(Date.now()) };

@@ -84,7 +84,7 @@ describe("publicationPolicy", () => {
     await removeStagingDirectory(localStagingDir);
 
     // Learning EIO on one movie inside a library latches the owning library root for subsequent movies.
-    await publicationPolicy.markDirectWrite(path.join(localOut, "MovieA", "movie.nfo"));
+    await publicationPolicy.markDirectWrite(path.join(localOut, "MovieA", "movie.nfo"), () => undefined);
     expect(await publicationPolicy.isDirectWrite(path.join(localOut, "MovieB", "poster.jpg"))).toBe(true);
     const learnedStaging = await createStagingDirectory(path.join(localOut, "MovieB"));
     expect(path.dirname(learnedStaging)).toBe(localStaging);

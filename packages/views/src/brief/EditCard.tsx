@@ -1,8 +1,6 @@
 import type { BriefParams } from "@mdcz/shared/briefCatalog";
 import type { Configuration } from "@mdcz/shared/config";
-import { toErrorMessage } from "@mdcz/shared/error";
-import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
-import { useEffect, useState } from "react";
+import { useLoad } from "../common/useLoad";
 import { useT } from "../i18n";
 import { type LibraryEditDraft, LibraryEditForm } from "../library/LibraryEditForm";
 import {
@@ -14,6 +12,7 @@ import {
   LibrarySelect,
   paramLabel,
   TextValue,
+  useConfirm,
 } from "./cardParts";
 
 const FILTER_KEYS = ["actor", "studio", "tag", "query"] as const;
@@ -36,21 +35,9 @@ export function EditCard({
     (["libraryId", ...FILTER_KEYS] as const).flatMap((key) => (params[key] ? [[key, params[key]]] : [])),
   );
   const filterKey = JSON.stringify(filter);
-  const [entries, setEntries] = useState<LibraryEntryDto[] | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let current = true;
-    setEntries(null);
-    port.movies(JSON.parse(filterKey)).then(
-      (movies) => current && setEntries(movies),
-      (loadError) => current && setError(toErrorMessage(loadError)),
-    );
-    return () => {
-      current = false;
-    };
-  }, [port, filterKey]);
+  const movies = useLoad(() => port.movies(filter), filterKey);
+  const entries = movies.data ?? null;
+  const { confirming, error, run } = useConfirm();
 
   const reportDraft = (draft: LibraryEditDraft) => {
     const patch = Object.fromEntries(
@@ -118,23 +105,13 @@ export function EditCard({
           initial={{ field: params.field, operation: params.operation, value: params.value, from: params.from }}
           onDraftChange={reportDraft}
           getPosterSrc={port.posterSrc}
-          submitting={submitting}
-          onSubmit={async (input) => {
-            setSubmitting(true);
-            setError(null);
-            try {
-              onConfirmed({ kind: "edit", jobId: await port.startEdit(input) });
-            } catch (startError) {
-              setError(toErrorMessage(startError));
-            } finally {
-              setSubmitting(false);
-            }
-          }}
+          submitting={confirming}
+          onSubmit={(input) => void run(async () => onConfirmed({ kind: "edit", jobId: await port.startEdit(input) }))}
         />
       )}
-      {error ? (
+      {(error ?? movies.error) ? (
         <p role="alert" className="text-xs text-destructive">
-          {error}
+          {error ?? movies.error}
         </p>
       ) : null}
     </div>

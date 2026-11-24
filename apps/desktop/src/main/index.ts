@@ -78,7 +78,6 @@ const holdQuit = createQuitGuard({
 const openMainWindow = async (configuration: Configuration, allowStartMinimized = false): Promise<void> => {
   windowService.createMainWindow({
     useCustomTitleBar: configuration.ui.useCustomTitleBar,
-    closeToTray: configuration.ui.closeToTray,
     startMinimizedToTray: allowStartMinimized && configuration.ui.startMinimizedToTray,
     holdClose: holdQuit,
   });

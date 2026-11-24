@@ -659,7 +659,7 @@ describe("TranslateService term consistency", () => {
   it.each([
     { output: '{"number":"MEYD-911"}', expected: "MEYD-911" },
     { output: '{"number":null}', expected: null },
-    { output: '<think>The domain is noise.</think>\n```json\n{"number": "MEYD-911"}\n```', expected: "MEYD-911" },
+    { output: '```json\n{"number": "MEYD-911"}\n```', expected: "MEYD-911" },
     { output: "MEYD-911", expected: /AI number reading returned invalid output/ },
   ])("reads a file number from LLM output $output", async ({ output, expected }) => {
     const generateText = vi.fn().mockResolvedValue(output);

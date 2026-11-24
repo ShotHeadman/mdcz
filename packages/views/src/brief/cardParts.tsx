@@ -4,7 +4,7 @@ import { type MediaLibraryDto, mediaLibrarySettingsSchema } from "@mdcz/shared/m
 import { isFieldAnchor } from "@mdcz/shared/settingsRegistry";
 import { Button, Checkbox, cn, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
 import { Loader2 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { type Messages, useT } from "../i18n";
 import { PERSON_SERVER_NAMES } from "../tools/details/PersonMediaLibraryDetail";
 import type { BriefPort } from "./BriefPort";
@@ -28,33 +28,6 @@ export interface BriefCardProps {
   onConfirmed: (job: BriefJob, outcome?: BriefOutcome) => void;
   /** Runs a request the cell waits on; the answer finishes the cell, and a reload meanwhile says it was not recorded. */
   onRequest: (run: () => Promise<BriefRequestAnswer>) => void;
-}
-
-/** Loads what a card shows; an answer for an older key, or for a card that has gone, is ignored. */
-export function useLoad<T>(load: () => Promise<T>, key: string | null) {
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<{ key: string; data?: T; error?: string } | null>(null);
-  const loadKey = key === null ? null : `${attempt}:${key}`;
-  useEffect(() => {
-    if (loadKey === null) return;
-    let current = true;
-    loadRef.current().then(
-      (data) => current && setState({ key: loadKey, data }),
-      (error) => current && setState({ key: loadKey, error: toErrorMessage(error) }),
-    );
-    return () => {
-      current = false;
-    };
-  }, [loadKey]);
-  const loaded = state?.key === loadKey ? state : null;
-  return {
-    data: loaded?.data,
-    error: loaded?.error ?? null,
-    loading: loadKey !== null && !loaded,
-    reload: () => setAttempt((count) => count + 1),
-  };
 }
 
 /** Confirm's progress and error for a card whose Confirm is one call. */

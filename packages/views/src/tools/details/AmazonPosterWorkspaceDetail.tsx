@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import { isPosterShaped, type NormalizedCropRegion, resolvePosterEditorCropRegion } from "@mdcz/shared/posterCrop";
+import { type NormalizedCropRegion, resolveInitialPosterCrop } from "@mdcz/shared/posterCrop";
 import type {
   AmazonPosterApplyItem,
   AmazonPosterApplyResultItem,
@@ -99,12 +99,7 @@ async function lookupWithCut(
   if (!url) return { lookup, cut: null };
   const size = await measureImage(url);
   if (!size) return { lookup: { ...lookup, amazonPosterUrl: null, reason: "image_unreachable" }, cut: null };
-  const recorded = scan.posterCut;
-  const crop =
-    recorded?.source === url && isPosterShaped(recorded.crop, size.width, size.height)
-      ? recorded.crop
-      : resolvePosterEditorCropRegion(size.width, size.height);
-  return { lookup, cut: { ...size, crop } };
+  return { lookup, cut: { ...size, crop: resolveInitialPosterCrop(scan.posterCut, url, size.width, size.height) } };
 }
 
 function formatElapsed(elapsedMs: number | null | undefined): string {

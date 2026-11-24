@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const LIBRARY_SORT_FIELDS = ["createdAt", "number", "title"] as const;
 export type LibrarySortField = (typeof LIBRARY_SORT_FIELDS)[number];
 
@@ -14,63 +16,32 @@ export const DEFAULT_LIBRARY_SORT: LibrarySort = {
   sortOrder: "desc",
 };
 
-export type LibraryPageCursor =
-  | { sortBy: "createdAt"; sortOrder: LibrarySortOrder; createdAt: Date; id: string }
-  | { sortBy: "number" | "title"; sortOrder: LibrarySortOrder; value: string; id: string };
+const libraryPageCursorSchema = z.union([
+  z.object({
+    sortBy: z.literal("createdAt"),
+    sortOrder: z.enum(LIBRARY_SORT_ORDERS),
+    createdAt: z.number().int().nonnegative(),
+    id: z.string().min(1),
+  }),
+  z.object({
+    sortBy: z.enum(["number", "title"]),
+    sortOrder: z.enum(LIBRARY_SORT_ORDERS),
+    value: z.string(),
+    id: z.string().min(1),
+  }),
+]);
 
-const toBase64Url = (text: string): string => {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, "-").replace(/\//gu, "_").replace(/=+$/u, "");
-};
+/** Where the next page starts: the sort key and id of the last movie on this one. */
+export type LibraryPageCursor = z.infer<typeof libraryPageCursorSchema>;
 
-const fromBase64Url = (encoded: string): string => {
-  if (!/^[A-Za-z0-9_-]+$/u.test(encoded)) throw new Error("Invalid library page cursor");
-  const padded = `${encoded}${"=".repeat((4 - (encoded.length % 4)) % 4)}`.replace(/-/gu, "+").replace(/_/gu, "/");
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-};
-
-export const encodeLibraryPageCursor = (cursor: LibraryPageCursor): string => {
-  const payload =
-    cursor.sortBy === "createdAt"
-      ? { b: cursor.sortBy, o: cursor.sortOrder, v: cursor.createdAt.getTime(), i: cursor.id }
-      : { b: cursor.sortBy, o: cursor.sortOrder, v: cursor.value, i: cursor.id };
-  return toBase64Url(JSON.stringify(payload));
-};
+/** The cursor stays opaque to clients, which only hand back what the last page gave them. */
+export const encodeLibraryPageCursor = (cursor: LibraryPageCursor): string => JSON.stringify(cursor);
 
 export const decodeLibraryPageCursor = (value: string | null | undefined): LibraryPageCursor | undefined => {
-  const normalized = value?.trim();
-  if (!normalized) return undefined;
-  let parsed: unknown;
+  if (!value?.trim()) return undefined;
   try {
-    parsed = JSON.parse(fromBase64Url(normalized));
-  } catch {
-    throw new Error("Invalid library page cursor");
+    return libraryPageCursorSchema.parse(JSON.parse(value));
+  } catch (error) {
+    throw new Error("Invalid library page cursor", { cause: error });
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Invalid library page cursor");
-  }
-  const { b, o, v, i } = parsed as Record<string, unknown>;
-  if (
-    typeof i !== "string" ||
-    !i ||
-    (o !== "asc" && o !== "desc") ||
-    (b !== "createdAt" && b !== "number" && b !== "title")
-  ) {
-    throw new Error("Invalid library page cursor");
-  }
-  if (b === "createdAt") {
-    if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) {
-      throw new Error("Invalid library page cursor");
-    }
-    return { sortBy: b, sortOrder: o, createdAt: new Date(v), id: i };
-  }
-  if (typeof v !== "string") {
-    throw new Error("Invalid library page cursor");
-  }
-  return { sortBy: b, sortOrder: o, value: v, id: i };
 };

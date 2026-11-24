@@ -1,34 +1,28 @@
-import { toErrorMessage } from "@mdcz/shared/error";
-import { LIBRARY_HEALTH_ISSUES, type LibraryEntryDto, type LibraryHealthIssue } from "@mdcz/shared/serverDtos";
-import { useEffect, useState } from "react";
+import { LIBRARY_HEALTH_ISSUES, type LibraryHealthIssue } from "@mdcz/shared/serverDtos";
+import { useLoad } from "../common/useLoad";
 import { useT } from "../i18n";
 import { HEALTH_FIX_PRESETS } from "../library/healthIssues";
-import { type BriefCardProps, CardRow, CardShell, findDrop, LibrarySelect, OptionSelect } from "./cardParts";
+import {
+  type BriefCardProps,
+  CardRow,
+  CardShell,
+  findDrop,
+  LibrarySelect,
+  OptionSelect,
+  useConfirm,
+} from "./cardParts";
 
 /** A repair of the movies one library health issue lists: the refresh the library page's Fix starts. */
 export function HealthRepairCard({ cell, libraries, port, onChange, onConfirmed }: BriefCardProps) {
   const t = useT();
   const issue = cell.params.issue as LibraryHealthIssue | undefined;
   const libraryId = typeof cell.params.libraryId === "string" ? cell.params.libraryId : undefined;
-  const [entries, setEntries] = useState<LibraryEntryDto[] | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!issue) {
-      setEntries([]);
-      return;
-    }
-    let current = true;
-    setEntries(null);
-    port.movies({ libraryId, health: issue }).then(
-      (movies) => current && setEntries(movies),
-      (loadError) => current && setError(toErrorMessage(loadError)),
-    );
-    return () => {
-      current = false;
-    };
-  }, [port, issue, libraryId]);
+  const movies = useLoad(
+    async () => (issue ? await port.movies({ libraryId, health: issue }) : []),
+    JSON.stringify([issue, libraryId]),
+  );
+  const entries = movies.data ?? null;
+  const { confirming, error, run } = useConfirm();
 
   const presetId = issue ? HEALTH_FIX_PRESETS[issue] : undefined;
   const refs = (entries ?? []).flatMap((entry) =>
@@ -42,22 +36,20 @@ export function HealthRepairCard({ cell, libraries, port, onChange, onConfirmed 
       confirmLabel={t.brief.card.confirm.repairIssue(entries?.length ?? 0)}
       confirmDisabled={!presetId || refs.length === 0 || mixedRoots}
       confirming={confirming}
-      error={error ?? (mixedRoots ? t.library.health.mixedRoots : issue && !presetId ? t.brief.card.noRepair : null)}
-      onConfirm={async () => {
+      error={
+        error ??
+        movies.error ??
+        (mixedRoots ? t.library.health.mixedRoots : issue && !presetId ? t.brief.card.noRepair : null)
+      }
+      onConfirm={() => {
         const rootId = refs[0]?.rootId;
         if (!presetId || !rootId) return;
-        setConfirming(true);
-        setError(null);
-        try {
+        void run(async () =>
           onConfirmed({
             kind: "maintenance",
             sessionId: await port.startMaintenance({ rootId, presetId, refs, libraryId }),
-          });
-        } catch (startError) {
-          setError(toErrorMessage(startError));
-        } finally {
-          setConfirming(false);
-        }
+          }),
+        );
       }}
     >
       <CardRow label={t.brief.params.issue} dropped={findDrop(cell, "issue")}>

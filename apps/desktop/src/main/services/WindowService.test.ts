@@ -35,12 +35,8 @@ describe("WindowService", () => {
     const holdClose = vi.fn(() => true);
 
     const service = new WindowService();
-    service.createMainWindow({
-      useCustomTitleBar: false,
-      closeToTray: true,
-      startMinimizedToTray: true,
-      holdClose,
-    });
+    service.createMainWindow({ useCustomTitleBar: false, startMinimizedToTray: true, holdClose });
+    service.applyUiConfig({ closeToTray: true, hideDock: false, hideMenu: false, hideWindowButtons: false });
 
     handlers.get("ready-to-show")?.();
     expect(show).not.toHaveBeenCalled();

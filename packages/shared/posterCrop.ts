@@ -83,6 +83,17 @@ export const resolvePosterEditorCropRegion = (imageWidth: number, imageHeight: n
 export const isPosterShaped = (crop: NormalizedCropRegion, imageWidth: number, imageHeight: number): boolean =>
   Math.abs((crop.width * imageWidth) / (crop.height * imageHeight) - POSTER_ASPECT_RATIO) <= 0.005;
 
+/** The area the editor opens on: the recorded cut while it was made from this source and still fits it, else the default. */
+export const resolveInitialPosterCrop = (
+  recorded: { source: string; crop: NormalizedCropRegion } | undefined,
+  source: string | undefined,
+  imageWidth: number,
+  imageHeight: number,
+): NormalizedCropRegion =>
+  recorded && recorded.source === source && isPosterShaped(recorded.crop, imageWidth, imageHeight)
+    ? recorded.crop
+    : resolvePosterEditorCropRegion(imageWidth, imageHeight);
+
 export const normalizedCropToPixels = (
   input: NormalizedCropRegion,
   imageWidth: number,

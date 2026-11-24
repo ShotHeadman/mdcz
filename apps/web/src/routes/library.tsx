@@ -24,7 +24,7 @@ import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createWebWorkbenchPorts } from "../adapters/ports";
-import { api, getLibraryAssetSrc } from "../client";
+import { api, getLibraryPosterSrc } from "../client";
 import { openFolder } from "../desktop";
 import { queryKeys } from "../lib/queryKeys";
 import { AppLink } from "../routeCommon";
@@ -187,15 +187,7 @@ export function LibraryPage() {
         })}
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
-        getImageSrc={(path, entry) =>
-          getLibraryAssetSrc({
-            format: "webp",
-            path,
-            rootId:
-              entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId ?? "",
-            width: 160,
-          })
-        }
+        getPosterSrc={getLibraryPosterSrc}
         hasMore={libraryQ.hasNextPage}
         isAvailabilityLoading={availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
         isLoading={libraryQ.isLoading}
@@ -236,17 +228,7 @@ export function LibraryPage() {
         onOpenChange={setEditOpen}
         entries={editTargets}
         ignoredFields={configQ.data?.download.nfoIgnoreFields ?? []}
-        getPosterSrc={(entry) =>
-          entry.thumbnailPath
-            ? getLibraryAssetSrc({
-                format: "webp",
-                path: entry.thumbnailPath,
-                rootId:
-                  entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId ?? "",
-                width: 160,
-              })
-            : ""
-        }
+        getPosterSrc={getLibraryPosterSrc}
         submitting={editM.isPending}
         loading={editLoading || configQ.isLoading}
         error={

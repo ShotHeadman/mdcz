@@ -169,6 +169,7 @@ describe("PosterCropService", () => {
       config,
       dataDir: root,
       nfoGenerator: new NfoGenerator(),
+      publication: { roots: [] },
       logger: { warn: vi.fn() },
     });
 
@@ -213,6 +214,7 @@ describe("PosterCropService", () => {
             config,
             dataDir: root,
             nfoGenerator: new NfoGenerator(),
+            publication: { roots: [] },
             logger: { warn: vi.fn() },
           },
         ),

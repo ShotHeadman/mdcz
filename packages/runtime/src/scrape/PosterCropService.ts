@@ -1,18 +1,9 @@
-import { basename, dirname, join } from "node:path";
 import type { AssetNamingMode } from "@mdcz/shared/assetNaming";
-import type { Configuration } from "@mdcz/shared/config";
-import { isPosterShaped, type NormalizedCropRegion, resolvePosterEditorCropRegion } from "@mdcz/shared/posterCrop";
-import type { LocalScanEntry, PosterRecord } from "@mdcz/shared/types";
+import { type NormalizedCropRegion, resolveInitialPosterCrop } from "@mdcz/shared/posterCrop";
+import type { LocalScanEntry } from "@mdcz/shared/types";
 import sharp from "sharp";
-import { type MovieLibrary, resolveRegisteredNfoPaths } from "../library/registeredMedia";
-import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
-import type { PublicationOutputPort } from "../publication/types";
-import type { RuntimeLogger } from "../shared";
 import type { DownloadManager } from "./download/DownloadManager";
-import type { NfoGenerator } from "./nfo";
-import { applyPosterTagBadgesIfNeeded } from "./output/applyPosterTagBadges";
-import { cutPoster } from "./posterCut";
-import { installPoster, posterTargetPath } from "./posterOutput";
+import { installPoster, type PosterInstallContext, posterTargetPath } from "./posterOutput";
 
 export interface PosterCropSession {
   /** A local file, or a remote image the browser loads directly. */
@@ -36,16 +27,17 @@ export class PosterCropService {
   async prepare(entry: LocalScanEntry, assetNamingMode: AssetNamingMode): Promise<PosterCropSession | null> {
     const source = await this.openSource(entry);
     if (!source) return null;
-    const recorded = entry.nfoLocalState?.posterRecord?.cut;
     return {
       source: source.image,
       targetPath: posterTargetPath(entry.fileInfo.filePath, assetNamingMode, entry.assets),
       width: source.width,
       height: source.height,
-      initialCrop:
-        recorded && recorded.source === source.cut && isPosterShaped(recorded.crop, source.width, source.height)
-          ? recorded.crop
-          : resolvePosterEditorCropRegion(source.width, source.height),
+      initialCrop: resolveInitialPosterCrop(
+        entry.nfoLocalState?.posterRecord?.cut,
+        source.cut,
+        source.width,
+        source.height,
+      ),
     };
   }
 
@@ -54,77 +46,17 @@ export class PosterCropService {
     entry: LocalScanEntry,
     assetNamingMode: AssetNamingMode,
     crop: NormalizedCropRegion,
-    output: {
-      config: Configuration;
-      dataDir: string;
-      nfoGenerator: Pick<NfoGenerator, "mergePosterRecordXml">;
-      movie?: {
-        library: MovieLibrary & PublicationOutputPort;
-        movieId: string;
-        roots: readonly { id: string; hostPath: string }[];
-      };
-      logger: Pick<RuntimeLogger, "warn">;
-    },
+    context: Omit<PosterInstallContext, "downloadManager">,
   ): Promise<PosterCropSession> {
     const source = await this.openSource(entry);
     if (!source) throw new Error("No cover or poster is available for editing");
     const targetPath = posterTargetPath(entry.fileInfo.filePath, assetNamingMode, entry.assets);
-    const { nfoPath, crawlerData } = entry;
-    const stagingDir = await createStagingDirectory(dirname(targetPath));
-    try {
-      const stagedPoster = join(stagingDir, basename(targetPath));
-      let record: PosterRecord | undefined;
-      if (source.cut === undefined) {
-        if (!(await cutPoster(source.image.path, crop, stagedPoster)))
-          throw new Error("Poster crop must use a 2:3 aspect ratio");
-      } else {
-        // Only a movie with an NFO offers a source a record can name.
-        if (!nfoPath || !crawlerData) throw new Error("Cutting from a recorded source requires the movie's NFO");
-        const cut = { source: source.cut, crop };
-        const plain = await this.downloadManager.downloadPlainPoster({
-          data: crawlerData,
-          cut,
-          targetPath: stagedPoster,
-          thumbPath: entry.assets.thumb,
-        });
-        if (!plain)
-          throw new Error(`Could not cut a poster from ${"url" in source.image ? source.image.url : "the cover"}`);
-        const { posterRecord } = await applyPosterTagBadgesIfNeeded({
-          assets: { poster: plain, sceneImages: [], downloaded: [plain] },
-          config: output.config,
-          crawlerData,
-          dataDir: output.dataDir,
-          fileInfo: entry.fileInfo,
-          localState: entry.nfoLocalState,
-          logger: output.logger,
-        });
-        if (!posterRecord) throw new Error("Badge drawing returned no poster record");
-        record = { ...posterRecord, cut };
-      }
-      const { movie } = output;
-      const registered =
-        record && nfoPath && movie
-          ? await resolveRegisteredNfoPaths(nfoPath, movie.library, async (id) => {
-              const root = movie.roots.find((root) => root.id === id);
-              if (!root) throw new Error(`Publication root not found: ${id}`);
-              return root;
-            })
-          : undefined;
-      await installPoster({
-        posterPath: targetPath,
-        stagedPoster,
-        record: record && {
-          value: record,
-          nfoPaths: registered?.paths ?? entry.nfoPaths,
-          nfoGenerator: output.nfoGenerator,
-        },
-        protectedMediaFiles: registered?.mediaPaths ?? [entry.fileInfo.filePath],
-        movie,
-        logger: output.logger,
-      });
-    } finally {
-      await removeStagingDirectory(stagingDir);
-    }
+    await installPoster(
+      entry,
+      targetPath,
+      source.cut === undefined ? { file: source.image.path, crop } : { source: source.cut, crop },
+      { ...context, downloadManager: this.downloadManager },
+    );
     return { source: source.image, targetPath, width: source.width, height: source.height, initialCrop: crop };
   }
 
