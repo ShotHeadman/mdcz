@@ -1,4 +1,19 @@
+import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
+
 export type DetailViewStatus = "success" | "failed" | "processing";
+
+export interface ImageCandidateVariant {
+  width: number;
+  format?: "avif" | "source" | "webp";
+}
+
+export const DETAIL_IMAGE_VARIANTS = {
+  poster: { width: 400, format: "webp" },
+  thumb: { width: 960, format: "webp" },
+  scene: { width: 480, format: "webp" },
+  compactScene: { width: 160, format: "webp" },
+  diffImage: { width: 640, format: "webp" },
+} as const satisfies Record<string, ImageCandidateVariant>;
 
 export interface DetailViewItem {
   resultId?: string;
@@ -34,5 +49,3 @@ export interface DetailViewItem {
   trailerFallbackUrls?: string[];
   errorMessage?: string;
 }
-
-import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";

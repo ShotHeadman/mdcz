@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { confirmDialog } from "../common";
 import { type DetailPanelCompareProps, DetailPanelView, toDetailViewItemFromScrapeResult } from "../detail";
 import { buildDetailArtworkCandidates } from "../detail/imageCandidates";
-import type { DetailViewItem } from "../detail/types";
+import { DETAIL_IMAGE_VARIANTS, type DetailViewItem, type ImageCandidateVariant } from "../detail/types";
 import { getT, useT } from "../i18n";
 import {
   createEmptyEditableNfoData,
@@ -40,7 +40,7 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
     [item?.trailerUrl, ...(item?.trailerFallbackUrls ?? [])].filter((value): value is string => Boolean(value)),
   );
   const baseDir = item?.outputPath ?? (item?.path ? getDirFromPath(item.path) : undefined);
-  const [sources, setSources] = useState<[string[], string[], string[]]>([[], [], []]);
+  const [sources, setSources] = useState<[string[], string[], string[], string[]]>([[], [], [], []]);
   const [posterIndex, setPosterIndex] = useState(0);
   const [thumbIndex, setThumbIndex] = useState(0);
   const [trailerIndex, setTrailerIndex] = useState(0);
@@ -56,7 +56,8 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
 
     const resolveSources = async () => {
       const resolved = await Promise.all([
-        port.resolveImageCandidates(posterCandidates, baseDir, item),
+        port.resolveImageCandidates(posterCandidates, baseDir, item, DETAIL_IMAGE_VARIANTS.poster),
+        port.resolveImageCandidates(thumbCandidates, baseDir, item, DETAIL_IMAGE_VARIANTS.thumb),
         port.resolveImageCandidates(thumbCandidates, baseDir, item),
         port.resolveImageCandidates(trailerCandidates, baseDir, item),
       ]);
@@ -80,13 +81,14 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
   }, [sources]);
 
   const handleTrailerError = useCallback(() => {
-    setTrailerIndex((currentIndex) => Math.min(currentIndex + 1, sources[2].length));
+    setTrailerIndex((currentIndex) => Math.min(currentIndex + 1, sources[3].length));
   }, [sources]);
 
   return {
     posterSrc: sources[0][posterIndex] ?? "",
     thumbSrc: sources[1][thumbIndex] ?? "",
-    trailerSrc: sources[2][trailerIndex] ?? "",
+    thumbPreviewSrc: sources[2][thumbIndex] ?? "",
+    trailerSrc: sources[3][trailerIndex] ?? "",
     handlePosterError,
     handleThumbError,
     handleTrailerError,
@@ -117,7 +119,8 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
   );
   const artwork = useResolvedArtworkSources(compare ? null : item, port);
   const resolveImageCandidates = useCallback(
-    async (candidates: string[], baseDir?: string) => await port.resolveImageCandidates(candidates, baseDir, item),
+    async (candidates: string[], baseDir?: string, variant?: ImageCandidateVariant) =>
+      await port.resolveImageCandidates(candidates, baseDir, item, variant),
     [item, port],
   );
 
@@ -231,6 +234,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
       compare={compare}
       posterSrc={artwork.posterSrc}
       thumbSrc={artwork.thumbSrc}
+      thumbPreviewSrc={artwork.thumbPreviewSrc}
       trailerSrc={artwork.trailerSrc}
       nfo={{
         open: nfoOpen,

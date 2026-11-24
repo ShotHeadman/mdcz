@@ -3,7 +3,9 @@ import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceT
 import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
+import { DETAIL_IMAGE_VARIANTS, DetailPanelView } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
+import { createEmptyEditableNfoData } from "@mdcz/views/nfo";
 import { selectMaintenanceSessionId, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { selectScrapeTaskId, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
@@ -69,6 +71,42 @@ describe("web detail action port", () => {
     expect(html).not.toContain(t.openSourceFolder);
     expect(html).not.toContain(t.openMetadataFolder);
     expect(html).toContain(t.editNfo);
+
+    const nfo = {
+      open: false,
+      data: createEmptyEditableNfoData(),
+      dirty: false,
+      errors: {},
+      loading: false,
+      saving: false,
+      onOpenChange: () => undefined,
+      onDataChange: () => undefined,
+      onSave: () => undefined,
+    };
+    const sameAssetHtml = renderToStaticMarkup(
+      createElement(DetailPanelView, {
+        item: { id: "root-1:ABC-001.mp4", number: "ABC-001", path: "ABC-001.mp4", status: "success", title: "ABC-001" },
+        posterSrc: "http://127.0.0.1:3838/api/library/assets/root-1/thumb.jpg?token=t&w=400&format=webp&revision=run-1",
+        thumbSrc: "http://127.0.0.1:3838/api/library/assets/root-1/thumb.jpg?token=t&w=960&format=webp&revision=run-1",
+        nfo,
+        resolveImageCandidates: async (candidates) => candidates,
+        showFilePath: false,
+      }),
+    );
+    expect(sameAssetHtml).not.toContain(t.posterThumbAlt("ABC-001"));
+
+    const revisedAssetHtml = renderToStaticMarkup(
+      createElement(DetailPanelView, {
+        item: { id: "root-1:ABC-001.mp4", number: "ABC-001", path: "ABC-001.mp4", status: "success", title: "ABC-001" },
+        posterSrc:
+          "http://127.0.0.1:3838/api/library/assets/root-1/thumb.jpg?token=t&w=400&format=webp&revision=run-1.42",
+        thumbSrc: "http://127.0.0.1:3838/api/library/assets/root-1/thumb.jpg?token=t&w=960&format=webp&revision=run-1",
+        nfo,
+        resolveImageCandidates: async (candidates) => candidates,
+        showFilePath: false,
+      }),
+    );
+    expect(revisedAssetHtml).toContain(t.posterThumbAlt("ABC-001"));
   });
 
   it("resolves root-relative image candidates through authenticated library assets", async () => {
@@ -93,7 +131,32 @@ describe("web detail action port", () => {
     );
 
     expect(poster).toContain("/api/library/assets/metadata-root/JAV_output/ABC-001/poster.jpg");
+    expect(poster).not.toContain("w=");
     expect(remote).toBe("https://img.example/poster.jpg");
+
+    const [resizedPoster, resizedRemote] = await port.resolveImageCandidates(
+      ["JAV_output/ABC-001/poster.jpg", "https://img.example/poster.jpg"],
+      undefined,
+      {
+        id: "root-1:ABC-001.mp4",
+        assets: [
+          {
+            type: "local",
+            kind: "poster",
+            file: { rootId: "metadata-root", relativePath: "JAV_output/ABC-001/poster.jpg" },
+          },
+        ],
+        number: "ABC-001",
+        path: "ABC-001.mp4",
+        status: "success",
+      },
+      DETAIL_IMAGE_VARIANTS.poster,
+    );
+
+    expect(resizedPoster).toBe(
+      "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/poster.jpg?token=token-1&w=400&format=webp",
+    );
+    expect(resizedRemote).toBe("https://img.example/poster.jpg");
   });
 
   it("resolves selected-maintenance absolute local image candidates relative to the media root", async () => {
@@ -203,12 +266,15 @@ describe("web detail action port", () => {
     expect((await port.preparePosterCrop(item))?.sourceUrl).toBe(remote);
     expect(save).toHaveBeenCalledWith({ rootId: "root-1", relativePath: "ABC-001.mp4", crop: initialCrop });
     expect(result.posterUrl).toContain("poster.png");
+    expect(result.posterUrl).toContain("w=400&format=webp");
     expect(result.posterUrl).toContain("revision=run-1.42");
     const [rescrapedPoster] = await port.resolveImageCandidates(
       [toLocalFileUrl({ rootId: "metadata-root", relativePath: "JAV_output/ABC-001/poster.png" })],
       undefined,
       { ...item, artworkRevision: "run-2" },
+      DETAIL_IMAGE_VARIANTS.poster,
     );
+    expect(rescrapedPoster).toContain("w=400&format=webp");
     expect(rescrapedPoster).toContain("revision=run-2.42");
 
     const data = { title: "Title", number: "ABC-001", actors: [], genres: [], scene_images: [], website: Website.DMM };

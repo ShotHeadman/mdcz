@@ -12,7 +12,7 @@ import type {
   SharedWorkbenchPorts,
   WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
-import type { DetailViewItem } from "@mdcz/views/detail";
+import { DETAIL_IMAGE_VARIANTS, type DetailViewItem, type ImageCandidateVariant } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
 import {
   applyMaintenanceSessionSnapshot,
@@ -120,7 +120,12 @@ const resolveCandidatePath = (candidate: string, item: DetailViewItem, baseDir?:
   return normalizedCandidate;
 };
 
-const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseDir?: string): string => {
+const toAssetCandidate = (
+  candidate: string,
+  item?: DetailViewItem | null,
+  baseDir?: string,
+  variant?: ImageCandidateVariant,
+): string => {
   const trimmed = candidate.trim();
   if (!trimmed) {
     return "";
@@ -128,10 +133,16 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (isRemoteAssetUrl(trimmed)) {
     return trimmed;
   }
+  const variantOptions = variant ? { width: variant.width, format: variant.format ?? ("webp" as const) } : {};
   if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
     const file = parseLocalFileUrl(trimmed);
     return (
-      getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath, revision: item?.artworkRevision }) || trimmed
+      getLibraryAssetSrc({
+        rootId: file.rootId,
+        path: file.relativePath,
+        revision: item?.artworkRevision,
+        ...variantOptions,
+      }) || trimmed
     );
   }
   if (!item) {
@@ -148,14 +159,21 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
   const path = asset?.type === "local" ? asset.file.relativePath : resolveCandidatePath(trimmed, item, baseDir);
-  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path), revision: item.artworkRevision }) || trimmed;
+  return (
+    getLibraryAssetSrc({
+      rootId,
+      path: toRelativePath(item, path),
+      revision: item.artworkRevision,
+      ...variantOptions,
+    }) || trimmed
+  );
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
   ...fileActions,
   showFilePath: Boolean(desktop),
-  resolveImageCandidates: async (candidates, baseDir, item) =>
-    dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
+  resolveImageCandidates: async (candidates, baseDir, item, variant) =>
+    dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir, variant))),
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
@@ -203,6 +221,7 @@ export const createWebDetailPort = (): DetailActionPort => ({
         rootId: response.rootId,
         path: response.targetRelativePath,
         revision: item.artworkRevision,
+        ...DETAIL_IMAGE_VARIANTS.poster,
       }),
     };
   },

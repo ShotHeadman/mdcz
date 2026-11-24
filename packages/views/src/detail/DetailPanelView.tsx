@@ -40,6 +40,7 @@ export interface DetailPanelViewProps {
   compare?: DetailPanelCompareProps;
   posterSrc?: string;
   thumbSrc?: string;
+  thumbPreviewSrc?: string;
   trailerSrc?: string;
   nfo: DetailPanelNfoState;
   onPlay?: () => void;
@@ -165,12 +166,30 @@ const getDirFromPath = (path: string): string => {
   return index >= 0 ? normalized.slice(0, index) : "";
 };
 
+const normalizeArtworkIdentity = (src: string): string => {
+  if (!src || !/^https?:/iu.test(src)) {
+    return src;
+  }
+  try {
+    const url = new URL(src);
+    if (!url.pathname.startsWith("/api/library/assets/")) {
+      return src;
+    }
+    url.searchParams.delete("w");
+    url.searchParams.delete("format");
+    return url.toString();
+  } catch {
+    return src;
+  }
+};
+
 export function DetailPanelView({
   item,
   emptyMessage,
   compare,
   posterSrc = "",
   thumbSrc = "",
+  thumbPreviewSrc = "",
   trailerSrc = "",
   nfo,
   onPlay,
@@ -285,7 +304,8 @@ export function DetailPanelView({
     durationLabel ? { label: t.detail.fields.duration, value: durationLabel } : undefined,
     item.publisher ? { label: t.detail.fields.publisher, value: item.publisher } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
-  const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== displayedPosterSrc;
+  const shouldShowThumb =
+    Boolean(thumbSrc) && normalizeArtworkIdentity(thumbSrc) !== normalizeArtworkIdentity(displayedPosterSrc);
 
   return (
     <>
@@ -469,7 +489,7 @@ export function DetailPanelView({
           <div className="flex max-h-[82vh] max-w-[90vw] items-center justify-center">
             {shouldShowThumb ? (
               <img
-                src={thumbSrc}
+                src={thumbPreviewSrc || thumbSrc}
                 alt={t.detail.posterPreviewAlt(posterAlt)}
                 className="block max-h-[82vh] max-w-[90vw] object-contain"
                 onError={onThumbError}

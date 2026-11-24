@@ -8,10 +8,11 @@ import {
 import type { ActorProfile, CrawlerData, FieldDiff, LocalScanEntry, MaintenancePreviewItem } from "@mdcz/shared/types";
 import { cn } from "@mdcz/ui";
 import { Clock, LoaderCircle } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ImageOptionCard } from "../common";
 import { type ResolveImageCandidates, SceneImageGallery } from "../detail/SceneImageGallery";
 import { TrailerPlayer } from "../detail/TrailerPlayer";
+import { DETAIL_IMAGE_VARIANTS } from "../detail/types";
 import { getT, useT } from "../i18n";
 
 export interface ChangeDiffViewProps {
@@ -253,6 +254,10 @@ export function ChangeDiffView({
 }: ChangeDiffViewProps) {
   const t = useT();
   const baseDir = imageBaseDir || getMaintenanceImageBaseDir(entry);
+  const resolveDiffImageCandidates = useCallback(
+    (candidates: string[], dir?: string) => resolveImageCandidates(candidates, dir, DETAIL_IMAGE_VARIANTS.diffImage),
+    [resolveImageCandidates],
+  );
   const sideLabels = { old: t.maintenance.oldCurrent, new: t.maintenance.newPreview };
   const sideCrawlerData = { old: entry?.crawlerData, new: preview?.proposedCrawlerData };
 
@@ -288,7 +293,7 @@ export function ChangeDiffView({
                 ]}
                 onClick={chooseMedia(side)}
                 baseDir={baseDir}
-                resolveImageCandidates={resolveImageCandidates}
+                resolveImageCandidates={resolveDiffImageCandidates}
               />
             );
           }
@@ -382,7 +387,7 @@ export function ChangeDiffView({
           empty={!hasMaintenanceDiffSideValue(diff, "old") && !hasMaintenanceDiffSideValue(diff, "new")}
           emptyText={t.maintenance.currentValueEmpty}
           baseDir={baseDir}
-          resolveImageCandidates={resolveImageCandidates}
+          resolveImageCandidates={resolveDiffImageCandidates}
         />
       );
     }

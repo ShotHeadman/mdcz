@@ -3,8 +3,13 @@ import { ChevronLeft, ChevronRight, ImageIcon, Play, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { TrailerPlayer } from "./TrailerPlayer";
+import { DETAIL_IMAGE_VARIANTS, type ImageCandidateVariant } from "./types";
 
-export type ResolveImageCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
+export type ResolveImageCandidates = (
+  candidates: string[],
+  baseDir?: string,
+  variant?: ImageCandidateVariant,
+) => Promise<string[]>;
 
 interface SceneImageGalleryProps {
   images: string[];
@@ -39,16 +44,20 @@ const useResolvedImageSrc = (
   resolveImageCandidates: ResolveImageCandidates,
   rawCandidates: string[],
   baseDir?: string,
+  variant?: ImageCandidateVariant,
 ): string => {
   const candidateKey = rawCandidates.map((candidate) => candidate.trim()).join("\u0000");
+  const variantWidth = variant?.width;
+  const variantFormat = variant?.format;
   const [resolvedSrc, setResolvedSrc] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     const candidates = candidateKey ? candidateKey.split("\u0000").filter(Boolean) : [];
+    const nextVariant = variantWidth ? { width: variantWidth, format: variantFormat } : undefined;
 
     const resolve = async () => {
-      const [nextSrc = ""] = await resolveImageCandidates(candidates, baseDir);
+      const [nextSrc = ""] = await resolveImageCandidates(candidates, baseDir, nextVariant);
       if (!cancelled) {
         setResolvedSrc(nextSrc);
       }
@@ -59,7 +68,7 @@ const useResolvedImageSrc = (
     return () => {
       cancelled = true;
     };
-  }, [baseDir, candidateKey, resolveImageCandidates]);
+  }, [baseDir, candidateKey, resolveImageCandidates, variantFormat, variantWidth]);
 
   return resolvedSrc;
 };
@@ -148,6 +157,7 @@ export function SceneImageGallery({
               baseDir={baseDir}
               resolveImageCandidates={resolveImageCandidates}
               src={imagePath}
+              variant={compact ? DETAIL_IMAGE_VARIANTS.compactScene : DETAIL_IMAGE_VARIANTS.scene}
             />
           </button>
         ))}
@@ -271,15 +281,17 @@ function LazyImage({
   alt,
   baseDir,
   resolveImageCandidates,
+  variant,
 }: {
   src: string;
   alt: string;
   baseDir?: string;
   resolveImageCandidates: ResolveImageCandidates;
+  variant?: ImageCandidateVariant;
 }) {
   const [status, setStatus] = useState<{ src: string; state: "loaded" | "error" } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir);
+  const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir, variant);
   const currentState = status?.src === resolvedSrc ? status.state : "loading";
 
   useEffect(() => {
