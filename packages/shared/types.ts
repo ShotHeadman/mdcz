@@ -124,6 +124,7 @@ export interface PosterCut {
 export interface ScrapeResult {
   size?: number;
   resultId?: string;
+  artworkRevision?: string;
   fileId: FileId;
   rootId: string;
   relativePath: string;

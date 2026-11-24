@@ -22,6 +22,8 @@ export const detail: Messages["detail"] = {
 
   // Poster crop dialog
   editCover: "编辑封面",
+  loadCropFailed: (error: string) => `无法打开封面编辑器：${error}`,
+  noCropSource: "没有可用于裁剪的图片。",
   cropDescription: "拖动选区调整位置，使用缩放控制取景范围。",
   cropSourceAlt: "封面裁剪源图",
   cropRegionAriaLabel: "封面裁剪区域",

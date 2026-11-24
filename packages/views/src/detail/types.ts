@@ -2,6 +2,7 @@ export type DetailViewStatus = "success" | "failed" | "processing";
 
 export interface DetailViewItem {
   resultId?: string;
+  artworkRevision?: string;
   id: string;
   status: DetailViewStatus;
   number: string;

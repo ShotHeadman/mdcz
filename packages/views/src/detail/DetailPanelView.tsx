@@ -1,35 +1,13 @@
 import type { MaintenanceFieldSelectionSide } from "@mdcz/shared/maintenanceTasks";
-import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type { FieldDiff, LocalScanEntry, MaintenanceItemResult, MaintenancePreviewItem } from "@mdcz/shared/types";
-import {
-  Badge,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  ScrollArea,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@mdcz/ui";
-import {
-  Crop,
-  FileText,
-  FolderOpen,
-  GitCompareArrows,
-  ImageIcon,
-  MousePointerClick,
-  Play,
-  Star,
-  X,
-} from "lucide-react";
+import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogTitle, ScrollArea } from "@mdcz/ui";
+import { FileText, FolderOpen, GitCompareArrows, ImageIcon, MousePointerClick, Play, Star, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useState } from "react";
-import { NaturalAspectImageFrame, PosterCropDialog, type PosterCropEditSession } from "../common";
+import { NaturalAspectImageFrame } from "../common";
 import { useT } from "../i18n";
 import { ChangeDiffView, PathPlanView } from "../maintenance";
 import { type EditableNfoData, NfoEditorDialog, type NfoValidationErrors } from "../nfo";
+import { DetailPoster, type DetailPosterEditor } from "./DetailPoster";
 import { formatBitrate, formatDuration } from "./detailViewAdapters";
 import { type ResolveImageCandidates, SceneImageGallery } from "./SceneImageGallery";
 import type { DetailViewItem } from "./types";
@@ -73,16 +51,7 @@ export interface DetailPanelViewProps {
   onTrailerError?: () => void;
   resolveImageCandidates: ResolveImageCandidates;
   showFilePath: boolean;
-  posterEditor: {
-    open: boolean;
-    session: PosterCropEditSession | null;
-    crop: NormalizedCropRegion | null;
-    saving: boolean;
-    onCropChange: (crop: NormalizedCropRegion) => void;
-    onOpen: () => void;
-    onOpenChange: (open: boolean) => void;
-    onSave: () => void;
-  };
+  posterEditor?: DetailPosterEditor;
 }
 
 function EmptyState({ message }: { message: string }) {
@@ -217,6 +186,21 @@ export function DetailPanelView({
 }: DetailPanelViewProps) {
   const t = useT();
   const [thumbPreviewOpen, setThumbPreviewOpen] = useState(false);
+  const [savedPoster, setSavedPoster] = useState<{ key: string; url: string } | null>(null);
+  const posterKey = JSON.stringify([
+    item?.id,
+    item?.resultId,
+    item?.artworkRevision,
+    item?.status,
+    item?.fileRef?.rootId,
+    item?.fileRef?.relativePath,
+    Boolean(compare),
+    Boolean(posterEditor),
+    posterSrc,
+  ]);
+  if (savedPoster && savedPoster.key !== posterKey) setSavedPoster(null);
+  const overrideUrl = savedPoster?.key === posterKey ? savedPoster.url : undefined;
+  const displayedPosterSrc = overrideUrl || posterSrc;
 
   if (!item) {
     return <EmptyState message={emptyMessage ?? t.detail.selectItemPrompt} />;
@@ -301,7 +285,7 @@ export function DetailPanelView({
     durationLabel ? { label: t.detail.fields.duration, value: durationLabel } : undefined,
     item.publisher ? { label: t.detail.fields.publisher, value: item.publisher } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
-  const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== posterSrc;
+  const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== displayedPosterSrc;
 
   return (
     <>
@@ -331,41 +315,14 @@ export function DetailPanelView({
             ) : (
               <>
                 <section className="grid gap-6 min-[960px]:grid-cols-[minmax(0,180px)_minmax(0,1fr)] min-[960px]:items-start">
-                  <div className="w-full max-w-[180px] shrink-0">
-                    {posterSrc ? (
-                      <div className="group relative aspect-2/3 overflow-hidden rounded-quiet-lg border border-black/5 bg-surface-low/70 shadow-[0_18px_48px_rgba(0,0,0,0.08)]">
-                        <img
-                          src={posterSrc}
-                          alt={posterAlt}
-                          className="h-full w-full object-cover"
-                          onError={onPosterError}
-                        />
-                        {posterEditor.session ? (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  size="icon-sm"
-                                  variant="secondary"
-                                  aria-label={t.detail.editCover}
-                                  className="absolute right-2 bottom-2 bg-surface-floating/90 opacity-90 shadow-sm backdrop-blur-sm hover:opacity-100"
-                                  onClick={posterEditor.onOpen}
-                                >
-                                  <Crop />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="right">{t.detail.editCover}</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="flex aspect-2/3 w-full items-center justify-center rounded-quiet-lg border border-black/5 bg-surface-low/70">
-                        <ImageIcon className="h-10 w-10 text-muted-foreground/30" />
-                      </div>
-                    )}
-                  </div>
+                  <DetailPoster
+                    key={posterKey}
+                    src={displayedPosterSrc}
+                    alt={posterAlt}
+                    onError={displayedPosterSrc !== posterSrc ? () => setSavedPoster(null) : onPosterError}
+                    onSaved={(url) => setSavedPoster({ key: posterKey, url })}
+                    editor={posterEditor}
+                  />
 
                   <div className="min-w-0">
                     <div className="space-y-4">
@@ -492,16 +449,6 @@ export function DetailPanelView({
         onOpenChange={nfo.onOpenChange}
         onDataChange={nfo.onDataChange}
         onSave={nfo.onSave}
-      />
-
-      <PosterCropDialog
-        open={posterEditor.open}
-        session={posterEditor.session}
-        crop={posterEditor.crop}
-        saving={posterEditor.saving}
-        onCropChange={posterEditor.onCropChange}
-        onOpenChange={posterEditor.onOpenChange}
-        onSave={posterEditor.onSave}
       />
 
       <Dialog open={thumbPreviewOpen} onOpenChange={setThumbPreviewOpen}>
