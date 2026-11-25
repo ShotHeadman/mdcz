@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rename, rm } from "node:fs/promises";
+import { BlockList, isIP } from "node:net";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Website } from "@mdcz/shared/enums";
@@ -9,6 +10,7 @@ import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
+import type { RuntimeJsonResponse } from "./index";
 import {
   getCrawlerExecutionSource,
   getNetworkSignal,
@@ -28,7 +30,25 @@ const IMAGE_METADATA_PROBE_RETRY_BYTES = 256 * 1024;
 const ERROR_BODY_PREVIEW_BYTES = 64 * 1024;
 type HeaderInit = ConstructorParameters<typeof Headers>[0];
 // impit accepts `timeout: null` to disable timeouts; every request here sets one, and the runtime network contracts only allow numbers.
-type ImpitRequestInit = Omit<ImpitFetchInit, "timeout"> & { timeout?: number };
+type ImpitRequestInit = Omit<ImpitFetchInit, "timeout"> & { timeout?: number; bypassProxy?: boolean };
+
+const localNetworks = new BlockList();
+localNetworks.addSubnet("127.0.0.0", 8);
+localNetworks.addSubnet("10.0.0.0", 8);
+localNetworks.addSubnet("172.16.0.0", 12);
+localNetworks.addSubnet("192.168.0.0", 16);
+localNetworks.addSubnet("169.254.0.0", 16);
+localNetworks.addSubnet("100.64.0.0", 10);
+localNetworks.addAddress("::1", "ipv6");
+localNetworks.addSubnet("fc00::", 7, "ipv6");
+localNetworks.addSubnet("fe80::", 10, "ipv6");
+
+export const isLocalNetworkUrl = (url: string): boolean => {
+  const host = new URL(url).hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+  const family = isIP(host);
+  if (family !== 0) return localNetworks.check(host, family === 6 ? "ipv6" : "ipv4");
+  return host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || !host.includes(".");
+};
 export interface RawNetworkResponse {
   readonly status: number;
   readonly statusText: string;
@@ -110,15 +130,6 @@ export interface ProbeResult {
   height?: number;
   /** Only full GET probes read the page, so only they report why it failed. */
   reason?: FailureReason;
-}
-
-export interface NetworkJsonResponse<T = unknown> {
-  ok: boolean;
-  status: number;
-  statusText: string;
-  resolvedUrl: string;
-  headers: Headers;
-  data: T | string | null;
 }
 
 interface RequestBehavior<TResult> {
@@ -206,7 +217,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     url: string,
     payload: unknown,
     init: Omit<ImpitRequestInit, "method" | "body"> = {},
-  ): Promise<NetworkJsonResponse<TResponse>> {
+  ): Promise<RuntimeJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
 
@@ -350,12 +361,20 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   }
 
   createSession(options: { cookieJar?: NetworkCookieJar } = {}): NetworkSession {
-    const client = options.cookieJar
-      ? this.createImpitClient(options.cookieJar, this.options.getProxyUrl?.())
-      : undefined;
+    const { cookieJar } = options;
+    const clientsByProxy = new Map<string, Impit>();
 
     return {
       getText: async (url: string, init: Omit<ImpitRequestInit, "method"> = {}) => {
+        let client: Impit | undefined;
+        if (cookieJar) {
+          const proxyUrl = this.resolveProxyUrl(url, init.bypassProxy);
+          client = clientsByProxy.get(proxyUrl ?? "");
+          if (!client) {
+            client = this.createImpitClient(cookieJar, proxyUrl);
+            clientsByProxy.set(proxyUrl ?? "", client);
+          }
+        }
         const response = await this.executeRequest(
           url,
           {
@@ -601,13 +620,14 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       throw createAbortError();
     }
 
-    const currentClient = client ?? this.getClient(getCrawlerExecutionSource()?.website);
-    const headers = new Headers(init.headers);
+    const { bypassProxy, ...requestInit } = init;
+    const currentClient = client ?? this.getClient(this.resolveProxyUrl(url, bypassProxy));
+    const headers = new Headers(requestInit.headers);
     this.applySiteRequestConfig(url, headers);
 
     const finalInit = {
-      ...init,
-      timeout: init.timeout ?? this.resolveTimeoutMs(),
+      ...requestInit,
+      timeout: requestInit.timeout ?? this.resolveTimeoutMs(),
       headers,
     };
     const dispatch = async (): Promise<RawNetworkResponse> => await currentClient.fetch(url, finalInit);
@@ -652,7 +672,15 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
 
     const text = await response.text();
-    return text.trim().length > 0 ? text : null;
+    if (!text.trim()) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text;
+    }
   }
 
   private buildProbeRangeValue(byteCount: number): string {
@@ -766,8 +794,13 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return Math.max(0, Math.trunc(value));
   }
 
-  private getClient(site?: Website): Impit {
-    const proxyUrl = this.options.getProxyUrl?.(site);
+  private resolveProxyUrl(url: string, bypassProxy?: boolean): string | undefined {
+    return bypassProxy || isLocalNetworkUrl(url)
+      ? undefined
+      : this.options.getProxyUrl?.(getCrawlerExecutionSource()?.website);
+  }
+
+  private getClient(proxyUrl: string | undefined): Impit {
     let client = this.clientsByProxy.get(proxyUrl ?? "");
     if (!client) {
       // Requests go either through the global proxy or direct, so any other cached proxy has been replaced.

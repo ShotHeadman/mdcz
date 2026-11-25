@@ -143,9 +143,11 @@ export class ActorImageService implements RuntimeActorImageService {
   ): Promise<ResolvedActorImage> {
     let state = this.createResolutionState(actorName, seedProfile);
 
-    state = await this.lookupStoredActorImage(configuration, state);
-    if (state.imagePath) {
-      return this.toResolvedActorImage(state);
+    if (hasActorPhoto(seedProfile) || configuration.personSync.personImageSources[0] === "local") {
+      state = await this.lookupStoredActorImage(configuration, state);
+      if (state.imagePath) {
+        return this.toResolvedActorImage(state);
+      }
     }
 
     state = await this.lookupActorProfileAndStoredImage(configuration, actorName, seedProfile, input, state);
@@ -158,12 +160,14 @@ export class ActorImageService implements RuntimeActorImageService {
       return this.toResolvedActorImage(state);
     }
 
-    state = await this.refreshActorProfileAndStoredImage(configuration, actorName, input, state);
-    if (state.imagePath) {
-      return this.toResolvedActorImage(state);
-    }
+    if (hasActorPhoto(seedProfile)) {
+      state = await this.refreshActorProfileAndStoredImage(configuration, actorName, input, state);
+      if (state.imagePath) {
+        return this.toResolvedActorImage(state);
+      }
 
-    state = await this.cacheProfilePhoto(input, state);
+      state = await this.cacheProfilePhoto(input, state);
+    }
     return this.toResolvedActorImage(state);
   }
 

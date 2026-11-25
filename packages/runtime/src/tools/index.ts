@@ -153,16 +153,17 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
       continue;
     }
 
+    // A dry run lists what the run would do, so sidecars it would leave alone are not planned.
+    if (copyExtensions.has(extension) && !payload.copyFiles) {
+      result.skipped += 1;
+      continue;
+    }
     result.planned.push(destinationPath);
     if (payload.dryRun) continue;
 
     try {
       const strmTarget = extension === ".strm" ? await inspectStrmTarget(sourcePath) : undefined;
       if (extension === ".strm" && !strmTarget) throw new Error(`STRM file does not contain a target: ${sourcePath}`);
-      if (copyExtensions.has(extension) && !payload.copyFiles) {
-        result.skipped += 1;
-        continue;
-      }
       await mkdir(dirname(destinationPath), { recursive: true });
       if (destinationState === "broken_symlink") await unlink(destinationPath);
       if (strmTarget?.kind === "relative_path") {

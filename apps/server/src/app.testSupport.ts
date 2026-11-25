@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { ActorSourceProvider, ActorSourceRegistry } from "@mdcz/runtime/actorSource";
+import { resolveSiteProxyUrl } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { findNamingPolicy } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime, MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
@@ -75,7 +76,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const networkClient =
     options.networkClient ??
     new NetworkClient({
-      getProxyUrl: () => config.getComputed().proxyUrl,
+      getProxyUrl: (site) => resolveSiteProxyUrl(config.getComputed(), site),
       getTimeoutMs: () => config.getComputed().networkTimeoutMs,
       getRetryCount: () => config.getComputed().networkRetryCount,
     });

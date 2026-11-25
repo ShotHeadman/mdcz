@@ -1,6 +1,7 @@
 import { dedupeMediaSources } from "@mdcz/shared/imageSource";
 import { isAbsoluteLocalPath } from "@mdcz/shared/localPath";
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
+import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import { isRemoteAssetUrl, LOCAL_FILE_SCHEME, parseLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type {
@@ -9,8 +10,9 @@ import type {
   MaintenanceActionPort,
   ScrapeActionPort,
   SharedWorkbenchPorts,
+  WorkbenchSetupPort,
 } from "@mdcz/views/adapters";
-import type { DetailViewItem } from "@mdcz/views/detail";
+import { DETAIL_IMAGE_VARIANTS, type DetailViewItem, type ImageCandidateVariant } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
 import {
   applyMaintenanceSessionSnapshot,
@@ -24,7 +26,7 @@ import {
   useScrapeStore,
 } from "@mdcz/views/state/scrapeStore";
 import { api, getLibraryAssetSrc, markLibraryAssetChanged } from "../client";
-import { desktop } from "../desktop";
+import { browseDirectory, desktop } from "../desktop";
 import { showScrapeRun } from "../taskHydration";
 
 const fileActions: Partial<FileActions> = desktop
@@ -118,7 +120,12 @@ const resolveCandidatePath = (candidate: string, item: DetailViewItem, baseDir?:
   return normalizedCandidate;
 };
 
-const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseDir?: string): string => {
+const toAssetCandidate = (
+  candidate: string,
+  item?: DetailViewItem | null,
+  baseDir?: string,
+  variant?: ImageCandidateVariant,
+): string => {
   const trimmed = candidate.trim();
   if (!trimmed) {
     return "";
@@ -126,9 +133,17 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (isRemoteAssetUrl(trimmed)) {
     return trimmed;
   }
+  const variantOptions = variant ? { width: variant.width, format: variant.format ?? ("webp" as const) } : {};
   if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
     const file = parseLocalFileUrl(trimmed);
-    return getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath }) || trimmed;
+    return (
+      getLibraryAssetSrc({
+        rootId: file.rootId,
+        path: file.relativePath,
+        revision: item?.artworkRevision,
+        ...variantOptions,
+      }) || trimmed
+    );
   }
   if (!item) {
     return trimmed;
@@ -144,14 +159,21 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
   const path = asset?.type === "local" ? asset.file.relativePath : resolveCandidatePath(trimmed, item, baseDir);
-  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path) }) || trimmed;
+  return (
+    getLibraryAssetSrc({
+      rootId,
+      path: toRelativePath(item, path),
+      revision: item.artworkRevision,
+      ...variantOptions,
+    }) || trimmed
+  );
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
   ...fileActions,
   showFilePath: Boolean(desktop),
-  resolveImageCandidates: async (candidates, baseDir, item) =>
-    dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
+  resolveImageCandidates: async (candidates, baseDir, item, variant) =>
+    dedupeMediaSources(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir, variant))),
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
@@ -181,16 +203,27 @@ export const createWebDetailPort = (): DetailActionPort => ({
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
     const response = await api.scrape.posterCropSession(item.fileRef);
     if (!response) return null;
+    const { rootId, sourceRelativePath, sourceUrl, width, height, initialCrop } = response;
     return {
-      ...response,
-      sourceUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.sourceRelativePath }),
+      sourceUrl:
+        sourceUrl ?? getLibraryAssetSrc({ rootId, path: sourceRelativePath ?? "", revision: item.artworkRevision }),
+      width,
+      height,
+      initialCrop,
     };
   },
   savePosterCrop: async (item, crop) => {
     if (!item.fileRef) throw new Error(getT().web.missingVideoFile);
     const response = await api.scrape.posterCropSave({ ...item.fileRef, crop });
     markLibraryAssetChanged(response.rootId, response.targetRelativePath, response.revision ?? String(Date.now()));
-    return { posterUrl: getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }) };
+    return {
+      posterUrl: getLibraryAssetSrc({
+        rootId: response.rootId,
+        path: response.targetRelativePath,
+        revision: item.artworkRevision,
+        ...DETAIL_IMAGE_VARIANTS.poster,
+      }),
+    };
   },
 });
 
@@ -291,4 +324,26 @@ export const createWebWorkbenchPorts = (): SharedWorkbenchPorts => ({
   detail: createWebDetailPort(),
   scrape: createWebScrapeActionPort(),
   maintenance: createWebMaintenanceActionPort(),
+});
+
+export const createWebSetupPort = (): WorkbenchSetupPort => ({
+  browseDirectory,
+  suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
+  cancelCandidates: async (scanId) => {
+    await api.scans.cancelCandidates({ scanId });
+  },
+  scanCandidates: async (scanDir, recursive, excludeDirPaths, scanId) => {
+    const result = await api.scans.candidates({
+      scanId,
+      scanDir,
+      recursive,
+      excludeDirPaths: excludeDirPaths ? [...excludeDirPaths] : undefined,
+      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
+    });
+    return {
+      candidates: result.candidates,
+      warnings: result.warnings,
+      supportedExtensions: [...SUPPORTED_MEDIA_EXTENSIONS],
+    };
+  },
 });

@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, stat, unlink } from "node:fs/promises";
 import { dirname, extname, join, parse } from "node:path";
 import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
-import sharp, { type Sharp } from "sharp";
+import sharp from "sharp";
 import { toErrorMessage } from "../../../shared";
+import { encodePoster } from "../../posterCut";
 
 const SMALL_POSTER_THRESHOLD_BYTES = 50_000;
 
 export type PosterDerivationResult =
-  | { status: "derived"; path: string }
+  | { status: "derived"; path: string; source: "thumb" | "poster" }
   | { status: "skipped"; reason: "large_poster" | "missing_thumb" | "unreadable_poster" };
 
 interface PosterDerivationLogger {
@@ -24,35 +25,27 @@ export interface DerivePosterFromThumbOptions {
 
 const inferOutputExtension = (filePath: string): string => extname(filePath) || ".jpg";
 
-const encodePoster = (pipeline: Sharp, outputPath: string): Sharp => {
-  switch (inferOutputExtension(outputPath).toLowerCase()) {
-    case ".png":
-      return pipeline.png();
-    case ".webp":
-      return pipeline.webp({ quality: 95 });
-    default:
-      return pipeline.jpeg({ quality: 95, chromaSubsampling: "4:4:4" });
-  }
-};
-
 export { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
 
 export class PosterImageDerivationService {
   constructor(private readonly logger: PosterDerivationLogger) {}
 
   async deriveFromThumbIfNeeded(options: DerivePosterFromThumbOptions): Promise<PosterDerivationResult> {
+    let inspection: "keep" | "small" | "non_portrait" | "unreadable" | undefined;
     if (options.posterPath) {
-      const shouldDerive = await this.isSmallPoster(options.posterPath);
-      if (shouldDerive === false) {
+      inspection = await this.inspectPoster(options.posterPath);
+      if (inspection === "keep") {
         return { status: "skipped", reason: "large_poster" };
       }
-      if (shouldDerive === null) {
+      if (inspection === "unreadable") {
         return { status: "skipped", reason: "unreadable_poster" };
       }
     }
 
     const thumbPath = await options.resolveThumbPath();
-    if (!thumbPath) {
+    const sourcePath = thumbPath ?? (inspection === "non_portrait" ? options.posterPath : undefined);
+    const derivedSource = thumbPath ? "thumb" : "poster";
+    if (!sourcePath) {
       this.logger.warn(`Cannot derive poster from thumb: thumb asset is missing for ${options.targetPath}`);
       return { status: "skipped", reason: "missing_thumb" };
     }
@@ -60,12 +53,12 @@ export class PosterImageDerivationService {
     const outputPath = options.posterPath ?? options.targetPath;
 
     try {
-      const source = sharp(thumbPath, { animated: false }).rotate();
+      const source = sharp(sourcePath, { animated: false }).rotate();
       const metadata = await source.metadata();
       const width = metadata.width ?? 0;
       const height = metadata.height ?? 0;
       if (width <= 0 || height <= 0) {
-        throw new Error(`Unable to read thumb dimensions for ${thumbPath}`);
+        throw new Error(`Unable to read image dimensions for ${sourcePath}`);
       }
 
       // A portrait cover is already poster-shaped and is used whole.
@@ -85,20 +78,29 @@ export class PosterImageDerivationService {
         await unlink(tempPath).catch(() => undefined);
       }
 
-      return { status: "derived", path: outputPath };
+      return { status: "derived", path: outputPath, source: derivedSource };
     } catch (error) {
-      this.logger.warn(`Failed to derive poster from thumb ${thumbPath}: ${toErrorMessage(error)}`);
+      this.logger.warn(`Failed to derive poster from ${sourcePath}: ${toErrorMessage(error)}`);
       return { status: "skipped", reason: options.posterPath ? "unreadable_poster" : "missing_thumb" };
     }
   }
 
-  private async isSmallPoster(posterPath: string): Promise<boolean | null> {
+  private async inspectPoster(posterPath: string): Promise<"keep" | "small" | "non_portrait" | "unreadable"> {
     try {
       const posterStat = await stat(posterPath);
-      return posterStat.size < SMALL_POSTER_THRESHOLD_BYTES;
+      if (posterStat.size < SMALL_POSTER_THRESHOLD_BYTES) {
+        return "small";
+      }
+      const metadata = await sharp(posterPath, { animated: false }).rotate().metadata();
+      const width = metadata.width ?? 0;
+      const height = metadata.height ?? 0;
+      if (width <= 0 || height <= 0) {
+        return "unreadable";
+      }
+      return resolveThumbToPosterCropRegion(width, height) ? "non_portrait" : "keep";
     } catch (error) {
-      this.logger.warn(`Cannot inspect poster size for ${posterPath}: ${toErrorMessage(error)}`);
-      return null;
+      this.logger.warn(`Cannot inspect poster for ${posterPath}: ${toErrorMessage(error)}`);
+      return "unreadable";
     }
   }
 }

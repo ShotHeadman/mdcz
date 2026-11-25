@@ -6,7 +6,7 @@ import type { NamingPreviewSampleId } from "@mdcz/shared/types";
 export const settings = {
   translationTest: {
     ok: (sample: string) => `Metadata translation sample verified: ${sample}`,
-    missing_model: "Please configure the LLM model name first",
+    missing_model: "Set the model name under AI model first",
     missing_credentials: "Please enter the credentials required by this translation engine",
     failed: "Connection failed",
   },
@@ -41,6 +41,7 @@ export const settings = {
       max: "max",
     },
     llmApiFormat: { responses: "Responses", "chat-completions": "Chat Completions" },
+    briefSendKey: { enter: "Enter", modEnter: "Ctrl+Enter (⌘+Enter on macOS)" },
     llmServiceType: { "openai-compatible": "OpenAI compatible", google: "Google", deepseek: "DeepSeek" },
     llmOutputFormat: { none: "Prompt JSON", json_object: "JSON Object", json_schema: "JSON Schema" },
     partStyle: {
@@ -105,6 +106,9 @@ export const settings = {
     organized: (path: string) => `Organized: ${path}`,
     files: (names: string[]) => `Writes: ${names.join(", ")}`,
     metadataDir: (path: string) => `Metadata directory: ${path}`,
+    writes: "Writes",
+    showDetails: "Full paths",
+    hideDetails: "Hide",
   },
   namingTemplateHelp: {
     folder: "Folder template",
@@ -442,6 +446,21 @@ export const settings = {
   crossField: {
     incomplete: (count: number) => `${count} setting${count === 1 ? "" : "s"} incomplete`,
     focus: "Focus",
+  },
+  briefModel: {
+    configure: "Configure",
+    modelPlaceholder: "e.g. gpt-6.2-sol, deepseek-chat",
+    dialogTitle: "Brief model",
+    dialogDescription:
+      "Configure a dedicated model connection for Brief without affecting translation or number fallback.",
+    useDedicated: "Use dedicated model",
+    useDedicatedHint: "Uses the default AI model when turned off.",
+    moreOptions: "Advanced parameters",
+    verify: "Verify model",
+    verified: "Model check passed.",
+    save: "Save",
+    testing: "Verifying…",
+    invalidConfig: "Check the API URL and parameter ranges.",
   },
   resetToDefault: {
     title: "Reset to default",

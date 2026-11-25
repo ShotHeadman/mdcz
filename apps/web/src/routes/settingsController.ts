@@ -80,6 +80,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     return desktop ? undefined : getT().web.copyServerPath;
   },
   testTranslation: async (input) => await api.translate.test(input),
+  checkBrief: async (settings) => await api.brief.check(settings),
   updateCurrentConfigCache: (flatPayload: Record<string, unknown>) => {
     queryClient.setQueryData(queryKeys.config.current, (previous) => {
       if (typeof previous !== "object" || previous === null || Array.isArray(previous)) {

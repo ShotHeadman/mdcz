@@ -1,4 +1,4 @@
-import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/scrape";
+import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/llm";
 import {
   DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,
@@ -56,7 +56,8 @@ describe("LlmApiClient", () => {
       url: "https://example.test/v1/chat/completions",
       expected: { model: "model", reasoning_effort: "high", messages: [{ role: "user", content: "hello" }] },
       absent: ["temperature", "response_format"],
-      data: { choices: [{ message: { content: "ok" } }] },
+      // A leading think block is the model's reasoning, not its answer.
+      data: { choices: [{ message: { content: "<think>The user says hello.</think>\nok" } }] },
     },
     {
       name: "explicit Google service type on a custom proxy",

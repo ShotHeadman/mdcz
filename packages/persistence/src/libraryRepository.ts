@@ -75,10 +75,12 @@ export interface UpsertLibraryEntryInput {
   files: LibraryFileInput[];
 }
 
-export interface LibraryEntriesCursor {
-  createdAt: Date;
-  id: string;
-}
+export type LibrarySortField = "createdAt" | "number" | "title";
+export type LibrarySortOrder = "asc" | "desc";
+
+export type LibraryEntriesCursor =
+  | { sortBy: "createdAt"; sortOrder: LibrarySortOrder; createdAt: number; id: string }
+  | { sortBy: "number" | "title"; sortOrder: LibrarySortOrder; value: string; id: string };
 
 export const LIBRARY_HEALTH_ISSUES = [
   "missingPoster",
@@ -107,6 +109,8 @@ export interface LibraryEntryFilter {
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
   cursor?: LibraryEntriesCursor;
   limit: number;
+  sortBy?: LibrarySortField;
+  sortOrder?: LibrarySortOrder;
 }
 
 export interface LibraryFacetCount {
@@ -289,9 +293,38 @@ const toLibraryEntryRecord = (
   };
 };
 
+const NAME_COLLATOR = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+
+const compareNameKey = (
+  left: { value: string; id: string },
+  right: { value: string; id: string },
+  direction: 1 | -1,
+): number => {
+  const primary = NAME_COLLATOR.compare(left.value, right.value);
+  if (primary !== 0) return primary * direction;
+  if (left.id === right.id) return 0;
+  return (left.id < right.id ? -1 : 1) * direction;
+};
+
+const NUMBER_SORT_KEY = sql<string>`coalesce(
+  nullif(trim(${libraryItems.number}), ''),
+  nullif(trim(${libraryItems.mediaIdentity}), ''),
+  ''
+)`;
+
+const TITLE_SORT_KEY = sql<string>`coalesce(
+  nullif(trim(CASE WHEN json_valid(${libraryItems.crawlerDataJson}) THEN json_extract(${libraryItems.crawlerDataJson}, '$.title_zh') END), ''),
+  nullif(trim(${libraryItems.title}), ''),
+  nullif(trim(${libraryItems.number}), ''),
+  ''
+)`;
+
 const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
 
 export class LibraryRepository {
+  /** Number and title order needs the zh-CN collator, so the whole filtered list is sorted once and paged from here. */
+  private sortedNames: { view: string; changes: number; keys: Array<{ id: string; value: string }> } | null = null;
+
   constructor(private readonly database: PersistenceDatabase) {}
 
   publicationRoots() {
@@ -626,27 +659,90 @@ export class LibraryRepository {
 
   async listEntriesPage(input: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {
     const limit = Math.max(1, Math.trunc(input.limit));
+    const sortBy = input.sortBy ?? "createdAt";
+    const sortOrder = input.sortOrder ?? "desc";
+    if (input.cursor && (input.cursor.sortBy !== sortBy || input.cursor.sortOrder !== sortOrder)) {
+      throw new Error("Invalid library page cursor");
+    }
     const baseWhere = buildLibraryListWhere(input);
-    const cursorTimestamp = input.cursor?.createdAt.getTime();
-    const cursorWhere = input.cursor
-      ? sql`(${libraryItems.createdAt} < ${cursorTimestamp} OR (${libraryItems.createdAt} = ${cursorTimestamp} AND ${libraryItems.id} < ${input.cursor.id}))`
-      : undefined;
-    const where = and(baseWhere, cursorWhere);
-    const items = this.database.db
-      .select()
-      .from(libraryItems)
-      .where(where)
-      .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
-      .limit(limit + 1)
-      .all();
-    const hasMore = items.length > limit;
-    const pageItems = hasMore ? items.slice(0, limit) : items;
+    let pageItems: LibraryItemRow[];
+    let hasMore: boolean;
+    let nextCursor: LibraryEntriesCursor | null = null;
+
+    if (sortBy === "createdAt") {
+      const cursor = input.cursor?.sortBy === "createdAt" ? input.cursor : undefined;
+      const cursorWhere = cursor
+        ? sortOrder === "asc"
+          ? sql`(${libraryItems.createdAt} > ${cursor.createdAt} OR (${libraryItems.createdAt} = ${cursor.createdAt} AND ${libraryItems.id} > ${cursor.id}))`
+          : sql`(${libraryItems.createdAt} < ${cursor.createdAt} OR (${libraryItems.createdAt} = ${cursor.createdAt} AND ${libraryItems.id} < ${cursor.id}))`
+        : undefined;
+      const items = this.database.db
+        .select()
+        .from(libraryItems)
+        .where(and(baseWhere, cursorWhere))
+        .orderBy(
+          ...(sortOrder === "asc"
+            ? [asc(libraryItems.createdAt), asc(libraryItems.id)]
+            : [desc(libraryItems.createdAt), desc(libraryItems.id)]),
+        )
+        .limit(limit + 1)
+        .all();
+      hasMore = items.length > limit;
+      pageItems = hasMore ? items.slice(0, limit) : items;
+      const lastItem = pageItems.at(-1);
+      if (hasMore && lastItem) {
+        nextCursor = { sortBy: "createdAt", sortOrder, createdAt: lastItem.createdAt.getTime(), id: lastItem.id };
+      }
+    } else {
+      const direction: 1 | -1 = sortOrder === "asc" ? 1 : -1;
+      const cursor = input.cursor && input.cursor.sortBy !== "createdAt" ? input.cursor : undefined;
+      const view = JSON.stringify({ ...input, cursor: undefined, limit: undefined, sortBy, sortOrder });
+      // Filters reach into files and roots, so any write on this connection, the only one the database lease
+      // allows, invalidates the order.
+      const changes = this.database.sqlite.prepare("SELECT total_changes()").pluck().get() as number;
+      if (this.sortedNames?.view !== view || this.sortedNames.changes !== changes) {
+        const keys = this.database.db
+          .select({ id: libraryItems.id, value: sortBy === "number" ? NUMBER_SORT_KEY : TITLE_SORT_KEY })
+          .from(libraryItems)
+          .where(baseWhere)
+          .all()
+          .sort((left, right) => compareNameKey(left, right, direction));
+        this.sortedNames = { view, changes, keys };
+      }
+      const { keys } = this.sortedNames;
+      let start = 0;
+      if (cursor) {
+        let end = keys.length;
+        while (start < end) {
+          const middle = (start + end) >>> 1;
+          if (compareNameKey(keys[middle], cursor, direction) > 0) end = middle;
+          else start = middle + 1;
+        }
+      }
+      hasMore = keys.length - start > limit;
+      const pageKeys = keys.slice(start, start + limit);
+      const pageIds = pageKeys.map((row) => row.id);
+      const itemMap = new Map(
+        (pageIds.length
+          ? this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, pageIds)).all()
+          : []
+        ).map((item) => [item.id, item]),
+      );
+      pageItems = pageIds.flatMap((id) => {
+        const item = itemMap.get(id);
+        return item ? [item] : [];
+      });
+      const lastKey = pageKeys.at(-1);
+      if (hasMore && lastKey) {
+        nextCursor = { sortBy, sortOrder, value: lastKey.value, id: lastKey.id };
+      }
+    }
+
     const ids = pageItems.map((item) => item.id);
     const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
     const entries = pageItems.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
-    const lastItem = pageItems.at(-1);
     const totals = this.database.db
       .select({
         fileCount: sql<number>`count(${libraryItemFiles.id})`,
@@ -661,13 +757,7 @@ export class LibraryRepository {
     return {
       entries,
       hasMore,
-      nextCursor:
-        hasMore && lastItem
-          ? {
-              createdAt: lastItem.createdAt,
-              id: lastItem.id,
-            }
-          : null,
+      nextCursor,
       ...totals,
       total: this.getListCount(baseWhere),
     };
@@ -708,6 +798,16 @@ export class LibraryRepository {
         tags: jsonFacet(sql`json_extract(${libraryItems.crawlerDataJson}, '$.genres')`),
       },
     };
+  }
+
+  /** Every text value a crawler field holds across the movies the filter lists, each entry of a list field on its own. */
+  crawlerFieldValues(filter: LibraryEntryFilter, field: string): string[] {
+    return this.database.db
+      .all<{ value: string }>(
+        sql`SELECT DISTINCT field.value AS value FROM library_items, json_each(${libraryItems.crawlerDataJson}, ${`$.${field}`}) AS field
+          WHERE ${buildLibraryListWhere(filter) ?? sql`1`} AND field.type = 'text' AND field.value <> ''`,
+      )
+      .map((row) => row.value);
   }
 
   /** Stops counting `filter.health` for every movie the filter lists. */

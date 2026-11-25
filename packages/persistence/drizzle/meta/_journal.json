@@ -71,6 +71,13 @@
       "when": 1794182400000,
       "tag": "0009_library_health_ignores",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794873600000,
+      "tag": "0010_library_direct_write",
+      "breakpoints": true
     }
   ]
 }

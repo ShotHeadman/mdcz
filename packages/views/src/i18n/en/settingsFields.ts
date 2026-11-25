@@ -19,7 +19,8 @@ const sections: Record<FieldAnchor, SectionText> = {
   paths: { label: "Paths", aliases: ["path", "paths", "folder", "directory", "directories", "exclude", "actor photo"] },
   scrape: { label: "Scraping", aliases: ["scrape", "crawler", "site", "sites", "source", "sources", "rate", "limit"] },
   network: { label: "Network", aliases: ["network", "proxy", "cookie", "retry", "timeout"] },
-  translate: { label: "Translation", aliases: ["translate", "translation", "translator", "llm", "language"] },
+  translate: { label: "Translation", aliases: ["translate", "translation", "translator", "language"] },
+  llm: { label: "AI model", aliases: ["ai", "llm", "model", "openai", "brief", "assistant"] },
   naming: { label: "Naming", aliases: ["naming", "name", "template", "rule", "rules"] },
   download: { label: "Downloads", aliases: ["download", "asset", "poster", "fanart", "nfo"] },
   mediaServer: { label: "Media servers", aliases: ["media server", "jellyfin", "emby", "person", "actor"] },
@@ -117,7 +118,7 @@ const fields: Record<FieldKey, FieldText> = {
   "scrape.aiNumberFallback": {
     label: "AI number fallback",
     description:
-      "When no site matches the number, asks the Translation LLM to re-extract it from the filename (uses only numbers actually in the filename).",
+      "When no site matches the number, asks the AI model to re-extract it from the filename (uses only numbers actually in the filename).",
     aliases: ["ai", "llm"],
   },
   "scrape.filenameBlacklistTokens": {
@@ -267,7 +268,7 @@ const fields: Record<FieldKey, FieldText> = {
   "download.tagBadges": {
     label: "Add tag badges to posters",
     description:
-      "Add badges based on the movie's existing tags; badge types and corner are configurable. Only newly downloaded posters are processed.",
+      "Add badges based on the movie's existing tags; badge types and corner are configurable. When tags or badge settings change, maintenance writes (Re-merge, Refresh in place, Organize locally) redraw the badges on kept posters.",
     aliases: ["badge", "badges", "mark", "corner"],
   },
   "download.tagBadgeTypes": {
@@ -445,37 +446,51 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["translation scope"],
   },
   "translate.engine": { label: "Translation engine", aliases: ["translator", "translation"] },
-  "translate.llmModelName": { label: "LLM model name", aliases: ["model", "openai", "llm"] },
-  "translate.llmApiKey": {
-    label: "LLM API key (optional)",
-    description:
-      "Usually required for the default OpenAI endpoint; whether local or compatible services need a key depends on the server.",
+  "llm.modelName": { label: "Model name", aliases: ["model", "openai", "llm"] },
+  "llm.brief": {
+    label: "Enable Brief",
+    description: "Draft confirmable tasks from natural language.",
+    aliases: ["assistant", "brief", "prompt"],
+  },
+  "llm.briefModel": {
+    label: "Brief model",
+    aliases: ["brief model", "dedicated model", "assistant model", "llm", "brief"],
+  },
+  "llm.briefSendKey": {
+    label: "Send shortcut",
+    description: "The alternate key combination inserts a new line.",
+    aliases: ["enter", "ctrl", "cmd", "send", "shortcut", "keyboard"],
+  },
+  "llm.apiKey": {
+    label: "API key",
+    description: "Required for the default OpenAI endpoint; optional for local or compatible services as configured.",
     aliases: ["api key", "token", "openai key"],
   },
-  "translate.llmBaseUrl": {
-    label: "LLM API URL",
-    description: `Default: ${DEFAULT_LLM_BASE_URL}. Google Gemini example: https://generativelanguage.googleapis.com/v1beta/openai. Local example: Ollama uses http://127.0.0.1:11434/v1`,
+  "llm.baseUrl": {
+    label: "API URL",
+    description: `Default: ${DEFAULT_LLM_BASE_URL}. Gemini: https://generativelanguage.googleapis.com/v1beta/openai. Ollama: http://127.0.0.1:11434/v1`,
     aliases: ["base url", "endpoint"],
   },
-  "translate.llmApiFormat": { label: "Request format" },
-  "translate.llmServiceType": {
+  "llm.apiFormat": { label: "API protocol" },
+  "llm.serviceType": {
     label: "Service type",
-    description: "Custom proxies must select Google or DeepSeek explicitly; the URL domain is not used for detection.",
+    description: "Select Google or DeepSeek explicitly for custom endpoints; not inferred from the URL.",
   },
   "translate.llmPrompt": { label: "LLM translation prompt", aliases: ["prompt"] },
-  "translate.llmTemperature": {
-    label: "LLM temperature (advanced, optional)",
-    description: "Leave empty to use the server default.",
+  "llm.temperature": {
+    label: "Temperature",
+    description:
+      "Controls output randomness (0–2); lower values are more consistent. Leave blank for the server default.",
   },
-  "translate.llmReasoning": { label: "LLM reasoning effort", aliases: ["reasoning", "thinking"] },
-  "translate.llmOutputFormat": {
+  "llm.reasoning": { label: "Reasoning effort", aliases: ["reasoning", "thinking", "llm"] },
+  "llm.outputFormat": {
     label: "Output format",
     description:
       "Prompt JSON omits structured output parameters; metadata translation always requests JSON and validates it locally.",
   },
-  "translate.llmTimeout": { label: "LLM request timeout (s)" },
-  "translate.llmMaxRetries": { label: "LLM max retries" },
-  "translate.llmMaxRequestsPerSecond": { label: "LLM max requests per second" },
+  "llm.timeout": { label: "Request timeout (s)" },
+  "llm.maxRetries": { label: "Max retries" },
+  "llm.maxRequestsPerSecond": { label: "Max requests per second" },
   "translate.targetLanguage": { label: "Target language", aliases: ["language", "locale"] },
   "personSync.personOverviewSources": { label: "Person overview source order" },
   "personSync.personImageSources": { label: "Person photo source order" },
@@ -500,6 +515,11 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Jellyfin user ID",
     description: "Must be a UUID. Used to read the person list; leave empty to use the server default.",
   },
+  "jellyfin.useProxy": {
+    label: "Use proxy for Jellyfin",
+    description: "Connects directly by default; turn on only when a remote Jellyfin server requires the global proxy.",
+    aliases: ["proxy", "direct", "jellyfin"],
+  },
   "jellyfin.lockOverviewAfterSync": {
     label: "Lock person overview after sync",
     description:
@@ -510,6 +530,11 @@ const fields: Record<FieldKey, FieldText> = {
   "emby.userId": {
     label: "Emby user ID",
     description: "Used to read the person list; leave empty to use the server default.",
+  },
+  "emby.useProxy": {
+    label: "Use proxy for Emby",
+    description: "Connects directly by default; turn on only when a remote Emby server requires the global proxy.",
+    aliases: ["proxy", "direct", "emby"],
   },
   "emby.notifyAfterPublish": {
     label: "Refresh folder after organizing",
@@ -583,6 +608,17 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Use custom title bar",
     description: "Requires restarting the app after switching.",
     aliases: ["title bar", "window chrome"],
+  },
+  "ui.closeToTray": {
+    label: "Close to system tray",
+    description:
+      "Hide to the system tray instead of quitting when closing the window; running tasks continue in the background.",
+    aliases: ["tray", "background"],
+  },
+  "ui.startMinimizedToTray": {
+    label: "Start minimized to tray",
+    description: "Launch hidden in the system tray without showing the main window.",
+    aliases: ["tray", "silent start"],
   },
   "ui.hideDock": { label: "Hide Dock icon" },
   "ui.hideMenu": { label: "Hide menu bar" },

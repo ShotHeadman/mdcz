@@ -1,10 +1,15 @@
 import { cn, Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz/ui";
 import { ChevronLeft, ChevronRight, ImageIcon, Play, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { TrailerPlayer } from "./TrailerPlayer";
+import { DETAIL_IMAGE_VARIANTS, type ImageCandidateVariant } from "./types";
 
-export type ResolveImageCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
+export type ResolveImageCandidates = (
+  candidates: string[],
+  baseDir?: string,
+  variant?: ImageCandidateVariant,
+) => Promise<string[]>;
 
 interface SceneImageGalleryProps {
   images: string[];
@@ -39,16 +44,20 @@ const useResolvedImageSrc = (
   resolveImageCandidates: ResolveImageCandidates,
   rawCandidates: string[],
   baseDir?: string,
+  variant?: ImageCandidateVariant,
 ): string => {
   const candidateKey = rawCandidates.map((candidate) => candidate.trim()).join("\u0000");
+  const variantWidth = variant?.width;
+  const variantFormat = variant?.format;
   const [resolvedSrc, setResolvedSrc] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     const candidates = candidateKey ? candidateKey.split("\u0000").filter(Boolean) : [];
+    const nextVariant = variantWidth ? { width: variantWidth, format: variantFormat } : undefined;
 
     const resolve = async () => {
-      const [nextSrc = ""] = await resolveImageCandidates(candidates, baseDir);
+      const [nextSrc = ""] = await resolveImageCandidates(candidates, baseDir, nextVariant);
       if (!cancelled) {
         setResolvedSrc(nextSrc);
       }
@@ -59,7 +68,7 @@ const useResolvedImageSrc = (
     return () => {
       cancelled = true;
     };
-  }, [baseDir, candidateKey, resolveImageCandidates]);
+  }, [baseDir, candidateKey, resolveImageCandidates, variantFormat, variantWidth]);
 
   return resolvedSrc;
 };
@@ -148,6 +157,7 @@ export function SceneImageGallery({
               baseDir={baseDir}
               resolveImageCandidates={resolveImageCandidates}
               src={imagePath}
+              variant={compact ? DETAIL_IMAGE_VARIANTS.compactScene : DETAIL_IMAGE_VARIANTS.scene}
             />
           </button>
         ))}
@@ -271,54 +281,26 @@ function LazyImage({
   alt,
   baseDir,
   resolveImageCandidates,
+  variant,
 }: {
   src: string;
   alt: string;
   baseDir?: string;
   resolveImageCandidates: ResolveImageCandidates;
+  variant?: ImageCandidateVariant;
 }) {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
-  const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir);
+  const [status, setStatus] = useState<{ src: string; state: "loaded" | "error" } | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir, variant);
+  const currentState = status?.src === resolvedSrc ? status.state : "loading";
 
   useEffect(() => {
-    setLoaded(false);
-    setError(false);
-
-    if (!resolvedSrc) {
-      return;
-    }
-
-    let cancelled = false;
-    const probe = new Image();
-    probe.onload = () => {
-      if (!cancelled) {
-        setLoaded(true);
-      }
-    };
-    probe.onerror = () => {
-      if (!cancelled) {
-        setError(true);
-      }
-    };
-    probe.src = resolvedSrc;
-
-    if (probe.complete) {
-      if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
-        setLoaded(true);
-      } else {
-        setError(true);
-      }
-    }
-
-    return () => {
-      cancelled = true;
-      probe.onload = null;
-      probe.onerror = null;
-    };
+    const img = imgRef.current;
+    if (!resolvedSrc || !img?.complete) return;
+    setStatus({ src: resolvedSrc, state: img.naturalWidth > 0 && img.naturalHeight > 0 ? "loaded" : "error" });
   }, [resolvedSrc]);
 
-  if (error || !resolvedSrc) {
+  if (currentState === "error" || !resolvedSrc) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <ImageIcon className="h-4 w-4 text-muted-foreground/30" />
@@ -328,14 +310,17 @@ function LazyImage({
 
   return (
     <>
-      {!loaded ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
+      {currentState !== "loaded" ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
       <img
+        ref={imgRef}
         key={resolvedSrc}
         src={resolvedSrc}
         alt={alt}
-        onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
-        className={cn("h-full w-full object-cover", !loaded && "invisible")}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setStatus({ src: resolvedSrc, state: "loaded" })}
+        onError={() => setStatus({ src: resolvedSrc, state: "error" })}
+        className={cn("h-full w-full object-cover", currentState !== "loaded" && "invisible")}
       />
     </>
   );

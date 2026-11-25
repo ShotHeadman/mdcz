@@ -7,8 +7,9 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import { isPrimaryVideoFile } from "../scrape/media/generatedSidecarVideos";
 import { type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 import { PublicationConflictError } from "./conflicts";
-import { CreatedDirectories, outputFileSystem, removeEmptyDirectory } from "./outputFileSystem";
+import { CreatedDirectories, outputFileSystem, removeEmptyDirectory, writeVerifiedFile } from "./outputFileSystem";
 import { publicationJournal, TemporaryPaths } from "./publicationJournal";
+import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
 import { type WriteArtifact, WriteOutput } from "./WriteOutput";
 
@@ -59,6 +60,8 @@ export class MoveOutput {
     commit(): TResult | Promise<TResult>;
     protectedMediaFiles?: readonly string[];
     reorganize?: boolean;
+    /** See `WriteOutput.install`; a copied video is likewise written under its final name. */
+    direct?: boolean;
   }): Promise<TResult> {
     const fs = this.fileSystem;
     const temporaryPaths = new TemporaryPaths();
@@ -154,6 +157,7 @@ export class MoveOutput {
       const value = await new WriteOutput(fs, this.logger).install(artifacts, {
         validate,
         directories,
+        direct: input.direct,
         protectedMediaFiles: [...protectedMediaFiles, ...moves.flatMap((move) => [move.sourcePath, move.targetPath])],
         beforeCommit: async () => {
           const parkedSources = new Map<string, string>();
@@ -224,20 +228,29 @@ export class MoveOutput {
               }
             }
             if (copied) {
-              const staging = `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
-              temporaryPaths.add(staging);
-              if (move.rewrittenContent !== undefined)
-                await fs.writeFile(staging, move.rewrittenContent, { flush: true });
-              else await fs.copyFile(sourcePath, staging);
-              if (move.rewrittenContent === undefined) await fs.flush?.(staging);
+              const direct = input.direct ?? (await publicationPolicy.isDirectWrite(move.targetPath));
               const expectedSize =
                 move.rewrittenContent === undefined ? move.size : Buffer.byteLength(move.rewrittenContent);
-              if ((await fs.stat(staging)).size !== expectedSize)
-                throw new Error(`Staged transfer size mismatch: ${move.targetPath}`);
+              const content = move.rewrittenContent === undefined ? { sourcePath } : { data: move.rewrittenContent };
+              const staging = direct ? move.targetPath : `${move.targetPath}.mdcz-staging-${randomUUID()}.part`;
+              temporaryPaths.add(staging);
+              await writeVerifiedFile(fs, staging, content, expectedSize, direct);
               await assertSource(move, sourcePath);
-              await assertTarget(move, sourcePath);
-              await fs.rename(staging, move.targetPath);
-              temporaryPaths.settle(staging);
+              if (direct) {
+                temporaryPaths.settle(staging);
+              } else {
+                await assertTarget(move, sourcePath);
+                try {
+                  await fs.rename(staging, move.targetPath);
+                  temporaryPaths.settle(staging);
+                } catch (error) {
+                  if ((error as NodeJS.ErrnoException).code !== "EIO" || input.direct !== undefined) throw error;
+                  await publicationPolicy.markDirectWrite(move.targetPath, warn);
+                  temporaryPaths.add(move.targetPath);
+                  await writeVerifiedFile(fs, move.targetPath, content, expectedSize, true);
+                  temporaryPaths.settle(move.targetPath);
+                }
+              }
               relocations.push({ from: sourcePath, to: move.targetPath, kind: "copied" });
               if (move.transfer === "move") retainedSources.set(sourcePath, move);
             } else {
@@ -252,18 +265,18 @@ export class MoveOutput {
         commit: async () => {
           const value = await input.commit();
           committed = true;
-          for (const [sourcePath, facts] of retainedSources) {
-            try {
-              if (!sameMediaFile(await fs.stat(sourcePath), facts))
-                throw new Error("Source changed after transfer; leaving it intact");
-              await fs.rm(sourcePath, { force: true });
-            } catch (error) {
-              this.logger.warn(`Published media but left source ${sourcePath}: ${toErrorMessage(error)}`);
-            }
-          }
           return value;
         },
       });
+      for (const [sourcePath, facts] of retainedSources) {
+        try {
+          if (!sameMediaFile(await fs.stat(sourcePath), facts))
+            throw new Error("Source changed after transfer; leaving it intact");
+          await fs.rm(sourcePath, { force: true });
+        } catch (error) {
+          this.logger.warn(`Published media but left source ${sourcePath}: ${toErrorMessage(error)}`);
+        }
+      }
       // A moved file leaves no empty folders between its old place and its media root, which itself always stays.
       for (const move of input.moves) {
         if (move.transfer !== "move") continue;

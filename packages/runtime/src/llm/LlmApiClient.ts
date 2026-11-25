@@ -1,31 +1,14 @@
-import type { Configuration } from "@mdcz/shared/config";
+import type { LlmConnectionSettings } from "@mdcz/shared/config";
 import {
-  DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,
   type LlmOutputFormat,
   type LlmReasoning,
   type LlmServiceType,
+  llmServiceChoices,
+  normalizeLlmBaseUrl,
 } from "@mdcz/shared/llm";
-import { toErrorMessage } from "../../../shared";
-
-type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
-
-export interface LlmApiTransport {
-  postJsonDetailed<TResponse>(
-    url: string,
-    payload: unknown,
-    init?: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number },
-  ): Promise<RuntimeNetworkJsonResponse<TResponse>>;
-}
-
-export interface RuntimeNetworkJsonResponse<T = unknown> {
-  ok: boolean;
-  status: number;
-  statusText: string;
-  resolvedUrl: string;
-  headers: Headers;
-  data: T | string | null;
-}
+import type { RuntimeJsonResponse, RuntimeNetworkClient, RuntimeRequestInit } from "../network";
+import { toErrorMessage } from "../shared";
 
 export interface LlmTextRequest {
   model: string;
@@ -46,35 +29,22 @@ export interface LlmJsonSchema {
   schema: Record<string, unknown>;
 }
 
-export type LlmRequestConfig = Pick<
-  Configuration["translate"],
-  | "llmModelName"
-  | "llmApiKey"
-  | "llmBaseUrl"
-  | "llmApiFormat"
-  | "llmTemperature"
-  | "llmReasoning"
-  | "llmServiceType"
-  | "llmOutputFormat"
-  | "llmTimeout"
->;
-
 export const toLlmTextRequest = (
-  config: LlmRequestConfig,
+  settings: LlmConnectionSettings,
   prompt: string,
   outputSchema?: LlmJsonSchema,
 ): LlmTextRequest => ({
-  model: config.llmModelName,
-  apiKey: config.llmApiKey,
-  baseUrl: config.llmBaseUrl,
-  apiFormat: config.llmApiFormat,
-  temperature: config.llmTemperature ?? undefined,
+  model: settings.modelName,
+  apiKey: settings.apiKey,
+  baseUrl: settings.baseUrl,
+  apiFormat: settings.apiFormat,
+  temperature: settings.temperature ?? undefined,
   prompt,
-  reasoning: config.llmReasoning,
-  serviceType: config.llmServiceType,
-  outputFormat: config.llmOutputFormat,
+  reasoning: settings.reasoning,
+  serviceType: settings.serviceType,
+  outputFormat: settings.outputFormat,
   outputSchema,
-  timeout: Math.max(1, Math.trunc(config.llmTimeout)) * 1000,
+  timeout: Math.max(1, Math.trunc(settings.timeout)) * 1000,
 });
 
 interface ResponsesApiResponse {
@@ -122,106 +92,23 @@ export class LlmTransportError extends Error {
   }
 }
 
-export const normalizeLlmBaseUrl = (baseUrl: string): string => {
-  const trimmed = baseUrl.trim();
-  if (!trimmed) {
-    return DEFAULT_LLM_BASE_URL;
-  }
+/** Reasoning models may open with their thinking even when asked for the answer alone. */
+const LEADING_THINK_BLOCK = /^\s*<think>[\s\S]*?<\/think>/iu;
 
-  return trimmed.replace(/\/+$/u, "").replace(/\/(chat\/completions|responses)$/iu, "");
-};
-
-export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>
-  normalizeLlmBaseUrl(baseUrl) === DEFAULT_LLM_BASE_URL;
-
-export const isMissingRequiredLlmApiKey = (baseUrl: string, apiKey: string): boolean =>
-  isOfficialOpenAiBaseUrl(baseUrl) && apiKey.trim().length === 0;
-
-class FetchLlmApiTransport implements LlmApiTransport {
-  async postJsonDetailed<TResponse>(
-    url: string,
-    payload: unknown,
-    init: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number } = {},
-  ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
-    const headers = new Headers(init.headers);
-    headers.set("content-type", "application/json");
-    const { signal, cleanup } = this.resolveSignal(init.signal, init.timeout);
-    let response: Response;
-
-    try {
-      response = await globalThis.fetch(url, {
-        body: JSON.stringify(payload),
-        headers,
-        method: "POST",
-        signal,
-      });
-    } finally {
-      cleanup();
-    }
-
-    return {
-      data: await this.parseJsonResponseBody<TResponse>(response),
-      headers: response.headers,
-      ok: response.ok,
-      resolvedUrl: response.url || url,
-      status: response.status,
-      statusText: response.statusText,
-    };
-  }
-
-  private async parseJsonResponseBody<TResponse>(response: Response): Promise<TResponse | string | null> {
-    const text = await response.text();
-    if (!text.trim()) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(text) as TResponse;
-    } catch {
-      return text;
-    }
-  }
-
-  private resolveSignal(signal?: AbortSignal, timeout?: number): { signal?: AbortSignal; cleanup: () => void } {
-    if (!timeout || !Number.isFinite(timeout)) {
-      return { signal, cleanup: () => undefined };
-    }
-
-    const controller = new AbortController();
-    const timeoutMs = Math.max(1, Math.trunc(timeout));
-    const onAbort = () => controller.abort(signal?.reason);
-    const timeoutId = globalThis.setTimeout(() => {
-      controller.abort(new Error(`Request timeout (${timeoutMs} ms)`));
-    }, timeoutMs);
-
-    if (signal?.aborted) {
-      onAbort();
-    } else {
-      signal?.addEventListener("abort", onAbort, { once: true });
-    }
-
-    return {
-      signal: controller.signal,
-      cleanup: () => {
-        globalThis.clearTimeout(timeoutId);
-        signal?.removeEventListener("abort", onAbort);
-      },
-    };
-  }
-}
-
+/** Requests go through the app's network client, so they follow its proxy. */
 export class LlmApiClient {
-  constructor(private readonly transport: LlmApiTransport = new FetchLlmApiTransport()) {}
+  constructor(private readonly network: Pick<RuntimeNetworkClient, "postJsonDetailed">) {}
 
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
-    if (request.reasoning === "enabled" && request.serviceType !== "deepseek") {
+    const choices = llmServiceChoices(request.serviceType);
+    if (!choices.reasoning.includes(request.reasoning))
       throw new Error(
-        "Explicitly enabling with default effort is only supported for DeepSeek; please use server default or specify effort",
+        `${request.serviceType} does not accept reasoning "${request.reasoning}"; choose another in Settings`,
       );
-    }
-    if (request.serviceType === "google" && request.reasoning === "max") {
-      throw new Error("Google OpenAI-compatible endpoint does not support max reasoning effort");
-    }
+    if (!choices.outputFormat.includes(request.outputFormat))
+      throw new Error(
+        `${request.serviceType} does not accept output format "${request.outputFormat}"; choose another in Settings`,
+      );
     const baseUrl = normalizeLlmBaseUrl(request.baseUrl);
     const headers = this.buildHeaders(request.apiKey);
     if (request.serviceType !== "openai-compatible" || request.apiFormat === "chat-completions") {
@@ -300,9 +187,6 @@ export class LlmApiClient {
 
   private buildOutputFormat(request: LlmTextRequest, apiFormat: LlmApiFormat): Record<string, unknown> {
     if (request.outputFormat === "none") return {};
-    if (request.serviceType === "deepseek" && request.outputFormat === "json_schema") {
-      throw new Error("DeepSeek does not support JSON Schema output; select prompt JSON or JSON Object");
-    }
     const useJsonObject = request.outputFormat === "json_object";
     if (apiFormat === "chat-completions") {
       if (useJsonObject) return { response_format: { type: "json_object" } };
@@ -334,10 +218,10 @@ export class LlmApiClient {
   private async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init?: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number },
-  ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
+    init: RuntimeRequestInit,
+  ): Promise<RuntimeJsonResponse<TResponse>> {
     try {
-      return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
+      return await this.network.postJsonDetailed<TResponse>(url, payload, init);
     } catch (error) {
       throw new LlmTransportError(`LLM request failed for ${url}: ${toErrorMessage(error)}`, error);
     }
@@ -345,12 +229,11 @@ export class LlmApiClient {
 
   private requireExtractedText(
     url: string,
-    response: RuntimeNetworkJsonResponse<unknown>,
+    response: RuntimeJsonResponse<unknown>,
     text: string | null,
   ): string | null {
-    if (typeof text === "string" && text.trim()) {
-      return text;
-    }
+    const answer = text?.replace(LEADING_THINK_BLOCK, "").trim();
+    if (answer) return answer;
 
     throw new LlmApiError(
       `LLM response did not contain text for ${url}: ${this.summarizeResponseData(response.data)}`,
@@ -434,7 +317,7 @@ export class LlmApiClient {
     return texts.length > 0 ? texts.join("\n") : null;
   }
 
-  private toLlmApiError(url: string, response: RuntimeNetworkJsonResponse<unknown>): LlmApiError {
+  private toLlmApiError(url: string, response: RuntimeJsonResponse<unknown>): LlmApiError {
     const baseMessage = `HTTP ${response.status} ${response.statusText} for ${url}`;
     const detail = this.extractErrorDetail(response.data);
     return new LlmApiError(

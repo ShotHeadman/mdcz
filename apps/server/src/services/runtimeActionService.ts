@@ -1,7 +1,7 @@
 import { type CrawlerProvider, probeSiteConnectivity } from "@mdcz/runtime/crawler";
 import { checkConfiguredSiteCookies, type NetworkClient } from "@mdcz/runtime/network";
 import { ensureWatermarkDirectory, PosterWatermarkService } from "@mdcz/runtime/scrape";
-import { testTranslation } from "@mdcz/runtime/translate";
+import { type TranslateTestInput, testTranslation } from "@mdcz/runtime/translate";
 import type { Configuration } from "@mdcz/shared/config";
 import type {
   AppEnsureWatermarkDirectoryResponse,
@@ -10,7 +10,6 @@ import type {
   CrawlerProbeSiteConnectivityInput,
   NetworkCheckCookiesResponse,
   SiteConnectivityProbeResponse,
-  TranslateTestInputDto,
   TranslateTestResponse,
 } from "@mdcz/shared/serverDtos";
 import type { ServerConfigService } from "./configService";
@@ -66,7 +65,7 @@ export class RuntimeActionService {
     return await checkConfiguredSiteCookies(await this.config.get(), this.networkClient);
   }
 
-  async testTranslation(input: TranslateTestInputDto): Promise<TranslateTestResponse> {
+  async testTranslation(input: TranslateTestInput): Promise<TranslateTestResponse> {
     return await testTranslation(input, await this.config.get(), this.networkClient);
   }
 }

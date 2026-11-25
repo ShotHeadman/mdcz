@@ -363,7 +363,7 @@ export class AvjohoActorSource implements BaseActorSource {
     });
 
     if (typeof deps.networkClient.setDomainLimit === "function") {
-      deps.networkClient.setDomainLimit(new URL(this.baseUrl).hostname, 1, 1);
+      deps.networkClient.setDomainLimit(new URL(this.baseUrl).host, 1, 1);
     }
   }
 

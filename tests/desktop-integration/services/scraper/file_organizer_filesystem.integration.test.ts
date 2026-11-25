@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { MoveOutput, WriteOutput } from "@mdcz/runtime/publication";
 import { resolvePublicationNaming } from "@mdcz/runtime/publication/assetLayout";
 import { prepareMovieArtifacts } from "@mdcz/runtime/publication/movieArtifacts";
+import { outputFileSystem } from "@mdcz/runtime/publication/outputFileSystem";
 import { toRootFileRef } from "@mdcz/runtime/publication/outputRefs";
 import { FileOrganizer, type ResolvedPublicationLayout } from "@mdcz/runtime/scrape";
 import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
@@ -19,7 +20,7 @@ import {
 } from "../../../unit/services/scraper/file_organizer.testSupport";
 
 const tempDirs: string[] = [];
-const publicationFs = { ...fs };
+const publicationFs = { ...outputFileSystem };
 
 const publishVideo = async (
   fileInfo: ReturnType<typeof createFileInfo>,

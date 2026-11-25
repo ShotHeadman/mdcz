@@ -2,6 +2,7 @@ import type { TaskNotificationDto } from "@mdcz/shared";
 import type { Configuration } from "@mdcz/shared/config";
 import { DomainErrorCode, type DomainErrorShape, type LibraryTaskConflictDomainError } from "@mdcz/shared/error";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
+import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { getT } from "@mdcz/views/i18n";
 import { createTRPCUntypedClient, httpLink, TRPCClientError } from "@trpc/client";
 
@@ -90,12 +91,21 @@ export const getLibraryAssetSrc = (input: {
       url.searchParams.set("format", input.format);
     }
   }
-  const revision = input.revision ?? assetRevisions.get(`${rootId}\0${assetPath}`);
+  const revision = [input.revision, assetRevisions.get(`${rootId}\0${assetPath}`)].filter(Boolean).join(".");
   if (revision) {
     url.searchParams.set("revision", revision);
   }
   return url.toString();
 };
+
+/** A library movie's poster at list size, or "" when it has none. */
+export const getLibraryPosterSrc = (entry: LibraryEntryDto): string =>
+  getLibraryAssetSrc({
+    format: "webp",
+    path: entry.thumbnailPath,
+    rootId: entry.thumbnailRootId ?? entry.fileRefs.find((file) => file.id === entry.displayFileId)?.rootId,
+    width: 160,
+  });
 
 const getAuthorizationHeaders = (): Record<string, string> => {
   const token = getAdminToken();
@@ -166,6 +176,10 @@ export const api: ServerApiContract = {
   app: {
     ensureWatermarkDirectory: () => trpcMutation("app.ensureWatermarkDirectory"),
     previewPosterBadges: (input) => trpcMutation("app.previewPosterBadges", input),
+  },
+  brief: {
+    plan: (input) => trpcMutation("brief.plan", input),
+    check: (input) => trpcMutation("brief.check", input),
   },
   browser: {
     list: (input) => trpcQuery("browser.list", input),

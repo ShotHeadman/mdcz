@@ -1,121 +1,90 @@
-import { basename, dirname, extname, join } from "node:path";
-import { type AssetNamingMode, buildMovieAssetFileNames } from "@mdcz/shared/assetNaming";
-import {
-  type NormalizedCropRegion,
-  normalizedCropToPixels,
-  resolvePosterEditorCropRegion,
-} from "@mdcz/shared/posterCrop";
-import sharp, { type Sharp } from "sharp";
-import { type MovieLibrary, writePublishedMovie } from "../library/registeredMedia";
-import { acquireOutputDirectories } from "../publication/outputMutex";
-import { toRootFileRef } from "../publication/outputRefs";
-import { WriteOutput } from "../publication/WriteOutput";
-import { DirectoryInventory } from "./DirectoryInventory";
-import { resolveExistingImageAsset } from "./download/assets/helpers";
-
-const supportedExtensions = new Set([".avif", ".jpeg", ".jpg", ".png", ".webp"]);
-
-const encodePoster = (pipeline: Sharp, extension: string): Sharp => {
-  switch (extension) {
-    case ".avif":
-      return pipeline.avif({ quality: 90 });
-    case ".png":
-      return pipeline.png();
-    case ".webp":
-      return pipeline.webp({ quality: 95 });
-    default:
-      return pipeline.jpeg({ quality: 95, chromaSubsampling: "4:4:4" });
-  }
-};
+import type { AssetNamingMode } from "@mdcz/shared/assetNaming";
+import { type NormalizedCropRegion, resolveInitialPosterCrop } from "@mdcz/shared/posterCrop";
+import type { LocalScanEntry } from "@mdcz/shared/types";
+import sharp from "sharp";
+import type { DownloadManager } from "./download/DownloadManager";
+import { installPoster, type PosterInstallContext, posterTargetPath } from "./posterOutput";
 
 export interface PosterCropSession {
-  sourcePath: string;
+  /** A local file, or a remote image the browser loads directly. */
+  source: { path: string } | { url: string };
   targetPath: string;
   width: number;
   height: number;
   initialCrop: NormalizedCropRegion;
 }
 
-export class PosterCropService {
-  async prepare(
-    videoPath: string,
-    assetNamingMode: AssetNamingMode,
-    assets?: { thumb?: string; poster?: string },
-  ): Promise<PosterCropSession> {
-    const outputDir = dirname(videoPath);
-    const videoBaseName = basename(videoPath, extname(videoPath));
-    const names = buildMovieAssetFileNames(videoBaseName, assetNamingMode);
-    const thumbTargetPath = join(outputDir, names.thumb);
-    const posterTargetPath =
-      assets?.poster ??
-      (assets?.thumb
-        ? join(
-            dirname(assets.thumb),
-            /thumb(?=\.[^.]+$)/u.test(basename(assets.thumb))
-              ? basename(assets.thumb).replace(/thumb(?=\.[^.]+$)/u, "poster")
-              : names.poster,
-          )
-        : join(outputDir, names.poster));
-    const inventory = new DirectoryInventory();
-    const thumbPath = assets ? assets.thumb : await resolveExistingImageAsset(thumbTargetPath, inventory);
-    const posterPath = assets ? assets.poster : await resolveExistingImageAsset(posterTargetPath, inventory);
-    const sourcePath = thumbPath ?? posterPath;
-    if (!sourcePath) throw new Error("No local thumb or poster is available for editing");
+/** `cut` is what the poster record names, so a rebuild repeats the cut; the poster file itself names nothing. */
+type CropImage =
+  | { cut: string; image: { url: string } | { path: string } }
+  | { cut?: undefined; image: { path: string } };
+type CropSource = CropImage & { width: number; height: number };
 
-    const metadata = await sharp(sourcePath, { animated: false }).rotate().metadata();
-    const width = metadata.width ?? 0;
-    const height = metadata.height ?? 0;
-    if (width <= 0 || height <= 0) throw new Error("Unable to read poster source dimensions");
+export class PosterCropService {
+  constructor(private readonly downloadManager: Pick<DownloadManager, "probeImageSize" | "downloadPlainPoster">) {}
+
+  /** Null when the movie has nothing to cut a poster from. */
+  async prepare(entry: LocalScanEntry, assetNamingMode: AssetNamingMode): Promise<PosterCropSession | null> {
+    const source = await this.openSource(entry);
+    if (!source) return null;
     return {
-      sourcePath,
-      targetPath: posterPath ?? posterTargetPath,
-      width,
-      height,
-      initialCrop: resolvePosterEditorCropRegion(width, height),
+      source: source.image,
+      targetPath: posterTargetPath(entry.fileInfo.filePath, assetNamingMode, entry.assets),
+      width: source.width,
+      height: source.height,
+      initialCrop: resolveInitialPosterCrop(
+        entry.nfoLocalState?.posterRecord?.cut,
+        source.cut,
+        source.width,
+        source.height,
+      ),
     };
   }
 
+  /** Cuts and badges the poster like a maintenance rebuild, and records how in the NFO so later rebuilds repeat it. */
   async save(
-    videoPath: string,
+    entry: LocalScanEntry,
     assetNamingMode: AssetNamingMode,
     crop: NormalizedCropRegion,
-    assets?: { thumb?: string; poster?: string },
-    movie?: {
-      library: MovieLibrary;
-      movieId: string;
-      roots: readonly { id: string; hostPath: string }[];
-    },
-  ): Promise<PosterCropSession & { revision: string }> {
-    const session = await this.prepare(videoPath, assetNamingMode, assets);
-    const extension = extname(session.targetPath).toLowerCase() || ".jpg";
-    if (!supportedExtensions.has(extension)) throw new Error(`Unsupported poster format: ${extension}`);
-    const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
-    const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
-    const data = await encodePoster(source, extension).toBuffer();
-    const inventory = new DirectoryInventory();
-    const release = await acquireOutputDirectories([session.targetPath], (directory) =>
-      inventory.canonicalDirectory(directory),
+    context: Omit<PosterInstallContext, "downloadManager">,
+  ): Promise<PosterCropSession> {
+    const source = await this.openSource(entry);
+    if (!source) throw new Error("No cover or poster is available for editing");
+    const targetPath = posterTargetPath(entry.fileInfo.filePath, assetNamingMode, entry.assets);
+    await installPoster(
+      entry,
+      targetPath,
+      source.cut === undefined ? { file: source.image.path, crop } : { source: source.cut, crop },
+      { ...context, downloadManager: this.downloadManager },
     );
-    try {
-      await new WriteOutput().install([{ targetPath: session.targetPath, data }], {
-        protectedMediaFiles: [videoPath],
-        commit: async () => {
-          if (!movie) return;
-          const ref = toRootFileRef(session.targetPath, movie.roots);
-          await writePublishedMovie(movie.library, movie.movieId, [
-            {
-              kind: "poster",
-              uri: ref.relativePath,
-              rootId: ref.rootId,
-              relativePath: ref.relativePath,
-              published: true,
-            },
-          ]);
-        },
-      });
-    } finally {
-      release();
+    return { source: source.image, targetPath, width: source.width, height: source.height, initialCrop: crop };
+  }
+
+  /**
+   * The poster's own source when its record names an image that can still be read, then the cover, local before
+   * remote. Without a cover the poster file itself is cut, which no rebuild could repeat.
+   */
+  private async openSource(entry: LocalScanEntry): Promise<CropSource | undefined> {
+    const recordable = Boolean(entry.nfoPath && entry.crawlerData);
+    const recorded = entry.nfoLocalState?.posterRecord?.cut;
+    const remoteCover = entry.crawlerData?.thumb_source_url;
+    const candidates: CropImage[] = [
+      ...(recordable && recorded && recorded.source !== "cover"
+        ? [{ cut: recorded.source, image: { url: recorded.source } }]
+        : []),
+      ...(entry.assets.thumb
+        ? [recordable ? { cut: "cover", image: { path: entry.assets.thumb } } : { image: { path: entry.assets.thumb } }]
+        : []),
+      ...(recordable && remoteCover ? [{ cut: "cover", image: { url: remoteCover } }] : []),
+      ...(entry.assets.poster ? [{ image: { path: entry.assets.poster } }] : []),
+    ];
+    for (const candidate of candidates) {
+      const size =
+        "url" in candidate.image
+          ? await this.downloadManager.probeImageSize(candidate.image.url)
+          : await sharp(candidate.image.path, { animated: false }).metadata();
+      if (size?.width && size.height) return { ...candidate, width: size.width, height: size.height };
     }
-    return { ...session, revision: String(Date.now()) };
+    return undefined;
   }
 }

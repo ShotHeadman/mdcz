@@ -1,10 +1,12 @@
 import { type NormalizedCropRegion, resolvePosterEditorCropRegion } from "@mdcz/shared/posterCrop";
-import { PosterCropDialog } from "@mdcz/views/detail";
+import { PosterCropDialog } from "@mdcz/views/common";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
-const initialCrop = resolvePosterEditorCropRegion(900, 500);
+const fullArea = resolvePosterEditorCropRegion(900, 500);
+// The area a poster was last cut by, half the size of the largest one.
+const initialCrop = { x: 0.1, y: 0.2, width: fullArea.width / 2, height: fullArea.height / 2 };
 const sourceUrl =
   "data:image/svg+xml," +
   encodeURIComponent(
@@ -27,17 +29,18 @@ function PosterCropHarness({ onSave }: { onSave: (crop: NormalizedCropRegion) =>
   );
 }
 
-test("poster crop dialog preserves 2:3 framing across zoom, reset, and save", async () => {
+test("poster crop dialog opens on a stored area and keeps 2:3 framing across zoom, reset, and save", async () => {
   const onSave = vi.fn();
   const screen = await render(<PosterCropHarness onSave={onSave} />);
   await expect.element(screen.getByRole("dialog", { name: "编辑封面" })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "封面裁剪区域" })).toBeVisible();
+  await expect.element(screen.getByLabelText("封面缩放")).toHaveValue("2");
 
-  await screen.getByLabelText("封面缩放").fill("2");
+  await screen.getByLabelText("封面缩放").fill("1");
   await screen.getByRole("button", { name: "保存封面" }).click();
-  const zoomedCrop = onSave.mock.calls[0]?.[0] as NormalizedCropRegion;
-  expect((zoomedCrop.width * 900) / (zoomedCrop.height * 500)).toBeCloseTo(2 / 3, 3);
-  expect(zoomedCrop.width).toBeLessThan(initialCrop.width);
+  const zoomedOut = onSave.mock.calls[0]?.[0] as NormalizedCropRegion;
+  expect((zoomedOut.width * 900) / (zoomedOut.height * 500)).toBeCloseTo(2 / 3, 3);
+  expect(zoomedOut.width).toBeCloseTo(fullArea.width, 6);
 
   await screen.getByRole("button", { name: "重置" }).click();
   await screen.getByRole("button", { name: "保存封面" }).click();

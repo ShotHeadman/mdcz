@@ -166,9 +166,11 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
       assets.downloaded.push(result.path);
     }
 
-    const thumbSourceUrl = plan.data.thumb_source_url ?? plan.data.thumb_url;
-    if (thumbSourceUrl) {
-      plan.callbacks?.onDerivedPosterSource?.(thumbSourceUrl);
+    if (result.source === "thumb") {
+      const thumbSourceUrl = plan.data.thumb_source_url ?? plan.data.thumb_url;
+      if (thumbSourceUrl) {
+        plan.callbacks?.onDerivedPosterSource?.(thumbSourceUrl);
+      }
     }
   }
 }

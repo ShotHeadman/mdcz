@@ -1,25 +1,30 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import { join } from "node:path";
+import { LocalScanService, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import type { RuntimeDownloadNetworkClient } from "@mdcz/runtime/network";
 import {
-  type AmazonJpImageService,
-  applyAmazonPosters,
-  lookupAmazonPoster,
-  scanAmazonPosters,
-} from "@mdcz/runtime/tools";
+  DownloadManager,
+  listPosterBadgeDefinitions,
+  MemoryImageHostCooldownStore,
+  NfoGenerator,
+  PosterWatermarkService,
+} from "@mdcz/runtime/scrape";
+import { applyAmazonPosters, lookupAmazonPoster, scanAmazonPosters } from "@mdcz/runtime/tools";
+import { configurationSchema } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const { validateImageMock } = vi.hoisted(() => ({
-  validateImageMock: vi.fn(),
-}));
-
-vi.mock("@mdcz/runtime/scrape/utils/image", () => ({
-  validateImage: validateImageMock,
-}));
+import {
+  type NormalizedCropRegion,
+  normalizedCropToPixels,
+  resolvePosterEditorCropRegion,
+} from "@mdcz/shared/posterCrop";
+import type { CrawlerData, PosterRecord } from "@mdcz/shared/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
+const sharp = createRequire(new URL("../../../../packages/runtime/package.json", import.meta.url))("sharp");
 
 const createTempDir = async (): Promise<string> => {
   const dirPath = await mkdtemp(join(tmpdir(), "mdcz-amazon-poster-tool-"));
@@ -27,266 +32,188 @@ const createTempDir = async (): Promise<string> => {
   return dirPath;
 };
 
-const createNfoXml = ({
-  title,
-  number,
-  website = Website.JAVDB,
-  originaltitle,
-}: {
-  title: string;
-  number: string;
-  website?: Website;
-  originaltitle?: string;
-}) => `
-  <movie>
-    <title>${title}</title>
-    ${originaltitle ? `<originaltitle>${originaltitle}</originaltitle>` : ""}
-    <uniqueid type="${website}">${number}</uniqueid>
-    <website>${website}</website>
-  </movie>
-`;
+const solid = async (width: number, height: number) =>
+  await sharp({ create: { width, height, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+    .jpeg()
+    .toBuffer();
 
-const createService = (options?: {
-  download?: (url: string, outputPath: string) => Promise<string>;
-  enhance?: AmazonJpImageService["enhance"];
-}) => {
-  const networkClient = {
-    download: vi.fn(options?.download ?? (async (_url: string, outputPath: string) => outputPath)),
-  } as unknown as NetworkClient;
-
-  const enhanceAmazonPoster = options?.enhance ?? vi.fn(async () => ({ reason: "no_results" as const }));
-
-  return {
-    service: {
-      scan: (root: string) => scanAmazonPosters(root),
-      lookup: (nfoPath: string, title: string) =>
-        lookupAmazonPoster(networkClient, nfoPath, title, { enhanceAmazonPoster }),
-      apply: (items: Array<{ nfoPath: string; amazonPosterUrl: string }>) =>
-        applyAmazonPosters(networkClient, items, { roots: [{ id: "tmp", hostPath: tmpdir() }] }),
-    },
-  };
+const writeMovie = async (
+  directory: string,
+  videos: string[],
+  data: Partial<CrawlerData> & Pick<CrawlerData, "number" | "title">,
+  posterRecord?: PosterRecord,
+) => {
+  await mkdir(directory, { recursive: true });
+  for (const video of videos) await writeFile(join(directory, video), "video");
+  await writeFile(
+    join(directory, `${data.number}.nfo`),
+    new NfoGenerator().buildXml(
+      { actors: [], genres: [], scene_images: [], website: Website.JAVDB, ...data },
+      { localState: { posterRecord } },
+    ),
+  );
 };
 
+const config = configurationSchema.parse({ download: { tagBadges: true, tagBadgeTypes: ["censored"] } });
+
 describe("Amazon poster tool", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    validateImageMock.mockReset();
-    validateImageMock.mockResolvedValue({
-      valid: true,
-      width: 800,
-      height: 538,
-    });
-  });
-
   afterEach(async () => {
-    await Promise.all(
-      tempDirs.splice(0, tempDirs.length).map(async (dirPath) => {
-        await rm(dirPath, { recursive: true, force: true });
-      }),
-    );
+    await Promise.all(tempDirs.splice(0).map(async (dirPath) => await rm(dirPath, { recursive: true, force: true })));
   });
 
-  it("scans nested NFOs, prefers original titles, and reports poster metadata when available", async () => {
+  it("scans each movie once by its video, with its original title, poster size and the cut it was made with", async () => {
     const root = await createTempDir();
-    const nested = join(root, "nested", "child");
-    const posterPath = join(root, "poster.jpg");
-    const posterContent = Buffer.alloc(12_345, 1);
+    const cut = { source: "https://m.media-amazon.com/images/I/a.jpg", crop: resolvePosterEditorCropRegion(600, 800) };
+    await writeMovie(
+      join(root, "AAA-001"),
+      ["AAA-001.mp4"],
+      { number: "AAA-001", title: "天然成分由来 瀧本雫葉汁 120% 83", title_zh: "中文标题" },
+      { stamp: "", sha256: "0".repeat(64), cut },
+    );
+    await writeFile(join(root, "AAA-001", "poster.jpg"), await solid(400, 600));
+    await writeMovie(join(root, "nested", "BBB-002"), ["BBB-002-cd1.mp4", "BBB-002-cd2.mp4"], {
+      number: "BBB-002",
+      title: "Title B",
+    });
+    await writeMovie(join(root, "no-video"), [], { number: "CCC-003", title: "No video" });
+    await mkdir(join(root, "empty"));
 
-    await mkdir(nested, { recursive: true });
-    await writeFile(
-      join(root, "AAA-001.nfo"),
-      createNfoXml({
-        title: "中文标题",
-        originaltitle: "天然成分由来 瀧本雫葉汁 120% 83",
+    const scan = async (directory: string) => await scanAmazonPosters(directory, config, new LocalScanService());
+
+    expect(await scan(root)).toEqual([
+      {
+        filePath: join(root, "AAA-001", "AAA-001.mp4"),
+        nfoPath: join(root, "AAA-001", "AAA-001.nfo"),
+        title: "天然成分由来 瀧本雫葉汁 120% 83",
         number: "AAA-001",
+        currentPosterPath: join(root, "AAA-001", "poster.jpg"),
+        currentPosterWidth: 400,
+        currentPosterHeight: 600,
+        posterCut: cut,
+      },
+      {
+        filePath: expect.stringMatching(/BBB-002-cd[12]\.mp4$/u),
+        nfoPath: join(root, "nested", "BBB-002", "BBB-002.nfo"),
+        title: "Title B",
+        number: "BBB-002",
+        currentPosterPath: null,
+        currentPosterWidth: 0,
+        currentPosterHeight: 0,
+      },
+    ]);
+    await expect(scan(join(root, "empty"))).resolves.toEqual([]);
+  });
+
+  it("returns lookup misses and reports Amazon hits for the title it is given", async () => {
+    const enhanceAmazonPoster = vi
+      .fn()
+      .mockResolvedValueOnce({ reason: "no_results" as const })
+      .mockResolvedValueOnce({
+        reason: "found" as const,
+        poster_url: "https://m.media-amazon.com/images/I/81test.jpg",
+      });
+    const lookup = async (title: string) =>
+      await lookupAmazonPoster({} as never, "/library/ABC-123.nfo", title, { enhanceAmazonPoster });
+
+    await expect(lookup("Lookup Title")).resolves.toMatchObject({ amazonPosterUrl: null, reason: "no_results" });
+    await expect(lookup("Custom Amazon Title")).resolves.toMatchObject({
+      amazonPosterUrl: "https://m.media-amazon.com/images/I/81test.jpg",
+      reason: "found",
+    });
+    expect(enhanceAmazonPoster).toHaveBeenLastCalledWith("Custom Amazon Title");
+  });
+
+  it("cuts the Amazon image by the chosen area, draws badges and records how, or leaves a failed movie as it was", async () => {
+    const root = await createTempDir();
+    const directory = join(root, "ABC-001");
+    const videoPath = join(directory, "ABC-001.mp4");
+    const nfoPath = join(directory, "ABC-001.nfo");
+    const posterPath = join(directory, "poster.jpg");
+    const sitePoster = "https://site.example/ABC-001-poster.jpg";
+    await writeMovie(directory, ["ABC-001.mp4"], { number: "ABC-001", title: "Title", poster_source_url: sitePoster });
+    await writeFile(posterPath, await solid(200, 300));
+    const amazonImage = await sharp(randomBytes(600 * 800 * 3), { raw: { width: 600, height: 800, channels: 3 } })
+      .jpeg({ quality: 95 })
+      .toBuffer();
+    const images: Record<string, Buffer> = { "https://m.media-amazon.com/images/I/found.jpg": amazonImage };
+    const networkClient = {
+      getText: vi.fn(),
+      probe: async (url: string) => ({
+        ok: Boolean(images[url]),
+        status: images[url] ? 200 : 404,
+        contentLength: images[url]?.length ?? null,
+        resolvedUrl: url,
+        ...(images[url] && { width: 600, height: 800 }),
       }),
-      "utf8",
-    );
-    await writeFile(join(nested, "BBB-002.nfo"), createNfoXml({ title: "Title B", number: "BBB-002" }), "utf8");
-    await writeFile(posterPath, posterContent);
-    validateImageMock.mockResolvedValueOnce({ valid: true, width: 1500, height: 1012 });
+      download: async (url: string, outputPath: string) => {
+        if (!images[url]) throw new Error(`HTTP 404: ${url}`);
+        await writeFile(outputPath, images[url]);
+        return outputPath;
+      },
+    } as unknown as RuntimeDownloadNetworkClient;
+    const localScanService = new LocalScanService();
+    const apply = async (amazonPosterUrl: string, crop: NormalizedCropRegion) =>
+      await applyAmazonPosters([{ filePath: videoPath, amazonPosterUrl, crop }], config, {
+        downloadManager: new DownloadManager(networkClient, {
+          imageHostCooldownStore: new MemoryImageHostCooldownStore(),
+        }),
+        localScanService,
+        nfoGenerator: new NfoGenerator(),
+        dataDir: root,
+        libraries: [],
+        publication: { roots: [{ id: "tmp", hostPath: root }] },
+      });
+    const found = "https://m.media-amazon.com/images/I/found.jpg";
+    const rows: Array<{ name: string; url: string; crop: () => Promise<NormalizedCropRegion> }> = [
+      { name: "the starting area", url: found, crop: async () => resolvePosterEditorCropRegion(600, 800) },
+      { name: "a confirmed area", url: found, crop: async () => ({ x: 0, y: 0.25, width: 0.5, height: 0.5625 }) },
+      {
+        name: "the stored area",
+        url: found,
+        crop: async () => {
+          const [item] = await scanAmazonPosters(root, config, localScanService);
+          if (!item.posterCut) throw new Error("The last apply recorded no cut");
+          expect(item.posterCut.source).toBe(found);
+          return item.posterCut.crop;
+        },
+      },
+      {
+        name: "a failed download",
+        url: "https://m.media-amazon.com/images/I/gone.jpg",
+        crop: async () => ({ x: 0, y: 0, width: 1, height: 1 }),
+      },
+    ];
 
-    const { service } = createService();
-    const items = await service.scan(root);
-
-    expect(items.map((item) => item.number)).toEqual(["AAA-001", "BBB-002"]);
-    expect(items[0]).toMatchObject({
-      title: "天然成分由来 瀧本雫葉汁 120% 83",
-      searchTitle: "天然成分由来 瀧本雫葉汁 120% 83",
-      currentPosterPath: posterPath,
-      currentPosterWidth: 1500,
-      currentPosterHeight: 1012,
-      currentPosterSize: posterContent.length,
-    });
-    expect(items[1]).toMatchObject({
-      currentPosterPath: null,
-      currentPosterWidth: 0,
-      currentPosterHeight: 0,
-      currentPosterSize: 0,
-    });
-  });
-
-  it("returns empty scan results for empty directories", async () => {
-    const root = await createTempDir();
-    const { service } = createService();
-
-    await expect(service.scan(root)).resolves.toEqual([]);
-  });
-
-  it("skips movie.nfo when a named NFO exists in the same directory", async () => {
-    const root = await createTempDir();
-    const namedNfoPath = join(root, "JUR-070.nfo");
-    const movieNfoPath = join(root, "movie.nfo");
-
-    await writeFile(namedNfoPath, createNfoXml({ title: "Named Title", number: "JUR-070" }), "utf8");
-    await writeFile(movieNfoPath, createNfoXml({ title: "Movie Title", number: "JUR-070" }), "utf8");
-
-    const { service } = createService();
-    const items = await service.scan(root);
-
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      nfoPath: namedNfoPath,
-      title: "Named Title",
-      number: "JUR-070",
-    });
-  });
-
-  it("returns lookup misses without writing posters and reports successful Amazon hits", async () => {
-    const missRoot = await createTempDir();
-    const missEnhance = vi.fn(async () => ({ reason: "no_results" as const }));
-    const missService = createService({ enhance: missEnhance }).service;
-
-    const missResult = await missService.lookup(join(missRoot, "ABC-123.nfo"), "Lookup Title");
-    expect(missResult.amazonPosterUrl).toBeNull();
-    expect(missResult.reason).toBe("no_results");
-
-    const hitRoot = await createTempDir();
-    const posterPath = join(hitRoot, "poster.jpg");
-    const hitEnhance = vi.fn(async () => ({
-      reason: "found" as const,
-      poster_url: "https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg",
-    }));
-    const { service } = createService({ enhance: hitEnhance });
-
-    const hitResult = await service.lookup(join(hitRoot, "ABC-123.nfo"), "Custom Amazon Title");
-
-    expect(hitResult.amazonPosterUrl).toBe("https://m.media-amazon.com/images/I/81test._AC_SL1500_.jpg");
-    expect(hitEnhance).toHaveBeenCalledTimes(1);
-    expect(hitEnhance).toHaveBeenCalledWith("Custom Amazon Title");
-    await expect(stat(posterPath)).rejects.toThrow();
-  });
-
-  it("applies poster downloads by replacing, creating, or reporting failures", async () => {
-    const replaceRoot = await createTempDir();
-    const replaceNfoPath = join(replaceRoot, "AAA-001.nfo");
-    const existingPosterPath = join(replaceRoot, "poster.jpg");
-    await writeFile(replaceNfoPath, createNfoXml({ title: "Replace", number: "AAA-001" }), "utf8");
-    await writeFile(existingPosterPath, Buffer.from("old-poster"));
-    const replacementContent = Buffer.alloc(14_000, 2);
-    const replaceDownload = vi.fn(async (_url: string, outputPath: string) => {
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, replacementContent);
-      return outputPath;
-    });
-    validateImageMock.mockResolvedValueOnce({ valid: true, width: 1500, height: 1012 });
-    const replaceService = createService({ download: replaceDownload }).service;
-
-    const replaceResults = await replaceService.apply([
-      { nfoPath: replaceNfoPath, amazonPosterUrl: "https://example.com/poster.jpg" },
-    ]);
-    expect(replaceResults[0]).toMatchObject({
-      nfoPath: replaceNfoPath,
-      success: true,
-      savedPosterPath: existingPosterPath,
-      replacedExisting: true,
-      fileSize: replacementContent.length,
-    });
-    await expect(readFile(existingPosterPath)).resolves.toEqual(replacementContent);
-
-    const createRoot = await createTempDir();
-    const createNfoPath = join(createRoot, "BBB-002.nfo");
-    const createdPosterPath = join(createRoot, "poster.jpg");
-    await writeFile(createNfoPath, createNfoXml({ title: "Create", number: "BBB-002" }), "utf8");
-    const createContent = Buffer.alloc(15_000, 3);
-    const createDownload = vi.fn(async (_url: string, outputPath: string) => {
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, createContent);
-      return outputPath;
-    });
-    validateImageMock.mockResolvedValueOnce({ valid: true, width: 1200, height: 800 });
-    const createServiceResult = createService({ download: createDownload }).service;
-
-    const createResults = await createServiceResult.apply([
-      { nfoPath: createNfoPath, amazonPosterUrl: "https://example.com/new-poster.jpg" },
-    ]);
-    expect(createResults[0]).toMatchObject({
-      nfoPath: createNfoPath,
-      success: true,
-      savedPosterPath: createdPosterPath,
-      replacedExisting: false,
-      fileSize: createContent.length,
-    });
-    await expect(stat(createdPosterPath)).resolves.toBeTruthy();
-
-    const failureRoot = await createTempDir();
-    const failureNfoPath = join(failureRoot, "CCC-003.nfo");
-    await writeFile(failureNfoPath, createNfoXml({ title: "Failure", number: "CCC-003" }), "utf8");
-    const failureDownload = vi.fn(async () => {
-      throw new Error("download failed");
-    });
-    const failureService = createService({ download: failureDownload }).service;
-
-    const failureResults = await failureService.apply([
-      { nfoPath: failureNfoPath, amazonPosterUrl: "https://example.com/fail.jpg" },
-    ]);
-    expect(failureResults[0]).toMatchObject({
-      nfoPath: failureNfoPath,
-      success: false,
-      replacedExisting: false,
-      fileSize: 0,
-    });
-    expect(failureResults[0]?.error).toContain("download failed");
-  });
-
-  it("uses per-NFO follow-video poster paths inside shared directories", async () => {
-    const root = await createTempDir();
-    const sharedDir = join(root, "Actor A");
-    const firstNfoPath = join(sharedDir, "AAA-001.nfo");
-    const secondNfoPath = join(sharedDir, "BBB-002.nfo");
-    const firstPosterPath = join(sharedDir, "AAA-001-poster.jpg");
-
-    await mkdir(sharedDir, { recursive: true });
-    await writeFile(firstNfoPath, createNfoXml({ title: "First", number: "AAA-001" }), "utf8");
-    await writeFile(secondNfoPath, createNfoXml({ title: "Second", number: "BBB-002" }), "utf8");
-    await writeFile(firstPosterPath, Buffer.alloc(11_000, 4));
-
-    const { service } = createService();
-    const items = await service.scan(root);
-    const firstItem = items.find((item) => item.nfoPath === firstNfoPath);
-    const secondItem = items.find((item) => item.nfoPath === secondNfoPath);
-
-    expect(firstItem?.currentPosterPath).toBe(firstPosterPath);
-    expect(secondItem?.currentPosterPath).toBeNull();
-
-    const replacementContent = Buffer.alloc(16_000, 5);
-    const replaceDownload = vi.fn(async (_url: string, outputPath: string) => {
-      await mkdir(dirname(outputPath), { recursive: true });
-      await writeFile(outputPath, replacementContent);
-      return outputPath;
-    });
-    const replaceService = createService({ download: replaceDownload }).service;
-
-    const results = await replaceService.apply([
-      { nfoPath: secondNfoPath, amazonPosterUrl: "https://example.com/shared-poster.jpg" },
-    ]);
-
-    expect(results[0]).toMatchObject({
-      nfoPath: secondNfoPath,
-      success: true,
-      savedPosterPath: join(sharedDir, "BBB-002-poster.jpg"),
-      replacedExisting: false,
-      fileSize: replacementContent.length,
-    });
+    for (const row of rows) {
+      const crop = await row.crop();
+      const before = { poster: await readFile(posterPath), nfo: await readFile(nfoPath, "utf8") };
+      const [result] = await apply(row.url, crop);
+      const snapshot = parseNfoSnapshot(await readFile(nfoPath, "utf8"));
+      expect(snapshot.crawlerData.poster_source_url, row.name).toBe(sitePoster);
+      if (row.url !== found) {
+        expect(result, row.name).toMatchObject({ filePath: videoPath, success: false });
+        expect(await readFile(posterPath), row.name).toEqual(before.poster);
+        expect(await readFile(nfoPath, "utf8"), row.name).toBe(before.nfo);
+        continue;
+      }
+      expect(result, row.name).toEqual({ filePath: videoPath, success: true });
+      const expectedPath = join(root, "expected.jpg");
+      await sharp(amazonImage)
+        .extract(normalizedCropToPixels(crop, 600, 800))
+        .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
+        .toFile(expectedPath);
+      await new PosterWatermarkService({ dataDir: root }).applyTagBadges(
+        expectedPath,
+        listPosterBadgeDefinitions(["censored"]),
+        { position: "topLeft", sizePercent: 100, insetPercent: 3, opacity: 100 },
+      );
+      const poster = await readFile(posterPath);
+      expect(await sharp(poster).raw().toBuffer(), row.name).toEqual(await sharp(expectedPath).raw().toBuffer());
+      expect(snapshot.localState?.posterRecord, row.name).toEqual({
+        stamp: expect.stringMatching(/^censored\|/u),
+        sha256: createHash("sha256").update(poster).digest("hex"),
+        cut: { source: found, crop },
+      });
+    }
   });
 });

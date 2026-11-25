@@ -7,15 +7,18 @@ import {
   storageErrorCodes,
   toRootRelativePath,
 } from "@mdcz/media-store";
+import { registeredMediaLocations } from "@mdcz/runtime";
 import { resolveFileNaming } from "@mdcz/runtime/library";
-import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { LocalScanService, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import {
   getNfoReadCandidates,
   type NfoGenerator,
   type PosterCropService,
+  type PosterCropSession,
   registeredPosterCropContext,
   writeNfoPublication,
 } from "@mdcz/runtime/scrape";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type {
   NfoReadInput,
@@ -112,14 +115,32 @@ export class ServerNfoAdapter {
   }
 }
 
+const toCropSessionResponse = (root: Pick<MediaRoot, "id" | "hostPath">, session: PosterCropSession) => ({
+  rootId: root.id,
+  ...("url" in session.source
+    ? { sourceUrl: session.source.url }
+    : { sourceRelativePath: requireRootRelativeAssetPath(root, session.source.path) }),
+  targetRelativePath: requireRootRelativeAssetPath(root, session.targetPath),
+  width: session.width,
+  height: session.height,
+  initialCrop: session.initialCrop,
+});
+
 export class ServerPosterCropAdapter {
+  private readonly localScanService = new LocalScanService(async (paths) => {
+    const state = await this.persistence.getState();
+    return registeredMediaLocations(state.repositories.library, (id) => state.repositories.mediaRoots.get(id), paths);
+  });
+
   constructor(
     private readonly mediaRoots: MediaRootService,
     private readonly config: ServerConfigService,
     private readonly posterCropService: PosterCropService,
     private readonly persistence: ServerPersistenceService,
+    private readonly nfoGenerator: NfoGenerator,
   ) {}
 
+  /** Null when the video is not in the library. */
   private async context(video: RootFileRef) {
     const sourceRoot = await this.mediaRoots.get(video.rootId);
     const videoPath = resolveRootRelativePath(sourceRoot, video.relativePath);
@@ -127,59 +148,42 @@ export class ServerPosterCropAdapter {
     const context = await registeredPosterCropContext(videoPath, state.repositories.library, (id) =>
       this.mediaRoots.get(id),
     );
-    return context && { ...context, root: context.root ?? sourceRoot };
-  }
-
-  private async assetNaming(videoPath: string, assets: { thumb?: string; poster?: string }) {
+    if (!context) return null;
+    const configuration = await this.config.get();
+    const entry = await this.localScanService.scanVideo(sourceRoot, videoPath, configuration.paths.sceneImagesFolder);
     const naming = await resolveFileNaming({
-      libraries: (await this.persistence.getState()).repositories.mediaLibraries.list(),
+      libraries: state.repositories.mediaLibraries.list(),
       videoPath,
-      metadataDir: dirname(assets.poster ?? assets.thumb ?? videoPath),
-      configuration: await this.config.get(),
+      metadataDir: dirname(entry.assets.poster ?? entry.assets.thumb ?? videoPath),
+      configuration,
     });
-    return naming.assetNaming;
+    return {
+      root: context.root ?? sourceRoot,
+      movieId: context.movieId,
+      entry,
+      assetNaming: naming.assetNaming,
+      configuration,
+      library: state.repositories.library,
+    };
   }
 
-  /** Null when there is no saved cover to crop: the video is not in the library, or its movie has no local image. */
+  /** Null when there is nothing to crop: the video is not in the library, or its movie has no image to cut. */
   async session(video: RootFileRef): Promise<PosterCropSessionResponse | null> {
     const context = await this.context(video);
-    if (!context || (!context.assets.thumb && !context.assets.poster)) return null;
-    const { root, videoPath, assets } = context;
-    const session = await this.posterCropService.prepare(videoPath, await this.assetNaming(videoPath, assets), assets);
-    return {
-      rootId: root.id,
-      sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
-      targetRelativePath: requireRootRelativeAssetPath(root, session.targetPath),
-      width: session.width,
-      height: session.height,
-      initialCrop: session.initialCrop,
-    } satisfies PosterCropSessionResponse;
+    const session = context && (await this.posterCropService.prepare(context.entry, context.assetNaming));
+    return context && session ? toCropSessionResponse(context.root, session) : null;
   }
 
-  async save(input: PosterCropSaveInput) {
+  async save(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
     const context = await this.context(input);
     if (!context) throw new Error("Current video is not in library; cannot retrieve saved cover");
-    const { root, videoPath, assets, movieId } = context;
-    const state = await this.persistence.getState();
-    const result = await this.posterCropService.save(
-      videoPath,
-      await this.assetNaming(videoPath, assets),
-      input.crop,
-      assets,
-      {
-        library: state.repositories.library,
-        movieId,
-        roots: await this.mediaRoots.listRoots(),
-      },
-    );
-    return {
-      rootId: root.id,
-      sourceRelativePath: requireRootRelativeAssetPath(root, result.sourcePath),
-      targetRelativePath: requireRootRelativeAssetPath(root, result.targetPath),
-      width: result.width,
-      height: result.height,
-      initialCrop: result.initialCrop,
-      revision: result.revision,
-    } satisfies PosterCropSessionResponse;
+    const session = await this.posterCropService.save(context.entry, context.assetNaming, input.crop, {
+      config: context.configuration,
+      dataDir: this.config.runtimePaths.dataDir,
+      nfoGenerator: this.nfoGenerator,
+      publication: { library: context.library, movieId: context.movieId, roots: await this.mediaRoots.listRoots() },
+      logger: runtimeLoggerService.getLogger("PosterCrop"),
+    });
+    return { ...toCropSessionResponse(context.root, session), revision: String(Date.now()) };
   }
 }

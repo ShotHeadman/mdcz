@@ -1,6 +1,8 @@
 import type { ActorAliasGroup } from "@mdcz/shared/actorAliases";
 import {
   type Configuration,
+  type LlmConnectionSettings,
+  type LlmSettings,
   NFO_FIELD_OPTIONS,
   NOTIFICATION_CHANNELS,
   notificationsSchema,
@@ -9,6 +11,7 @@ import {
 } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { fitLlmChoices, llmServiceChoices, missingLlmSettings } from "@mdcz/shared/llm";
 import {
   POSTER_TAG_BADGE_ASPECT_HEIGHT,
   POSTER_TAG_BADGE_ASPECT_WIDTH,
@@ -32,11 +35,12 @@ import {
   Label,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
+import { AlertCircle, CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { FieldError, FieldValues } from "react-hook-form";
 import { useFormContext, useFormState, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { useLoad } from "../common/useLoad";
 import { ChipArrayField } from "../config-form/ChipArrayField";
 import {
   BaseField,
@@ -56,6 +60,7 @@ import {
 } from "../config-form/FieldRenderer";
 import { useT } from "../i18n";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
+import { BriefModelField } from "./BriefModelField";
 import { PosterBadgePreview } from "./PosterBadgePreview";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
@@ -76,16 +81,20 @@ const TAG_BADGE_IMAGE_RATIO_LABEL = `${POSTER_TAG_BADGE_ASPECT_WIDTH}:${POSTER_T
 const toEnumOptions = (labels: Record<string, string>): Array<{ value: string; label: string }> =>
   Object.entries(labels).map(([value, label]) => ({ value, label }));
 
-const ASSET_DOWNLOAD_FIELD_KEYS = [
-  "download.downloadThumb",
-  "download.downloadPoster",
-  "download.tagBadges",
+const TAG_BADGE_DETAIL_KEYS = [
   "download.tagBadgeTypes",
   "download.tagBadgePosition",
   "download.tagBadgeSizePercent",
   "download.tagBadgeOpacity",
   "download.tagBadgeInsetPercent",
   "download.tagBadgeImageOverrides",
+] as const;
+
+const ASSET_DOWNLOAD_FIELD_KEYS = [
+  "download.downloadThumb",
+  "download.downloadPoster",
+  "download.tagBadges",
+  ...TAG_BADGE_DETAIL_KEYS,
   "download.downloadFanart",
   "download.downloadSceneImages",
   "download.downloadTrailer",
@@ -149,33 +158,12 @@ function shouldMountConditionalSettings(
 
 export function useCrawlerSiteOptions(flatDefaults: Record<string, unknown>): string[] {
   const services = useSettingsServices();
-  const [sites, setSites] = useState<string[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    services
-      .listCrawlerSites()
-      .then((result) => {
-        if (!cancelled) {
-          setSites(toSiteOptions(result.sites));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSites([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [services]);
+  const { data } = useLoad(() => services.listCrawlerSites(), "sites");
 
   return useMemo(() => {
     const fromConfig = toStringArray(flatDefaults["scrape.sites"]);
-    return Array.from(new Set([...sites, ...fromConfig]));
-  }, [sites, flatDefaults]);
+    return Array.from(new Set([...toSiteOptions(data?.sites), ...fromConfig]));
+  }, [data, flatDefaults]);
 }
 
 // ── Section renderers ──
@@ -257,6 +245,8 @@ export function NetworkSiteAccessSection() {
 export function AssetDownloadsSection() {
   const t = useT();
   const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
+  const hasVisibleBadgeDetails = useHasRenderableFields(TAG_BADGE_DETAIL_KEYS);
+  const sectionMode = useSettingsSectionMode();
   const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
   const [downloadThumb, downloadPoster, tagBadges, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
@@ -275,6 +265,7 @@ export function AssetDownloadsSection() {
     boolean | undefined,
   ];
   const showTagBadgeSettings = Boolean(downloadPoster) && Boolean(tagBadges);
+  const showTagBadgePreview = sectionMode === "public" && showTagBadgeSettings && hasVisibleBadgeDetails;
 
   if (!hasRenderableFields) {
     return null;
@@ -285,8 +276,8 @@ export function AssetDownloadsSection() {
       <BoolField name="download.downloadThumb" />
       <BoolField name="download.downloadPoster" />
       {shouldMountConditionalSettings(Boolean(downloadPoster), search) && <BoolField name="download.tagBadges" />}
-      {shouldMountConditionalSettings(showTagBadgeSettings, search) && (
-        <div className="grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_14rem]">
+      {shouldMountConditionalSettings(showTagBadgeSettings, search) && hasVisibleBadgeDetails && (
+        <div className={showTagBadgePreview ? "grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_14rem]" : undefined}>
           <div>
             <ChipArrayFieldWrapper
               name="download.tagBadgeTypes"
@@ -308,7 +299,7 @@ export function AssetDownloadsSection() {
             <NumberField name="download.tagBadgeInsetPercent" min={0} max={20} />
             <PosterBadgeImageOverridesField />
           </div>
-          <PosterBadgePreview />
+          {showTagBadgePreview && <PosterBadgePreview />}
         </div>
       )}
       <BoolField name="download.downloadFanart" />
@@ -583,9 +574,7 @@ export function TranslateSection() {
   const form = useFormContext<FieldValues>();
   const search = useOptionalSettingsSearch();
   const engine = useWatch({ control: form.control, name: "translate.engine" });
-  const serviceType = useWatch({ control: form.control, name: "translate.llmServiceType" });
   const baiduService = useWatch({ control: form.control, name: "translate.baiduService" });
-  const isLLM = engine === "openai";
 
   const handleTestTranslation = async () => {
     const input = {
@@ -596,18 +585,8 @@ export function TranslateSection() {
       baiduAppId: String(form.getValues("translate.baiduAppId") ?? ""),
       baiduSecretKey: String(form.getValues("translate.baiduSecretKey") ?? ""),
       baiduApiKey: String(form.getValues("translate.baiduApiKey") ?? ""),
-      llmModelName: String(form.getValues("translate.llmModelName") ?? ""),
-      llmApiKey: String(form.getValues("translate.llmApiKey") ?? ""),
-      llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
-      llmApiFormat: form.getValues("translate.llmApiFormat") ?? "responses",
-      llmServiceType: form.getValues("translate.llmServiceType") ?? "openai-compatible",
       llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
-      llmTemperature: form.getValues("translate.llmTemperature"),
-      llmReasoning: form.getValues("translate.llmReasoning") ?? "default",
-      llmOutputFormat: form.getValues("translate.llmOutputFormat") ?? "none",
-      llmTimeout: Number(form.getValues("translate.llmTimeout") ?? 120),
-      llmMaxRetries: Number(form.getValues("translate.llmMaxRetries") ?? 3),
-      llmMaxRequestsPerSecond: Number(form.getValues("translate.llmMaxRequestsPerSecond") ?? 1),
+      llm: form.getValues("llm") as LlmSettings,
     };
 
     setTesting(true);
@@ -671,42 +650,88 @@ export function TranslateSection() {
           )}
         </>
       )}
-      {shouldMountConditionalSettings(isLLM, search) && (
-        <>
-          <TextField name="translate.llmModelName" />
-          <SecretField name="translate.llmApiKey" />
-          <UrlField name="translate.llmBaseUrl" />
-          {serviceType === "openai-compatible" && (
-            <EnumField name="translate.llmApiFormat" options={toEnumOptions(t.settings.options.llmApiFormat)} />
-          )}
-          <EnumField name="translate.llmServiceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
-          <PromptFieldWrapper name="translate.llmPrompt" />
-          <NumberField name="translate.llmTemperature" min={0} max={2} step={0.1} optional />
-          <EnumField
-            name="translate.llmReasoning"
-            description={
-              t.settingsFields.llmReasoningDescription[
-                serviceType === "google" || serviceType === "deepseek"
-                  ? (serviceType as "google" | "deepseek")
-                  : "default"
-              ]
-            }
-            options={toEnumOptions(
-              serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning,
-            )}
-          />
-          <EnumField
-            name="translate.llmOutputFormat"
-            options={toEnumOptions(t.settings.options.llmOutputFormat).filter(
-              (option) => serviceType !== "deepseek" || option.value !== "json_schema",
-            )}
-          />
-          <NumberField name="translate.llmTimeout" min={1} max={300} />
-          <NumberField name="translate.llmMaxRetries" min={1} max={20} />
-          <NumberField name="translate.llmMaxRequestsPerSecond" min={1} max={100} />
-        </>
-      )}
+      {shouldMountConditionalSettings(engine === "openai", search) && <PromptFieldWrapper name="translate.llmPrompt" />}
       <EnumField name="translate.targetLanguage" options={LANGUAGE_OPTIONS} />
+    </>
+  );
+}
+
+/** Default connection shared by translation and AI number fallback, plus Brief controls. */
+export function LlmSection() {
+  const t = useT();
+  const search = useOptionalSettingsSearch();
+  const form = useFormContext<FieldValues>();
+  const [serviceType, brief, briefModel, modelName, baseUrl, apiKey] = useWatch({
+    control: form.control,
+    name: ["llm.serviceType", "llm.brief", "llm.briefModel", "llm.modelName", "llm.baseUrl", "llm.apiKey"],
+  }) as [
+    LlmSettings["serviceType"],
+    boolean | undefined,
+    LlmConnectionSettings | null | undefined,
+    string | undefined,
+    string | undefined,
+    string | undefined,
+  ];
+  const briefEnabled = brief === true;
+  const effectiveBriefConnection = briefModel ?? {
+    modelName: modelName ?? "",
+    baseUrl: baseUrl ?? "",
+    apiKey: apiKey ?? "",
+  };
+  const missingBriefItems = briefEnabled ? missingLlmSettings(effectiveBriefConnection) : [];
+  const choices = llmServiceChoices(serviceType);
+  const reasoningLabels: Partial<Record<LlmSettings["reasoning"], string>> =
+    serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning;
+  // A switch of service keeps only the choices the new service accepts.
+  useEffect(() => {
+    const reasoning = form.getValues("llm.reasoning") as LlmSettings["reasoning"];
+    const outputFormat = form.getValues("llm.outputFormat") as LlmSettings["outputFormat"];
+    const fitted = fitLlmChoices({ serviceType, reasoning, outputFormat });
+    if (fitted.reasoning !== reasoning) form.setValue("llm.reasoning", fitted.reasoning, { shouldDirty: true });
+    if (fitted.outputFormat !== outputFormat)
+      form.setValue("llm.outputFormat", fitted.outputFormat, { shouldDirty: true });
+  }, [form, serviceType]);
+
+  return (
+    <>
+      <BoolField name="llm.brief" />
+      {missingBriefItems.length > 0 && !search?.hasActiveFilters ? (
+        <div
+          role="status"
+          className="mb-2 flex items-center gap-2 rounded-quiet border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>{t.brief.setup.missingNotice(missingBriefItems.map((item) => t.brief.missingItems[item]))}</span>
+        </div>
+      ) : null}
+      {shouldMountConditionalSettings(briefEnabled, search) && <BriefModelField />}
+      {shouldMountConditionalSettings(briefEnabled, search) && (
+        <EnumField name="llm.briefSendKey" options={toEnumOptions(t.settings.options.briefSendKey)} />
+      )}
+      <TextField name="llm.modelName" placeholder={t.settings.briefModel.modelPlaceholder} />
+      <SecretField name="llm.apiKey" />
+      <UrlField name="llm.baseUrl" />
+      {serviceType === "openai-compatible" && (
+        <EnumField name="llm.apiFormat" options={toEnumOptions(t.settings.options.llmApiFormat)} />
+      )}
+      <EnumField name="llm.serviceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
+      <NumberField name="llm.temperature" min={0} max={2} step={0.1} optional />
+      <EnumField
+        name="llm.reasoning"
+        description={
+          t.settingsFields.llmReasoningDescription[
+            serviceType === "google" || serviceType === "deepseek" ? serviceType : "default"
+          ]
+        }
+        options={choices.reasoning.map((value) => ({ value, label: reasoningLabels[value] ?? value }))}
+      />
+      <EnumField
+        name="llm.outputFormat"
+        options={choices.outputFormat.map((value) => ({ value, label: t.settings.options.llmOutputFormat[value] }))}
+      />
+      <NumberField name="llm.timeout" min={1} max={300} />
+      <NumberField name="llm.maxRetries" min={1} max={20} />
+      <NumberField name="llm.maxRequestsPerSecond" min={1} max={100} />
     </>
   );
 }
@@ -802,6 +827,8 @@ export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
           </div>
         )}
       </BaseField>
+      <BoolField name="ui.closeToTray" />
+      <BoolField name="ui.startMinimizedToTray" />
       <BoolField name="ui.hideDock" />
       <BoolField name="ui.hideMenu" />
       <BoolField name="ui.hideWindowButtons" />

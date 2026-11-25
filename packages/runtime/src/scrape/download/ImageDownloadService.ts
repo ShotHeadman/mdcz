@@ -6,6 +6,7 @@ import { toErrorMessage } from "../../shared";
 import { isAbortError, throwIfAborted } from "../utils/abort";
 import {
   getImageFileExtensionForFormat,
+  type ImageDimensions,
   type ImageFileFormat,
   replaceImageFileExtension,
   validateImage,
@@ -77,6 +78,12 @@ export class ImageDownloadService {
     }
 
     return await this.downloadBestImageByComparison(downloadableCandidates, outputPath, signal);
+  }
+
+  /** Reads an image's size through the ranged probe, without downloading it. */
+  async probeImageSize(url: string, signal?: AbortSignal): Promise<ImageDimensions | undefined> {
+    const probed = await this.probeImageCandidate(url, 0, signal, true);
+    return this.hasProbeDimensions(probed) ? { width: probed.width, height: probed.height } : undefined;
   }
 
   async downloadValidatedImageCandidate(

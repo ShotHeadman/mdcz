@@ -69,9 +69,9 @@ describe("scrape store contract", () => {
       }),
     );
 
-    expect(selectScrapeResults(useScrapeStore.getState()).map(({ fileId, status }) => ({ fileId, status }))).toEqual([
-      { fileId: "item-success", status: "success" },
-      { fileId: "retried-id", status: "processing" },
+    expect(selectScrapeResults(useScrapeStore.getState())).toMatchObject([
+      { fileId: "item-success", status: "success", artworkRevision: completed.task.id },
+      { fileId: "retried-id", status: "processing", artworkRevision: "retry-run" },
     ]);
 
     useScrapeStore.getState().setSnapshot(

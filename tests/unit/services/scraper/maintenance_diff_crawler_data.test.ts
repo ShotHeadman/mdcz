@@ -210,11 +210,13 @@ describe("diffCrawlerData", () => {
     ]);
   });
 
-  it("uses persisted source urls to keep matching thumb, trailer, and scene data unchanged", () => {
+  it("uses persisted source urls to keep matching thumb, derived poster, trailer, and scene data unchanged", () => {
     const entry = createEntry(
       createCrawlerData({
         thumb_url: "thumb.jpg",
         thumb_source_url: "https://example.com/current-thumb.jpg",
+        poster_url: "poster.jpg",
+        poster_source_url: "https://example.com/current-thumb.jpg",
         trailer_url: "trailer.mp4",
         trailer_source_url: "https://example.com/current-trailer.mp4",
         scene_images: ["https://example.com/current-scene.jpg"],
@@ -226,6 +228,7 @@ describe("diffCrawlerData", () => {
       existingCrawlerData,
       createCrawlerData({
         thumb_url: "https://example.com/current-thumb.jpg",
+        poster_url: undefined,
         trailer_url: "https://example.com/current-trailer.mp4",
         scene_images: ["https://example.com/current-scene.jpg"],
       }),
@@ -234,9 +237,24 @@ describe("diffCrawlerData", () => {
       },
     );
 
-    expect(result.fieldDiffs.find((diff) => ["thumb_url", "trailer_url", "scene_images"].includes(diff.field))).toBe(
-      undefined,
-    );
+    expect(
+      result.fieldDiffs.find((diff) => ["thumb_url", "poster_url", "trailer_url", "scene_images"].includes(diff.field)),
+    ).toBe(undefined);
+    expect(result.unchangedFieldDiffs).toContainEqual({
+      kind: "image",
+      field: "poster_url",
+      oldValue: "poster.jpg",
+      newValue: undefined,
+      changed: false,
+      oldPreview: {
+        src: "/media/poster.jpg",
+        fallbackSrcs: [],
+      },
+      newPreview: {
+        src: "",
+        fallbackSrcs: [],
+      },
+    });
     expect(result.unchangedFieldDiffs).toContainEqual({
       kind: "image",
       field: "thumb_url",

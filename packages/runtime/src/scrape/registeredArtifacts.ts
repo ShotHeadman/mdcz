@@ -1,12 +1,5 @@
 import { dirname } from "node:path";
-import {
-  type MediaRoot,
-  readRootFile,
-  resolveRootFile,
-  resolveRootRelativePath,
-  StorageError,
-  storageErrorCodes,
-} from "@mdcz/media-store";
+import { type MediaRoot, readRootFile, resolveRootFile, StorageError, storageErrorCodes } from "@mdcz/media-store";
 import type { NfoNamingMode } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
 import { applyLibraryEdit, type LibraryEdit } from "@mdcz/shared/libraryEdit";
@@ -62,11 +55,7 @@ export async function writeNfoPublication(
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
   const paths = getNfoWritePaths(plannedPath, nfoNaming);
   const owned = publication.outputs
-    ? await resolveRegisteredNfoPaths(nfoPath, publication.outputs, async (id) => {
-        const root = publication.roots.find((root) => root.id === id);
-        if (!root) throw new Error(`Publication root not found: ${id}`);
-        return root;
-      })
+    ? await resolveRegisteredNfoPaths(nfoPath, publication.outputs, publication.roots)
     : undefined;
   const library = publication.library;
   if (owned && !library) throw new Error("Registered NFO write requires library updates");
@@ -174,13 +163,9 @@ export async function registeredPosterCropContext(
   if (!owners.length) return null;
   const movieId = owners[0];
   const entry = await library.getEntryById(movieId);
-  const assets: { thumb?: string; poster?: string } = {};
-  let root: Pick<MediaRoot, "id" | "hostPath"> | undefined;
-  for (const kind of ["thumb", "poster"] as const) {
-    const asset = entry.assets.find((asset) => asset.kind === kind && asset.rootId && asset.relativePath);
-    if (!asset?.rootId || !asset.relativePath) continue;
-    root = await resolveRoot(asset.rootId);
-    assets[kind] = resolveRootRelativePath(root, asset.relativePath);
-  }
-  return { videoPath, assets, root, movieId };
+  // The crop dialog's paths are relative to the root of the poster it writes, or of the cover when there is none yet.
+  const image =
+    entry.assets.find((asset) => asset.kind === "poster" && asset.rootId) ??
+    entry.assets.find((asset) => asset.kind === "thumb" && asset.rootId);
+  return { movieId, root: image?.rootId ? await resolveRoot(image.rootId) : undefined };
 }

@@ -140,19 +140,12 @@ export const writePublishedMovie = async (
 export const resolveRegisteredNfoPaths = async (
   nfoPath: string,
   outputs: PublicationOutputPort,
-  resolveRoot: ResolveRoot,
+  roots: readonly Pick<MediaRoot, "id" | "hostPath">[],
 ): Promise<{ movieId: string; paths: string[]; mediaPaths: string[] } | undefined> => {
   const snapshot = outputs.publicationSnapshot({ paths: [nfoPath], includeOwners: true });
-  const roots = new Map(
-    await Promise.all(
-      [...new Set([...snapshot.assets, ...snapshot.files].map((ref) => ref.rootId))].map(
-        async (id) => [id, await resolveRoot(id)] as const,
-      ),
-    ),
-  );
   const absolute = (ref: RootFileRef) => {
-    const root = roots.get(ref.rootId);
-    if (!root) throw new Error(`Resource root not found: ${ref.rootId}`);
+    const root = roots.find((root) => root.id === ref.rootId);
+    if (!root) throw new Error(`Publication root not found: ${ref.rootId}`);
     return resolveRootRelativePath(root, ref.relativePath);
   };
   const target = filesystemPathKey(nfoPath);

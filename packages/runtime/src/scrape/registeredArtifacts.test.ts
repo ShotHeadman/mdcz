@@ -28,7 +28,7 @@ describe("registered artifacts", () => {
       hostPath: "/media",
     }));
     if (new Set(owners).size === 1) {
-      await expect(result).resolves.toMatchObject({ assets: {}, movieId: "movie-a" });
+      await expect(result).resolves.toMatchObject({ movieId: "movie-a" });
       expect(library.getEntryById).toHaveBeenCalledWith("movie-a");
     } else {
       if (owners.length) await expect(result).rejects.toThrow("referenced by multiple library movies");

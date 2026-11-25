@@ -4,7 +4,7 @@ import type { Messages } from "../en";
 export const settings: Messages["settings"] = {
   translationTest: {
     ok: (sample) => `元数据翻译样例验证通过：${sample}`,
-    missing_model: "请先填写 LLM 模型名称",
+    missing_model: "请先在 AI 模型中填写模型名称",
     missing_credentials: "请填写当前翻译引擎所需的凭据",
     failed: "连接失败",
   },
@@ -33,6 +33,7 @@ export const settings: Messages["settings"] = {
       max: "max",
     },
     llmApiFormat: { responses: "Responses", "chat-completions": "Chat Completions" },
+    briefSendKey: { enter: "Enter", modEnter: "Ctrl+Enter（macOS 上为 ⌘+Enter）" },
     llmServiceType: { "openai-compatible": "OpenAI 兼容", google: "Google", deepseek: "DeepSeek" },
     llmOutputFormat: { none: "提示词 JSON", json_object: "JSON Object", json_schema: "JSON Schema" },
     partStyle: {
@@ -93,6 +94,9 @@ export const settings: Messages["settings"] = {
     organized: (path) => `整理后：${path}`,
     metadataDir: (path) => `元数据目录：${path}`,
     files: (names) => `写入：${names.join("、")}`,
+    writes: "写入",
+    showDetails: "完整路径",
+    hideDetails: "收起",
   },
   namingTemplateHelp: {
     folder: "文件夹模板",
@@ -404,6 +408,20 @@ export const settings: Messages["settings"] = {
   crossField: {
     incomplete: (count) => `${count} 项配置未完成`,
     focus: "聚焦",
+  },
+  briefModel: {
+    configure: "配置",
+    modelPlaceholder: "例如 gpt-6.2-sol、deepseek-chat",
+    dialogTitle: "指令模型",
+    dialogDescription: "为指令功能配置独立模型连接，不影响翻译与番号识别。",
+    useDedicated: "使用独立配置",
+    useDedicatedHint: "关闭时沿用通用 AI 模型配置。",
+    moreOptions: "高级参数",
+    verify: "校验模型",
+    verified: "模型校验通过。",
+    save: "保存",
+    testing: "校验中…",
+    invalidConfig: "请检查 API 地址及参数取值范围。",
   },
   resetToDefault: {
     title: "恢复默认值",

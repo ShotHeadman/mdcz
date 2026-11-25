@@ -21,20 +21,20 @@ describe("symlink tool", () => {
     );
   });
 
-  it("counts skipped sidecar files when copyFiles is disabled", async () => {
+  it("skips sidecar files when copyFiles is disabled, and a dry run plans none", async () => {
     const sourceDir = await createTempDir();
     const destDir = await createTempDir();
     await writeFile(join(sourceDir, "movie.srt"), "subtitle", "utf8");
 
-    const result = await createSymlinks({ sourceDir, destDir, copyFiles: false });
-
-    expect(result).toMatchObject({
-      total: 1,
-      linked: 0,
-      copied: 0,
-      skipped: 1,
-      failed: 0,
-    });
+    for (const dryRun of [true, false])
+      await expect(createSymlinks({ sourceDir, destDir, copyFiles: false, dryRun })).resolves.toEqual({
+        total: 1,
+        linked: 0,
+        copied: 0,
+        skipped: 1,
+        failed: 0,
+        planned: [],
+      });
   });
 
   it.each([

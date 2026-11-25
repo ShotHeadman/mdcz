@@ -183,7 +183,7 @@ describe("Persistence migrations", () => {
         { name: "scrape_runs" },
       ]);
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 10,
+        count: 11,
       });
 
       expect(
@@ -253,7 +253,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 10,
+        count: 11,
       });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
@@ -313,7 +313,7 @@ describe("Persistence migrations", () => {
       runMigrations(database, { migrationsFolder: migrations.path });
       runMigrations(database);
 
-      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 8 });
+      expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({ count: 9 });
       const fresh = createTestPersistenceDatabase();
       try {
         expect(readSchema(database)).toEqual(readSchema(fresh));
@@ -571,6 +571,64 @@ describe("LibraryRepository", () => {
     expect(second).toMatchObject({ hasMore: false, nextCursor: null, total: 3 });
   });
 
+  it("sorts paged library entries by createdAt, number, and localized title across pages", async () => {
+    database = createTestPersistenceDatabase();
+    await addRoots("root-1");
+    const repository = new LibraryRepository(database);
+    const seed = [
+      {
+        id: "entry-1",
+        number: "SSIS-10",
+        title: "Original One",
+        crawlerDataJson: JSON.stringify({ title_zh: "中国故事" }),
+        createdAt: new Date("2026-05-01T00:00:00.000Z"),
+      },
+      {
+        id: "entry-2",
+        number: "SSIS-2",
+        title: "Original Two",
+        crawlerDataJson: JSON.stringify({ title_zh: "啊哈日记" }),
+        createdAt: new Date("2026-05-03T00:00:00.000Z"),
+      },
+      {
+        id: "entry-3",
+        number: "ABP-001",
+        title: "冰雪奇缘",
+        crawlerDataJson: null,
+        createdAt: new Date("2026-05-02T00:00:00.000Z"),
+      },
+    ];
+    for (const movie of seed) {
+      await repository.upsertEntry({
+        movie,
+        files: [{ rootId: "root-1", rootRelativePath: `${movie.id}.mp4`, fileId: `root-1:${movie.id}.mp4` }],
+      });
+    }
+
+    const collectAll = async (sortBy: "createdAt" | "number" | "title", sortOrder: "asc" | "desc") => {
+      const ids: string[] = [];
+      let cursor: Awaited<ReturnType<LibraryRepository["listEntriesPage"]>>["nextCursor"] | undefined;
+      do {
+        const page = await repository.listEntriesPage({ limit: 2, sortBy, sortOrder, cursor: cursor ?? undefined });
+        ids.push(...page.entries.map((entry) => entry.id));
+        cursor = page.nextCursor;
+      } while (cursor);
+      return ids;
+    };
+
+    expect(await collectAll("createdAt", "asc")).toEqual(["entry-1", "entry-3", "entry-2"]);
+    expect(await collectAll("number", "asc")).toEqual(["entry-3", "entry-2", "entry-1"]);
+    expect(await collectAll("number", "desc")).toEqual(["entry-1", "entry-2", "entry-3"]);
+    expect(await collectAll("title", "desc")).toEqual(["entry-1", "entry-3", "entry-2"]);
+    expect(await collectAll("title", "asc")).toEqual(["entry-2", "entry-3", "entry-1"]);
+
+    await repository.upsertEntry({
+      movie: { ...seed[2], title: "最后一夜" },
+      files: [{ rootId: "root-1", rootRelativePath: "entry-3.mp4", fileId: "root-1:entry-3.mp4" }],
+    });
+    expect(await collectAll("title", "asc")).toEqual(["entry-2", "entry-1", "entry-3"]);
+  });
+
   it("filters paged library entries by file/root and metadata in SQL", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1", "root-2");
@@ -704,6 +762,13 @@ describe("LibraryRepository", () => {
     await expect(ids({ actor: "Bob" })).resolves.toEqual(["bare", "translated"]);
     await expect(ids({ studio: "S2", tag: "drama" })).resolves.toEqual([]);
     await expect(ids({ tag: "3p" })).resolves.toEqual(["bare"]);
+    // A list field gives each of its entries, a scalar field its one value, from the movies the filter lists.
+    expect(repository.crawlerFieldValues({}, "genres").sort()).toEqual(["3p", "drama"]);
+    expect(repository.crawlerFieldValues({ pathPrefixes: [resolve("/root-1")] }, "studio").sort()).toEqual([
+      "S1",
+      "S2",
+    ]);
+    expect(repository.crawlerFieldValues({ tag: "3p" }, "studio")).toEqual(["S1"]);
 
     // An ignored issue stops counting for that movie only; its other issues still list it.
     repository.ignoreHealth({ health: "missingSynopsis" });

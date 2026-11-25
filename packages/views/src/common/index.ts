@@ -3,3 +3,4 @@ export * from "./DisabledReason";
 export * from "./ImageOptionCard";
 export * from "./MediaBrowserList";
 export * from "./NaturalAspectImageFrame";
+export * from "./PosterCropDialog";

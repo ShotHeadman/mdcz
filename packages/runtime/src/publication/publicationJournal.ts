@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { toErrorMessage } from "../shared";
+import { publicationPolicy } from "./publicationPolicy";
 import type { PublicationFileSystem } from "./types";
 
 export type PublicationJournalEntry = { path: string; restoreTo: string | null };
@@ -13,6 +14,15 @@ export interface PublicationJournalStore {
 }
 
 let store: PublicationJournalStore | undefined;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** True only for a WriteOutput backup (`<targetPath>.mdcz-backup-<uuid>`), never a parked source video. */
+export const isArtifactBackupPath = (backupPath: string, targetPath: string): boolean => {
+  const prefix = `${path.resolve(targetPath)}.mdcz-backup-`;
+  const resolved = path.resolve(backupPath);
+  return resolved.startsWith(prefix) && UUID_PATTERN.test(resolved.slice(prefix.length));
+};
 
 /**
  * Process-wide like the runtime logger, so every publication records into the app's database whoever starts it.
@@ -29,13 +39,17 @@ export const publicationJournal = {
   forget(temporaryPath: string): void {
     store?.forget(path.resolve(temporaryPath));
   },
+  list(): PublicationJournalEntry[] {
+    return store?.list() ?? [];
+  },
 };
 
-/** A journaled folder inside `parent` for the assets a scrape prepares before publishing them. */
+/** A journaled folder for assets prepared before publication; redirected to local staging for direct-write outputs. */
 export const createStagingDirectory = async (parent: string): Promise<string> => {
-  const directory = path.join(parent, `.mdcz-staging-${randomUUID()}`);
+  const stagingParent = await publicationPolicy.stagingParent(parent);
+  const directory = path.join(stagingParent, `.mdcz-staging-${randomUUID()}`);
   publicationJournal.record(directory);
-  await mkdir(directory);
+  await mkdir(directory, { recursive: true });
   return directory;
 };
 
@@ -53,7 +67,7 @@ export class TemporaryPaths {
     this.#paths.add(temporaryPath);
   }
 
-  /** The file was renamed into place, so there is nothing left to remove. */
+  /** The file is in place under its final name, so there is nothing left to remove. */
   settle(temporaryPath: string): void {
     this.#paths.delete(temporaryPath);
     publicationJournal.forget(temporaryPath);

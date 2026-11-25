@@ -104,13 +104,14 @@ export const tools = {
   currentPoster: "Current poster",
   noCurrentPoster: "No current poster",
   amazonPoster: "Amazon poster",
+  adjustAmazonCrop: "Adjust crop",
   queryingAmazon: "Querying Amazon…",
   noAmazonPosterHit: "No Amazon poster found",
   selectedForReplace: (count: number) => `${count} selected for replacement`,
   confirmReplace: "Confirm replacement",
   confirmReplaceTitle: "Confirm poster replacement",
   confirmReplaceDescription: (count: number) =>
-    `About to replace poster files for ${count} items. This will overwrite existing posters.`,
+    `About to replace poster files for ${count} items, cut to 2:3 by the chosen area and badged with the current settings. This will overwrite existing posters.`,
   replacing: "Replacing…",
   replaceOutcome: ({ replaced, failed }: { replaced: number; failed: number }) =>
     `Replaced ${replaced} poster${replaced === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}`,

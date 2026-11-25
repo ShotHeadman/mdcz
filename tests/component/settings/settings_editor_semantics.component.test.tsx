@@ -5,6 +5,7 @@ import {
   AdvancedSettingsFooterContent,
   AssetDownloadsSection,
   flattenConfig,
+  LlmSection,
   NamingSection,
   NetworkTopLevelSection,
   NfoSection,
@@ -29,6 +30,7 @@ const noop = vi.fn();
 
 const baseSettingsServices = {
   browsePath: vi.fn(async () => null),
+  checkBrief: vi.fn(async () => ({ status: "ok" as const })),
   checkCookies: vi.fn(async () => ({ results: [] })),
   decrementInFlightSaves: vi.fn(),
   ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
@@ -77,10 +79,12 @@ function SettingsSurfaceHarness({
   engine = "openai",
   baiduService = "general",
   isServer = false,
+  tagBadges = true,
 }: {
   engine?: "openai" | "deepl" | "baidu";
   baiduService?: "general" | "llm";
   isServer?: boolean;
+  tagBadges?: boolean;
 }) {
   const configuration = useMemo(
     () => ({
@@ -90,14 +94,15 @@ function SettingsSurfaceHarness({
         ...defaultConfiguration.download,
         downloadPoster: true,
         generateNfo: true,
-        tagBadges: true,
+        tagBadges,
       },
       titleRepair: {
         ...defaultConfiguration.titleRepair,
         enabled: true,
       },
+      llm: { ...defaultConfiguration.llm, brief: true },
     }),
-    [engine, baiduService],
+    [engine, baiduService, tagBadges],
   );
 
   return (
@@ -143,7 +148,7 @@ test("settings editor renders registry fields and preserves section order throug
   await expect.poll(readNavigationLabels).toEqual(initialSectionLabels);
 
   for (const [query, labels] of [
-    ["proxy", ["网络连接"]],
+    ["proxy", ["网络连接", "媒体服务器"]],
     ["@group:translate", ["翻译服务"]],
     ["mdcz-no-matching-setting", []],
   ] as const) {
@@ -356,7 +361,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
     await screen.getByLabelText(labels[key], { exact: true }).fill(value);
   }
   await expect.element(screen.getByRole("switch", { name: "启用内容翻译" })).toBeVisible();
-  expect(screen.container.querySelector('[data-field-name="translate.llmModelName"]')).toBeNull();
+  expect(screen.container.querySelector('[data-field-name="translate.llmPrompt"]')).toBeNull();
   await screen.getByRole("button", { name: "验证元数据翻译" }).click();
   expect(testTranslation).toHaveBeenCalledWith(
     expect.objectContaining({ engine, targetLanguage: "zh-CN", ...credentials }),
@@ -506,4 +511,74 @@ test("poster badge controls follow download and badge visibility gates", async (
   await expect.element(badgeOn.getByText("覆盖角标图片", { exact: true })).toBeVisible();
   await expect.element(badgeOn.getByText("中字")).toBeVisible();
   await expect.element(badgeOn.getByText("流出")).toBeVisible();
+  await badgeOn.unmount();
+
+  const advancedMode = await render(
+    <FormHarness values={{ download: { downloadPoster: true, tagBadges: true, sceneImageConcurrency: 4 } }}>
+      <SettingsSectionModeProvider mode="advanced">
+        <AssetDownloadsSection />
+      </SettingsSectionModeProvider>
+    </FormHarness>,
+  );
+  await expect.element(advancedMode.getByText("角标预览", { exact: true })).not.toBeInTheDocument();
+  await advancedMode.unmount();
+
+  const searchWithBadgesOff = await render(<SettingsSurfaceHarness tagBadges={false} />);
+  await searchWithBadgesOff.getByPlaceholder("搜索设置").fill("角标位置");
+  await expect.element(searchWithBadgesOff.getByText("角标位置", { exact: true })).toBeVisible();
+  await expect.element(searchWithBadgesOff.getByText("角标预览", { exact: true })).not.toBeInTheDocument();
+  await searchWithBadgesOff.unmount();
+
+  const searchOtherDownloadField = await render(<SettingsSurfaceHarness tagBadges />);
+  await searchOtherDownloadField.getByPlaceholder("搜索设置").fill("下载剧照");
+  await expect.element(searchOtherDownloadField.getByText("角标预览", { exact: true })).not.toBeInTheDocument();
+});
+
+test("brief model dialog configures a dedicated connection, verifies on demand, and saves without blocking", async () => {
+  const checkBrief = vi.fn(async () => ({ status: "ok" as const }));
+  const saveConfig = vi.fn(async () => undefined);
+  const screen = await render(
+    <FormHarness
+      services={createSettingsServices({ checkBrief, saveConfig })}
+      values={{
+        llm: {
+          ...defaultConfiguration.llm,
+          modelName: "gpt-4o-mini",
+          brief: true,
+          briefModel: null,
+        },
+      }}
+    >
+      <LlmSection />
+    </FormHarness>,
+  );
+
+  await screen.getByRole("button", { name: "配置" }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect.element(dialog.getByText("关闭时沿用通用 AI 模型配置。")).toBeVisible();
+  await dialog.getByRole("switch", { name: "使用独立配置" }).click();
+  await dialog.getByLabelText("模型名称").fill("claude-sonnet-4");
+  await dialog.getByLabelText("API 密钥").fill("sk-brief-only");
+  await expect.element(dialog.getByLabelText("请求超时(秒)")).not.toBeInTheDocument();
+  await dialog.getByRole("button", { name: "高级参数" }).click();
+  await expect.element(dialog.getByLabelText("请求超时(秒)")).toBeVisible();
+  await dialog.getByRole("button", { name: "校验模型" }).click();
+
+  await expect.poll(() => checkBrief.mock.calls.length).toBe(1);
+  expect(checkBrief).toHaveBeenCalledWith(
+    expect.objectContaining({ modelName: "claude-sonnet-4", apiKey: "sk-brief-only" }),
+  );
+  await expect.element(dialog.getByText("模型校验通过。")).toBeVisible();
+
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect.poll(() => saveConfig.mock.calls.length).toBe(1);
+  expect(saveConfig).toHaveBeenCalledWith(
+    expect.objectContaining({
+      llm: expect.objectContaining({
+        briefModel: expect.objectContaining({ modelName: "claude-sonnet-4", apiKey: "sk-brief-only" }),
+      }),
+    }),
+  );
+  await expect.element(screen.getByText("claude-sonnet-4")).toBeVisible();
 });

@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyPosterTagBadgesIfNeeded } from "./applyPosterTagBadges";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
@@ -23,12 +27,6 @@ const createFileInfo = (overrides: Partial<FileInfo> = {}): FileInfo => ({
   ...overrides,
 });
 
-const createAssets = (downloadedPoster: boolean): DownloadedAssets => ({
-  poster: "/tmp/poster.jpg",
-  sceneImages: [],
-  downloaded: downloadedPoster ? ["/tmp/poster.jpg"] : [],
-});
-
 const createConfiguration = (download: Partial<typeof defaultConfiguration.download> = {}) =>
   configurationSchema.parse({
     download: {
@@ -38,35 +36,47 @@ const createConfiguration = (download: Partial<typeof defaultConfiguration.downl
     },
   });
 
-describe("applyPosterTagBadgesIfNeeded", () => {
-  it("applies supported tag badges only to newly downloaded posters", async () => {
-    const config = createConfiguration({
-      tagBadgeTypes: ["subtitle", "fourK"],
-      tagBadgePosition: "bottomRight",
-      tagBadgeImageOverrides: true,
-    });
-    const watermarkService = {
-      applyTagBadges: vi.fn().mockResolvedValue(undefined),
-    };
+const POSTER_BYTES = Buffer.from("poster");
+const POSTER_SHA = createHash("sha256").update(POSTER_BYTES).digest("hex");
 
-    await applyPosterTagBadgesIfNeeded({
-      assets: createAssets(true),
-      config,
+describe("applyPosterTagBadgesIfNeeded", () => {
+  let posterPath: string;
+  let directory: string;
+  const createAssets = (downloadedPoster: boolean): DownloadedAssets => ({
+    poster: posterPath,
+    sceneImages: [],
+    downloaded: downloadedPoster ? [posterPath] : [],
+  });
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "mdcz-poster-badges-"));
+    posterPath = join(directory, "poster.jpg");
+    await writeFile(posterPath, POSTER_BYTES);
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it("draws badges only on a newly produced poster and records the look with the file's hash", async () => {
+    const watermarkService = { applyTagBadges: vi.fn().mockResolvedValue(undefined) };
+    const input = {
+      config: createConfiguration({
+        tagBadgeTypes: ["subtitle", "fourK"],
+        tagBadgePosition: "bottomRight",
+        tagBadgeImageOverrides: true,
+      }),
       crawlerData: createCrawlerData(),
       dataDir: "/tmp/data",
-      fileInfo: createFileInfo({
-        isSubtitled: true,
-        subtitleTag: "中文字幕",
-        resolution: "2160P",
-      }),
-      logger: {
-        warn: vi.fn(),
-      },
+      fileInfo: createFileInfo({ isSubtitled: true, subtitleTag: "中文字幕", resolution: "2160P" }),
+      logger: { warn: vi.fn() },
       watermarkService,
-    });
+    };
+
+    const assets = await applyPosterTagBadgesIfNeeded({ ...input, assets: createAssets(true) });
 
     expect(watermarkService.applyTagBadges).toHaveBeenCalledWith(
-      "/tmp/poster.jpg",
+      posterPath,
       [expect.objectContaining({ label: "中字" }), expect.objectContaining({ label: "4K" })],
       expect.objectContaining({
         imageOverrides: true,
@@ -77,45 +87,22 @@ describe("applyPosterTagBadgesIfNeeded", () => {
         onWarn: expect.any(Function),
       }),
     );
+    expect(assets.posterRecord).toEqual({ stamp: "subtitle,fourK|bottomRight|100|100|3|images", sha256: POSTER_SHA });
+
+    const kept = createAssets(false);
+    await expect(applyPosterTagBadgesIfNeeded({ ...input, assets: kept })).resolves.toBe(kept);
+    expect(watermarkService.applyTagBadges).toHaveBeenCalledOnce();
   });
 
-  it("skips disabled badges and preserved posters", async () => {
-    const watermarkService = {
-      applyTagBadges: vi.fn().mockResolvedValue(undefined),
-    };
-    const disabledConfig = createConfiguration({ tagBadges: false });
-    const enabledConfig = createConfiguration();
+  it.each([
+    ["badges are off", { tagBadges: false }],
+    ["no enabled badge matches", { tagBadgeTypes: ["subtitle" as const] }],
+  ])("records an unbadged poster when %s", async (_case, download) => {
+    const watermarkService = { applyTagBadges: vi.fn().mockResolvedValue(undefined) };
 
-    await applyPosterTagBadgesIfNeeded({
+    const assets = await applyPosterTagBadgesIfNeeded({
       assets: createAssets(true),
-      config: disabledConfig,
-      crawlerData: createCrawlerData(),
-      dataDir: "/tmp/data",
-      fileInfo: createFileInfo({ isSubtitled: true }),
-      logger: { warn: vi.fn() },
-      watermarkService,
-    });
-    await applyPosterTagBadgesIfNeeded({
-      assets: createAssets(false),
-      config: enabledConfig,
-      crawlerData: createCrawlerData(),
-      dataDir: "/tmp/data",
-      fileInfo: createFileInfo({ isSubtitled: true }),
-      logger: { warn: vi.fn() },
-      watermarkService,
-    });
-
-    expect(watermarkService.applyTagBadges).not.toHaveBeenCalled();
-  });
-
-  it("skips downloaded posters without matching enabled badge definitions", async () => {
-    const watermarkService = {
-      applyTagBadges: vi.fn().mockResolvedValue(undefined),
-    };
-
-    await applyPosterTagBadgesIfNeeded({
-      assets: createAssets(true),
-      config: createConfiguration({ tagBadgeTypes: ["subtitle"] }),
+      config: createConfiguration(download),
       crawlerData: createCrawlerData(),
       dataDir: "/tmp/data",
       fileInfo: createFileInfo(),
@@ -124,26 +111,24 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     });
 
     expect(watermarkService.applyTagBadges).not.toHaveBeenCalled();
+    expect(assets.posterRecord).toEqual({ stamp: "", sha256: POSTER_SHA });
   });
 
-  it("logs rendering failures and preserves the downloaded asset result", async () => {
-    const assets = createAssets(true);
+  it("logs rendering failures and records the poster as drawn without badges", async () => {
     const warn = vi.fn();
 
-    await expect(
-      applyPosterTagBadgesIfNeeded({
-        assets,
-        config: createConfiguration({ tagBadgeTypes: ["subtitle"] }),
-        crawlerData: createCrawlerData(),
-        dataDir: "/tmp/data",
-        fileInfo: createFileInfo({ isSubtitled: true }),
-        logger: { warn },
-        watermarkService: {
-          applyTagBadges: vi.fn().mockRejectedValue(new Error("render failed")),
-        },
-      }),
-    ).resolves.toBe(assets);
-    expect(warn).toHaveBeenCalledWith("Failed to apply poster tag badges for /tmp/poster.jpg: render failed");
+    const assets = await applyPosterTagBadgesIfNeeded({
+      assets: createAssets(true),
+      config: createConfiguration({ tagBadgeTypes: ["subtitle"] }),
+      crawlerData: createCrawlerData(),
+      dataDir: "/tmp/data",
+      fileInfo: createFileInfo({ isSubtitled: true }),
+      logger: { warn },
+      watermarkService: { applyTagBadges: vi.fn().mockRejectedValue(new Error("render failed")) },
+    });
+
+    expect(warn).toHaveBeenCalledWith(`Failed to apply poster tag badges for ${posterPath}: render failed`);
+    expect(assets.posterRecord).toEqual({ stamp: "", sha256: POSTER_SHA });
   });
 
   it("checks cancellation before and after rendering", async () => {

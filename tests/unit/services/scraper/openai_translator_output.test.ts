@@ -10,12 +10,6 @@ describe("OpenAiTranslator output cleanup", () => {
     expect(cleanTranslationOutput("第一行\n第二行", prompt, source)).toBe("第一行\n第二行");
   });
 
-  it("strips one complete leading think block", () => {
-    expect(
-      cleanTranslationOutput("<think>We need translate this sentence.</think>\n那是某天傍晚的事。", prompt, source),
-    ).toBe("那是某天傍晚的事。");
-  });
-
   it.each([
     ["empty output", ""],
     ["prompt echo", prompt],

@@ -1,29 +1,34 @@
 import { app, Menu, nativeImage, Tray } from "electron";
 import trayIconPath from "../../../build/tray_icon.png?asset";
-import type { WindowService } from "./WindowService";
+
+const TRAY_MENU_TEXT = {
+  zh: { showWindow: "显示主窗口", quit: "退出" },
+  en: { showWindow: "Show Window", quit: "Quit" },
+};
 
 export class TrayService {
   private tray: Tray | null = null;
 
-  initialize(windowService: WindowService): void {
+  initialize(onShowWindow: () => void): void {
     if (this.tray) {
       return;
     }
 
     const trayIcon = nativeImage.createFromPath(trayIconPath);
+    const text = TRAY_MENU_TEXT[app.getLocale().toLowerCase().startsWith("zh") ? "zh" : "en"];
 
     this.tray = new Tray(trayIcon);
     this.tray.setToolTip("MDCz");
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
         {
-          label: "Show Window",
+          label: text.showWindow,
           click: () => {
-            windowService.showMainWindow();
+            onShowWindow();
           },
         },
         {
-          label: "Quit",
+          label: text.quit,
           click: () => {
             app.quit();
           },
@@ -31,9 +36,11 @@ export class TrayService {
       ]),
     );
 
-    this.tray.on("double-click", () => {
-      windowService.showMainWindow();
-    });
+    if (process.platform !== "darwin") {
+      this.tray.on("click", () => {
+        onShowWindow();
+      });
+    }
   }
 
   dispose(): void {

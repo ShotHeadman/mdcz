@@ -1,5 +1,4 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
-import { BlockList, isIP } from "node:net";
 import path from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import type { Website } from "@mdcz/shared/enums";
@@ -7,6 +6,7 @@ import { type FailureReason, MOVIE_FACT_FAILURE_REASONS, type SiteResult } from 
 import sharp from "sharp";
 import { parseImageDimensions } from "../scrape/utils/image";
 import {
+  isLocalNetworkUrl,
   NetworkClient,
   type NetworkClientOptions,
   type RawNetworkRequest,
@@ -86,18 +86,6 @@ const isNotFound = (error: unknown): boolean =>
   error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
 const crawlerSite = (channel: string): string | undefined =>
   channel.startsWith("crawler:") ? channel.slice("crawler:".length) : undefined;
-const localNetworks = new BlockList();
-localNetworks.addSubnet("127.0.0.0", 8);
-localNetworks.addSubnet("10.0.0.0", 8);
-localNetworks.addSubnet("172.16.0.0", 12);
-localNetworks.addSubnet("192.168.0.0", 16);
-localNetworks.addAddress("::1", "ipv6");
-localNetworks.addSubnet("fc00::", 7, "ipv6");
-const isLocalNetworkUrl = (url: string): boolean => {
-  const host = new URL(url).hostname.replace(/^\[|\]$/gu, "");
-  const family = isIP(host);
-  return host === "localhost" || (family !== 0 && localNetworks.check(host, family === 6 ? "ipv6" : "ipv4"));
-};
 const isSameRequest = (recorded: NetworkFixtureRequest, actual: NetworkFixtureRequest): boolean =>
   recorded.method.toUpperCase() === actual.method &&
   normalizeFixtureUrl(recorded.url) === normalizeFixtureUrl(actual.url) &&

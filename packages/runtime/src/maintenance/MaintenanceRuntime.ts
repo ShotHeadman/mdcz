@@ -1,9 +1,8 @@
-import { mkdir } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, parse, resolve } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
-import { isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
+import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
@@ -21,6 +20,8 @@ import type {
   MaintenancePreviewStatus,
   NfoLocalState,
   PathDiff,
+  PosterCut,
+  PosterRebuild,
 } from "@mdcz/shared/types";
 import { registeredMediaLocations } from "../library/registeredMedia";
 import { runWithScrapeItem } from "../network";
@@ -56,11 +57,13 @@ import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActor
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { editedKeys } from "../scrape/nfoEdits";
 import { assignVersionLabels } from "../scrape/organize/versionLabels";
+import { decidePosterRebuild, resolvePosterBadgeStamp } from "../scrape/posterBadges";
 import { prepareOnlineMetadata } from "../scrape/prepareOnlineMetadata";
 import { publishMetadata } from "../scrape/publishMetadata";
 import type { PrepareScrapeItem } from "../scrape/ScrapeRunner";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
+import { buildMaintenanceApplyData } from "./applyData";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import { LocalScanService } from "./LocalScanService";
@@ -135,6 +138,7 @@ export interface MaintenanceRuntimePreviewItem {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
+  poster?: PosterRebuild;
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
@@ -185,6 +189,9 @@ export interface MaintenanceRuntimeApplyFailure {
 }
 
 export type MaintenanceRuntimeApplyResult = MaintenanceRuntimeApplySuccess | MaintenanceRuntimeApplyFailure;
+
+const writesNfo = (preset: MaintenancePreset, config: Configuration): boolean =>
+  preset.output !== "none" && (preset.dataSource !== "local" || config.download.generateNfo);
 
 const mergeDeep = <T>(base: T, override: DeepPartial<T>): T => {
   if (
@@ -327,8 +334,21 @@ export class MaintenanceRuntime {
         const merged = mergeSiteData(siteData, config);
         imageAlternatives = merged.imageAlternatives;
         const publication = await publishMetadata({
-          // Actor photos are output, not site data; re-merging must not fetch them again.
-          data: { ...merged.data, actor_profiles: entry.crawlerData?.actor_profiles },
+          // Re-merging never fetches remote media, so keep the published artwork fields alongside actor photos.
+          data: {
+            ...merged.data,
+            actor_profiles: entry.crawlerData?.actor_profiles,
+            ...(entry.crawlerData
+              ? {
+                  thumb_url: entry.crawlerData.thumb_url,
+                  thumb_source_url: entry.crawlerData.thumb_source_url,
+                  poster_url: entry.crawlerData.poster_url,
+                  poster_source_url: entry.crawlerData.poster_source_url,
+                  fanart_url: entry.crawlerData.fanart_url,
+                  fanart_source_url: entry.crawlerData.fanart_source_url,
+                }
+              : {}),
+          },
           published,
           keepEdits: false,
           keepPublishedGenres: true,
@@ -359,6 +379,17 @@ export class MaintenanceRuntime {
         crawlerData,
         signal,
       });
+      // The poster is judged on what applying the default choices writes; a poster replaced there gets its badges
+      // when it arrives, as does the new one an online preset that doesn't keep posters fetches.
+      const applied = buildMaintenanceApplyData(
+        entry,
+        { fieldDiffs, proposedCrawlerData: crawlerData, imageAlternatives },
+        undefined,
+      );
+      const keptPoster =
+        preset.dataSource === "online" && (!config.download.keepPoster || applied.assetDecisions?.poster === "replace")
+          ? undefined
+          : entry.assets.poster;
 
       return {
         entry,
@@ -371,6 +402,15 @@ export class MaintenanceRuntime {
         pathDiff: pathDiff ?? null,
         proposedCrawlerData: crawlerData ?? null,
         imageAlternatives,
+        poster: await this.posterRebuild(
+          preset,
+          config,
+          entry,
+          keptPoster,
+          applied.crawlerData,
+          entry.assets.thumb,
+          signal,
+        ),
         affectedFiles,
         files,
       };
@@ -526,7 +566,6 @@ export class MaintenanceRuntime {
     try {
       const stagingParent = members[0].layout.metadataDir;
       if (preset.dataSource === "online") {
-        await mkdir(stagingParent, { recursive: true });
         stagingDir = await createStagingDirectory(stagingParent);
       }
 
@@ -587,7 +626,50 @@ export class MaintenanceRuntime {
       }
       throwIfAborted(signal);
 
-      if (this.deps.postProcessAssets && stagingDir && preset.dataSource === "online") {
+      const keptPoster =
+        downloadedAssets.poster && downloadedAssets.downloaded.includes(downloadedAssets.poster)
+          ? undefined
+          : (downloadedAssets.poster ?? entry.assets.poster);
+      const thumbPath = downloadedAssets.thumb ?? entry.assets.thumb;
+      const posterRebuild =
+        preset.dataSource === "online" && committed?.assetDecisions?.poster === "replace"
+          ? undefined
+          : await this.posterRebuild(preset, config, entry, keptPoster, preparedCrawlerData, thumbPath, signal);
+      const logger = this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime");
+      if (posterRebuild === "kept")
+        logger.warn(
+          `[${entry.fileInfo.number}] The poster wasn't made by MDCz, so it keeps its badges; run the tool that made it again to update them`,
+        );
+      let rebuiltCut: PosterCut | undefined;
+      if (keptPoster && posterRebuild === "redraw") {
+        if (!this.deps.downloadManager) throw new Error("Rebuilding a poster requires the download service");
+        if (!stagingDir) {
+          stagingDir = await createStagingDirectory(stagingParent);
+        }
+        const posterName = parse(buildMovieAssetFileNames(movieBaseName, naming.assetNaming).poster).name;
+        const cut = entry.nfoLocalState?.posterRecord?.cut;
+        const plainPoster = await this.deps.downloadManager.downloadPlainPoster({
+          data: preparedCrawlerData,
+          cut,
+          // With the old extension the rebuilt poster replaces the old file instead of landing beside it.
+          targetPath: join(stagingDir, `${posterName}${extname(keptPoster).toLowerCase()}`),
+          thumbPath,
+          signal,
+        });
+        if (plainPoster) {
+          downloadedAssets = {
+            ...downloadedAssets,
+            poster: plainPoster,
+            downloaded: [...downloadedAssets.downloaded, plainPoster],
+          };
+          rebuiltCut = cut;
+        } else {
+          logger.warn(`[${entry.fileInfo.number}] No source left to rebuild the poster from; it keeps its badges`);
+        }
+      }
+      throwIfAborted(signal);
+
+      if (this.deps.postProcessAssets && stagingDir) {
         downloadedAssets = await this.deps.postProcessAssets({
           assets: downloadedAssets,
           configuration: config,
@@ -598,6 +680,8 @@ export class MaintenanceRuntime {
           signalService: this.deps.signalService,
         });
       }
+      if (rebuiltCut && downloadedAssets.posterRecord)
+        downloadedAssets = { ...downloadedAssets, posterRecord: { ...downloadedAssets.posterRecord, cut: rebuiltCut } };
 
       const published = await prepareMovieArtifacts({
         inventory: this.inventory,
@@ -627,7 +711,7 @@ export class MaintenanceRuntime {
                 config,
                 naming,
                 crawlerData: preparedCrawlerData,
-                enabled: preset.dataSource !== "local" || config.download.generateNfo,
+                enabled: writesNfo(preset, config),
                 fileInfo: entry.fileInfo,
                 localState: entry.nfoLocalState,
                 buildTags: buildMovieTags,
@@ -771,6 +855,24 @@ export class MaintenanceRuntime {
         }
       }
     }
+  }
+
+  /** Badges are part of the poster file, so a write that changes the movie's tags or the badge settings rebuilds it. */
+  private async posterRebuild(
+    preset: MaintenancePreset,
+    config: Configuration,
+    entry: LocalScanEntry,
+    posterPath: string | undefined,
+    crawlerData: CrawlerData | undefined,
+    thumbPath: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<PosterRebuild | undefined> {
+    if (!posterPath || !crawlerData || !config.download.downloadPoster || !writesNfo(preset, config)) return undefined;
+    const { stamp } = resolvePosterBadgeStamp(crawlerData, entry.fileInfo, entry.nfoLocalState, config.download);
+    return await decidePosterRebuild(posterPath, entry.nfoLocalState?.posterRecord, stamp, async () => {
+      if (!this.deps.downloadManager) throw new Error("Rebuilding a poster requires the download service");
+      return await this.deps.downloadManager.plainPosterSize({ data: crawlerData, thumbPath, signal });
+    });
   }
 
   private memberIndex(files: readonly LocalScanEntry[], entry: LocalScanEntry): number {
