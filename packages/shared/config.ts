@@ -38,6 +38,7 @@ const DEFAULT_SITES: Website[] = [
   Website.CARIBBEANCOM,
   Website.HEYZO,
   Website.R18_DEV,
+  Website.JAVMANIA,
 ];
 
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;

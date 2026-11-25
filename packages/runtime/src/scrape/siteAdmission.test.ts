@@ -84,6 +84,8 @@ describe("resolveSiteAdmission", () => {
       ["HEYZO-3806", Website.HEYZO],
       ["H0930-GOL205", Website.H0930],
       ["H4610-ORI1693", Website.H4610],
+      ["PACO-112426_100", Website.JAVMANIA],
+      ["C0930-KI261027", Website.JAVMANIA],
     ] as const) {
       expect(admit(number, { configuredSites: [site] }).admitted).toEqual([site]);
       expect(admit("UNRELATED-123", { configuredSites: [site] })).toEqual({

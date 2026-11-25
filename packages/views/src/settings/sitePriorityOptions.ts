@@ -32,6 +32,7 @@ const SITE_PRIORITY_OPTION_DEFINITIONS: SitePriorityOptionDefinition[] = [
   { id: Website.JAV321, sites: [Website.JAV321] },
   { id: "h0930_family", sites: [Website.H0930, Website.H4610] },
   { id: "uncensored_official", sites: [Website.ONEPONDO, Website.TENMUSUME, Website.CARIBBEANCOM, Website.HEYZO] },
+  { id: Website.JAVMANIA, sites: [Website.JAVMANIA] },
   { id: Website.FC2, sites: [Website.FC2] },
   { id: Website.FC2HUB, sites: [Website.FC2HUB] },
   { id: Website.PPVDATABANK, sites: [Website.PPVDATABANK] },

@@ -30,6 +30,7 @@ const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Exclude<Website, MirrorableSite>, s
   [Website.TENMUSUME]: "https://www.10musume.com",
   [Website.CARIBBEANCOM]: "https://www.caribbeancom.com",
   [Website.HEYZO]: "https://www.heyzo.com",
+  [Website.JAVMANIA]: "https://www.jav-mania.net",
 };
 
 const appendCookie = (headers: Record<string, string>, cookie: string | undefined): void => {

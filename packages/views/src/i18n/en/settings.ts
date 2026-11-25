@@ -288,6 +288,11 @@ export const settings = {
         description:
           "1pondo, 10musume, Caribbeancom and HEYZO official metadata. Uses 1PON, 10MU, CARIB and HEYZO codes without a login.",
       },
+      [Website.JAVMANIA]: {
+        label: "JAV Mania",
+        description:
+          "English metadata for uncensored studios without an official source here (PacoPacoMama, Caribbeancom Premium, Muramura, Kin8tengoku, Nyoshin, HGMO, C0930, Pikkur, AV9898). Exact code match only, no login, not region-locked.",
+      },
       [Website.FC2]: {
         label: "fc2",
         description:
