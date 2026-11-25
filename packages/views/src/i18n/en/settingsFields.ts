@@ -107,6 +107,7 @@ const fields: Record<FieldKey, FieldText> = {
       "PPVDataBank",
       "R18.dev",
       "AVWikiDB",
+      "JAV Mania",
     ],
   },
   "scrape.r18MetadataLanguage": { label: "R18.dev metadata language" },

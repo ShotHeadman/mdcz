@@ -165,22 +165,35 @@ const formatFirstCapture = (prefix: string): NonNullable<NumberExtractionRule["f
 };
 
 // Caribbeancompr is a separate studio that shares Caribbeancom's prefix.
-const DATE_SEQUENCE_STUDIO = "(?<studio>1PON(?:DO)?|10MU(?:SUME)?|CARIB(?:BEANCOM)?(?!PR))";
-const DATE_SEQUENCE = String.raw`(?<date>\d{6})[-_](?<sequence>\d{2,3})`;
-// Studio tags lead (`1pon-100524_001`) or trail (`100524_001-1pon`) the number.
+const DATE_SEQUENCE_STUDIO =
+  "(?<studio>1PON(?:DO)?|10MU(?:SUME)?|CARIB(?:BEANCOM)?PR|CARIB(?:BEANCOM)?|PACO(?:PACOMAMA)?|MURA(?:MURA)?)";
+const DATE_SEQUENCE = String.raw`(?<date>\d{6})[-_](?<sequence>\d{2,4})`;
+// Canonical prefix, separator and sequence length of each date-sequence studio.
+const DATE_SEQUENCE_FORMATS: Record<string, { separator: string; sequence: RegExp }> = {
+  "1PON": { separator: "_", sequence: /^\d{3}$/u },
+  "10MU": { separator: "_", sequence: /^\d{2}$/u },
+  CARIB: { separator: "-", sequence: /^\d{3}$/u },
+  CARIBPR: { separator: "_", sequence: /^\d{3}$/u },
+  PACO: { separator: "_", sequence: /^\d{3}$/u },
+  MURA: { separator: "_", sequence: /^\d{3,4}$/u },
+};
+// Studio tags lead (`1pon-100524_001`) or trail (`100524_001-1pon`) the number as whole words, so `SAMURA-…` or
+// `…-CARIBPRINCE` keep their own reading.
 const TAGGED_DATE_SEQUENCE_PATTERNS = [
-  new RegExp(String.raw`${DATE_SEQUENCE_STUDIO}[-_.\s]*${DATE_SEQUENCE}(?!\d)`, "iu"),
-  new RegExp(String.raw`(?<!\d)${DATE_SEQUENCE}[-_.\s]*${DATE_SEQUENCE_STUDIO}`, "iu"),
+  new RegExp(String.raw`(?<![A-Z\d])${DATE_SEQUENCE_STUDIO}[-_.\s]*${DATE_SEQUENCE}(?!\d)`, "giu"),
+  new RegExp(String.raw`(?<!\d)${DATE_SEQUENCE}[-_.\s]*${DATE_SEQUENCE_STUDIO}(?![A-Z\d])`, "giu"),
 ];
 
 const extractTaggedDateSequence = (fileName: string): string | undefined => {
   for (const pattern of TAGGED_DATE_SEQUENCE_PATTERNS) {
-    const groups = fileName.match(pattern)?.groups;
-    if (!groups) continue;
-    const tag = groups.studio.toUpperCase();
-    const studio = tag.startsWith("CARIB") ? "CARIB" : tag.slice(0, 4);
-    if ((studio === "10MU") !== (groups.sequence.length === 2)) continue;
-    return `${studio}-${groups.date}${studio === "CARIB" ? "-" : "_"}${groups.sequence}`;
+    for (const { groups } of fileName.matchAll(pattern)) {
+      if (!groups) continue;
+      const tag = groups.studio.toUpperCase();
+      const studio = tag.startsWith("CARIB") ? (tag.endsWith("PR") ? "CARIBPR" : "CARIB") : tag.slice(0, 4);
+      const format = DATE_SEQUENCE_FORMATS[studio];
+      if (!format?.sequence.test(groups.sequence)) continue;
+      return `${studio}-${groups.date}${format.separator}${groups.sequence}`;
+    }
   }
   return undefined;
 };
@@ -193,6 +206,9 @@ const ORDERED_NUMBER_EXTRACTION_RULES: NumberExtractionRule[] = [
   { pattern: /(TH101-\d{3,}-\d{5,})/iu },
   { pattern: /H0930-?([A-Z]{2,}\d{2,}[A-Z]?)/iu, format: formatFirstCapture("H0930") },
   { pattern: /H4610-?([A-Z]{2,}\d{2,}[A-Z]?)/iu, format: formatFirstCapture("H4610") },
+  { pattern: /(?<![A-Z\d])C0930-?([A-Z]{2,}\d{3,})/iu, format: formatFirstCapture("C0930") },
+  // Nyoshin's n#### codes collide with Tokyo-Hot's, so only a name that says "nyoshin" keeps the studio.
+  { pattern: /(?<![A-Z\d])NYOSHIN-?((?:N|LES)\d{3,4})(?!\d)/iu, format: formatFirstCapture("NYOSHIN") },
   { pattern: /(T28-?\d{3,})/iu },
   { pattern: /(S2M[BD]*-\d{3,})/iu },
   { pattern: /(MCB3D[BD]*-\d{2,})/iu },

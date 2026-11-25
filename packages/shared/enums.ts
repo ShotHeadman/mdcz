@@ -25,6 +25,7 @@ export enum Website {
   TENMUSUME = "10musume",
   CARIBBEANCOM = "caribbeancom",
   HEYZO = "heyzo",
+  JAVMANIA = "javmania",
 }
 
 export enum ProxyType {

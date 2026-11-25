@@ -17,6 +17,7 @@ import { crawlerRegistration as heyzoRegistration } from "./sites/heyzo";
 import { crawlerRegistration as jav321Registration } from "./sites/jav321";
 import { crawlerRegistration as javbusRegistration } from "./sites/javbus";
 import { crawlerRegistration as javdbRegistration } from "./sites/javdb";
+import { crawlerRegistration as javManiaRegistration } from "./sites/javmania";
 import { crawlerRegistration as kingdomRegistration } from "./sites/kingdom";
 import { crawlerRegistration as kmProduceRegistration } from "./sites/kmproduce";
 import { crawlerRegistration as mgstageRegistration } from "./sites/mgstage";
@@ -80,6 +81,7 @@ const crawlerRegistrations: CrawlerRegistration[] = [
   tenMusumeRegistration,
   caribbeancomRegistration,
   heyzoRegistration,
+  javManiaRegistration,
 ];
 
 for (const registration of crawlerRegistrations) {

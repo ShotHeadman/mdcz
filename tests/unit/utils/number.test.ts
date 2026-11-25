@@ -41,6 +41,23 @@ describe("extractNumber", () => {
       { input: "100524_001-1pon", expected: "1PON-100524_001" },
       { input: "100524_001", expected: "100524_001" },
       { input: "100524-001", expected: "100524-001" },
+      { input: "paco 112426_100", expected: "PACO-112426_100" },
+      { input: "pacopacomama-112426_100", expected: "PACO-112426_100" },
+      { input: "112426_100-paco", expected: "PACO-112426_100" },
+      { input: "caribpr 112426_001", expected: "CARIBPR-112426_001" },
+      { input: "caribbeancompr-112426_001", expected: "CARIBPR-112426_001" },
+      { input: "muramura 112126_1276", expected: "MURA-112126_1276" },
+      { input: "muramura-112126_332", expected: "MURA-112126_332" },
+      { input: "c0930-ki261027", expected: "C0930-KI261027" },
+      { input: "c0930 hitozuma0051", expected: "C0930-HITOZUMA0051" },
+      { input: "nyoshin n3424", expected: "NYOSHIN-N3424" },
+      { input: "nyoshin-les001", expected: "NYOSHIN-LES001" },
+      { input: "XPACO-112426_100", expected: "XPACO-112426" },
+      { input: "SAMURA-112126_332", expected: "SAMURA-112126" },
+      { input: "100524_001-CARIBPRINCE", expected: "100524_001" },
+      { input: "PACO-112426_1000-1PON-100524_001", expected: "1PON-100524_001" },
+      { input: "XC0930-KI261027", expected: "XC-0930" },
+      { input: "XNYOSHIN-N3424", expected: "N3424" },
     ];
 
     for (const { input, expected } of cases) {

@@ -262,6 +262,11 @@ export const settings: Messages["settings"] = {
         description:
           "一本道、天然むすめ、Caribbeancom、HEYZO 官方元数据；使用 1PON、10MU、CARIB、HEYZO 番号，无需登录。",
       },
+      javmania: {
+        label: "JAV Mania",
+        description:
+          "补充本软件没有官方数据源的无码厂牌（PACO、CARIBPR、MURA、KIN8、NYOSHIN、HGMO、C0930、PIKKUR、AV9898）的英文元数据；仅按番号精确匹配，无需登录，无地区限制。",
+      },
       fc2: {
         label: "fc2",
         description: "FC2 官方商品页，卖家名与官方发行信息可信度高，适合 FC2 编号；无法作用于已下架作品。",

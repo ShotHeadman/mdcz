@@ -16,6 +16,12 @@ describe("manual scrape URL routing", () => {
         Website.H4610,
         "https://www.h4610.com/moviepages/ori696/index.html",
       ],
+      [
+        "https://www.jav-mania.net/movies/pacopacomama/112426_100/",
+        officialOnly,
+        Website.JAVMANIA,
+        "https://www.jav-mania.net/movies/pacopacomama/112426_100/",
+      ],
       ["https://javdb.com/v/abc", withJavdbMirror, Website.JAVDB, "https://javdb.com/v/abc"],
       ["https://www.javdb.com/v/abc", withJavdbMirror, Website.JAVDB, "https://www.javdb.com/v/abc"],
       ["https://javdb571.com/v/abc", withJavdbMirror, Website.JAVDB, "https://javdb571.com/v/abc"],

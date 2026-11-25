@@ -124,6 +124,11 @@ const SITE_RULES: readonly ManualScrapeSiteRule[] = [
     isDetailUrl: (url) => pathMatches(url, /^\/moviepages\/[a-z\d]+\/index\.html$/iu),
   },
   {
+    site: Website.JAVMANIA,
+    hosts: ["jav-mania.net", "www.jav-mania.net"],
+    isDetailUrl: (url) => pathMatches(url, /^\/(?:[a-z]{2}\/)?movies\/[a-z\d]+\/[\w-]+\/?$/iu),
+  },
+  {
     site: Website.PPVDATABANK,
     hosts: ["ppvdatabank.com", "www.ppvdatabank.com"],
     isDetailUrl: (url) => pathMatches(url, /^\/article\/\d+\/?$/iu),

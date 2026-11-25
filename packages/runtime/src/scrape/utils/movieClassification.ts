@@ -6,7 +6,8 @@ export type ContentType = "censored" | "uncensored" | "fc2";
 const FC2_NUMBER_PATTERN = /^FC2[-_\s]*(?:PPV[-_\s]*)?\d+/iu;
 const UNCENSORED_NUMBER_PATTERNS = [
   /^HEYZO-\d+/iu,
-  /^(?:1PON(?:DO)?|10MU(?:SUME)?|CARIB(?:BEANCOM)?|PACO|MURA|KIN8)[-_]?\d+/iu,
+  /^(?:1PON(?:DO)?|10MU(?:SUME)?|CARIB(?:BEANCOM)?(?:PR)?|PACO|MURA|KIN8)[-_]?\d+/iu,
+  /^(?:C0930|NYOSHIN|HGMO|PIKKUR|AV9898)-[A-Z]*\d+/iu,
   /^\d{6}[-_]\d{2,3}$/u,
   // Uncensored studio labels whose numbers are shaped like censored ones (S Model, Sky High, Catwalk, Laforet…);
   // Kirari numbers carry an S before the digits (MKBD-S120).
