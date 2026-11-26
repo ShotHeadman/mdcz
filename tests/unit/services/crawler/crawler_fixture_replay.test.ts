@@ -163,7 +163,7 @@ describe.skipIf(!hasNetworkFixtures)("Crawler actual fixture replay", () => {
       expect(data.plot).toBeTruthy();
       expect(data.plot).not.toMatch(/<br/iu);
       expect(data.thumb_url).toBeTruthy();
-      expect(data.poster_url).toBeTruthy();
+      expect(data.poster_url).toBeUndefined();
       expect(data.genres?.length).toBeGreaterThan(0);
     });
 
@@ -191,7 +191,7 @@ describe.skipIf(!hasNetworkFixtures)("Crawler actual fixture replay", () => {
       expect(data.plot).toBeTruthy();
       expect(data.plot).not.toMatch(/<br/iu);
       expect(data.thumb_url).toBeTruthy();
-      expect(data.poster_url).toBeTruthy();
+      expect(data.poster_url).toBeUndefined();
     });
 
     it("parses AVBASE recorded network data", async () => {
@@ -216,7 +216,7 @@ describe.skipIf(!hasNetworkFixtures)("Crawler actual fixture replay", () => {
       expect(data.title).toBe(expectedAvbaseTitle ?? expectedTitle);
       expect(data.actors).toEqual(expectedActors);
       expect(data.thumb_url).toBeTruthy();
-      expect(data.poster_url).toBeTruthy();
+      expect(data.poster_url).toBeUndefined();
       expect(data.genres?.length).toBeGreaterThan(0);
     });
   });

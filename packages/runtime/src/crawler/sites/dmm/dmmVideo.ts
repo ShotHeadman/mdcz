@@ -25,7 +25,7 @@ interface DmmVideoDataResponse {
     maker?: { name?: string };
     label?: { name?: string };
     genres?: Array<{ name?: string }>;
-    packageImage?: { largeUrl?: string; mediumUrl?: string };
+    packageImage?: { largeUrl?: string };
     sampleImages?: Array<{ largeImageUrl?: string }>;
     sample2DMovie?: { highestMovieUrl?: string; hlsMovieUrl?: string };
   };
@@ -285,7 +285,6 @@ export const parseDmmVideoData = (payload: unknown): Partial<CrawlerData> | null
     release_date: releaseDate,
     rating: data?.reviewSummary?.average,
     thumb_url: content.packageImage?.largeUrl,
-    poster_url: content.packageImage?.mediumUrl,
     scene_images: (content.sampleImages ?? [])
       .map((item) => item.largeImageUrl)
       .filter((value): value is string => Boolean(value)),

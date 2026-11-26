@@ -197,7 +197,6 @@ export const parseMonoLikeDetail = ($: CheerioAPI): Partial<CrawlerData> | null 
     release_date: release,
     rating: Number.isFinite(rating) ? rating : undefined,
     thumb_url: thumbUrl,
-    poster_url: thumbUrl?.replace("pl.jpg", "ps.jpg"),
     scene_images: sceneImages,
   };
 };
@@ -235,7 +234,6 @@ export const parseDigitalDetail = ($: CheerioAPI): Partial<CrawlerData> | null =
     release_date: releaseFromJson ?? base?.release_date,
     rating: Number.isFinite(ratingFromJson) ? ratingFromJson : base?.rating,
     thumb_url: thumbUrl,
-    poster_url: thumbUrl?.replace("pl.jpg", "ps.jpg") ?? base?.poster_url,
     scene_images: mergedSamples.length > 0 ? mergedSamples : base?.scene_images,
     trailer_url: trailerFromJson ?? base?.trailer_url,
   };

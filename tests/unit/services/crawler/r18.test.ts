@@ -92,11 +92,12 @@ describe("R18DevCrawler", () => {
       release_date: "2026-04-01",
       durationSeconds: 121 * 60,
       thumb_url: "https://pics.dmm.co.jp/digital/video/ure00013/ure00013pl.jpg",
-      poster_url: "https://pics.dmm.co.jp/digital/video/ure00013/ure00013ps.jpg",
+      poster_url: undefined,
       fanart_url: "https://pics.dmm.co.jp/digital/video/ure00013/ure00013pl.jpg",
       trailer_url: "https://cc3001.dmm.co.jp/sample/ure00013.mp4",
       trailer_source_url: "https://cc3001.dmm.co.jp/sample/ure00013.mp4",
     });
+    expect(response.result.data.poster_source_url).toBeUndefined();
     expect(response.result.data.scene_images).toEqual([
       "https://pics.dmm.co.jp/digital/video/ure00013/ure00013jp-1.jpg",
       "https://pics.dmm.co.jp/digital/video/ure00013/ure00013jp-2.jpg",

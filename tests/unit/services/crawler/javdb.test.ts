@@ -63,7 +63,7 @@ describe("JavdbCrawler", () => {
           expect(data.result.data.director).toBe("DirectorA");
           expect(data.result.data.release_date).toBe("2021-02-03");
           expect(data.result.data.thumb_url).toBe("https://javdb.com/covers/cover1.jpg");
-          expect(data.result.data.poster_url).toBe("https://javdb.com/thumbs/cover1.jpg");
+          expect(data.result.data.poster_url).toBeUndefined();
           expect(data.result.data.trailer_url).toBe("https://cdn.example.com/trailer.mp4");
           expect(data.result.data.scene_images).toEqual([
             "https://javdb.com/images/1.jpg",

@@ -331,7 +331,6 @@ export class DmmCrawler extends BaseDmmCrawler {
     const title = baseData.title;
 
     const thumbUrl = baseData.thumb_url;
-    const posterUrl = baseData.poster_url ?? thumbUrl?.replace("pl.jpg", "ps.jpg");
 
     return {
       title,
@@ -346,7 +345,7 @@ export class DmmCrawler extends BaseDmmCrawler {
       release_date: baseData.release_date,
       rating: baseData.rating,
       thumb_url: thumbUrl,
-      poster_url: posterUrl,
+      poster_url: undefined,
       fanart_url: baseData.fanart_url,
       scene_images: baseData.scene_images ?? [],
       trailer_url: baseData.trailer_url,

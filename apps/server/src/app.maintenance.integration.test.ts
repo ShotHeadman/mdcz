@@ -324,11 +324,17 @@ describe("buildServer maintenance integration", () => {
       .composite([{ input: await solid(400, 538, { r: 220, g: 200, b: 40 }), left: 400, top: 0 }])
       .jpeg()
       .toBuffer();
+    const listThumb = await solid(147, 200, { r: 100, g: 100, b: 100 });
     // Large enough that the scrape's rule keeps a site poster instead of cropping the cover.
     const sitePoster = await noise(400, 600);
     const amazonImage = await noise(600, 800);
     const images = await startLocalHttpServer((request, response) => {
-      const body = { "/site.jpg": sitePoster, "/amazon.jpg": amazonImage }[request.url ?? ""];
+      const body = {
+        "/site.jpg": sitePoster,
+        "/amazon.jpg": amazonImage,
+        "/abc00601pl.jpg": cover,
+        "/abc00601ps.jpg": listThumb,
+      }[request.url ?? ""];
       if (!body) {
         response.writeHead(404).end();
         return;
@@ -339,6 +345,10 @@ describe("buildServer maintenance integration", () => {
       response.end(range ? body.subarray(0, Number(range[1]) + 1) : body);
     });
     const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+    const fromCover = {
+      poster_source_url: `${images.url}/abc00601pl.jpg`,
+      thumb_source_url: `${images.url}/abc00601pl.jpg`,
+    };
     const fromSite = { poster_source_url: `${images.url}/site.jpg`, thumb_source_url: `${images.url}/cover.jpg` };
     const amazonCut = { source: `${images.url}/amazon.jpg`, crop: resolvePosterEditorCropRegion(600, 800) };
     const coverCut = { source: "cover", crop: { x: 0, y: 0, width: (538 * 2) / 3 / 800, height: 1 } };
@@ -356,6 +366,7 @@ describe("buildServer maintenance integration", () => {
     }> = [
       {
         name: "a cover cut",
+        sources: fromCover,
         poster: blank,
         record: "own",
         preview: "redraw",
@@ -489,6 +500,69 @@ describe("buildServer maintenance integration", () => {
     // A rebuild writes a record, so it happens once; a poster MDCz can't vouch for stays kept.
     const second = await preview();
     expect(second.posters).toEqual(numbered.map((row) => (row.plain ? undefined : row.preview)));
+
+    // Online refresh of a DMM cover-cut movie (like #180 / MIDV-668) must keep poster unchanged and write 379x538.
+    const dmmDetailUrl = "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=abc00601/";
+    const dmmSearchUrl = "https://www.dmm.co.jp/search/=/searchstr=abc00601/sort=ranking/";
+    const dmmSearchHtml = `<html><body><script>const item = {"detailUrl":"${dmmDetailUrl.replaceAll("/", "\\/")}"};</script></body></html>`;
+    const dmmDetailHtml = `<html><body>
+      <h1><span>ABC-601</span></h1>
+      <table><tr><th>品番</th><td>ABC-601</td></tr></table>
+      <meta property="og:image" content="${images.url}/abc00601ps.jpg">
+    </body></html>`;
+    const dmmNetwork = new NetworkClient({
+      rawDispatch: async (request, dispatch) => {
+        const html = { [dmmSearchUrl]: dmmSearchHtml, [dmmDetailUrl]: dmmDetailHtml }[request.url];
+        if (!html) return await dispatch();
+        const body = new TextEncoder().encode(html);
+        return {
+          status: 200,
+          statusText: "OK",
+          headers: new Headers({ "content-type": "text/html; charset=utf-8" }),
+          ok: true,
+          url: request.url,
+          body: null,
+          arrayBuffer: async () => body.buffer,
+          bytes: async () => body,
+          text: async () => html,
+          json: async () => JSON.parse(html),
+          clone: () => new Response(html),
+          abort: () => undefined,
+        };
+      },
+    });
+    const onlineServer = await createTestServer({ networkClient: dmmNetwork });
+    const onlineToken = await loginAsAdmin(onlineServer.fastify);
+    const onlineLibrary = await createTestLibrary(onlineServer.fastify, onlineToken, root);
+    await onlineServer.services.config.update({
+      scrape: { sites: [Website.DMM] },
+      translate: { enableTranslation: false },
+      download: { tagBadges: true, tagBadgeTypes: ["censored"] },
+    });
+    const onlineRefresh = await startMaintenancePreview(
+      onlineServer.fastify,
+      onlineToken,
+      onlineLibrary,
+      "refresh_metadata",
+      ["ABC-601/ABC-601.mp4"],
+    );
+    expect(onlineRefresh.session.previews[0].fieldDiffs.find((diff) => diff.field === "poster_url")).toBeUndefined();
+    expect(onlineRefresh.session.previews[0].unchangedFieldDiffs).toContainEqual(
+      expect.objectContaining({
+        field: "poster_url",
+        changed: false,
+        newPreview: { src: "", fallbackSrcs: [] },
+      }),
+    );
+    const onlineApply = await onlineServer.fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.execute",
+      headers: { authorization: `Bearer ${onlineToken}` },
+      payload: { sessionId: onlineRefresh.sessionId },
+    });
+    expect(onlineApply.statusCode, onlineApply.body).toBe(200);
+    await waitForMaintenanceSession(onlineServer.fastify, onlineToken, onlineRefresh.sessionId, "apply", "completed");
+    expect(await sharp(join(root, "ABC-601", "poster.jpg")).metadata()).toMatchObject({ width: 379, height: 538 });
   });
 
   it("pauses and resumes previews through HTTP, refusing scrapes while one is live", async () => {

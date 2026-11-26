@@ -27,22 +27,6 @@ const JAVBUS_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
 
 type CheerioInput = Parameters<CheerioAPI>[0];
 
-const buildPosterUrl = (thumbUrl: string | undefined): string | undefined => {
-  if (!thumbUrl) {
-    return undefined;
-  }
-
-  if (thumbUrl.includes("/pics/")) {
-    return thumbUrl.replace("/cover/", "/thumb/").replace("_b.jpg", ".jpg");
-  }
-
-  if (thumbUrl.includes("/imgs/")) {
-    return thumbUrl.replace("/cover/", "/thumbs/").replace("_b.jpg", ".jpg");
-  }
-
-  return undefined;
-};
-
 const javbusNumber = (number: string): string => toDateSequenceLabel(number) ?? number.toUpperCase();
 
 const javbusBlockedPageError = (html: string): SiteError | null => {
@@ -164,7 +148,6 @@ export class JavbusCrawler extends BaseCrawler {
 
     const thumbUrl = $("a.bigImage").first().attr("href") ?? undefined;
     const thumbUrlAbsolute = toAbsoluteUrl(detailUrl, thumbUrl);
-    const posterUrl = buildPosterUrl(thumbUrlAbsolute);
 
     const studio = $("a[href*='/studio/']").first().text().trim() || undefined;
     const publisherText = $("a[href*='/label/']").first().text().trim();
@@ -194,7 +177,7 @@ export class JavbusCrawler extends BaseCrawler {
       release_date: release,
       rating: undefined,
       thumb_url: thumbUrlAbsolute,
-      poster_url: posterUrl,
+      poster_url: undefined,
       fanart_url: undefined,
       scene_images: sceneImageUrls,
       trailer_url: undefined,

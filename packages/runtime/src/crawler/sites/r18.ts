@@ -320,7 +320,6 @@ const mapR18RecordToCrawlerData = (record: JsonRecord, language: R18MetadataLang
   const genres = readEntityNames(record, ["categories", "category", "genres", "genre"], language);
   const directors = readEntityNames(record, ["directors", "director"], language);
   const thumbUrl = readString(record, ["jacket_full_url", "jacketFullUrl", "image_url", "imageUrl"]);
-  const posterUrl = readString(record, ["jacket_thumb_url", "jacketThumbUrl", "thumbnail_url", "thumbnailUrl"]);
   const trailerUrl = readString(record, ["sample_url", "sampleUrl", "trailer_url", "trailerUrl"]);
 
   return {
@@ -340,10 +339,9 @@ const mapR18RecordToCrawlerData = (record: JsonRecord, language: R18MetadataLang
     release_date: parseDate(readString(record, ["release_date", "releaseDate", "date"])),
     durationSeconds: readDurationSeconds(record),
     thumb_url: thumbUrl,
-    poster_url: posterUrl,
+    poster_url: undefined,
     fanart_url: thumbUrl,
     thumb_source_url: thumbUrl,
-    poster_source_url: posterUrl,
     fanart_source_url: thumbUrl,
     scene_images: readSceneImages(record),
     trailer_url: trailerUrl,

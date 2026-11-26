@@ -91,7 +91,6 @@ interface ResolvedAvbaseProductMetadata {
   plot?: string;
   durationSeconds?: number;
   thumbUrl?: string;
-  posterUrl?: string;
   sceneImages: string[];
 }
 
@@ -315,7 +314,6 @@ const resolveProductMetadata = (products: AvbaseProduct[]): ResolvedAvbaseProduc
       pickFirstNonEmpty(products, (product) => toNonEmptyString(product.iteminfo?.volume)),
     ),
     thumbUrl: pickFirstNonEmpty(products, (product) => toNonEmptyString(product.image_url)),
-    posterUrl: pickFirstNonEmpty(products, (product) => toNonEmptyString(product.thumbnail_url)),
     sceneImages,
   };
 };
@@ -372,7 +370,7 @@ export class AvbaseCrawler extends BaseCrawler {
       release_date: parseAvbaseDate(work?.min_date ?? undefined),
       durationSeconds: metadata.durationSeconds,
       thumb_url: metadata.thumbUrl,
-      poster_url: metadata.posterUrl,
+      poster_url: undefined,
       scene_images: metadata.sceneImages,
       website: Website.AVBASE,
     };

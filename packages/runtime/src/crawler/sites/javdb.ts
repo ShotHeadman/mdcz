@@ -117,7 +117,6 @@ export class JavdbCrawler extends BaseCrawler {
 
     const thumbUrl = extractAttr($, "img.video-cover", "src");
     const thumbUrlAbsolute = toAbsoluteUrl(detailUrl, thumbUrl);
-    const posterUrl = thumbUrlAbsolute?.replace("/covers/", "/thumbs/");
 
     const trailerUrl = extractAttr($, "video#preview-video source", "src") ?? undefined;
     const trailerUrlAbsolute = toAbsoluteUrl(detailUrl, trailerUrl);
@@ -154,7 +153,7 @@ export class JavdbCrawler extends BaseCrawler {
       release_date: release,
       rating: ratingValue,
       thumb_url: thumbUrlAbsolute,
-      poster_url: posterUrl,
+      poster_url: undefined,
       fanart_url: undefined,
       scene_images: sceneImageUrls,
       trailer_url: trailerUrlAbsolute,

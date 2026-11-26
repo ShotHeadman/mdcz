@@ -10,6 +10,8 @@ const createNextDataHtml = (pageProps: Record<string, unknown>, bodyHtml = ""): 
 
 const createProduct = (options: { maker?: string } = {}) => ({
   maker: options.maker ? { name: options.maker } : undefined,
+  image_url: "https://pics.dmm.co.jp/digital/video/abf00777/abf00777pl.jpg",
+  thumbnail_url: "https://pics.dmm.co.jp/digital/video/abf00777/abf00777ps.jpg",
 });
 
 const createSearchWork = (options: { prefix: string; workId: string; title: string }) => ({
@@ -133,6 +135,7 @@ describe("AvbaseCrawler", () => {
 
       expect(response.result.data.actors).toEqual(expectedActors);
       expect(response.result.data.title).toBe(expectedTitle);
+      expect(response.result.data.poster_url).toBeUndefined();
     }
   });
 });

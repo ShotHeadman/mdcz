@@ -403,7 +403,7 @@ export class AvwikidbCrawler implements SiteAdapter {
       release_date: first(parseDate(movie.dateOfPublication), parseDate(dmmData?.date)),
       durationSeconds: parseMinutesToSeconds(movie.durationMin) ?? parseMinutesToSeconds(dmmData?.volume),
       thumb_url: readImageUrl(imageUrl, ["large", "list", "small"]) ?? (imageBase ? `${imageBase}pl.jpg` : undefined),
-      poster_url: readImageUrl(imageUrl, ["small", "list", "large"]) ?? (imageBase ? `${imageBase}ps.jpg` : undefined),
+      poster_url: undefined,
       scene_images: sceneImages,
       trailer_url: readTrailerUrl(movie, dmmData),
       website: Website.AVWIKIDB,

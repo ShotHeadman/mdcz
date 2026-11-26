@@ -101,7 +101,7 @@ describe("AvwikidbCrawler", () => {
       release_date: "2026-04-03",
       durationSeconds: 7_500,
       thumb_url: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020pl.jpg",
-      poster_url: "https://pics.dmm.co.jp/digital/video/zake00020/zake00020ps.jpg",
+      poster_url: undefined,
       trailer_url: "https://cc3001.dmm.co.jp/litevideo/freepv/z/zak/zake00020/zake00020_dmb_w.mp4",
     });
     expect(response.result.data.scene_images).toEqual([

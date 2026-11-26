@@ -148,7 +148,7 @@ describe("DmmCrawler", () => {
           const data = successfulData(response);
           expect(data.title).toBe("AWS Optimization Test");
           expect(data.thumb_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00027/ssis00027pl.jpg");
-          expect(data.poster_url).toBe("https://pics.dmm.co.jp/digital/video/ssis00027/ssis00027ps.jpg");
+          expect(data.poster_url).toBeUndefined();
           expect(networkClient.requests.some((request) => request.url.includes("awsimgsrc.dmm.co.jp"))).toBe(false);
         },
       },
@@ -301,6 +301,8 @@ describe("DmmCrawler", () => {
     expect(response.result.data.title).toBe("DMM Video From TV List");
     expect(response.result.data.number).toBe("SSNI-103");
     expect(response.result.data.plot).toBe("Recovered from tv.dmm.co.jp list content");
+    expect(response.result.data.thumb_url).toBe("https://cdn.example.com/ssni-cover.jpg");
+    expect(response.result.data.poster_url).toBeUndefined();
     expect(networkClient.requests.map((request) => request.url)).toEqual([searchUrl]);
   });
 
